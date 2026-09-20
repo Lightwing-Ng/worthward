@@ -1,4 +1,4 @@
-/* Code version: v0.12.0 */
+/* Code version: v0.13.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -393,85 +393,27 @@
 				: `${markerParts.day}/${markerParts.monthIndex + 1}/${markerParts.year}`;
 		};
 
-		const resolveMarketTimeConfig = (ticker) => {
-			const normalized = String(ticker || "").toUpperCase();
-			const configs = [
-				{ suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", label: "KST", session: { open: 9 * 60, close: 15 * 60 + 30 } },
-				{ suffixes: [".HK"], timezone: "Asia/Hong_Kong", label: "HKT", session: { open: (9 * 60) + 30, close: 16 * 60 } },
-				{ suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", label: "JST", session: { open: 9 * 60, close: 15 * 60 + 30 } },
-				{ suffixes: [".SH", ".SS", ".SZ"], timezone: "Asia/Shanghai", label: "CST", session: { open: (9 * 60) + 30, close: 15 * 60 } },
-				{ suffixes: [".SG", ".SI"], timezone: "Asia/Singapore", label: "SGT", session: { open: 9 * 60, close: 17 * 60 } },
-				{ suffixes: [".L"], timezone: "Europe/London", label: "LON", session: { open: 8 * 60, close: (16 * 60) + 30 } },
-				{ suffixes: [".AX"], timezone: "Australia/Sydney", label: "AET", session: { open: 10 * 60, close: 16 * 60 } },
-				{ suffixes: [".TO", ".V", ".NE", ".CN", ".CA"], timezone: "America/Toronto", label: "ET", session: { open: (9 * 60) + 30, close: 16 * 60 } },
-				{ suffixes: [".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS"], timezone: "Europe/Paris", label: "CET", session: { open: 9 * 60, close: (17 * 60) + 30 } },
-				{ suffixes: [".HE"], timezone: "Europe/Helsinki", label: "EET", session: { open: 9 * 60, close: (17 * 60) + 30 } },
-				{ suffixes: [".NS", ".BO"], timezone: "Asia/Kolkata", label: "IST", session: { open: (9 * 60) + 15, close: (15 * 60) + 30 } },
-				{ suffixes: [".TW", ".TWO"], timezone: "Asia/Taipei", label: "CST", session: { open: 9 * 60, close: (13 * 60) + 30 } },
-				{ suffixes: [".KL"], timezone: "Asia/Kuala_Lumpur", label: "MYT", session: { open: 9 * 60, close: 17 * 60 } },
-				{ suffixes: [".BK"], timezone: "Asia/Bangkok", label: "ICT", session: { open: 10 * 60, close: (16 * 60) + 30 } },
-				{ suffixes: [".JK"], timezone: "Asia/Jakarta", label: "WIB", session: { open: 9 * 60, close: 16 * 60 } },
-				{ suffixes: [".NZ"], timezone: "Pacific/Auckland", label: "NZT", session: { open: 10 * 60, close: (16 * 60) + 45 } },
-				{ suffixes: [".SA"], timezone: "America/Sao_Paulo", label: "BRT", session: { open: 10 * 60, close: 17 * 60 } },
-				{ suffixes: [".BA", ".MX"], timezone: "America/Mexico_City", label: "CT", session: { open: (8 * 60) + 30, close: 15 * 60 } },
-				{ suffixes: [".TA"], timezone: "Asia/Jerusalem", label: "IST", session: { open: (9 * 60) + 30, close: (17 * 60) + 30 } },
-				{ suffixes: [".SR", ".SE"], timezone: "Asia/Riyadh", label: "AST", session: { open: 10 * 60, close: 15 * 60 } },
-				{ suffixes: [".JO"], timezone: "Africa/Johannesburg", label: "SAST", session: { open: 9 * 60, close: 17 * 60 } },
-				{ suffixes: [".QA"], timezone: "Asia/Qatar", label: "AST", session: { open: (9 * 60) + 30, close: (13 * 60) + 10 } },
-			];
-			const match = configs.find((config) => config.suffixes.some((suffix) => normalized.endsWith(suffix)));
-			if (match) return match;
-			return { timezone: "America/New_York", label: "NYT", session: { open: (9 * 60) + 30, close: 16 * 60 } };
-		};
-
-		const getTimezoneOffsetMinutes = (timezone, utcMs) => {
-			try {
-				const parts = new Intl.DateTimeFormat("en-US", {
-					timeZone: timezone,
-					year: "numeric",
-					month: "2-digit",
-					day: "2-digit",
-					hour: "2-digit",
-					minute: "2-digit",
-					hourCycle: "h23",
-				}).formatToParts(new Date(utcMs));
-				const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-				const localAsUtcMs = Date.UTC(
-					Number(values.year),
-					Number(values.month) - 1,
-					Number(values.day),
-					Number(values.hour),
-					Number(values.minute),
-				);
-				return Math.round((localAsUtcMs - utcMs) / 60000);
-			} catch (_error) {
-				return 0;
-			}
-		};
+		// `chart-axis-utils.js` owns the market-session projection published by
+		// `app/core/market_sessions.py`. base.html loads it before this script.
+		const resolveMarketTimeConfig = (ticker) => chartAxis.resolveMarketTimeConfig(ticker);
 
 		const formatSerialMinuteLocalTime = (serialMinute, config) => {
 			if (!Number.isFinite(serialMinute) || !config) return "";
-			const rawNewYorkMs = serialMinute * 60000;
-			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", rawNewYorkMs);
-			const actualUtcMs = rawNewYorkMs - (newYorkOffset * 60000);
-			const marketOffset = getTimezoneOffsetMinutes(config.timezone, actualUtcMs);
-			const localDate = new Date(actualUtcMs + (marketOffset * 60000));
-			const hours = String(localDate.getUTCHours()).padStart(2, "0");
-			const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+			const parts = chartAxis.newYorkWallMsToMarketParts(serialMinute * 60000, config.timezone);
+			if (!parts) return "";
+			const hours = String(parts.hours).padStart(2, "0");
+			const minutes = String(parts.minutes).padStart(2, "0");
 			return `${hours}:${minutes} ${config.label}`;
 		};
 
 		const getSerialMinuteMarketDateParts = (serialMinute, config) => {
 			if (!Number.isFinite(serialMinute) || !config) return null;
-			const rawNewYorkMs = serialMinute * 60000;
-			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", rawNewYorkMs);
-			const actualUtcMs = rawNewYorkMs - (newYorkOffset * 60000);
-			const marketOffset = getTimezoneOffsetMinutes(config.timezone, actualUtcMs);
-			const localDate = new Date(actualUtcMs + (marketOffset * 60000));
+			const parts = chartAxis.newYorkWallMsToMarketParts(serialMinute * 60000, config.timezone);
+			if (!parts) return null;
 			return {
-				year: localDate.getUTCFullYear(),
-				monthIndex: localDate.getUTCMonth(),
-				day: localDate.getUTCDate(),
+				year: parts.year,
+				monthIndex: parts.monthIndex,
+				day: parts.day,
 			};
 		};
 
@@ -483,21 +425,11 @@
 			return `${year}-${month}-${day}`;
 		};
 
-		const localMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => {
-			if (!dateText || !config || !Number.isFinite(marketMinute)) return null;
-			const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
-			if (!match) return null;
-			const year = Number(match[1]);
-			const month = Number(match[2]);
-			const day = Number(match[3]);
-			if (![year, month, day].every(Number.isFinite)) return null;
-			const localWallUtcMs = Date.UTC(year, month - 1, day, Math.floor(marketMinute / 60), marketMinute % 60);
-			const marketOffset = getTimezoneOffsetMinutes(config.timezone, localWallUtcMs);
-			const actualUtcMs = localWallUtcMs - (marketOffset * 60000);
-			const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", actualUtcMs);
-			const newYorkWallMs = actualUtcMs + (newYorkOffset * 60000);
-			return Math.round(newYorkWallMs / 60000);
-		};
+		const localMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => (
+			config
+				? chartAxis.marketMinuteToNewYorkSerialMinute(dateText, marketMinute, config.timezone)
+				: null
+		);
 
 		const buildCrossMarketTooltipContent = (pointIndex) => {
 			if (!isCrossMarketOneDayRange) return null;
@@ -539,8 +471,8 @@
 			const markerMinutes = new Set();
 			series.forEach((item) => {
 				const config = resolveMarketTimeConfig(item?.ticker);
-				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
-				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.openMinute, config);
+				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.closeMinute, config);
 				[
 					Number.isFinite(openMinute) ? openMinute - 0.5 : null,
 					Number.isFinite(closeBoundaryMinute) ? closeBoundaryMinute : null,
@@ -597,8 +529,8 @@
 		const crossMarketSessionWindows = isCrossMarketOneDayRange
 			? series.flatMap((item) => {
 				const config = resolveMarketTimeConfig(item?.ticker);
-				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
-				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+				const openMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.openMinute, config);
+				const closeBoundaryMinute = localMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.closeMinute, config);
 				if (!Number.isFinite(openMinute) || !Number.isFinite(closeBoundaryMinute)) return [];
 				return [{
 					openCenter: openMinute,
@@ -1202,24 +1134,9 @@
 				: [`${displayDateParts.day}/${displayDateParts.monthIndex + 1}`, `${displayDateParts.year}`];
 		};
 
-		const buildTickIndexSet = (count, plotWidth) => (
-			typeof chartAxis.buildTickIndexSet === "function"
-				? chartAxis.buildTickIndexSet(count, plotWidth)
-				: (() => {
-					if (count <= 0) return new Set();
-					if (count === 1) return new Set([0]);
-					const maxTickCount = plotWidth >= 768 ? 4 : 3;
-					if (maxTickCount === 3 || count < 4) {
-						return new Set([0, Math.round((count - 1) / 2), count - 1]);
-					}
-					return new Set([
-						0,
-						Math.round((count - 1) / 3),
-						Math.round(((count - 1) * 2) / 3),
-						count - 1,
-					]);
-				})()
-		);
+		// `chart-axis-utils.js` owns the one tick-selection algorithm.
+		// base.html loads it before every chart consumer.
+		const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
 
 		const buildChartTickIndexes = (chartLabels, chartRawDates, plotWidth, useIntradayDedup = false) => {
 			const tickIndexes = Array.from(buildTickIndexSet(chartLabels.length, plotWidth)).sort((left, right) => left - right);

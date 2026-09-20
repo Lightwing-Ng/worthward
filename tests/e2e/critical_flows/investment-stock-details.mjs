@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {
     expect,
     test,
@@ -78,7 +78,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.12.0');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.13.0');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');

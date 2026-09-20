@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.147.1
+ * Code version: v2.147.2
  * - Fixed: Initial and realtime Holdings now share one current NAV calculation,
  *   preserving dated broker interest accruals without double counting.
  * - Fixed: Daily equity now materializes accrual-only statement dates and
@@ -33,7 +33,7 @@ import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/hol
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.0';
 import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.1.0';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.0';
-import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.1.1';
+import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
 import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.0';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.1.0';
@@ -91,7 +91,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.34.10';
+} from './investment/stock-details.js?v=investment-stock-details-v0.34.11';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -140,7 +140,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.147.1',
+    entry: 'v2.147.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

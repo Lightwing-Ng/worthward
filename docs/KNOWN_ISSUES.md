@@ -1,5 +1,34 @@
 # Known issues and operating constraints
 
+Market-session consolidation, 20 Sep 2026: `app/core/market_sessions.py` is
+now the one maintained owner of every supported market family's regular
+session, and the browser chart, SVG exporter, and date controls consume a
+serialized projection of it instead of private rule tables. Four intentional
+behavior fixes ride along with that consolidation.
+
+- Buenos Aires (`.BA`) and Istanbul (`.IS`) are now their own market families in
+  the browser. The chart and the SVG exporter previously drew them on Mexico
+  City and Paris time with those markets' session hours, so one-day cross-market
+  windows, session guides, and market-local hover times were wrong for Argentine
+  and Turkish tickers. The backend was already correct.
+- The Australian (`.AX`) regular session now opens at 10:00 Sydney time
+  everywhere. `app/services/comparisons.py` used 09:00, which is the ASX
+  pre-open phase; the browser chart and `broker_market_data.py` already used
+  10:00. ASX cash-market normal trading is 10:00 to 16:00 Sydney time.
+  Intraday gap filling no longer synthesizes 09:00 to 09:59 ASX rows.
+- Broker candlestick filtering now keeps the closing-auction bar stamped on the
+  session boundary for Euronext, Helsinki, India, Taiwan, Thailand, and Tel
+  Aviv. `broker_market_data.py` used a half-open window for those markets and
+  dropped that final bar, while `comparisons.py` already kept it.
+- The one-day SVG export window now ends at the right edge of the last included
+  minute bar for those same six markets, which previously clipped a half minute
+  short of it. Every other market's export window is unchanged.
+
+Live-session activity checks for Euronext and Helsinki now end at the 17:30
+closing boundary rather than including that minute, matching Taiwan, India,
+Thailand, and Tel Aviv. The user-owned 8688 process keeps serving its cached
+template and asset keys until the owner performs the normal manual restart.
+
 Ticker-comparison controls overlay, 16 Sep 2026: at the registered 900 px
 sidebar-overlay breakpoint and below, the Ticker comparison controls now reuse
 Backtest's shared workspace-controls overlay instead of consuming a permanent
@@ -309,7 +338,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.259.0`
+Documentation version: `v1.260.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

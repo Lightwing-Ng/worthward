@@ -51,13 +51,17 @@ from strategies.price_field_pipeline import (
     merge_price_field_bundle_observations as _merge_bundle_observations,
     normal_probability_above_zero as _normal_probability_above_zero,
     normalize_price_field_ohlcv as _normalize_ohlcv_frame,
-    price_field_probabilistic_diagnostics as _probabilistic_diagnostics,
-    probability_threshold_signals as _probability_threshold_signals,
+    # Retained shared aliases: `tests/test_price_field_contract.py` asserts
+    # that both Price Field strategies expose the same pipeline owners.
+    price_field_probabilistic_diagnostics as _probabilistic_diagnostics,  # noqa: F401
+    probability_threshold_signals as _probability_threshold_signals,  # noqa: F401
     record_price_field_value as _record_value,
 )
 from strategies.price_field_scoring import (
-    score_price_field_grid,
-    visible_scoring_bounds,
+    PriceFieldPredictionColumns,
+    evaluate_gaussian_price_field,
+    score_price_field_grid,  # noqa: F401
+    visible_scoring_bounds,  # noqa: F401
 )
 
 from ..base import (
@@ -73,6 +77,14 @@ _PROBABILITY_COLUMN = "lstm_probability_up"
 _AUTOREGRESSION_COLUMN = "lstm_return_autoregression"
 _LONG_RUN_MEAN_COLUMN = "lstm_return_long_run_mean"
 _INNOVATION_STD_COLUMN = "lstm_return_innovation_std"
+_PREDICTION_COLUMNS = PriceFieldPredictionColumns(
+    predictive_mean=_PREDICTION_MEAN_COLUMN,
+    predictive_scale=_PREDICTION_STD_COLUMN,
+    probability_up=_PROBABILITY_COLUMN,
+    return_autoregression=_AUTOREGRESSION_COLUMN,
+    return_long_run_mean=_LONG_RUN_MEAN_COLUMN,
+    return_innovation_scale=_INNOVATION_STD_COLUMN,
+)
 _MODEL_VERSION = "lstm-price-field-model/v1.2.0"
 _CELL_DISPLAY_THRESHOLD_DEFAULT_PCT = 1.0
 _CELL_DISPLAY_THRESHOLD_MIN_PCT = 0.0
@@ -486,69 +498,20 @@ class LSTMPriceFieldStrategy(BaseStrategy):
             innovation_std[origin] = innovation
             probability_up[origin] = _normal_probability_above_zero(mean, scale)
 
-        prediction_frame = pd.DataFrame(
-            {
-                "Date": full_frame["Date"],
-                _PREDICTION_MEAN_COLUMN: predictive_mean,
-                _PREDICTION_STD_COLUMN: predictive_std,
-                _PROBABILITY_COLUMN: probability_up,
-                _AUTOREGRESSION_COLUMN: autoregression,
-                _LONG_RUN_MEAN_COLUMN: long_run_mean,
-                _INNOVATION_STD_COLUMN: innovation_std,
-            }
+        evaluation = evaluate_gaussian_price_field(
+            full_frame=full_frame,
+            visible_frame=visible_frame,
+            predictive_mean=predictive_mean,
+            predictive_scale=predictive_std,
+            probability_up=probability_up,
+            return_autoregression=autoregression,
+            return_long_run_mean=long_run_mean,
+            return_innovation_scale=innovation_std,
+            columns=_PREDICTION_COLUMNS,
+            entry_probability_pct=float(normalized_params["entry_probability"]),
         )
-        output = visible_frame.merge(
-            prediction_frame,
-            on="Date",
-            how="left",
-            validate="one_to_one",
-        )
-        diagnostics = _probabilistic_diagnostics(
-            output["Open"].to_numpy(dtype=np.float64),
-            output[_PREDICTION_MEAN_COLUMN].to_numpy(dtype=np.float64),
-            output[_PREDICTION_STD_COLUMN].to_numpy(dtype=np.float64),
-            output[_PROBABILITY_COLUMN].to_numpy(dtype=np.float64),
-        )
-        grid_scoring_frame = full_frame.assign(
-            **{
-                _PREDICTION_MEAN_COLUMN: predictive_mean,
-                _PREDICTION_STD_COLUMN: predictive_std,
-                _AUTOREGRESSION_COLUMN: autoregression,
-                _LONG_RUN_MEAN_COLUMN: long_run_mean,
-                _INNOVATION_STD_COLUMN: innovation_std,
-            }
-        )
-        grid_score_start, grid_score_end = visible_scoring_bounds(
-            grid_scoring_frame["Date"],
-            visible_frame["Date"],
-        )
-        diagnostics["grid"] = score_price_field_grid(
-            grid_scoring_frame,
-            grid_score_start,
-            grid_score_end,
-            predictive_mean_column=_PREDICTION_MEAN_COLUMN,
-            predictive_scale_column=_PREDICTION_STD_COLUMN,
-            return_autoregression_column=_AUTOREGRESSION_COLUMN,
-            return_long_run_mean_column=_LONG_RUN_MEAN_COLUMN,
-            return_innovation_scale_column=_INNOVATION_STD_COLUMN,
-        )
-        diagnostics["distribution_metric_kind"] = (
-            "close-anchored-standardized-1-20d-crps-skill"
-        )
-        diagnostics["distribution_evaluation_scope"] = (
-            "visible-backtest-range-with-causal-prior-history"
-        )
-        diagnostics["distribution_warmup_history_points"] = grid_score_start
-        diagnostics["distribution_visible_origin_points"] = (
-            grid_score_end - grid_score_start
-        )
-        entry_probability = float(normalized_params["entry_probability"]) / 100.0
-        buy_signals, sell_signals = _probability_threshold_signals(
-            pd.to_numeric(output[_PROBABILITY_COLUMN], errors="coerce"),
-            entry_probability,
-        )
-        output["buy_signal"] = pd.Series(buy_signals, index=output.index, dtype="bool")
-        output["sell_signal"] = pd.Series(sell_signals, index=output.index, dtype="bool")
+        output = evaluation.output
+        diagnostics = evaluation.diagnostics
 
         latest_origin = max(0, len(output) - 1)
         actual_features = backend.origin_feature_names.get(len(full_frame) - 1, ())

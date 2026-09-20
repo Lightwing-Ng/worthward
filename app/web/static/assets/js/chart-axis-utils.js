@@ -1,7 +1,9 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.6.0
+ * Code version: v1.7.0
+ * - Added: One market-session resolver and one New York / market-local
+ *   timezone conversion owner shared by charting and SVG export.
  * - Added: Shared rounded y-axis value badges preserve the Investment chart's
  *   decimal anchor, axis-label bounds, and theme radius contract.
  * - Added: Shared stock-price y-axis labels use grouped integers at or above
@@ -323,6 +325,120 @@
         element.classList.add("is-visible");
     };
 
+
+    /**
+     * Resolve the serialized market-session projection published by the
+     * server. `app/core/market_sessions.py` is the sole maintained owner of
+     * ticker suffixes, IANA timezones, and regular-session minutes; the
+     * browser never keeps a second rule table.
+     */
+    const readMarketSessionConfigs = () => {
+        const published = globalScope.WORTHWARD_MARKET_SESSIONS;
+        return Array.isArray(published) ? published : [];
+    };
+
+    const DEFAULT_MARKET_TIME_CONFIG = Object.freeze({
+        market: "US",
+        timezone: "America/New_York",
+        label: "NYT",
+        openMinute: (9 * 60) + 30,
+        closeMinute: 16 * 60,
+        lastBarMinute: (16 * 60) - 1,
+        barEndMinute: 16 * 60,
+        segments: [],
+    });
+
+    /**
+     * Return the market-time configuration for a ticker suffix.
+     * Entries are consumed in the canonical backend order, so suffix
+     * precedence matches `infer_ticker_market()` exactly.
+     */
+    const resolveMarketTimeConfig = (ticker) => {
+        const normalized = String(ticker || "").toUpperCase();
+        const configs = readMarketSessionConfigs();
+        const match = configs.find((config) => (
+            Array.isArray(config?.suffixes)
+            && config.suffixes.some((suffix) => normalized.endsWith(String(suffix)))
+        ));
+        if (match) return match;
+        const fallback = configs.find((config) => (
+            Array.isArray(config?.suffixes) && config.suffixes.length === 0
+        ));
+        return fallback || DEFAULT_MARKET_TIME_CONFIG;
+    };
+
+    /**
+     * Return the signed offset, in minutes, between a timezone's wall clock
+     * and UTC at one instant. Daylight-saving transitions are resolved by the
+     * platform's own zone data rather than a stored offset table.
+     */
+    const getTimezoneOffsetMinutes = (timezone, utcMs) => {
+        try {
+            const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+            }).formatToParts(new Date(utcMs));
+            const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+            const localAsUtcMs = Date.UTC(
+                Number(values.year),
+                Number(values.month) - 1,
+                Number(values.day),
+                Number(values.hour),
+                Number(values.minute),
+            );
+            return Math.round((localAsUtcMs - utcMs) / 60000);
+        } catch (_error) {
+            return 0;
+        }
+    };
+
+    /**
+     * Convert a New York wall-clock instant, expressed in milliseconds of the
+     * project's serial timeline, into the requested timezone's wall-clock
+     * parts. The application's timestamp contract keeps every stored series in
+     * New York wall time, so the market-local view is always derived, never
+     * stored.
+     */
+    const newYorkWallMsToMarketParts = (newYorkWallMs, timezone) => {
+        if (!Number.isFinite(newYorkWallMs) || !timezone) return null;
+        const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", newYorkWallMs);
+        const actualUtcMs = newYorkWallMs - (newYorkOffset * 60000);
+        const marketOffset = getTimezoneOffsetMinutes(timezone, actualUtcMs);
+        const localDate = new Date(actualUtcMs + (marketOffset * 60000));
+        return {
+            year: localDate.getUTCFullYear(),
+            monthIndex: localDate.getUTCMonth(),
+            day: localDate.getUTCDate(),
+            hours: localDate.getUTCHours(),
+            minutes: localDate.getUTCMinutes(),
+            offsetMinutes: marketOffset,
+        };
+    };
+
+    /**
+     * Convert a market-local date and minute-of-day into the New York serial
+     * minute used by the shared one-day charting window.
+     */
+    const marketMinuteToNewYorkSerialMinute = (dateText, marketMinute, timezone) => {
+        if (!dateText || !timezone || !Number.isFinite(marketMinute)) return null;
+        const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        if (![year, month, day].every(Number.isFinite)) return null;
+        const localWallUtcMs = Date.UTC(year, month - 1, day, Math.floor(marketMinute / 60), marketMinute % 60);
+        const marketOffset = getTimezoneOffsetMinutes(timezone, localWallUtcMs);
+        const actualUtcMs = localWallUtcMs - (marketOffset * 60000);
+        const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", actualUtcMs);
+        return Math.round((actualUtcMs + (newYorkOffset * 60000)) / 60000);
+    };
+
     const api = Object.freeze({
         WIDE_CHART_BREAKPOINT_PX,
         STOCK_PRICE_INTEGER_THRESHOLD,
@@ -336,7 +452,12 @@
         readThemeToken,
         readThemeTokens,
         normalizeSafeImageUrl,
-        CHART_AXIS_UTILS_VERSION: "v1.6.0",
+        resolveMarketTimeConfig,
+        getTimezoneOffsetMinutes,
+        newYorkWallMsToMarketParts,
+        marketMinuteToNewYorkSerialMinute,
+        DEFAULT_MARKET_TIME_CONFIG,
+        CHART_AXIS_UTILS_VERSION: "v1.7.0",
     });
 
     globalScope.WORTHWARD_CHART_AXIS = api;

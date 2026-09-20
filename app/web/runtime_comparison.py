@@ -1,9 +1,14 @@
 """Build the comparison web-runtime context.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
+
+from app.core.market_sessions import (
+    market_session_last_bar_minute,
+    market_session_segments,
+)
 
 
 def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
@@ -441,84 +446,14 @@ def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
         return current_timestamp.tz_convert(market_timezone_for_ticker(ticker)).date()
 
     def market_close_minute_for_ticker(ticker: str) -> int | None:
-        market = infer_ticker_market(ticker)
-        if market in {"KR", "JP"}:
-            return (15 * 60) + 30
-        if market == "HK":
-            return (15 * 60) + 59
-        if market == "CN":
-            return (14 * 60) + 59
-        if market == "UK":
-            return (16 * 60) + 29
-        if market in {"AU", "CA", "ID"}:
-            return (16 * 60) - 1
-        if market == "SG":
-            return (17 * 60) - 1
-        if market in {"AR", "BR", "ZA"}:
-            return (17 * 60) - 1
-        if market == "TR":
-            return (18 * 60) - 1
-        if market in {"EU", "FI", "IL"}:
-            return (17 * 60) + 30
-        if market == "IN":
-            return (15 * 60) + 30
-        if market == "TW":
-            return (13 * 60) + 30
-        if market == "MY":
-            return (17 * 60) - 1
-        if market == "TH":
-            return (16 * 60) + 30
-        if market == "NZ":
-            return (16 * 60) + 44
-        if market == "LATAM":
-            return (15 * 60) - 1
-        if market == "SA":
-            return (15 * 60) - 1
-        if market == "QA":
-            return (13 * 60) + 9
-        return None
+        """Return the market's last included minute bar, or None for US."""
+        if infer_ticker_market(ticker) == "US":
+            return None
+        return market_session_last_bar_minute(ticker)
 
     def market_session_segments_for_ticker(ticker: str) -> list[tuple[int, int]]:
-        market = infer_ticker_market(ticker)
-        if market == "HK":
-            return [((9 * 60) + 30, 12 * 60), (13 * 60, 16 * 60)]
-        if market == "CN":
-            return [((9 * 60) + 30, (11 * 60) + 30), (13 * 60, 15 * 60)]
-        if market == "KR":
-            return [(9 * 60, (15 * 60) + 30)]
-        if market == "JP":
-            return [(9 * 60, (11 * 60) + 30), ((12 * 60) + 30, (15 * 60) + 30)]
-        if market == "UK":
-            return [(8 * 60, (16 * 60) + 30)]
-        if market == "SG":
-            return [(9 * 60, 12 * 60), (13 * 60, 17 * 60)]
-        if market in {"AU", "MY", "EU", "FI", "ID", "ZA"}:
-            return [(9 * 60, market_close_minute_for_ticker(ticker) + 1)]
-        if market == "CA":
-            return [((9 * 60) + 30, 16 * 60)]
-        if market == "IN":
-            return [((9 * 60) + 15, (15 * 60) + 30)]
-        if market == "TW":
-            return [(9 * 60, (13 * 60) + 30)]
-        if market == "TH":
-            return [(10 * 60, (16 * 60) + 30)]
-        if market == "NZ":
-            return [(10 * 60, (16 * 60) + 45)]
-        if market == "BR":
-            return [(10 * 60, 17 * 60)]
-        if market == "AR":
-            return [((10 * 60) + 30, 17 * 60)]
-        if market == "LATAM":
-            return [((8 * 60) + 30, 15 * 60)]
-        if market == "TR":
-            return [(10 * 60, 18 * 60)]
-        if market == "IL":
-            return [((9 * 60) + 30, (17 * 60) + 30)]
-        if market == "SA":
-            return [(10 * 60, 15 * 60)]
-        if market == "QA":
-            return [((9 * 60) + 30, (13 * 60) + 10)]
-        return [((9 * 60) + 30, 16 * 60)]
+        """Return half-open market-local regular-session windows."""
+        return market_session_segments(ticker)
 
     def is_market_regular_session_active_for_ticker(
         ticker: str,

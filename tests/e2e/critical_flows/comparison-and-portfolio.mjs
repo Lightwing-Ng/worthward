@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.4.1 */
 import {
     expect,
     test,
@@ -1601,7 +1601,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
     });
-    expect(highPriceContract.helperVersion).toBe('v1.6.0');
+    expect(highPriceContract.helperVersion).toBe('v1.7.0');
     expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
     expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
 

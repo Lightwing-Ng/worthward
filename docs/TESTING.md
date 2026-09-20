@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.79.0`
+Documentation version: `v1.80.0`
 
 ## Prices secondary-sidebar overlay
 
@@ -58,7 +58,28 @@ application layers, eager outer-layer loading during a core import, route-module
 dependencies outside Flask and `WebRuntime`, and drift among runtime fields,
 builder arguments, and route consumers. `tests/test_market_identity.py` protects
 the canonical aliases, every supported market family's representative timezone,
-and distinct Istanbul and Buenos Aires regular-session windows. The compute-job,
+and distinct Istanbul and Buenos Aires regular-session windows.
+`tests/test_market_session_contract.py` protects the one maintained session
+source: every supported suffix family resolves to exactly one definition, the
+confirmed Buenos Aires, Istanbul, Sydney, and Seoul mismatches stay resolved,
+split sessions keep their lunch break, inclusive included-bar windows stay
+distinct from exclusive session windows, the browser projection preserves
+backend suffix precedence, and neither the chart nor the exporter keeps a
+private suffix, timezone, or session table.
+`tests/test_shared_chart_utility_contract.py` rejects a second copy of the
+tick-selection algorithm and asserts that `base.html` loads
+`chart-axis-utils.js` before every classic chart consumer.
+`tests/test_price_field_evaluation.py` reproduces the previously duplicated
+inline Price Field orchestration as a reference implementation and asserts that
+the shared owner matches it frame for frame and diagnostic for diagnostic
+across warm-up and threshold variants.
+`tests/test_neighbor_indicator_ownership.py`,
+`tests/test_runtime_workspace_dependencies.py`,
+`tests/test_shared_ui_structure_contract.py`, and
+`tests/test_investment_import_compat_boundary.py` protect the neutral neighbor
+primitives, the declared workspace runtime namespace, the shared Settings
+token-table and Backtest column structures, and the declared investment-import
+patch seams. The compute-job,
 storage-row, Longbridge config, network-diagnostic, and broker-candlestick suites
 verify their shared pure adapters without touching production stores or making
 broker or market requests. LSTM coverage launches two same-ticker requests

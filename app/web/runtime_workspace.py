@@ -1,13 +1,16 @@
 """Build the workspace web-runtime context.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
 
 from functools import partial
-from types import SimpleNamespace
 
+from app.web.runtime_workspace_dependencies import (
+    WORKSPACE_RUNTIME_DEPENDENCIES as WORKSPACE_RUNTIME_DEPENDENCIES,
+    build_workspace_dependencies,
+)
 from app.web.runtime_workspace_finalize import finalize_workspace_values
 from app.web.runtime_workspace_history import load_history_after_fetch_failure
 from app.web.runtime_workspace_request import build_workspace_request_context
@@ -15,7 +18,7 @@ from app.web.runtime_workspace_response import render_workspace_response
 
 
 def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
-    c = SimpleNamespace(**context)
+    c = build_workspace_dependencies(context)
 
     def render_workspace_page(
         current_view: str,

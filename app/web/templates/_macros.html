@@ -1,4 +1,4 @@
-{# Code version: v0.6.10 #}
+{# Code version: v0.8.0 #}
 
 {% macro render_notice_banner(
     title='',
@@ -272,4 +272,66 @@
         data-sort-key="{{ entry.label }}"
         {% if selected_code == entry.code %}selected{% endif %}>{{ entry.label }}</option>
 {% endfor %}
+{%- endmacro %}
+
+{% macro render_style_token_table(row) -%}
+<div class="style-token-table-wrap">
+    <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
+        <tbody>
+            {% for token in row.tokens %}
+            <tr>
+                <td class="style-token-name">{{ token.name }}</td>
+                <td class="style-token-value">
+                    {% if token.editable %}
+                    <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
+                        <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
+                        <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
+                            <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                            <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
+                        </div>
+                    </div>
+                    {% else %}
+                    {% if token.reference_target_id %}
+                    <a
+                        href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                        class="style-token-value-link"
+                        data-settings-section-link="material-tokens"
+                        data-style-token-material-link
+                    >{{ token.reference_label }}</a>
+                    {% else %}
+                    <span class="style-token-value-text">{{ token.value }}</span>
+                    {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% for related_style in row.related_styles %}
+            <tr class="style-token-related-row">
+                <td class="style-token-name">
+                    <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
+                </td>
+                <td class="style-token-value">
+                    <span class="style-token-related-value">{{ translate_ui('Reusable style') }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{%- endmacro %}
+
+{# `app/web/backtest_table_columns.py` owns the column order, width tokens, and
+   labels shared by the server table and the optimistic hydration skeleton. #}
+{% macro render_backtest_transaction_colgroup(columns) -%}
+<colgroup>
+{% for column in columns %}    <col style="width: var({{ column.widthToken }});">
+{% endfor %}</colgroup>
+{%- endmacro %}
+
+{% macro render_backtest_transaction_header(columns) -%}
+<thead>
+<tr>
+{% for column in columns %}    <th data-markdown-export-label="{{ column.label }}">{{ column.label }}</th>
+{% endfor %}</tr>
+</thead>
 {%- endmacro %}

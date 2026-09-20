@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 ((globalScope) => {
 	const createSessionAxis = ({bootstrap, state, chartAxis, yAxisMinWidth}) => {
 		const Y_AXIS_MIN_WIDTH = yAxisMinWidth;
@@ -108,20 +108,20 @@
 			return groups;
 		};
 	
-		const marketForTicker = (ticker) => {
-			const normalized = String(ticker || "").trim().toUpperCase();
-			if (normalized.endsWith(".HK")) return "HK";
-			if (normalized.endsWith(".KS") || normalized.endsWith(".KQ")) return "KR";
-			if (normalized.endsWith(".L")) return "UK";
-			return "US";
-		};
+		// `app/core/market_sessions.py` owns ticker market identity, timezones,
+		// and session minutes. `chart-axis-utils.js` exposes its serialized
+		// projection, so Price comparison keeps no suffix or timezone table.
+		const marketForTicker = (ticker) => (
+			String(chartAxis.resolveMarketTimeConfig(ticker)?.market || "US")
+		);
 	
-		const timezoneForMarket = (market) => ({
-			HK: "Asia/Hong_Kong",
-			KR: "Asia/Seoul",
-			UK: "Europe/London",
-			US: "America/New_York",
-		}[market] || "America/New_York");
+		const timezoneForMarket = (market) => {
+			const configs = Array.isArray(globalScope.WORTHWARD_MARKET_SESSIONS)
+				? globalScope.WORTHWARD_MARKET_SESSIONS
+				: [];
+			const match = configs.find((config) => config?.market === String(market));
+			return String(match?.timezone || "America/New_York");
+		};
 	
 		const timezoneLabel = (timezone, offsetMinutes, referenceDate = new Date()) => {
 			if (timezone === "Asia/Hong_Kong") return "HKT";
@@ -179,13 +179,33 @@
 		const buildMarketSessionEvents = (rawDates, tickers) => {
 			const markets = new Set((tickers || []).map(marketForTicker));
 			if (markets.size <= 1) return [];
+			// Opening and closing marks read the canonical session minutes; the
+			// 04:00 New York mark is a pre-market reference, not a session
+			// boundary, so it stays an explicit local constant.
+			const sessionMinute = (market, key) => {
+				const configs = Array.isArray(globalScope.WORTHWARD_MARKET_SESSIONS)
+					? globalScope.WORTHWARD_MARKET_SESSIONS
+					: [];
+				const match = configs.find((config) => config?.market === market);
+				return Number(match?.[key]);
+			};
+			const sessionEvent = (market, key) => {
+				const minute = sessionMinute(market, key);
+				if (!Number.isFinite(minute)) return null;
+				return {
+					market,
+					timezone: timezoneForMarket(market),
+					hours: Math.floor(minute / 60),
+					minutes: minute % 60,
+				};
+			};
 			const eventDefinitions = [
-				{market: "KR", timezone: "Asia/Seoul", hours: 9, minutes: 0},
-				{market: "UK", timezone: "Europe/London", hours: 8, minutes: 0},
-				{market: "HK", timezone: "Asia/Hong_Kong", hours: 16, minutes: 0},
-				{market: "KR", timezone: "Asia/Seoul", hours: 15, minutes: 30},
-				{market: "US", timezone: "America/New_York", hours: 4, minutes: 0},
-			];
+				sessionEvent("KR", "openMinute"),
+				sessionEvent("UK", "openMinute"),
+				sessionEvent("HK", "closeMinute"),
+				sessionEvent("KR", "closeMinute"),
+				{market: "US", timezone: timezoneForMarket("US"), hours: 4, minutes: 0},
+			].filter(Boolean);
 			return eventDefinitions
 				.filter((event) => markets.has(event.market))
 				.map((event) => {
@@ -472,7 +492,7 @@
 	};
 
 	globalScope.WORTHWARD_PRICE_COMPARE_RUNTIME = Object.freeze({
-		VERSION: "v1.0.0",
+		VERSION: "v1.1.0",
 		createChipRevealController,
 		createSessionAxis,
 	});

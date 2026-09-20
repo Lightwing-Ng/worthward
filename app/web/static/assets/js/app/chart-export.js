@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
     const create = (context) => {
         const {
@@ -161,77 +161,22 @@
             return Math.floor(Date.UTC(year, month - 1, day) / 60000) + (hours * 60) + minutes;
         };
 
-        const resolveSvgMarketTimeConfig = (ticker) => {
-            const normalized = String(ticker || "").toUpperCase();
-            const configs = [
-                {suffixes: [".KS", ".KQ"], timezone: "Asia/Seoul", session: {open: 9 * 60, close: (15 * 60) + 31}},
-                {suffixes: [".HK"], timezone: "Asia/Hong_Kong", session: {open: (9 * 60) + 30, close: 16 * 60}},
-                {suffixes: [".T", ".JP"], timezone: "Asia/Tokyo", session: {open: 9 * 60, close: (15 * 60) + 31}},
-                {suffixes: [".SH", ".SS", ".SZ"], timezone: "Asia/Shanghai", session: {open: (9 * 60) + 30, close: 15 * 60}},
-                {suffixes: [".SG", ".SI"], timezone: "Asia/Singapore", session: {open: 9 * 60, close: 17 * 60}},
-                {suffixes: [".L"], timezone: "Europe/London", session: {open: 8 * 60, close: (16 * 60) + 30}},
-                {suffixes: [".AX"], timezone: "Australia/Sydney", session: {open: 10 * 60, close: 16 * 60}},
-                {suffixes: [".TO", ".V", ".NE", ".CN", ".CA"], timezone: "America/Toronto", session: {open: (9 * 60) + 30, close: 16 * 60}},
-                {suffixes: [".PA", ".AS", ".BR", ".MI", ".MC", ".DE", ".F", ".HM", ".BE", ".DU", ".MU", ".HA", ".SW", ".VI", ".ST", ".CO", ".OL", ".IR", ".IS"], timezone: "Europe/Paris", session: {open: 9 * 60, close: (17 * 60) + 30}},
-                {suffixes: [".HE"], timezone: "Europe/Helsinki", session: {open: 9 * 60, close: (17 * 60) + 30}},
-                {suffixes: [".NS", ".BO"], timezone: "Asia/Kolkata", session: {open: (9 * 60) + 15, close: (15 * 60) + 30}},
-                {suffixes: [".TW", ".TWO"], timezone: "Asia/Taipei", session: {open: 9 * 60, close: (13 * 60) + 30}},
-                {suffixes: [".KL"], timezone: "Asia/Kuala_Lumpur", session: {open: 9 * 60, close: 17 * 60}},
-                {suffixes: [".BK"], timezone: "Asia/Bangkok", session: {open: 10 * 60, close: (16 * 60) + 30}},
-                {suffixes: [".JK"], timezone: "Asia/Jakarta", session: {open: 9 * 60, close: 16 * 60}},
-                {suffixes: [".NZ"], timezone: "Pacific/Auckland", session: {open: 10 * 60, close: (16 * 60) + 45}},
-                {suffixes: [".SA"], timezone: "America/Sao_Paulo", session: {open: 10 * 60, close: 17 * 60}},
-                {suffixes: [".BA", ".MX"], timezone: "America/Mexico_City", session: {open: (8 * 60) + 30, close: 15 * 60}},
-                {suffixes: [".TA"], timezone: "Asia/Jerusalem", session: {open: (9 * 60) + 30, close: (17 * 60) + 30}},
-                {suffixes: [".SR", ".SE"], timezone: "Asia/Riyadh", session: {open: 10 * 60, close: 15 * 60}},
-                {suffixes: [".JO"], timezone: "Africa/Johannesburg", session: {open: 9 * 60, close: 17 * 60}},
-                {suffixes: [".QA"], timezone: "Asia/Qatar", session: {open: (9 * 60) + 30, close: (13 * 60) + 10}},
-            ];
-            const match = configs.find((config) => config.suffixes.some((suffix) => normalized.endsWith(suffix)));
-            if (match) return match;
-            return { timezone: "America/New_York", session: { open: (9 * 60) + 30, close: 16 * 60 } };
-        };
+        // The shared axis module owns the serialized market-session projection
+        // from `app/core/market_sessions.py` and the one timezone-offset
+        // implementation. This exporter keeps only its own bar-edge geometry.
+        const chartAxisApi = () => window.WORTHWARD_CHART_AXIS || {};
 
-        const getSvgTimezoneOffsetMinutes = (timezone, utcMs) => {
-            try {
-                const parts = new Intl.DateTimeFormat("en-US", {
-                    timeZone: timezone,
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hourCycle: "h23",
-                }).formatToParts(new Date(utcMs));
-                const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-                const localAsUtcMs = Date.UTC(
-                    Number(values.year),
-                    Number(values.month) - 1,
-                    Number(values.day),
-                    Number(values.hour),
-                    Number(values.minute),
-                );
-                return Math.round((localAsUtcMs - utcMs) / 60000);
-            } catch (_error) {
-                return 0;
-            }
-        };
+        const resolveSvgMarketTimeConfig = (ticker) => chartAxisApi().resolveMarketTimeConfig(ticker);
 
-        const localSvgMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => {
-            if (!dateText || !config || !Number.isFinite(marketMinute)) return null;
-            const match = String(dateText).match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (!match) return null;
-            const year = Number(match[1]);
-            const month = Number(match[2]);
-            const day = Number(match[3]);
-            if (![year, month, day].every(Number.isFinite)) return null;
-            const localWallUtcMs = Date.UTC(year, month - 1, day, Math.floor(marketMinute / 60), marketMinute % 60);
-            const marketOffset = getSvgTimezoneOffsetMinutes(config.timezone, localWallUtcMs);
-            const actualUtcMs = localWallUtcMs - (marketOffset * 60000);
-            const newYorkOffset = getSvgTimezoneOffsetMinutes("America/New_York", actualUtcMs);
-            const newYorkWallMs = actualUtcMs + (newYorkOffset * 60000);
-            return Math.round(newYorkWallMs / 60000);
-        };
+        const getSvgTimezoneOffsetMinutes = (timezone, utcMs) => (
+            chartAxisApi().getTimezoneOffsetMinutes(timezone, utcMs)
+        );
+
+        const localSvgMarketMinuteToNewYorkSerialMinute = (dateText, marketMinute, config) => (
+            config
+                ? chartAxisApi().marketMinuteToNewYorkSerialMinute(dateText, marketMinute, config.timezone)
+                : null
+        );
 
         const buildSvgOneDayTimestampRatio = (sourceSeries, rawDates) => {
             const hasCrossMarketRange = sourceSeries.some((item) => /\.(AS|AX|BA|BE|BK|BO|BR|CA|CN|CO|DE|DU|F|HA|HE|HK|HM|IR|IS|JK|JP|KL|KQ|KS|L|MC|MI|MX|NE|NS|NZ|OL|PA|QA|SA|SE|SG|SH|SI|SR|SS|ST|SW|SZ|TA|T|TO|TWO|TW|V|VI)$/i.test(String(item?.ticker || "")));
@@ -239,8 +184,12 @@
                 const selectedTradingDate = String(state.chart?.tradingDate || rawDates.find(Boolean) || "");
                 const sessionWindows = sourceSeries.flatMap((item) => {
                     const config = resolveSvgMarketTimeConfig(item?.ticker);
-                    const openMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.open, config);
-                    const closeBoundaryMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.session?.close, config);
+                    const openMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.openMinute, config);
+                    // `barEndMinute` is the exclusive end of the last included
+                    // minute bar, so the half-minute step below lands exactly on
+                    // that bar's right edge instead of clipping a closing-auction
+                    // bar stamped on the session boundary itself.
+                    const closeBoundaryMinute = localSvgMarketMinuteToNewYorkSerialMinute(selectedTradingDate, config?.barEndMinute, config);
                     if (!Number.isFinite(openMinute) || !Number.isFinite(closeBoundaryMinute)) return [];
                     return [{
                         startBoundary: openMinute - 0.5,

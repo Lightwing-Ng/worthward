@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.3.0 */
 (() => {
     const create = (context) => {
         const {
@@ -39,6 +39,17 @@
         let lastWorkspaceRangeNoticeFingerprint = "";
         let lastWorkspaceRangeNoticeTexts = new Set();
 
+        const escapeHtmlText = (value) => String(value ?? "").replace(
+            /[&<>"']/g,
+            (character) => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+            })[character],
+        );
+
         const buildPendingWorkspaceMarkup = () => {
             const currentValues = getFilledTickers();
             const reportHeading = $(".workspace .report-heading")?.textContent?.trim() || labels.backtest_metrics || translateUi("Loading");
@@ -70,6 +81,22 @@
                 const pendingMetricCards = tradeMetricLabels.map((label) => (
                     `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`
                 )).join("");
+                // `app/web/backtest_table_columns.py` owns this structure. The
+                // pending skeleton and the server-rendered table read the same
+                // column order, width tokens, and labels.
+                const backtestColumns = Array.isArray(window.WORTHWARD_BACKTEST_COLUMNS?.single)
+                    ? window.WORTHWARD_BACKTEST_COLUMNS.single
+                    : [];
+                const backtestColumnColgroup = backtestColumns.length
+                    ? `<colgroup>${backtestColumns.map((column) => (
+                        `<col style="width: var(${column.widthToken});">`
+                    )).join("")}</colgroup>`
+                    : "";
+                const backtestColumnHeader = backtestColumns.length
+                    ? `<thead><tr>${backtestColumns.map((column) => (
+                        `<th>${escapeHtmlText(column.label)}</th>`
+                    )).join("")}</tr></thead>`
+                    : "";
                 const pendingTransactionRows = Array.from({length: 4}, (_, index) => `
                     <tr>
                         <td class="trade-transactions-index">${index + 1}</td>
@@ -186,34 +213,12 @@
                             <div id="backtest_history_transactions_panel" data-backtest-history-view-panel="transactions"${showBacktestTradeDetails ? "" : " hidden"}>
                         <div class="investment-stock-details-table-host scrollable-data-table-shell local-store-pagination-host investment-history-table-shell backtest-history-table-shell" id="backtest_history_table_wrap">
                             <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-header aria-label="Transaction details columns">
-                                <colgroup>
-                                    <col style="width: var(--backtest-col-no-width);">
-                                    <col style="width: var(--backtest-col-date-time-width);">
-                                    <col style="width: var(--backtest-col-side-width);">
-                                    <col style="width: var(--backtest-col-price-width);">
-                                    <col style="width: var(--backtest-col-quantity-width);">
-                                    <col style="width: var(--backtest-col-realized-pnl-width);">
-                                    <col style="width: var(--backtest-col-unrealized-pnl-width);">
-                                    <col style="width: var(--backtest-col-cash-width);">
-                                    <col style="width: var(--backtest-col-market-value-width);">
-                                    <col style="width: var(--backtest-col-equity-width);">
-                                </colgroup>
-                                <thead><tr><th>No.</th><th>Date time</th><th>Side</th><th>Price</th><th>Quantity</th><th>Realized P&amp;L</th><th>Unrealized P&amp;L</th><th>Cash</th><th>Market value</th><th>Equity</th></tr></thead>
+                                ${backtestColumnColgroup}
+                                ${backtestColumnHeader}
                             </table>
                             <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll" id="backtest_history_table_scroll" data-table-scroll>
                                 <table id="tradeTransactionsTable" class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table" data-table-body>
-                                    <colgroup>
-                                        <col style="width: var(--backtest-col-no-width);">
-                                        <col style="width: var(--backtest-col-date-time-width);">
-                                        <col style="width: var(--backtest-col-side-width);">
-                                        <col style="width: var(--backtest-col-price-width);">
-                                        <col style="width: var(--backtest-col-quantity-width);">
-                                        <col style="width: var(--backtest-col-realized-pnl-width);">
-                                        <col style="width: var(--backtest-col-unrealized-pnl-width);">
-                                        <col style="width: var(--backtest-col-cash-width);">
-                                        <col style="width: var(--backtest-col-market-value-width);">
-                                        <col style="width: var(--backtest-col-equity-width);">
-                                    </colgroup>
+                                    ${backtestColumnColgroup}
                                     <tbody>${pendingTransactionRows}</tbody>
                                 </table>
                             </div>

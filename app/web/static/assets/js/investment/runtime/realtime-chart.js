@@ -1,7 +1,9 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.1.1
+ * Code version: v1.2.0
+ * - Changed: Equity axis ticks now use the one shared tick-selection owner
+ *   instead of an independent copy of the same algorithm.
  * - Fixed: An unavailable current Holdings NAV stays unavailable in realtime
  *   chart points instead of being coerced to numeric zero.
  * - Changed: Binding response now applies broker_summaries to refresh
@@ -297,19 +299,10 @@ function buildInvestmentAxisTickIndexes(labels = [], rawDates = [], plotWidth = 
         });
     }
 
+// `chart-axis-utils.js` owns the one tick-selection algorithm shared by every
+// chart. base.html loads it as a classic script before this deferred module.
 function buildInvestmentEquityTickIndexSet(count, plotWidth) {
-        if (count <= 0) return new Set();
-        if (count === 1) return new Set([0]);
-        const maxTickCount = plotWidth >= 768 ? 4 : 3;
-        if (maxTickCount === 3 || count < 4) {
-            return new Set([0, Math.round((count - 1) / 2), count - 1]);
-        }
-        return new Set([
-            0,
-            Math.round((count - 1) / 3),
-            Math.round(((count - 1) * 2) / 3),
-            count - 1,
-        ]);
+        return window.WORTHWARD_CHART_AXIS.buildTickIndexSet(count, plotWidth);
     }
 
 function getInvestmentRealtimeQuoteDateKey(quote) {

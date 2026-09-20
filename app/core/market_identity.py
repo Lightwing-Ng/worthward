@@ -1,12 +1,12 @@
 """Dependency-neutral ticker market identity helpers.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
 
 
-_MARKET_SUFFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+MARKET_SUFFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("HK", (".HK",)),
     ("KR", (".KS", ".KQ")),
     ("JP", (".T", ".JP")),
@@ -56,6 +56,9 @@ _MARKET_SUFFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("QA", (".QA",)),
 )
 
+# Retained alias for existing private consumers of the suffix table.
+_MARKET_SUFFIXES = MARKET_SUFFIXES
+
 MARKET_TIMEZONES = {
     "US": "America/New_York",
     "HK": "Asia/Hong_Kong",
@@ -88,7 +91,7 @@ MARKET_TIMEZONES = {
 def infer_ticker_market(ticker: object) -> str:
     """Return the canonical market family inferred from a ticker suffix."""
     normalized = str(ticker or "").strip().upper()
-    for market, suffixes in _MARKET_SUFFIXES:
+    for market, suffixes in MARKET_SUFFIXES:
         if normalized.endswith(suffixes):
             return market
     return "US"

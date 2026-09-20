@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.117.0`
+Documentation version: `v1.118.0`
 
 ## Reuse and dependency boundaries
 
@@ -9,11 +9,45 @@ Reuse follows the smallest stable contract, not a shared mutable subsystem.
 authority. Its contract keeps Warsaw (`.WA`) in the European family while
 distinguishing Istanbul (`.IS`) and Buenos Aires (`.BA`) from the Paris and
 Mexico City timezones. Services and broker adapters may retain compatibility
-aliases, but they do not maintain independent suffix tables. Session adapters
-retain their caller-specific inclusive or half-open interval shapes while using
-the same market identity. Intraday history's market-date projection belongs to
-the comparison service; the web history adapter imports that pure projection
-rather than being a dependency of strategy tuning.
+aliases, but they do not maintain independent suffix tables. Intraday history's
+market-date projection belongs to the comparison service; the web history
+adapter imports that pure projection rather than being a dependency of strategy
+tuning.
+
+`app/core/market_sessions.py` builds on that identity and is the sole owner of
+every supported market family's regular-session definition. Each segment
+carries three explicitly separate minutes: `open_minute` is the session opening
+boundary and the first included minute bar, `close_minute` is the session
+closing boundary and an exclusive endpoint, and `last_bar_minute` is the
+timestamp of the last included minute bar and an inclusive endpoint. They are
+not interchangeable: Korea, Japan, Euronext, Helsinki, India, Taiwan, Thailand,
+and Tel Aviv print a closing-auction bar stamped on the boundary minute itself,
+so their `last_bar_minute` equals `close_minute`, while Hong Kong, the United
+States, Australia, and the rest carry `close_minute - 1`. Lunch breaks and
+split sessions are separate segments. The module holds no holiday calendar.
+
+Session adapters pick a view instead of restating rules.
+`market_session_segments()` returns half-open `[open, close)` windows and
+answers "is the continuous session running right now";
+`runtime_comparison.py`'s live-session check uses it.
+`market_included_bar_segments()` returns inclusive `[open, last bar]` windows
+and answers "does this minute bar belong to the regular session";
+`comparisons.py` and `broker_market_data.py`'s candlestick filter use it.
+
+`browser_market_session_config()` serializes that same table, in the canonical
+suffix-precedence order, into `worthward_market_sessions` in `base.html`.
+`chart-axis-utils.js` reads it as `window.WORTHWARD_MARKET_SESSIONS` and owns
+`resolveMarketTimeConfig`, `getTimezoneOffsetMinutes`,
+`newYorkWallMsToMarketParts`, and `marketMinuteToNewYorkSerialMinute`. The
+browser chart, the SVG exporter, the date controls, and Price comparison's
+session axis consume that one projection and keep no private suffix, timezone,
+or session table. Price comparison retains only its daylight-saving-aware
+timezone abbreviation helper, which is a display concern rather than a market
+rule.
+
+Each browser consumer still owns its own bar-edge geometry: `chart.js` plots to the session
+`closeMinute` boundary, while the SVG exporter plots to `barEndMinute`, the
+exclusive end of the last included minute bar.
 
 `app/infrastructure/compute_jobs.py` owns only side-effect-isolated JSON,
 project-workspace, directory-enumeration, numbering, and admission-lock
@@ -30,6 +64,17 @@ construction across supported package versions; storage owns one row-to-record
 adapter per persisted schema; and broker market data owns one OHLCV value/schema
 adapter while each transport retains its timestamp, defaulting, session, and
 filter behavior.
+
+`app/web/runtime_workspace.py` no longer converts the whole runtime context
+into a namespace. `app/web/runtime_workspace_dependencies.py` owns that
+contract: `WORKSPACE_RUNTIME_DEPENDENCIES` declares exactly the runtime
+names the workspace renderer and its request, history, finalize, and response
+modules read, `build_workspace_dependencies()` builds a namespace from only
+those names and fails loudly on a missing one, and
+`tests/test_runtime_workspace_dependencies.py` rejects both an undeclared
+dependency and a declared name no module still uses. The remaining domain
+factories already bind their dependencies by explicit name at the top of each
+builder.
 
 The application package is a dependency-light facade. Importing an inner module
 does not construct the Flask runtime or load services, infrastructure, web, or
@@ -111,6 +156,31 @@ window. For mixed-frequency execution, pre-range intents are removed before the
 daily-to-minute bridge. Prediction eligibility is checked on the scored dates
 before bridging, and model provenance survives the bridge. Predictions that exist
 only in warmup cannot make an otherwise unavailable validation/holdout eligible.
+
+## Shared Price Field evaluation orchestration
+
+`strategies/price_field_scoring.py` owns `evaluate_gaussian_price_field()`, the
+model-neutral part of a Gaussian log-return Price Field run. Given per-origin
+predictive means, scales, probabilities, and AR(1) return state computed on the
+complete causal frame, it joins predictions onto the visible backtest interval,
+builds the probabilistic diagnostics from that visible frame, resolves the
+visible scoring bounds, scores the causal grid while the hidden warm-up history
+stays available to the scorer, stamps the distribution metadata, and converts
+the probability column into threshold intent.
+
+Bayesian Price Field and LSTM Price Field both call it and supply their own
+column names through `PriceFieldPredictionColumns`. Bayesian posterior
+inference, LSTM training, factor selection, and backend scheduling stay
+strategy-owned, and the distribution definition is a caller-declared string so a
+different forecasting distribution cannot be absorbed silently. The eight neural
+adapters keep their own direct-horizon scoring path through
+`NeuralPriceFieldStrategy`; they are not folded into this contract.
+
+`strategies/neighbor_indicators.py` is the neutral owner of the observed-bar
+validation, explicit numeric parameter checking, and Wilder-smoothed indicators
+shared by kNN Machine Learning and Lorentzian Classification. Neither strategy
+imports the other's private helpers; both keep `_`-prefixed compatibility
+aliases because existing tests address them by those names.
 
 ## Direct-horizon neural Price Fields
 
@@ -1238,6 +1308,14 @@ sets of values.
 - `app/web/strategy_forms.py`: pure shared-category strategy selector,
   parameter-field, and Settings catalog presentation builders. WebRuntime
   supplies the strategy factory while retaining request assembly.
+- `app/web/backtest_table_columns.py`: one pure definition of the Backtest
+  transaction-table column order, CSS width tokens, and header labels. The
+  `_macros.html` colgroup and header macros render it server side, and
+  `base.html` publishes it as `window.WORTHWARD_BACKTEST_COLUMNS` so the
+  optimistic hydration skeleton builds the same stable structure. It carries no
+  transaction values.
+- `app/web/templates/_macros.html`: `render_style_token_table` owns the Settings
+  token-table body shared by the Style tokens and Export image sections.
 - `app/web/style_token_rows.py`: pure Settings design-token presentation
   builders. WebRuntime supplies translated labels, the project display URL,
   and the Light / Dark theme mappings;
@@ -1248,11 +1326,19 @@ sets of values.
   shared support live in bounded `investment_import_*.py` domain modules. The
   facade preserves documented patch seams while avoiding dynamic source
   assembly.
+- `app/services/investment_import_compat.py`: the declared patch-seam bridge.
+  Six facade names are addressed by both production code and tests, so a domain
+  module resolves them through `investment_import` at call time instead of
+  binding the owning module's function at import time. `PATCHABLE_SEAMS` names
+  each seam's real owner, and
+  `tests/test_investment_import_compat_boundary.py` proves that every seam
+  still re-exports its owner when unpatched, is still observed through the
+  bridge when patched, and that the bridge holds no logic of its own.
 - `app/services/investment_import_registry.py`: explicit broker and
   source-format parser dispatch plus the normalize, idempotent merge, atomic
   persistence, cache invalidation, and readback-verification boundary. The
   cohesive Zircon (HK) template and parser remain in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Existing consumers keep local fallbacks if the shared script is unavailable.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `buildTickIndexSet` is the one tick-selection algorithm: Price comparison, Backtest, DCA, Live trading, Investment Stock details, and the Investment equity chart all call it rather than keeping a fallback copy. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.

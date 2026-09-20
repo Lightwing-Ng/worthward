@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -1464,24 +1464,9 @@
 			hoverDateLabel.classList.add("is-visible");
 		};
 
-		const buildTickIndexSet = (count, plotWidth) => (
-			typeof chartAxis.buildTickIndexSet === "function"
-				? chartAxis.buildTickIndexSet(count, plotWidth)
-				: (() => {
-					if (count <= 0) return new Set();
-					if (count === 1) return new Set([0]);
-					const maxTickCount = plotWidth >= 768 ? 4 : 3;
-					if (maxTickCount === 3 || count < 4) {
-						return new Set([0, Math.round((count - 1) / 2), count - 1]);
-					}
-					return new Set([
-						0,
-						Math.round((count - 1) / 3),
-						Math.round(((count - 1) * 2) / 3),
-						count - 1,
-					]);
-				})()
-		);
+		// `chart-axis-utils.js` owns the one tick-selection algorithm.
+		// base.html loads it before every chart consumer.
+		const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
 
 
 		const addTradingDays = (dateParts, tradingDays) => {

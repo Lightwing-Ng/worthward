@@ -1,6 +1,6 @@
-{# Code version: v0.11.1 #}
+{# Code version: v0.12.0 #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
+{% from "_macros.html" import render_segmented_control, render_investment_share_actions, render_backtest_transaction_colgroup, render_backtest_transaction_header with context %}
 {% set sidebar_title = "Workspaces" %}
 
 {% block sidebar_content %}
@@ -160,55 +160,18 @@
                     {% if selected_strategy_id == 'dca' %}
                         {% include "_dca_backtest_table.html" %}
                     {% else %}
+                        {% set backtest_transaction_columns = backtest_table_columns['multiAsset'] if backtest_result.multi_asset else backtest_table_columns['single'] %}
                         <table class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                data-table-header aria-label="Transaction details columns">
-                            <colgroup>
-                                <col style="width: var(--backtest-col-no-width);">
-                                <col style="width: var(--backtest-col-date-time-width);">
-                                {% if backtest_result.multi_asset %}<col style="width: var(--backtest-col-ticker-width);">{% endif %}
-                                <col style="width: var(--backtest-col-side-width);">
-                                <col style="width: var(--backtest-col-price-width);">
-                                <col style="width: var(--backtest-col-quantity-width);">
-                                <col style="width: var(--backtest-col-realized-pnl-width);">
-                                <col style="width: var(--backtest-col-unrealized-pnl-width);">
-                                <col style="width: var(--backtest-col-cash-width);">
-                                <col style="width: var(--backtest-col-market-value-width);">
-                                <col style="width: var(--backtest-col-equity-width);">
-                            </colgroup>
-                            <thead>
-                            <tr>
-                                <th data-markdown-export-label="No.">No.</th>
-                                <th data-markdown-export-label="Date time">Date time</th>
-                                {% if backtest_result.multi_asset %}<th data-markdown-export-label="Ticker">Ticker</th>{% endif %}
-                                <th data-markdown-export-label="Side">Side</th>
-                                <th data-markdown-export-label="Price">Price</th>
-                                <th data-markdown-export-label="Quantity">Quantity</th>
-                                <th data-markdown-export-label="Realized P&amp;L">Realized P&amp;L</th>
-                                <th data-markdown-export-label="Unrealized P&amp;L">Unrealized P&amp;L</th>
-                                <th data-markdown-export-label="Cash">Cash</th>
-                                <th data-markdown-export-label="Market value">Market value</th>
-                                <th data-markdown-export-label="Equity">Equity</th>
-                            </tr>
-                            </thead>
+                            {{ render_backtest_transaction_colgroup(backtest_transaction_columns) }}
+                            {{ render_backtest_transaction_header(backtest_transaction_columns) }}
                         </table>
                         <div class="trade-transactions-wrap scrollable-data-table-scroll investment-history-table-scroll"
                              id="backtest_history_table_scroll" data-table-scroll>
                             <table id="tradeTransactionsTable"
                                    class="settings-table trade-transactions-table scrollable-data-table investment-history-table backtest-history-table"
                                    data-table-body>
-                                <colgroup>
-                                    <col style="width: var(--backtest-col-no-width);">
-                                    <col style="width: var(--backtest-col-date-time-width);">
-                                    {% if backtest_result.multi_asset %}<col style="width: var(--backtest-col-ticker-width);">{% endif %}
-                                    <col style="width: var(--backtest-col-side-width);">
-                                    <col style="width: var(--backtest-col-price-width);">
-                                    <col style="width: var(--backtest-col-quantity-width);">
-                                    <col style="width: var(--backtest-col-realized-pnl-width);">
-                                    <col style="width: var(--backtest-col-unrealized-pnl-width);">
-                                    <col style="width: var(--backtest-col-cash-width);">
-                                    <col style="width: var(--backtest-col-market-value-width);">
-                                    <col style="width: var(--backtest-col-equity-width);">
-                                </colgroup>
+                                {{ render_backtest_transaction_colgroup(backtest_transaction_columns) }}
                                 <tbody>
                                 <!-- Transactions will be rendered by JS with pagination -->
                                 </tbody>

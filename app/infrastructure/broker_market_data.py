@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.17.1
+Code version: v0.18.0
 - Fixed: Daily candles now resolve their trading dates in each ticker's native
   market timezone instead of applying New York dates to every market.
 """
@@ -38,6 +38,7 @@ from app.core.market_identity import (
     infer_ticker_market,
     market_timezone_for_ticker,
 )
+from app.core.market_sessions import market_included_bar_segments
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.longbridge_sdk import build_longbridge_sdk_config
 from app.infrastructure.storage import (
@@ -769,71 +770,18 @@ def _market_local_date(value: object, ticker: str | None) -> date:
 
 
 def _is_regular_market_session(timestamp: pd.Timestamp, ticker: str | None = None) -> bool:
+    """Keep broker minute bars that belong to their market's regular session."""
     market = _infer_market_from_ticker(ticker)
-    if market == "HK":
-        localized = timestamp.tz_convert(HONG_KONG_TIMEZONE)
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return ((9 * 60) + 30 <= total_minutes < 12 * 60) or (13 * 60 <= total_minutes < 16 * 60)
-    if market == "KR":
-        localized = timestamp.tz_convert("Asia/Seoul")
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return 9 * 60 <= total_minutes <= (15 * 60) + 30
-    if market == "JP":
-        localized = timestamp.tz_convert("Asia/Tokyo")
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return (9 * 60 <= total_minutes < (11 * 60) + 30) or ((12 * 60) + 30 <= total_minutes <= (15 * 60) + 30)
-    if market == "CN":
-        localized = timestamp.tz_convert("Asia/Shanghai")
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return ((9 * 60) + 30 <= total_minutes < (11 * 60) + 30) or (13 * 60 <= total_minutes < 15 * 60)
-    if market == "UK":
-        localized = timestamp.tz_convert("Europe/London")
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return 8 * 60 <= total_minutes < (16 * 60) + 30
-    if market == "SG":
-        localized = timestamp.tz_convert("Asia/Singapore")
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        return (9 * 60 <= total_minutes < 12 * 60) or (13 * 60 <= total_minutes < 17 * 60)
-    market_sessions = {
-        "AU": (10 * 60, 16 * 60),
-        "CA": ((9 * 60) + 30, 16 * 60),
-        "EU": (9 * 60, (17 * 60) + 30),
-        "FI": (9 * 60, (17 * 60) + 30),
-        "IN": ((9 * 60) + 15, (15 * 60) + 30),
-        "TW": (9 * 60, (13 * 60) + 30),
-        "MY": (9 * 60, 17 * 60),
-        "TH": (10 * 60, (16 * 60) + 30),
-        "ID": (9 * 60, 16 * 60),
-        "NZ": (10 * 60, (16 * 60) + 45),
-        "BR": (10 * 60, 17 * 60),
-        "AR": ((10 * 60) + 30, 17 * 60),
-        "LATAM": ((8 * 60) + 30, 15 * 60),
-        "TR": (10 * 60, 18 * 60),
-        "IL": ((9 * 60) + 30, (17 * 60) + 30),
-        "SA": (10 * 60, 15 * 60),
-        "ZA": (9 * 60, 17 * 60),
-        "QA": ((9 * 60) + 30, (13 * 60) + 10),
-    }
-    if market in MARKET_TIMEZONES and market in market_sessions:
-        localized = timestamp.tz_convert(MARKET_TIMEZONES[market])
-        if localized.weekday() >= 5:
-            return False
-        total_minutes = (int(localized.hour) * 60) + int(localized.minute)
-        start_minute, end_minute = market_sessions[market]
-        return start_minute <= total_minutes < end_minute
-    return _is_regular_new_york_session(timestamp)
+    if market not in MARKET_TIMEZONES:
+        return _is_regular_new_york_session(timestamp)
+    localized = timestamp.tz_convert(MARKET_TIMEZONES[market])
+    if localized.weekday() >= 5:
+        return False
+    total_minutes = (int(localized.hour) * 60) + int(localized.minute)
+    return any(
+        start_minute <= total_minutes <= end_minute
+        for start_minute, end_minute in market_included_bar_segments(ticker)
+    )
 
 
 def _count_regular_session_rows(values: pd.Series, ticker: str | None = None) -> int:

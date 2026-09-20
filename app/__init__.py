@@ -1,8 +1,10 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.12.0
+Code version: v0.13.0
 - Changed: Keep the package facade dependency-light until create_app() is called.
+- Added: Publish the canonical market-session projection to every template.
+- Added: Publish one Backtest transaction-column structure to every template.
 """
 
 from __future__ import annotations
@@ -40,6 +42,8 @@ def create_app() -> Flask:
         SETTINGS_BROKER_CODES,
         sorted_broker_entries,
     )
+    from app.core.market_sessions import browser_market_session_config
+    from app.web.backtest_table_columns import backtest_transaction_columns
     from app.web.request_security import get_or_create_investment_csrf_token, protect_settings_writes
     from app.web.routes_entry import register_routes
 
@@ -69,6 +73,16 @@ def create_app() -> Flask:
         )
         return response
 
+    # The browser market-session projection is immutable for the process, so
+    # it is serialized once rather than rebuilt for every rendered template.
+    market_session_config = browser_market_session_config()
+    # One maintained Backtest transaction-column structure for the server
+    # table and the optimistic hydration skeleton.
+    backtest_table_columns = {
+        "single": backtest_transaction_columns(),
+        "multiAsset": backtest_transaction_columns(multi_asset=True),
+    }
+
     @app.context_processor
     def inject_broker_catalog() -> dict[str, object]:
         return {
@@ -77,6 +91,8 @@ def create_app() -> Flask:
             "live_trading_broker_codes": LIVE_TRADING_BROKER_CODES,
             "investment_import_broker_codes": INVESTMENT_IMPORT_BROKER_CODES,
             "investment_csrf_token": get_or_create_investment_csrf_token(),
+            "market_session_config": market_session_config,
+            "backtest_table_columns": backtest_table_columns,
         }
 
     register_routes(app)

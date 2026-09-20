@@ -6,7 +6,7 @@ This port keeps the Lorentzian-distance nearest-neighbour classifier,
 feature engineering controls, and the main trend filters, while mapping
 short-side transitions to exits for the app's current long-only backtest.
 
-Code version: v0.6.0
+Code version: v0.6.1
 - Changed: Catalog this TradingView-derived strategy with the technical-analysis
   strategies used by Backtest and Settings.
 - Fixed: Train on mature forward labels, preserve indicator warmup, and track
@@ -22,13 +22,16 @@ import pandas as pd
 from app.infrastructure.parallel import map_ordered_batches
 
 from ..base import BaseStrategy, StrategyParameterDefinition, StrategySignalResult, StrategySupportMatrix
-from .strategy_knn_machine_learning import (
-    _atr as _atr,
-    _ensure_ohlcv_columns as _ensure_ohlcv_columns,
-    _normalize_neighbor_params as _normalize_neighbor_params,
-    _rsi as _rsi,
-    _true_range as _true_range,
-    _wilder_average,
+# Shared neighbor primitives now live in a neutral module rather than in the
+# sibling strategy. The `_`-prefixed aliases remain because existing tests and
+# callers reference them by those names.
+from ..neighbor_indicators import (
+    average_true_range as _atr,
+    ensure_neighbor_ohlcv_columns as _ensure_ohlcv_columns,
+    normalize_neighbor_params as _normalize_neighbor_params,
+    true_range as _true_range,  # noqa: F401
+    wilder_average as _wilder_average,
+    wilder_rsi as _rsi,
 )
 
 LONG = 1

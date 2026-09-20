@@ -1,4 +1,4 @@
-"""Score the complete close-anchored Price Field. Code version: v1.2.0.
+"""Score the complete close-anchored Price Field. Code version: v1.3.0.
 
 Research bins are fixed from causal price history, independently of candidate
 parameters and browser geometry. Every horizon includes both outside tails.
@@ -6,6 +6,7 @@ parameters and browser geometry. Every horizon includes both outside tails.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 from statistics import NormalDist
 from typing import Any
@@ -13,7 +14,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from strategies.price_field_pipeline import multi_step_price_field_normal_parameters
+from strategies.price_field_pipeline import (
+    multi_step_price_field_normal_parameters,
+    price_field_probabilistic_diagnostics,
+    probability_threshold_signals,
+)
 
 GRID_SCORING_VERSION = "close-price-grid/v1.1.3"
 GRID_HORIZONS = tuple(range(1, 21))
@@ -391,3 +396,141 @@ def score_price_field_grid(
         ),
         "horizons": horizons,
     }
+
+
+@dataclass(frozen=True)
+class PriceFieldPredictionColumns:
+    """Names of the six model-neutral prediction columns for one strategy."""
+
+    predictive_mean: str
+    predictive_scale: str
+    probability_up: str
+    return_autoregression: str
+    return_long_run_mean: str
+    return_innovation_scale: str
+
+    def as_tuple(self) -> tuple[str, ...]:
+        """Return every prediction column name in a stable order."""
+        return (
+            self.predictive_mean,
+            self.predictive_scale,
+            self.probability_up,
+            self.return_autoregression,
+            self.return_long_run_mean,
+            self.return_innovation_scale,
+        )
+
+
+@dataclass(frozen=True)
+class PriceFieldEvaluation:
+    """The visible evaluation frame, diagnostics, and its scoring bounds."""
+
+    output: pd.DataFrame
+    diagnostics: dict[str, Any]
+    grid_score_start: int
+    grid_score_end: int
+
+
+def evaluate_gaussian_price_field(
+        *,
+        full_frame: pd.DataFrame,
+        visible_frame: pd.DataFrame,
+        predictive_mean: Any,
+        predictive_scale: Any,
+        probability_up: Any,
+        return_autoregression: Any,
+        return_long_run_mean: Any,
+        return_innovation_scale: Any,
+        columns: PriceFieldPredictionColumns,
+        entry_probability_pct: float,
+        distribution_metric_kind: str = (
+            "close-anchored-standardized-1-20d-crps-skill"
+        ),
+        distribution_evaluation_scope: str = (
+            "visible-backtest-range-with-causal-prior-history"
+        ),
+) -> PriceFieldEvaluation:
+    """Assemble the model-neutral Price Field evaluation for one strategy.
+
+    Every caller supplies per-origin Gaussian log-return parameters computed on
+    the complete causal frame, including hidden warm-up origins. This function
+    owns only the model-neutral part: it joins predictions onto the visible
+    backtest interval, builds the probabilistic diagnostics from that visible
+    frame, scores the causal grid over the visible origins while keeping the
+    hidden warm-up history available to the scorer, and converts the
+    probability column into threshold intent.
+
+    Bayesian posterior inference, LSTM training, factor selection, and backend
+    scheduling stay with the owning strategy. The distribution definition is a
+    caller-declared string so a different forecasting distribution cannot be
+    silently absorbed into this shared contract.
+    """
+    prediction_frame = pd.DataFrame(
+        {
+            "Date": full_frame["Date"],
+            columns.predictive_mean: predictive_mean,
+            columns.predictive_scale: predictive_scale,
+            columns.probability_up: probability_up,
+            columns.return_autoregression: return_autoregression,
+            columns.return_long_run_mean: return_long_run_mean,
+            columns.return_innovation_scale: return_innovation_scale,
+        }
+    )
+    output = visible_frame.merge(
+        prediction_frame,
+        on="Date",
+        how="left",
+        validate="one_to_one",
+    )
+    # Score only the visible backtest interval. The hidden warm-up bars may
+    # train a posterior, but they are not part of the user-facing equity curve
+    # or its diagnostic denominator.
+    diagnostics = price_field_probabilistic_diagnostics(
+        output["Open"].to_numpy(dtype=np.float64),
+        output[columns.predictive_mean].to_numpy(dtype=np.float64),
+        output[columns.predictive_scale].to_numpy(dtype=np.float64),
+        output[columns.probability_up].to_numpy(dtype=np.float64),
+    )
+    grid_scoring_frame = full_frame.assign(
+        **{
+            columns.predictive_mean: predictive_mean,
+            columns.predictive_scale: predictive_scale,
+            columns.return_autoregression: return_autoregression,
+            columns.return_long_run_mean: return_long_run_mean,
+            columns.return_innovation_scale: return_innovation_scale,
+        }
+    )
+    grid_score_start, grid_score_end = visible_scoring_bounds(
+        grid_scoring_frame["Date"],
+        visible_frame["Date"],
+    )
+    diagnostics["grid"] = score_price_field_grid(
+        grid_scoring_frame,
+        grid_score_start,
+        grid_score_end,
+        predictive_mean_column=columns.predictive_mean,
+        predictive_scale_column=columns.predictive_scale,
+        return_autoregression_column=columns.return_autoregression,
+        return_long_run_mean_column=columns.return_long_run_mean,
+        return_innovation_scale_column=columns.return_innovation_scale,
+    )
+    diagnostics["distribution_metric_kind"] = distribution_metric_kind
+    diagnostics["distribution_evaluation_scope"] = distribution_evaluation_scope
+    diagnostics["distribution_warmup_history_points"] = grid_score_start
+    diagnostics["distribution_visible_origin_points"] = (
+        grid_score_end - grid_score_start
+    )
+
+    entry_probability = float(entry_probability_pct) / 100.0
+    buy_signals, sell_signals = probability_threshold_signals(
+        pd.to_numeric(output[columns.probability_up], errors="coerce"),
+        entry_probability,
+    )
+    output["buy_signal"] = pd.Series(buy_signals, index=output.index, dtype="bool")
+    output["sell_signal"] = pd.Series(sell_signals, index=output.index, dtype="bool")
+    return PriceFieldEvaluation(
+        output=output,
+        diagnostics=diagnostics,
+        grid_score_start=grid_score_start,
+        grid_score_end=grid_score_end,
+    )

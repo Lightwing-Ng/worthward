@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 (() => {
     const create = (context) => {
         const {
@@ -177,30 +177,10 @@
             const timeText = `${padTwo(dateParts.hours)}:${padTwo(dateParts.minutes)}`;
             return [firstLine, secondLineBase ? `${secondLineBase} ${timeText}` : timeText];
         };
-        const getTimezoneOffsetMinutes = (timezone, utcMs) => {
-            try {
-                const parts = new Intl.DateTimeFormat("en-US", {
-                    timeZone: timezone,
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hourCycle: "h23",
-                }).formatToParts(new Date(utcMs));
-                const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-                const localAsUtcMs = Date.UTC(
-                    Number(values.year),
-                    Number(values.month) - 1,
-                    Number(values.day),
-                    Number(values.hour),
-                    Number(values.minute),
-                );
-                return Math.round((localAsUtcMs - utcMs) / 60000);
-            } catch (_error) {
-                return 0;
-            }
-        };
+        // `chart-axis-utils.js` owns the single timezone-offset implementation.
+        const getTimezoneOffsetMinutes = (timezone, utcMs) => (
+            (window.WORTHWARD_CHART_AXIS || {}).getTimezoneOffsetMinutes(timezone, utcMs)
+        );
         const convertNewYorkWallTimeParts = (rawValue, timezone) => {
             const match = String(rawValue || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
             if (!match || !match[4] || !timezone) return null;
@@ -211,18 +191,7 @@
                 Number(match[4]),
                 Number(match[5]),
             );
-            const newYorkOffset = getTimezoneOffsetMinutes("America/New_York", wallTimeUtcMs);
-            const actualUtcMs = wallTimeUtcMs - (newYorkOffset * 60000);
-            const targetOffset = getTimezoneOffsetMinutes(timezone, actualUtcMs);
-            const targetWallTime = new Date(actualUtcMs + (targetOffset * 60000));
-            return {
-                year: targetWallTime.getUTCFullYear(),
-                monthIndex: targetWallTime.getUTCMonth(),
-                day: targetWallTime.getUTCDate(),
-                hours: targetWallTime.getUTCHours(),
-                minutes: targetWallTime.getUTCMinutes(),
-                offsetMinutes: targetOffset,
-            };
+            return (window.WORTHWARD_CHART_AXIS || {}).newYorkWallMsToMarketParts(wallTimeUtcMs, timezone);
         };
         const formatPickerMonthLabel = (date) => {
             if (!(date instanceof Date)) return "";

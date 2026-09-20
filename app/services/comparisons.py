@@ -1,7 +1,7 @@
 """
 Comparison and return-series logic.
 
-Code version: v0.12.1
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -13,6 +13,11 @@ from app.core.market_identity import (
     infer_ticker_market,
     market_timezone_for_ticker,
 )
+from app.core.market_sessions import (
+    market_included_bar_segments,
+    market_session_last_bar_minute,
+    market_session_open_minute,
+)
 from app.models.schemas import SeriesPayload
 from app.services.presentation import (
     format_display_date,
@@ -20,8 +25,8 @@ from app.services.presentation import (
     format_period_label,
 )
 
-_REGULAR_SESSION_OPEN_MINUTE = (9 * 60) + 30
-_REGULAR_SESSION_CLOSE_MINUTE = (16 * 60) - 1
+_REGULAR_SESSION_OPEN_MINUTE = market_session_open_minute("AAPL")
+_REGULAR_SESSION_CLOSE_MINUTE = market_session_last_bar_minute("AAPL")
 _NEW_YORK_TIMEZONE = "America/New_York"
 
 _market_for_ticker = infer_ticker_market
@@ -102,111 +107,29 @@ def _market_session_mask(values: pd.Series, ticker: str | None = None) -> pd.Ser
 
 
 def _is_market_session_timestamp(timestamp: pd.Timestamp, ticker: str | None = None) -> bool:
-    market = _market_for_ticker(ticker)
     localized = _timestamp_as_market_local(timestamp, ticker)
     if localized.weekday() >= 5:
         return False
     minute_of_day = _minute_of_day(localized)
-    if market == "HK":
-        return ((9 * 60) + 30 <= minute_of_day < 12 * 60) or (13 * 60 <= minute_of_day < 16 * 60)
-    if market == "CN":
-        return ((9 * 60) + 30 <= minute_of_day < (11 * 60) + 30) or (13 * 60 <= minute_of_day < 15 * 60)
-    if market == "KR":
-        return 9 * 60 <= minute_of_day <= (15 * 60) + 30
-    if market == "JP":
-        return (9 * 60 <= minute_of_day < (11 * 60) + 30) or ((12 * 60) + 30 <= minute_of_day <= (15 * 60) + 30)
-    if market == "UK":
-        return 8 * 60 <= minute_of_day < (16 * 60) + 30
-    return any(start_minute <= minute_of_day <= end_minute for start_minute, end_minute in _market_session_segments(ticker))
+    return any(
+        start_minute <= minute_of_day <= end_minute
+        for start_minute, end_minute in _market_session_segments(ticker)
+    )
 
 
 def _market_session_close_minute(ticker: str | None = None) -> int:
-    market = _market_for_ticker(ticker)
-    if market == "HK":
-        return (16 * 60) - 1
-    if market == "CN":
-        return (15 * 60) - 1
-    if market in {"KR", "JP"}:
-        return (15 * 60) + 30
-    if market == "UK":
-        return (16 * 60) + 29
-    if market in {"AU", "CA", "ID"}:
-        return (16 * 60) - 1
-    if market == "SG":
-        return (17 * 60) - 1
-    if market in {"AR", "BR", "ZA"}:
-        return (17 * 60) - 1
-    if market == "TR":
-        return (18 * 60) - 1
-    if market in {"EU", "FI", "IL"}:
-        return (17 * 60) + 30
-    if market == "IN":
-        return (15 * 60) + 30
-    if market == "TW":
-        return (13 * 60) + 30
-    if market == "MY":
-        return (17 * 60) - 1
-    if market == "TH":
-        return (16 * 60) + 30
-    if market == "NZ":
-        return (16 * 60) + 44
-    if market == "LATAM":
-        return (15 * 60) - 1
-    if market == "SA":
-        return (15 * 60) - 1
-    if market == "QA":
-        return (13 * 60) + 9
-    return _REGULAR_SESSION_CLOSE_MINUTE
+    """Return the last regular-session minute bar included for this market."""
+    return market_session_last_bar_minute(ticker)
 
 
 def _market_session_open_minute(ticker: str | None = None) -> int:
-    market = _market_for_ticker(ticker)
-    if market in {"HK", "CN"}:
-        return (9 * 60) + 30
-    if market in {"KR", "JP"}:
-        return 9 * 60
-    if market == "UK":
-        return 8 * 60
-    if market in {"AU", "MY", "EU", "FI", "ID", "SG", "ZA"}:
-        return 9 * 60
-    if market == "CA":
-        return (9 * 60) + 30
-    if market == "IN":
-        return (9 * 60) + 15
-    if market == "TW":
-        return 9 * 60
-    if market == "TH":
-        return 10 * 60
-    if market == "NZ":
-        return 10 * 60
-    if market == "BR":
-        return 10 * 60
-    if market == "AR":
-        return (10 * 60) + 30
-    if market == "LATAM":
-        return (8 * 60) + 30
-    if market == "TR":
-        return 10 * 60
-    if market == "IL":
-        return (9 * 60) + 30
-    if market == "SA":
-        return 10 * 60
-    if market == "QA":
-        return (9 * 60) + 30
-    return _REGULAR_SESSION_OPEN_MINUTE
+    """Return the first regular-session minute bar included for this market."""
+    return market_session_open_minute(ticker)
 
 
 def _market_session_segments(ticker: str | None = None) -> list[tuple[int, int]]:
-    market = _market_for_ticker(ticker)
-    if market == "HK":
-        return [((9 * 60) + 30, (12 * 60) - 1), (13 * 60, (16 * 60) - 1)]
-    if market == "CN":
-        return [((9 * 60) + 30, (11 * 60) + 29), (13 * 60, (15 * 60) - 1)]
-    if market == "JP":
-        return [(9 * 60, (11 * 60) + 29), ((12 * 60) + 30, (15 * 60) + 30)]
-    if market == "SG":
-        return [(9 * 60, (12 * 60) - 1), (13 * 60, (17 * 60) - 1)]
-    return [(_market_session_open_minute(ticker), _market_session_close_minute(ticker))]
+    """Return inclusive market-local windows of included regular-session bars."""
+    return market_included_bar_segments(ticker)
 
 
 def prepare_intraday_dataset_for_compare(
