@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -14,6 +14,110 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
+
+test('keeps Investment import physical effects inside the shared scrollport clearance', async ({page}) => {
+    const pageErrors = [];
+    const consoleErrors = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('console', (message) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+
+    await mockInvestmentReadApis(page, {
+        transactions: [],
+        brokerSummaries: {},
+    });
+
+    for (const viewport of [
+        {width: 1_280, height: 420},
+        {width: 600, height: 1_222},
+        {width: 390, height: 844},
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('/trade/investment?view=holdings');
+        await page.locator('#toggle_form_button').click();
+        await expect(page.locator('#investment_import_ibkr_fields')).toBeVisible();
+
+        const trigger = page.locator(
+          '[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]',
+        );
+        await trigger.hover();
+
+        const geometry = await page.locator('#investment_form').evaluate((form) => {
+            const stack = form.querySelector('.investment-import-stack');
+            const broker = form.querySelector('[data-shared-select-kind="investment-import-broker"]');
+            const brokerTrigger = broker?.querySelector('[data-shared-select-trigger]');
+            const fieldGroup = form.querySelector('#investment_import_ibkr_fields');
+            const cards = [...form.querySelectorAll(
+              '#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"] .investment-import-bridge-field',
+            )];
+            if (!(stack instanceof HTMLElement)
+                || !(broker instanceof HTMLElement)
+                || !(brokerTrigger instanceof HTMLElement)
+                || !(fieldGroup instanceof HTMLElement)
+                || cards.length !== 2) return null;
+
+            const stackRect = stack.getBoundingClientRect();
+            const triggerRect = brokerTrigger.getBoundingClientRect();
+            const cardRects = cards.map((card) => card.getBoundingClientRect());
+            const stackStyle = getComputedStyle(stack);
+            return {
+                formOverflow: getComputedStyle(form).overflow,
+                stackOverflowX: stackStyle.overflowX,
+                stackOverflowY: stackStyle.overflowY,
+                stackPaddingTop: Number.parseFloat(stackStyle.paddingTop),
+                stackPaddingBottom: Number.parseFloat(stackStyle.paddingBottom),
+                stackPaddingLeft: Number.parseFloat(stackStyle.paddingLeft),
+                stackPaddingRight: Number.parseFloat(stackStyle.paddingRight),
+                stackLeft: stackRect.left,
+                stackRight: stackRect.right,
+                triggerLeftClearance: triggerRect.left - stackRect.left,
+                triggerRightClearance: stackRect.right - triggerRect.right,
+                triggerTopClearance: triggerRect.top - stackRect.top,
+                triggerShadow: getComputedStyle(brokerTrigger).boxShadow,
+                brokerOverflow: getComputedStyle(broker).overflow,
+                fieldGroupOverflow: getComputedStyle(fieldGroup).overflow,
+                cardOverflows: cards.map((card) => getComputedStyle(card).overflow),
+                cardLeftClearances: cardRects.map((rect) => rect.left - stackRect.left),
+                cardRightClearances: cardRects.map((rect) => stackRect.right - rect.right),
+                pageOverflow: document.documentElement.scrollWidth
+                    - document.documentElement.clientWidth,
+                viewportWidth: window.innerWidth,
+                layoutRole: stack.dataset.layoutRole,
+                scrollable: stack.scrollHeight > stack.clientHeight + 1,
+            };
+        });
+
+        expect(geometry, JSON.stringify({viewport, geometry})).not.toBeNull();
+        expect(geometry.formOverflow).toBe('visible');
+        expect(geometry.stackOverflowX).toBe('hidden');
+        expect(geometry.stackOverflowY).toBe('auto');
+        expect(geometry.stackPaddingTop).toBeGreaterThanOrEqual(24);
+        expect(geometry.stackPaddingBottom).toBeGreaterThanOrEqual(48);
+        expect(geometry.stackPaddingLeft).toBeGreaterThanOrEqual(32);
+        expect(geometry.stackPaddingRight).toBeGreaterThanOrEqual(36);
+        expect(geometry.triggerLeftClearance).toBeGreaterThanOrEqual(31);
+        expect(geometry.triggerRightClearance).toBeGreaterThanOrEqual(35);
+        expect(geometry.triggerTopClearance).toBeGreaterThanOrEqual(23);
+        expect(geometry.triggerShadow).not.toBe('none');
+        expect(geometry.brokerOverflow).toBe('visible');
+        expect(geometry.fieldGroupOverflow).toBe('visible');
+        expect(geometry.cardOverflows).toEqual(['visible', 'visible']);
+        expect(Math.min(...geometry.cardLeftClearances)).toBeGreaterThanOrEqual(31);
+        expect(Math.min(...geometry.cardRightClearances)).toBeGreaterThanOrEqual(35);
+        expect(geometry.stackLeft).toBeGreaterThanOrEqual(-1);
+        expect(geometry.stackRight).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+        expect(geometry.pageOverflow).toBeLessThanOrEqual(1);
+        expect(geometry.layoutRole).toBe('content-scrollport');
+        if (viewport.height === 420) {
+            expect(geometry.scrollable).toBe(true);
+        }
+    }
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+});
+
 test('validates the investment import flow without mutating the local store', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
@@ -1698,4 +1802,3 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     ).filter({has: page.getByText('Realized P&L', {exact: true})});
     await expect(realizedMetric).toContainText('25.00');
 });
-

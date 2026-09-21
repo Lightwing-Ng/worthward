@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.22.0
+Code version: v0.23.0
 """
 
 from pathlib import Path
@@ -1668,6 +1668,9 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
     settings_css = _read(ASSET_ROOT / "css/views/settings.css")
     workspace_css = _read(ASSET_ROOT / "css/views/workspace.css")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
+    investment_tables_css = _read(
+        ASSET_ROOT / "css/views/investment-tables.css"
+    )
 
     assert ".chart-panel.workspace {\n    overflow: visible;" in workspace_css
     settings_header_start = settings_css.index(".settings-workspace-header {")
@@ -1708,6 +1711,52 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
         ".settings-action-package {\n    position: relative;",
     ):
         assert fragment in settings_css
+
+    import_form_start = investment_tables_css.index(".investment-import-form {")
+    import_form = investment_tables_css[
+        import_form_start : investment_tables_css.index("\n}", import_form_start)
+    ]
+    for fragment in (
+        "--investment-import-effect-gutter-inline: clamp(",
+        "overflow: visible;",
+    ):
+        assert fragment in import_form
+
+    import_scrollport_start = investment_tables_css.index(
+        ".investment-import-stack {"
+    )
+    import_scrollport = investment_tables_css[
+        import_scrollport_start : investment_tables_css.index(
+            "\n}", import_scrollport_start
+        )
+    ]
+    for fragment in (
+        "var(--investment-import-effect-gutter-inline) * 2",
+        "box-sizing: border-box;",
+        "overflow-x: hidden;",
+        "overflow-y: auto;",
+        "24px",
+        "var(--layout-physical-effect-bleed)",
+    ):
+        assert fragment in import_scrollport
+
+    for selector in (
+        ".investment-import-field-group {",
+        ".investment-import-field {",
+    ):
+        rule_start = investment_tables_css.index(selector)
+        rule = investment_tables_css[
+            rule_start : investment_tables_css.index("\n}", rule_start)
+        ]
+        assert "overflow: visible;" in rule
+
+    import_tables_version = _css_code_version(
+        ASSET_ROOT / "css/views/investment-tables.css"
+    ).removeprefix("v")
+    assert (
+        f'@import url("./views/investment-tables.css?v={import_tables_version}");'
+        in app_css
+    )
 
     trade_stack_start = trade_css.rindex(".trade-chart-stack {")
     trade_stack = trade_css[

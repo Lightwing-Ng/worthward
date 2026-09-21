@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1161,6 +1161,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-form {
+    --investment-import-effect-gutter-inline: clamp(
+        32px,
+        5vw,
+        var(--layout-physical-effect-bleed)
+    );
     --investment-import-modal-edge: calc(
         var(--investment-import-control-rail-top, var(--page-edge-pad))
         + var(--settings-round-icon-button-size)
@@ -1182,7 +1187,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-height: 0;
     box-sizing: border-box;
     padding: 16px;
-    overflow: hidden;
+    overflow: visible;
     background: var(--frosted-glass-surface);
     backdrop-filter: var(--frosted-glass-blur);
     -webkit-backdrop-filter: var(--frosted-glass-blur);
@@ -1203,13 +1208,27 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     display: grid;
     flex: 1 1 auto;
     gap: 10px;
-    width: min(100%, var(--settings-action-package-max-width));
-    max-width: var(--settings-action-package-max-width);
+    width: min(
+        calc(100% + (var(--investment-import-effect-gutter-inline) * 2)),
+        calc(
+            var(--settings-action-package-max-width)
+            + (var(--investment-import-effect-gutter-inline) * 2)
+        )
+    );
+    max-width: calc(
+        var(--settings-action-package-max-width)
+        + (var(--investment-import-effect-gutter-inline) * 2)
+    );
     min-height: 0;
+    box-sizing: border-box;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: none;
-    padding-right: 4px;
+    padding:
+        24px
+        calc(var(--investment-import-effect-gutter-inline) + 4px)
+        var(--layout-physical-effect-bleed)
+        var(--investment-import-effect-gutter-inline);
     scrollbar-gutter: stable;
     align-self: center;
 }
@@ -1235,6 +1254,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     width: 100%;
     max-width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
 }
 
 .investment-import-stack > .investment-import-field-group {
@@ -1356,6 +1376,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     border-radius: var(--settings-general-option-radius);
     background: var(--glass-surface-background-soft);
     border: var(--frosted-glass-border);
+    overflow: visible;
 }
 
 .investment-import-bridge-field {
@@ -2488,12 +2509,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
     .investment-import-broker-field {
         grid-column: auto;
-    }
-
-    .investment-import-stack {
-        width: min(100%, var(--settings-action-package-max-width));
-        max-width: var(--settings-action-package-max-width);
-        padding-bottom: 0;
     }
 
     .investment-metrics-toolbar {

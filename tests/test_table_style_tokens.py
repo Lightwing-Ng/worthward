@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.17.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.17.2."""
 
 from __future__ import annotations
 
@@ -801,6 +801,7 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert response.status_code == 200
     assert 'id="investment_form"' in html
     assert 'data-card-shadow="false"' in html
+    assert 'class="investment-import-stack" data-layout-role="content-scrollport"' in html
     assert 'id="investment_import_close_button"' in html
     assert 'data-ibkr-calibration-table' not in html
     assert 'id="ibkr_trade_notifications_cash"' not in html

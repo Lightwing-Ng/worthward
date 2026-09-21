@@ -1,4 +1,4 @@
-{# Code version: v1.74.10 #}
+{# Code version: v1.74.11 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -158,7 +158,7 @@
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
                       data-card-shadow="false"
                       enctype="multipart/form-data">
-                    <div class="investment-import-stack">
+                    <div class="investment-import-stack" data-layout-role="content-scrollport">
                         <div class="investment-import-field-group">
                             <div class="field live-trading-broker-strip backtest-shared-select-field investment-import-broker-field"
                                  data-shared-select-field

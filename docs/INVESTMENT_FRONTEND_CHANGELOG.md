@@ -1,12 +1,19 @@
 # Investment frontend changelog
 
-Documentation version: `v1.54.0`
+Documentation version: `v1.54.1`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: The Investment broker-import modal now keeps its form and field groups
+  open to physical effects while the named import stack remains the only
+  vertical scroll owner. Adaptive 32–48px inline clearance plus 24px top and
+  48px bottom clearance prevents Broker select shadows, focus effects, and all
+  broker field-card materials from being cut by the scroll boundary at desktop,
+  tall, short, and compact viewports.
 
 - Fixed: IBKR statement Interest Accruals are now included in historical
   broker equity, aggregate equity, the daily Overview curve, and the current

@@ -1,5 +1,22 @@
 # Known issues and operating constraints
 
+Investment-import physical effects, 21 Sep 2026: the source now gives the
+broker-import scrollport explicit adaptive effect clearance and keeps its modal
+and field-group effect hosts open, so Broker controls and all import-field cards
+are no longer cut at the scroll boundary. The user-owned 8688 process keeps its
+startup-cached template and stylesheet chain until the owner performs the normal
+manual restart; isolated verification uses 8699.
+
+Complete-gate baseline, 21 Sep 2026: the post-change static checks, complete
+Python suite, and all 399 Node tests passed. The complete Chromium run reached
+425 passes and retained eight unrelated failures; rerunning exactly those eight
+reproduced all eight. Seven are existing layout/style-token cases with 38px or
+58px document overflow (Collapse motion, Collapse trailing icons, workspace gel,
+Style-token alignment, and Style-token physical effects). The eighth is the
+Frontier CPU probability-model case, whose `skill` value is non-finite. These
+failures do not intersect the Investment-import selectors or the three-viewport
+physical-effect regression and remain outside this repair.
+
 Return-comparison ticker memory, 20 Sep 2026: a successfully rendered ticker
 set is now retained in browser-local storage. Returning through an unparameterized
 `/workspaces/compare` entry restores that set, including across browser sessions;
