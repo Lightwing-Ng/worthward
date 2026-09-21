@@ -1,6 +1,6 @@
 """Investment import domain: merge identity.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -40,6 +40,16 @@ import app.services.investment_import_payload_summaries as _ii_payload_summaries
 import app.services.investment_import_records as _ii_records
 
 from app.services import investment_import_compat as _investment_import_compat
+
+
+_HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES = frozenset(
+    {
+        "matched",
+        "matched_local_market_action",
+        "preserved_existing_ledger_attribution",
+        "user_confirmed",
+    }
+)
 
 
 def _grant_identity_key(record: dict[str, Any]) -> tuple[str, ...]:
@@ -2066,34 +2076,71 @@ def _has_same_hsbc_dividend_event(
     incoming_source = (
         incoming.get("source") if isinstance(incoming.get("source"), dict) else {}
     )
+    current_reference = _normalize_text(
+        current_source.get("corporate_action_reference")
+    )
+    incoming_reference = _normalize_text(
+        incoming_source.get("corporate_action_reference")
+    )
+    if (
+        current_reference
+        and incoming_reference
+        and current_reference != incoming_reference
+    ):
+        return False
+    current_status = _normalize_text(
+        current_source.get("dividend_attribution_status")
+    ).lower()
+    incoming_status = _normalize_text(
+        incoming_source.get("dividend_attribution_status")
+    ).lower()
     has_attribution_evidence = bool(
-        _normalize_text(current_source.get("corporate_action_reference"))
-        or _normalize_text(incoming_source.get("corporate_action_reference"))
-        or _normalize_text(current_source.get("dividend_attribution_status"))
-        or _normalize_text(incoming_source.get("dividend_attribution_status"))
+        (current_reference and current_reference == incoming_reference)
+        or current_status in _HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES
+        or incoming_status in _HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES
     )
     if not has_attribution_evidence:
         return False
     if _normalize_text(current.get("date")) != _normalize_text(incoming.get("date")):
         return False
-    if normalize_ticker(_normalize_text(current.get("ticker"))) != normalize_ticker(
-        _normalize_text(incoming.get("ticker"))
-    ):
+    current_ticker = normalize_ticker(_normalize_text(current.get("ticker")))
+    incoming_ticker = normalize_ticker(_normalize_text(incoming.get("ticker")))
+    if not current_ticker or current_ticker != incoming_ticker:
+        return False
+    current_currency = _normalize_hsbc_currency_code(current.get("currency"))
+    incoming_currency = _normalize_hsbc_currency_code(incoming.get("currency"))
+    if not current_currency or current_currency != incoming_currency:
         return False
     if not _decimal_identity_values_match(
         current.get("net_amount_raw"),
         incoming.get("net_amount_raw"),
-        tolerance=Decimal("0.01"),
+        tolerance=ZERO,
     ):
         return False
     current_account = _normalize_text(current.get("account")) or _normalize_text(
         current_source.get("account")
+        or current_source.get("account_number")
+        or current_source.get("statement_account_number")
     )
     incoming_account = _normalize_text(incoming.get("account")) or _normalize_text(
         incoming_source.get("account")
+        or incoming_source.get("account_number")
+        or incoming_source.get("statement_account_number")
     )
-    return _ii_basics._accounts_are_compatible(
-        "hsbc", current_account, incoming_account
+    if not current_account or current_account != incoming_account:
+        return False
+    current_balance = _ii_basics._normalize_decimal_identity_token(
+        current_source.get("balance_after_raw")
+        or current_source.get("cash_settlement_balance_after_raw")
+    )
+    incoming_balance = _ii_basics._normalize_decimal_identity_token(
+        incoming_source.get("balance_after_raw")
+        or incoming_source.get("cash_settlement_balance_after_raw")
+    )
+    return not (
+        current_balance
+        and incoming_balance
+        and current_balance != incoming_balance
     )
 
 
@@ -2361,13 +2408,27 @@ def _merge_candidate_index_keys(
         if transaction_type in {"buy", "sell"} and order_reference:
             keys.append(("hsbc_order_reference", order_reference))
         if transaction_type == "dividend":
-            keys.append(
-                (
-                    "hsbc_dividend_event",
-                    _normalize_text(record.get("date")),
-                    normalize_ticker(_normalize_text(record.get("ticker"))),
-                )
+            account = _normalize_text(record.get("account")) or _normalize_text(
+                source.get("account")
+                or source.get("account_number")
+                or source.get("statement_account_number")
             )
+            currency = _normalize_hsbc_currency_code(record.get("currency"))
+            ticker = normalize_ticker(_normalize_text(record.get("ticker")))
+            amount = _ii_basics._normalize_decimal_identity_token(
+                record.get("net_amount_raw")
+            )
+            if account and currency and ticker and amount:
+                keys.append(
+                    (
+                        "hsbc_dividend_event",
+                        _ii_basics._account_identity_token("hsbc", account),
+                        _normalize_text(record.get("date")),
+                        ticker,
+                        currency,
+                        amount,
+                    )
+                )
         description = _normalize_whitespace(record.get("description")).upper()
         balance_after = _ii_basics._normalize_decimal_identity_token(
             source.get("balance_after_raw")

@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -25,6 +25,128 @@ from tests.investment_import_test_support import (
 
 
 class HsbcPasteImportTestsMixin:
+    def test_hsbc_dividend_fallback_requires_exact_cash_event_identity(
+        self,
+    ) -> None:
+        def dividend_record(
+            *,
+            account: str = "000-999999-999",
+            currency: str = "USD",
+            balance_after: str = "109.00",
+            amount: str = "9.00",
+            ticker: str = "QQQI",
+            attribution_status: str = "matched_local_market_action",
+            corporate_action_reference: str = "",
+            description: str = "CORP EVT PAYMENT SEC",
+            file_kind: str = "hsbc_usd_account_text",
+        ) -> dict[str, object]:
+            source = {
+                "file_kind": file_kind,
+                "balance_after_raw": balance_after,
+                "dividend_attribution_status": attribution_status,
+            }
+            if corporate_action_reference:
+                source["corporate_action_reference"] = corporate_action_reference
+                source["reference_id"] = corporate_action_reference
+            return {
+                "date": "2026-09-21",
+                "datetime": "2026-09-21 20:00:00",
+                "type": "dividend",
+                "ticker": ticker,
+                "currency": currency,
+                "description": description,
+                "broker": "hsbc",
+                "account": account,
+                "gross_amount_raw": amount,
+                "commission_raw": "0",
+                "net_amount_raw": amount,
+                "source": source,
+            }
+
+        def merged_transaction_count(
+            existing_record: dict[str, object],
+            incoming_record: dict[str, object],
+        ) -> int:
+            merged = merge_investment_payloads(
+                {
+                    "broker": "hsbc",
+                    "account": existing_record.get("account", ""),
+                    "transactions": [existing_record],
+                },
+                {
+                    "broker": "hsbc",
+                    "account": incoming_record.get("account", ""),
+                    "transactions": [incoming_record],
+                },
+            )
+            return len(merged["transactions"])
+
+        exact = dividend_record()
+        self.assertEqual(merged_transaction_count(exact, deepcopy(exact)), 1)
+
+        distinct_pairs = {
+            "currency": (
+                dividend_record(currency="USD"),
+                dividend_record(currency="HKD"),
+            ),
+            "missing_account": (
+                dividend_record(),
+                dividend_record(account=""),
+            ),
+            "unattributed_balances": (
+                dividend_record(
+                    ticker="",
+                    attribution_status="unavailable_from_hsbc_cash_text",
+                    balance_after="109.00",
+                ),
+                dividend_record(
+                    ticker="",
+                    attribution_status="unavailable_from_hsbc_cash_text",
+                    balance_after="118.00",
+                ),
+            ),
+            "cash_balances": (
+                dividend_record(balance_after="109.00"),
+                dividend_record(balance_after="118.00"),
+            ),
+            "corporate_action_references": (
+                dividend_record(
+                    corporate_action_reference="REFERENCE-1",
+                    description="DIVIDEND PAYMENT",
+                    file_kind="hsbc_dividend_statement",
+                ),
+                dividend_record(
+                    corporate_action_reference="REFERENCE-2",
+                    description="DIVIDEND PAYMENT",
+                    file_kind="hsbc_dividend_statement",
+                ),
+            ),
+            "one_sided_corporate_action_reference": (
+                dividend_record(
+                    attribution_status="",
+                    corporate_action_reference="REFERENCE-1",
+                    description="DIVIDEND PAYMENT",
+                    file_kind="hsbc_dividend_statement",
+                ),
+                dividend_record(
+                    attribution_status="",
+                    corporate_action_reference="",
+                    description="DIVIDEND PAYMENT",
+                    file_kind="hsbc_dividend_statement",
+                ),
+            ),
+            "amounts": (
+                dividend_record(amount="9.00"),
+                dividend_record(amount="9.01"),
+            ),
+        }
+        for scenario, (existing_record, incoming_record) in distinct_pairs.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(
+                    merged_transaction_count(existing_record, incoming_record),
+                    2,
+                )
+
     def test_hsbc_pasted_snapshot_records_one_bundle_fingerprint_and_boundary(
         self,
     ) -> None:
