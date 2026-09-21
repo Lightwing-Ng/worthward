@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.118.0`
+Documentation version: `v1.119.0`
 
 ## Reuse and dependency boundaries
 
@@ -1257,6 +1257,24 @@ sets of values.
   equity balance displayed by Holdings.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
+- HSBC cash-only USD corporate-event attribution belongs to the atomic ledger
+  merge, not the standalone paste parser. The merge inspects only a new,
+  unlabelled USD dividend row, exact same-account HSBC Order Status records,
+  and that account's broker-scoped snapshot for candidate tickers. Eligible
+  quantity is replayed strictly before the dividend ex-date; the snapshot never
+  substitutes for historical quantity. Local dividend histories are loaded as
+  one fail-closed candidate set. A unique amount match may add derived
+  attribution metadata, while missing, unreadable, or ambiguous evidence keeps
+  the ticker empty. A matching ledger row that already has a ticker bypasses
+  inference so manual and statement provenance cannot be rewritten by a later
+  long cash-page paste.
+- HSBC sell settlement references retain principal and fee postings as separate
+  ordered components. A sell's all-in realized proceeds use those components
+  only when one positive principal, one or more negative fees, and both raw and
+  normalized order commission fields agree. The same evidence covers both a
+  principal-only normalized amount and an amount that is already net of the
+  fee, without double counting.
+  Cash replay remains owned by the ordered settlement postings.
 - Every accepted HSBC pasted page is retained as exact UTF-8 parser-input bytes
   in one fingerprint-addressed immutable evidence bundle. The Portfolio
   snapshot stores `market_value` as exact `quantity * last_price`, preserves the

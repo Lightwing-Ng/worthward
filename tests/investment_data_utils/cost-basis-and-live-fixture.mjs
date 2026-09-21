@@ -1,6 +1,7 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createInvestmentFundingMetricsRuntime} from '../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     getInvestmentAggregatePnlCoverage,
@@ -60,6 +61,8 @@ import {
     projectAuthoritativePositionSnapshot,
     createPositionState,
     getTransactionAmount,
+    getTransactionEvidencedTradeCashAmount,
+    getTransactionEvidencedTradePrincipalAmount,
     getInvestmentInternalTransferAggregateBridgeAmount,
     getInvestmentInternalTransferAggregateBridgeDelta,
     getTransactionEconomicAmount,
@@ -154,6 +157,154 @@ const verifiedHsbcGooglTrades = [
     makeGooglTrade({broker: 'hsbc', account: '000-999999-999', type: 'buy', date: '2026-07-23', quantity: 1, price: 318.92, netAmount: -318.92}),
     makeGooglTrade({broker: 'hsbc', account: '000-999999-999', type: 'sell', date: '2026-07-27', quantity: 1, price: 327, netAmount: 326.99, commission: -0.01}),
 ];
+
+function makeHsbcSellSettlement({
+    broker = 'hsbc',
+    netAmount = '59.99',
+    commission = '-0.01',
+    principalAmount = '59.99',
+    feeAmount = '-0.01',
+} = {}) {
+    const transaction = makeScopedDramTrade({
+        broker,
+        account: '000-999999-999',
+        type: 'sell',
+        date: '2026-08-04',
+        quantity: 5,
+        price: 12,
+        commission: Number(commission),
+    });
+    transaction.net_amount_raw = String(netAmount);
+    transaction.normalized.net_amount = String(netAmount);
+    transaction.commission_raw = String(commission);
+    transaction.normalized.commission = String(commission);
+    transaction.source.cash_settlement_postings = [
+        {role: 'principal', amount_raw: String(principalAmount)},
+        {role: 'fee', amount_raw: String(feeAmount)},
+    ];
+    return transaction;
+}
+
+function setHsbcSellSettlementTestWindow(calculationMethod) {
+    setDramTestWindow();
+    globalThis.window.WORTHWARD_INVESTMENT_DATA.broker_summaries.hsbc = {
+        account: '000-999999-999',
+        tax_lot_history_verifications: {
+            DRAM: {
+                currency: 'USD',
+                verified_through: '2026-08-04',
+                buy_count: 1,
+                sell_count: 1,
+                buy_quantity: '5',
+                sell_quantity: '5',
+                expected_shares: '0',
+                calculation_method: calculationMethod,
+                verification_source: 'synthetic_complete_history',
+            },
+        },
+    };
+}
+
+test('HSBC sell settlement evidence includes a separate fee exactly once', () => {
+    const baseSell = makeHsbcSellSettlement();
+    assert.equal(getTransactionAmount(baseSell), 59.99);
+    assert.ok(Math.abs(getTransactionEvidencedTradeCashAmount(baseSell) - 59.98) < 1e-9);
+
+    const alreadyAllIn = makeHsbcSellSettlement({netAmount: '59.98'});
+    assert.equal(getTransactionEvidencedTradeCashAmount(alreadyAllIn), 59.98);
+
+    const nonHsbc = makeHsbcSellSettlement({broker: 'ibkr'});
+    assert.equal(getTransactionEvidencedTradeCashAmount(nonHsbc), 59.99);
+
+    const noPostings = makeHsbcSellSettlement();
+    delete noPostings.source.cash_settlement_postings;
+    assert.equal(getTransactionEvidencedTradeCashAmount(noPostings), 59.99);
+
+    const buyDecoy = makeHsbcSellSettlement();
+    buyDecoy.type = 'buy';
+    assert.equal(getTransactionEvidencedTradeCashAmount(buyDecoy), 59.99);
+
+    const missingNormalizedCommission = makeHsbcSellSettlement();
+    delete missingNormalizedCommission.normalized.commission;
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingNormalizedCommission), 59.99);
+    assert.equal(
+        getTransactionEvidencedTradePrincipalAmount(missingNormalizedCommission),
+        null,
+    );
+
+    const missingRawCommission = makeHsbcSellSettlement();
+    delete missingRawCommission.commission_raw;
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingRawCommission), 59.99);
+    assert.equal(getTransactionEvidencedTradePrincipalAmount(missingRawCommission), null);
+
+    const mismatchedCommission = makeHsbcSellSettlement({commission: '-0.02'});
+    assert.equal(getTransactionEvidencedTradeCashAmount(mismatchedCommission), 59.99);
+
+    const malformedPosting = makeHsbcSellSettlement();
+    malformedPosting.source.cash_settlement_postings[1].amount_raw = 'not-a-number';
+    assert.equal(getTransactionEvidencedTradeCashAmount(malformedPosting), 59.99);
+});
+
+for (const calculationMethod of [
+    'settled_net_amount_and_configured_lot_method',
+    'trade_price_and_commission',
+]) {
+    for (const netAmount of ['59.99', '59.98']) {
+        test(`HSBC ${calculationMethod} replay uses evidenced ${netAmount} sell amount once`, () => {
+            setHsbcSellSettlementTestWindow(calculationMethod);
+            const transactions = [
+                makeScopedDramTrade({
+                    broker: 'hsbc',
+                    account: '000-999999-999',
+                    type: 'buy',
+                    date: '2026-08-03',
+                    quantity: 5,
+                    price: 10,
+                }),
+                makeHsbcSellSettlement({netAmount}),
+            ];
+            const dram = buildTickerSummaries(transactions, {DRAM: 12}, 0, {})[0];
+            const hsbc = dram.realizedPnlAccounts.find((result) => result.broker === 'hsbc');
+
+            assert.equal(hsbc.status, 'complete');
+            assert.ok(Math.abs(hsbc.realizedPnlLocal - 9.98) < 1e-9);
+        });
+    }
+}
+
+for (const netAmount of ['59.99', '59.98']) {
+    test(`HSBC realized-P&L breakdown classifies ${netAmount} proceeds without a residual`, () => {
+        setHsbcSellSettlementTestWindow('settled_net_amount_and_configured_lot_method');
+        const transactions = [
+            makeScopedDramTrade({
+                broker: 'hsbc',
+                account: '000-999999-999',
+                type: 'buy',
+                date: '2026-08-03',
+                quantity: 5,
+                price: 10,
+            }),
+            makeHsbcSellSettlement({netAmount}),
+        ];
+        const dram = buildTickerSummaries(transactions, {DRAM: 12}, 0, {})[0];
+        const metricRuntime = createUtils();
+        Object.assign(metricRuntime, {
+            getBrokerRewardLedgerRows: () => [],
+            getBrokerRewardRealizedIncome: () => 0,
+            getInvestmentCanonicalSummaryRealizedPnl: (summary) => summary.realizedPnl,
+        });
+        const fundingRuntime = createInvestmentFundingMetricsRuntime(metricRuntime);
+        const attribution = fundingRuntime.getRealizedPnlAttribution(transactions, [dram], {});
+        const detailsByLabel = Object.fromEntries(
+            attribution.realizedPnlDetails.map((detail) => [detail.label, detail.value]),
+        );
+
+        assert.ok(Math.abs(attribution.totalRealizedPnl - 9.98) < 1e-9);
+        assert.equal(detailsByLabel['Trading spread gains'], '+9.99');
+        assert.equal(detailsByLabel['Commissions / fees'], '-0.01');
+        assert.equal(detailsByLabel['Broker-reported reconciliation'], undefined);
+    });
+}
 
 test('user-confirmed CMB round trip and verified HSBC GOOGL history aggregate to 414.81', () => {
     setVerifiedGooglTestWindow();

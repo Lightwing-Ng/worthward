@@ -1,6 +1,6 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from app.services.investment_import_support import (
     DEFAULT_CONVENTION_TIME,
     DEFAULT_CONVENTION_TIMEZONE,
     Decimal,
+    HSBC_CORPORATE_EVENT_PAYMENT_PREFIX,
     HSBC_EXPECTED_ACCOUNT_NUMBER,
     HSBC_PARTIAL_ORDER_STATUS_WARNING,
     SCHEMA_VERSION,
@@ -48,6 +49,146 @@ import app.services.investment_import_merge_reconciliation as _ii_merge_reconcil
 import app.services.investment_import_payload_summaries as _ii_payload_summaries
 
 import app.services.investment_import_records as _ii_records
+
+
+def _hsbc_record_account_identity(record: dict[str, Any]) -> str:
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    account = _normalize_text(record.get("account")) or _normalize_text(
+        source.get("account") or source.get("account_number")
+    )
+    return _ii_basics._account_identity_token("hsbc", account) if account else ""
+
+
+def _attribute_hsbc_cash_only_dividends_from_existing_ledger(
+    existing_payload: dict[str, Any],
+    incoming_payload: dict[str, Any],
+    dividend_action_loader: Callable[[set[str]], dict[str, list[dict[str, str]]]]
+    | None,
+) -> int:
+    """Attribute only new HSBC cash-only dividend rows from same-account history."""
+    if dividend_action_loader is None:
+        return 0
+    incoming_summary = (
+        incoming_payload.get("summary")
+        if isinstance(incoming_payload.get("summary"), dict)
+        else {}
+    )
+    if (
+        _ii_basics._normalize_broker_code(incoming_payload.get("broker")) != "hsbc"
+        or _normalize_text(incoming_summary.get("hsbc_paste_import_scope"))
+        != "cash_only_usd"
+    ):
+        return 0
+
+    existing_transactions = _ii_merge_reconciliation._payload_transactions(
+        existing_payload
+    )
+    incoming_transactions = _ii_merge_reconciliation._payload_transactions(
+        incoming_payload
+    )
+    events_by_account: dict[str, list[dict[str, Any]]] = {}
+    for record in incoming_transactions:
+        if (
+            _ii_basics._normalize_broker_code(record.get("broker")) != "hsbc"
+            or _normalize_text(record.get("type")).lower() != "dividend"
+            or _normalize_text(record.get("currency")).upper() != "USD"
+            or normalize_ticker(_normalize_text(record.get("ticker")))
+            or not _normalize_whitespace(record.get("description"))
+            .upper()
+            .startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX)
+        ):
+            continue
+        account_identity = _hsbc_record_account_identity(record)
+        if not account_identity:
+            continue
+        if any(
+            _ii_merge_identity._has_same_hsbc_corporate_event_cash_record(
+                existing_record,
+                record,
+            )
+            and _hsbc_record_account_identity(existing_record) == account_identity
+            and normalize_ticker(_normalize_text(existing_record.get("ticker")))
+            for existing_record in existing_transactions
+        ):
+            # Preserve an existing manual or statement-backed attribution verbatim.
+            continue
+        events_by_account.setdefault(account_identity, []).append(record)
+    if not events_by_account:
+        return 0
+
+    position_snapshots_by_account: dict[str, dict[str, dict[str, str]]] = {}
+    raw_broker_snapshots = existing_payload.get("broker_snapshots")
+    if isinstance(raw_broker_snapshots, dict):
+        for raw_snapshot in raw_broker_snapshots.values():
+            if (
+                not isinstance(raw_snapshot, dict)
+                or _ii_basics._normalize_broker_code(raw_snapshot.get("broker"))
+                != "hsbc"
+            ):
+                continue
+            snapshot_account = _normalize_text(raw_snapshot.get("account"))
+            account_identity = (
+                _ii_basics._account_identity_token("hsbc", snapshot_account)
+                if snapshot_account
+                else ""
+            )
+            if not account_identity or account_identity not in events_by_account:
+                continue
+            position_snapshots_by_account[account_identity] = (
+                _ii_artifacts._normalize_snapshot_keys(
+                    raw_snapshot.get("position_snapshot")
+                )
+            )
+
+    attribution_warnings: list[str] = []
+    attributed_count = 0
+    for account_identity, event_records in events_by_account.items():
+        order_records = [
+            record
+            for record in existing_transactions
+            if (
+                _ii_basics._normalize_broker_code(record.get("broker")) == "hsbc"
+                and _hsbc_record_account_identity(record) == account_identity
+                and _normalize_text(record.get("type")).lower() in {"buy", "sell"}
+                and _ii_basics._is_hsbc_order_status_record(record)
+            )
+        ]
+        before_tickers = [
+            normalize_ticker(_normalize_text(record.get("ticker")))
+            for record in event_records
+        ]
+        _ii_hsbc_core._attribute_hsbc_corporate_event_dividends(
+            event_records,
+            order_records,
+            position_snapshots_by_account.get(account_identity, {}),
+            attribution_warnings,
+            dividend_action_loader,
+        )
+        for before_ticker, record in zip(
+            before_tickers,
+            event_records,
+            strict=True,
+        ):
+            if before_ticker or not normalize_ticker(
+                _normalize_text(record.get("ticker"))
+            ):
+                continue
+            source = (
+                dict(record.get("source"))
+                if isinstance(record.get("source"), dict)
+                else {}
+            )
+            source["dividend_attribution_context"] = "existing_hsbc_ledger"
+            record["source"] = source
+            attributed_count += 1
+
+    if attribution_warnings:
+        incoming_summary["warnings"] = _ii_payload_summaries._unique_preserving_order(
+            _ii_payload_summaries._summary_list(incoming_summary, "warnings")
+            + attribution_warnings
+        )
+        incoming_payload["summary"] = incoming_summary
+    return attributed_count
 
 
 def _build_hsbc_pasted_snapshot_report(

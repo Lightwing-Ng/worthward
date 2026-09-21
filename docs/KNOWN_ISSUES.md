@@ -1,5 +1,20 @@
 # Known issues and operating constraints
 
+HSBC cash-only dividend attribution, 21 Sep 2026: a newly pasted USD
+corporate-event payment can now be attributed during the atomic incremental
+merge when the existing same-account Order Status ledger and the complete local
+dividend-action candidate set produce exactly one match. Existing manual or
+statement-backed ticker provenance wins unchanged. Missing local history,
+cross-account evidence, and ambiguous matches remain explicitly unresolved.
+This is a source change; the user-owned 8688 process keeps its startup-loaded
+Python modules until the owner performs the normal manual restart.
+
+HSBC sell-fee replay, 21 Sep 2026: separately posted fees now reduce realized
+sell proceeds exactly once when the settlement postings and commission fields
+form one closed evidence set. Malformed, conflicting, non-HSBC, and buy-side
+postings retain the prior amount instead of triggering an inferred adjustment.
+The same user-owned 8688 restart boundary applies to the frontend module graph.
+
 Investment-import physical effects, 21 Sep 2026: the source now gives the
 broker-import scrollport explicit adaptive effect clearance and keeps its modal
 and field-group effect hosts open, so Broker controls and all import-field cards

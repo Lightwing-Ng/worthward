@@ -1,7 +1,9 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Fixed: HSBC realized trade cash includes separately posted settlement fees
+ *   exactly once when the normalized trade amount matches the principal row.
  * - Added: Extracted from the Investment data-utilities composition root.
  */
 
@@ -554,7 +556,7 @@ export function createInvestmentReconciliationUtils(runtime) {
 
             if (!isAfterPerformanceBoundary) return true;
             const brokerRealizedPnl = getTransactionBrokerRealizedPnl(txn);
-            const proceeds = getTransactionAmount(txn);
+            const proceeds = getTransactionEvidencedTradeCashAmount(txn);
             const delta = brokerRealizedPnl === null
                 ? proceeds - consumption.removedCost
                 : brokerRealizedPnl;
@@ -1297,11 +1299,87 @@ export function createInvestmentReconciliationUtils(runtime) {
         );
     }
 
+    function getTransactionEvidencedTradeCashResolution(txn) {
+        const amount = getTransactionAmount(txn);
+        if (!Number.isFinite(amount)) return null;
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const broker = String(txn?.broker || source.broker || '').trim().toLowerCase();
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (broker !== 'hsbc' || normalizedType !== 'sell') return null;
+
+        const postings = Array.isArray(source.cash_settlement_postings)
+            ? source.cash_settlement_postings
+            : [];
+        const principalPostings = postings.filter(
+            (posting) => String(posting?.role || '').trim().toLowerCase() === 'principal',
+        );
+        const feePostings = postings.filter(
+            (posting) => String(posting?.role || '').trim().toLowerCase() === 'fee',
+        );
+        if (principalPostings.length !== 1 || feePostings.length < 1) return null;
+
+        const parsePostingAmount = (posting) => {
+            const rawAmount = posting?.amount_raw ?? posting?.amount;
+            if (rawAmount === undefined || rawAmount === null || String(rawAmount).trim() === '') {
+                return null;
+            }
+            const numericAmount = Number(rawAmount);
+            return Number.isFinite(numericAmount) ? numericAmount : null;
+        };
+        const principalTotal = parsePostingAmount(principalPostings[0]);
+        const feeAmounts = feePostings.map(parsePostingAmount);
+        if (
+            principalTotal === null
+            || principalTotal <= 1e-9
+            || feeAmounts.some((feeAmount) => feeAmount === null || feeAmount >= -1e-9)
+        ) {
+            return null;
+        }
+        const feeTotal = feeAmounts.reduce((total, value) => total + value, 0);
+        const commissionInputs = [txn?.normalized?.commission, txn?.commission_raw];
+        if (commissionInputs.some((value) => (
+            value === undefined
+            || value === null
+            || String(value).trim() === ''
+        ))) {
+            return null;
+        }
+        const commissions = commissionInputs.map(Number);
+        if (
+            commissions.some((commission) => (
+                !Number.isFinite(commission)
+                || commission >= -1e-9
+                || Math.abs(commission - feeTotal) > 1e-6
+            ))
+        ) {
+            return null;
+        }
+
+        const evidencedAmount = principalTotal + feeTotal;
+        if (evidencedAmount <= 1e-9) return null;
+        if (Math.abs(amount - principalTotal) <= 1e-6) {
+            return {amount: evidencedAmount, principalAmount: principalTotal, adjusted: true};
+        }
+        if (Math.abs(amount - evidencedAmount) <= 1e-6) {
+            return {amount, principalAmount: principalTotal, adjusted: false};
+        }
+        return null;
+    }
+
+    function getTransactionEvidencedTradeCashAmount(txn) {
+        const amount = getTransactionAmount(txn);
+        return getTransactionEvidencedTradeCashResolution(txn)?.amount ?? amount;
+    }
+
+    function getTransactionEvidencedTradePrincipalAmount(txn) {
+        return getTransactionEvidencedTradeCashResolution(txn)?.principalAmount ?? null;
+    }
+
     function getTransactionEvidencedUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
         if (quantity !== null && Number.isFinite(quantity) && quantity > 0) {
             if (txn?.normalized?.net_amount !== undefined && txn?.normalized?.net_amount !== null) {
-                const normalizedAmount = Number(txn.normalized.net_amount);
+                const normalizedAmount = getTransactionEvidencedTradeCashAmount(txn);
                 if (Number.isFinite(normalizedAmount) && Math.abs(normalizedAmount) > 1e-9) {
                     return Math.abs(normalizedAmount) / quantity;
                 }
@@ -1518,6 +1596,15 @@ export function createInvestmentReconciliationUtils(runtime) {
 
     function getTransactionTradePriceAndCommissionUnitPrice(txn, quantityOverride = null) {
         const quantity = quantityOverride ?? getTransactionQuantity(txn);
+        const evidencedCash = getTransactionEvidencedTradeCashResolution(txn);
+        if (
+            quantity !== null
+            && Number.isFinite(quantity)
+            && quantity > 0
+            && evidencedCash
+        ) {
+            return evidencedCash.amount / quantity;
+        }
         const price = getTransactionPrice(txn);
         if (
             quantity === null
@@ -1567,6 +1654,8 @@ export function createInvestmentReconciliationUtils(runtime) {
         getDynamicallyVerifiedTaxLotHistoryScopes,
         shouldPreferDynamicTaxLotHistoryVerification,
         matchesVerifiedTaxLotHistory,
+        getTransactionEvidencedTradeCashAmount,
+        getTransactionEvidencedTradePrincipalAmount,
         getTransactionEvidencedUnitPrice,
         getTransactionEffectiveUnitPrice,
         getTransactionDerivedCostBasis,

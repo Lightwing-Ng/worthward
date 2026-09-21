@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.80.0`
+Documentation version: `v1.81.0`
 
 ## Prices secondary-sidebar overlay
 
@@ -346,7 +346,21 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   one immutable source bundle, compact row values do not replace exact
   quantity-times-price valuation, visible-order mismatches retain explicit
   partial-history scope, and a broker-export archive can restore only its exact
-  SHA-256 subset without concealing the remaining gaps.
+  SHA-256 subset without concealing the remaining gaps. Cash-only dividend
+  regressions prove that the atomic merge can attribute one new corporate event
+  from exact same-account order history, preserves an older explicit
+  attribution and its metadata, excludes empty-account, other-account, and
+  other-broker decoys, fails closed for two plausible tickers or a local-history
+  read error, and remains idempotent.
+  `tests/test_hsbc_cash_only_dividend_route.py` repeats the POST against a
+  temporary ledger and temporary dividend parquet, then verifies one persisted
+  event and its immutable raw-text evidence. Separate settlement tests require
+  both a sell's principal and fee posting, with the fee represented once in
+  commission, cash, and realized proceeds. The JavaScript replay suite covers
+  settled-net and trade-price verification methods, principal-only and
+  already-net amount shapes, missing commission fields, malformed evidence,
+  non-HSBC decoys, and a Metrics breakdown with no unexplained reconciliation
+  residue.
 - `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
   template structure, standard-export archive health, exact named ranges and
   validation ranges through the full selected scope, stable Reference ID and

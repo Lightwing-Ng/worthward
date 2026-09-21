@@ -1,6 +1,6 @@
 """Investment import domain: merge.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from app.services.investment_import_support import (
     DEFAULT_CONVENTION_TIME,
     DEFAULT_CONVENTION_TIMEZONE,
     Decimal,
+    Callable,
     HSBC_PARTIAL_ORDER_STATUS_WARNING,
     MIXED_BROKER_SNAPSHOT_WARNING,
     SCHEMA_VERSION,
@@ -47,6 +48,9 @@ import app.services.investment_import_schwab as _ii_schwab
 def merge_investment_payloads(
     existing_payload: dict[str, Any] | None,
     incoming_payload: dict[str, Any],
+    *,
+    hsbc_dividend_action_loader: Callable[[set[str]], dict[str, list[dict[str, str]]]]
+    | None = None,
 ) -> dict[str, Any]:
     normalized_incoming = _ii_bindings.normalize_investment_payload_tickers(
         incoming_payload
@@ -206,6 +210,13 @@ def merge_investment_payloads(
     incoming_is_hsbc_cash_only = (
         _ii_merge_reconciliation._is_hsbc_cash_only_paste_payload(normalized_incoming)
     )
+    attributed_hsbc_cash_only_dividend_count = 0
+    if incoming_is_hsbc_cash_only:
+        attributed_hsbc_cash_only_dividend_count = _ii_hsbc_reconciliation._attribute_hsbc_cash_only_dividends_from_existing_ledger(
+            normalized_existing,
+            normalized_incoming,
+            hsbc_dividend_action_loader,
+        )
     incoming_hsbc_cash_settlement_evidence = (
         _ii_payload_summaries._payload_hsbc_cash_settlement_evidence(
             normalized_incoming
@@ -733,6 +744,9 @@ def merge_investment_payloads(
         ),
         "authoritative_hsbc_settlement_update_count": (
             hsbc_authoritative_settlement_update_count
+        ),
+        "attributed_hsbc_cash_only_dividend_count": (
+            attributed_hsbc_cash_only_dividend_count
         ),
         "superseded_ibkr_realized_summary_cash_count": (
             superseded_ibkr_realized_summary_cash_count

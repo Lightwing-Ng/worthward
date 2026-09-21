@@ -1,12 +1,22 @@
 # Investment frontend changelog
 
-Documentation version: `v1.54.1`
+Documentation version: `v1.55.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: A new unlabelled HSBC USD cash-only corporate-event dividend can now
+  acquire a ticker during the atomic ledger merge when exact same-account order
+  history and the complete local dividend-action set yield one unique match.
+  Existing explicit attribution metadata remains authoritative, while missing,
+  unreadable, cross-account, or ambiguous evidence leaves the ticker empty.
+- Fixed: HSBC realized proceeds now include a separately posted sell-settlement
+  fee exactly once when the principal, fee, and commission evidence agree.
+  Principal-only and already-net normalized amounts share the same guarded
+  replay, while the Metrics breakdown keeps the fee visible without a residual.
 
 - Fixed: The Investment broker-import modal now keeps its form and field groups
   open to physical effects while the named import stack remains the only

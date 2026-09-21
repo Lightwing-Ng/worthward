@@ -1,6 +1,6 @@
 """Build the foundation web-runtime context.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -860,7 +860,11 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         return commit_investment_import(
             imported_payload,
             normalize_payload=normalize_payload,
-            merge_payloads=merge_investment_payloads,
+            merge_payloads=lambda current, incoming: merge_investment_payloads(
+                current,
+                incoming,
+                hsbc_dividend_action_loader=load_local_investment_dividend_actions,
+            ),
             update_store=update_store,
             load_store=load_normalized_investment_payload,
             invalidate_cache=invalidate_investment_transactions_cache,
@@ -898,11 +902,15 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         for ticker in sorted(tickers):
             path = history_store_path_for(ticker)
             if not path.exists():
-                continue
+                raise FileNotFoundError(
+                    f"Local dividend history is unavailable for {ticker}."
+                )
             try:
                 dataset = pd.read_parquet(path, columns=["Date", "Dividends"])
-            except Exception:
-                continue
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Local dividend history could not be read for {ticker}."
+                ) from exc
             dividend_values = pd.to_numeric(
                 dataset["Dividends"], errors="coerce"
             ).fillna(0.0)

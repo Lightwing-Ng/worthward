@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.116.1
+ * Code version: v1.117.0
+ * - Fixed: HSBC realized trade proceeds include an evidenced settlement fee
+ *   posting once without changing the principal cash row or balance boundary.
  * - Fixed: Current Holdings NAV adds a dated broker interest accrual exactly
  *   once through the shared current-equity calculation and fails closed when
  *   that accrual cannot be converted into the workspace base currency.
@@ -230,7 +232,7 @@ import {
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.0.0';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.0.0';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.1.0';
 import {
     createInvestmentSummaryUtils,
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.0';
@@ -610,6 +612,8 @@ export function createInvestmentDataUtils({
         getInvestmentInternalTransferAggregateBridgeDelta,
         getTransactionCommission,
         getTransactionEconomicAmount,
+        getTransactionEvidencedTradeCashAmount,
+        getTransactionEvidencedTradePrincipalAmount,
         getTransactionEffectiveUnitPrice,
         getTransactionBrokerRealizedPnl,
         getTransactionLotScope,
@@ -747,6 +751,8 @@ export function createInvestmentDataUtils({
         getInvestmentInternalTransferAggregateBridgeDelta,
         getTransactionCommission,
         getTransactionEconomicAmount,
+        getTransactionEvidencedTradeCashAmount,
+        getTransactionEvidencedTradePrincipalAmount,
         getTransactionEffectiveUnitPrice,
         getTransactionBrokerRealizedPnl,
         getTransactionLotScope,
@@ -776,7 +782,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.116.1';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.117.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

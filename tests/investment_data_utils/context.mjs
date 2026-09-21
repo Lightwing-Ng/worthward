@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import fs from 'node:fs';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
@@ -99,6 +99,9 @@ export const {
     getInvestmentInternalTransferAggregateBridgeAmount,
     getInvestmentInternalTransferAggregateBridgeDelta,
     getTransactionEconomicAmount,
+    getTransactionEvidencedTradeCashAmount,
+    getTransactionEvidencedTradePrincipalAmount,
+    getTransactionEffectiveUnitPrice,
     getTransactionRenderedSplitFactor,
     getTransactionValuationQuantity,
     getLongbridgeHkCashEquivalentSyntheticTicker,

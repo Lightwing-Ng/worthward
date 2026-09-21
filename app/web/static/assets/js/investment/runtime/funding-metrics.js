@@ -1,7 +1,9 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
+ * - Fixed: HSBC sell-settlement principal adjustments and separately posted
+ *   fees reconcile to all-in realized proceeds without hiding the fee category.
  * - Fixed: Holdings metrics reuse the canonical current Total equity instead
  *   of recomputing cash plus market value and dropping dated NAV components.
  * - Added: Extracted from the Investment workspace composition root.
@@ -242,9 +244,18 @@ function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitM
                     }
                     const lotState = lotStates.get(lotScopeKey);
                     const rawPrice = runtime.getTransactionPrice(txn);
-                    const unitPrice = Number.isFinite(rawPrice) && rawPrice >= 0
-                        ? rawPrice
-                        : runtime.getTransactionEffectiveUnitPrice(txn, quantity);
+                    const evidencedPrincipalAmount = (
+                        normalizedType === 'sell'
+                        && typeof runtime.getTransactionEvidencedTradePrincipalAmount === 'function'
+                    )
+                        ? runtime.getTransactionEvidencedTradePrincipalAmount(txn)
+                        : null;
+                    const unitPrice = Number.isFinite(evidencedPrincipalAmount)
+                        && evidencedPrincipalAmount >= 0
+                        ? evidencedPrincipalAmount / quantity
+                        : (Number.isFinite(rawPrice) && rawPrice >= 0
+                            ? rawPrice
+                            : runtime.getTransactionEffectiveUnitPrice(txn, quantity));
 
                     if (normalizedType === 'buy') {
                         runtime.applyDirectionalTrade(lotState, 'long', quantity, unitPrice);
@@ -1315,4 +1326,3 @@ function getUsdFundingMetrics(transactions) {
         getUsdFundingMetrics,
     };
 }
-

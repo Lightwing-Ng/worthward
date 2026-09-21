@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -1851,6 +1851,320 @@ class HsbcPasteImportTestsMixin:
         self.assertEqual(len(merged_corporate_events), 1)
         self.assertEqual(merged_corporate_events[0]["type"], "dividend")
         self.assertEqual(merged_corporate_events[0]["ticker"], "SGOV")
+
+    def test_hsbc_cash_only_merge_attributes_only_new_same_account_dividend(
+        self,
+    ) -> None:
+        account = "000-999999-999"
+
+        def cash_page(*, include_new_event: bool) -> str:
+            rows = [
+                "10 Jul 2026",
+                "CORP EVT PAYMENT SEC",
+                "9.00",
+                "1,009.00",
+            ]
+            if include_new_event:
+                rows = [
+                    "10 Aug 2026",
+                    "CORP EVT PAYMENT SEC",
+                    "18.00",
+                    "1,027.00",
+                    *rows,
+                ]
+            return "\n".join(
+                [
+                    "Skip to the main content for this pageHSBC Logo-this will redirect to My accounts",
+                    "USD Savings",
+                    "Account number:",
+                    account,
+                    "Ledger balance:",
+                    "1,027.00" if include_new_event else "1,009.00",
+                    "USD",
+                    "Available balance:",
+                    "1,027.00 USD" if include_new_event else "1,009.00 USD",
+                    "Post date Description Amount in Amount out Balance Additional options",
+                    *rows,
+                    "Download",
+                ]
+            )
+
+        existing = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text="",
+            order_status_text="",
+            cash_account_text=cash_page(include_new_event=False),
+        )
+        existing_event = next(
+            record
+            for record in existing["transactions"]
+            if record["description"] == "CORP EVT PAYMENT SEC"
+        )
+        existing_event["ticker"] = "QQQI"
+        existing_event["source"].update(
+            {
+                "dividend_attribution_status": "user_confirmed",
+                "dividend_attribution_method": "user_confirmed_hsbc_holding",
+                "manual_evidence_note": "retain-this-provenance",
+            }
+        )
+
+        def order(
+            ticker: str,
+            order_date: str,
+            quantity: str,
+            order_id: str,
+            *,
+            order_account: str = account,
+            broker: str = "hsbc",
+        ) -> dict[str, object]:
+            return {
+                "date": order_date,
+                "datetime": f"{order_date} 20:00:00",
+                "type": "buy",
+                "ticker": ticker,
+                "currency": "USD",
+                "description": f"{ticker} synthetic order",
+                "broker": broker,
+                "account": order_account,
+                "quantity_raw": quantity,
+                "quantity_abs": quantity,
+                "price_raw": "1",
+                "gross_amount_raw": f"-{quantity}",
+                "commission_raw": "0",
+                "net_amount_raw": f"-{quantity}",
+                "source": {
+                    "file_kind": "hsbc_order_status_text",
+                    "statement_order_id": order_id,
+                    "order_id": order_id,
+                    "broker": broker,
+                    "account": order_account,
+                },
+            }
+
+        existing["transactions"].extend(
+            [
+                order("QQQI", "2026-06-30", "10", "P-100001"),
+                order("QQQI", "2026-07-15", "10", "P-100002"),
+                order(
+                    "DECOY",
+                    "2026-06-30",
+                    "20",
+                    "P-200001",
+                    order_account="111-222222-333",
+                ),
+                order(
+                    "OUTSIDE",
+                    "2026-06-30",
+                    "20",
+                    "U-300001",
+                    broker="ibkr",
+                ),
+            ]
+        )
+        empty_account_decoy = deepcopy(existing_event)
+        empty_account_decoy["date"] = "2026-08-10"
+        empty_account_decoy["datetime"] = "2026-08-10 20:00:00"
+        empty_account_decoy["ticker"] = "DECOY"
+        empty_account_decoy["net_amount_raw"] = "18.00"
+        empty_account_decoy["account"] = ""
+        empty_account_decoy["source"] = {
+            **empty_account_decoy["source"],
+            "account": "",
+            "account_number": "",
+            "balance_after_raw": "1027.00",
+        }
+        existing["transactions"].append(empty_account_decoy)
+        existing["broker"] = "multiple"
+        existing["account"] = "multiple"
+
+        incoming = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text="",
+            order_status_text="",
+            cash_account_text=cash_page(include_new_event=True),
+        )
+        actions = {
+            "QQQI": [
+                {"date": "2026-07-01", "dividend_per_share": "1"},
+                {"date": "2026-08-01", "dividend_per_share": "1"},
+            ]
+        }
+        merged = merge_investment_payloads(
+            existing,
+            incoming,
+            hsbc_dividend_action_loader=lambda tickers: {
+                ticker: actions[ticker] for ticker in tickers if ticker in actions
+            },
+        )
+
+        same_account_events = [
+            record
+            for record in merged["transactions"]
+            if record.get("account") == account
+            and record.get("description") == "CORP EVT PAYMENT SEC"
+        ]
+        self.assertEqual(len(same_account_events), 2)
+        old_event = next(
+            record for record in same_account_events if record["date"] == "2026-07-10"
+        )
+        new_event = next(
+            record for record in same_account_events if record["date"] == "2026-08-10"
+        )
+        self.assertEqual(old_event["ticker"], "QQQI")
+        self.assertEqual(
+            old_event["source"]["dividend_attribution_method"],
+            "user_confirmed_hsbc_holding",
+        )
+        self.assertEqual(
+            old_event["source"]["manual_evidence_note"],
+            "retain-this-provenance",
+        )
+        self.assertEqual(new_event["ticker"], "QQQI")
+        self.assertEqual(new_event["source"]["dividend_ex_date"], "2026-08-01")
+        self.assertEqual(new_event["source"]["dividend_eligible_quantity_raw"], "20")
+        self.assertEqual(new_event["source"]["dividend_expected_gross_raw"], "20")
+        self.assertEqual(
+            new_event["source"]["dividend_inferred_net_retention_rate"], "0.90"
+        )
+        self.assertEqual(
+            new_event["source"]["dividend_attribution_context"],
+            "existing_hsbc_ledger",
+        )
+        self.assertEqual(
+            merged["summary"]["incremental_import"][
+                "attributed_hsbc_cash_only_dividend_count"
+            ],
+            1,
+        )
+
+        reimported = merge_investment_payloads(
+            merged,
+            incoming,
+            hsbc_dividend_action_loader=lambda tickers: {
+                ticker: actions[ticker] for ticker in tickers if ticker in actions
+            },
+        )
+        reimported_events = [
+            record
+            for record in reimported["transactions"]
+            if record.get("account") == account
+            and record.get("description") == "CORP EVT PAYMENT SEC"
+        ]
+        self.assertEqual(len(reimported_events), 2)
+        self.assertEqual(
+            reimported["summary"]["incremental_import"]["added_record_count"],
+            0,
+        )
+        self.assertEqual(
+            reimported["summary"]["incremental_import"][
+                "attributed_hsbc_cash_only_dividend_count"
+            ],
+            0,
+        )
+
+    def test_hsbc_cash_only_dividend_attribution_fails_closed(
+        self,
+    ) -> None:
+        account = "000-999999-999"
+
+        def order(ticker: str, order_id: str) -> dict[str, object]:
+            return {
+                "date": "2026-06-30",
+                "datetime": "2026-06-30 20:00:00",
+                "type": "buy",
+                "ticker": ticker,
+                "currency": "USD",
+                "description": f"{ticker} synthetic order",
+                "broker": "hsbc",
+                "account": account,
+                "quantity_raw": "10",
+                "quantity_abs": "10",
+                "price_raw": "1",
+                "gross_amount_raw": "-10",
+                "commission_raw": "0",
+                "net_amount_raw": "-10",
+                "source": {
+                    "file_kind": "hsbc_order_status_text",
+                    "statement_order_id": order_id,
+                    "order_id": order_id,
+                    "broker": "hsbc",
+                    "account": account,
+                },
+            }
+
+        existing = {
+            "schema_version": "3.0.0",
+            "broker": "hsbc",
+            "account": account,
+            "summary": {},
+            "position_snapshot": {},
+            "transactions": [order("ALFA", "P-100001"), order("BETA", "P-100002")],
+        }
+
+        def incoming_payload() -> dict[str, object]:
+            cash_text = "\n".join(
+                [
+                    "Skip to the main content for this pageHSBC Logo-this will redirect to My accounts",
+                    "USD Savings",
+                    "Account number:",
+                    account,
+                    "Ledger balance:",
+                    "9.00",
+                    "USD",
+                    "Available balance:",
+                    "9.00 USD",
+                    "Post date Description Amount in Amount out Balance Additional options",
+                    "10 Jul 2026",
+                    "CORP EVT PAYMENT SEC",
+                    "9.00",
+                    "9.00",
+                    "Download",
+                ]
+            )
+            return build_investment_payload_from_hsbc_pasted_text(
+                portfolio_text="",
+                order_status_text="",
+                cash_account_text=cash_text,
+            )
+
+        ambiguous = merge_investment_payloads(
+            existing,
+            incoming_payload(),
+            hsbc_dividend_action_loader=lambda tickers: {
+                ticker: [{"date": "2026-07-01", "dividend_per_share": "1"}]
+                for ticker in tickers
+            },
+        )
+        ambiguous_event = next(
+            record
+            for record in ambiguous["transactions"]
+            if record.get("description") == "CORP EVT PAYMENT SEC"
+        )
+        self.assertEqual(ambiguous_event["ticker"], "")
+        self.assertEqual(
+            ambiguous_event["source"]["dividend_attribution_status"],
+            "unavailable_from_hsbc_cash_text",
+        )
+
+        def broken_loader(_tickers: set[str]) -> dict[str, list[dict[str, str]]]:
+            raise RuntimeError("synthetic local-history read failure")
+
+        unavailable = merge_investment_payloads(
+            existing,
+            incoming_payload(),
+            hsbc_dividend_action_loader=broken_loader,
+        )
+        unavailable_event = next(
+            record
+            for record in unavailable["transactions"]
+            if record.get("description") == "CORP EVT PAYMENT SEC"
+        )
+        self.assertEqual(unavailable_event["ticker"], "")
+        self.assertTrue(
+            any(
+                "local dividend history could not be read" in warning
+                for warning in unavailable["summary"]["warnings"]
+            )
+        )
 
     def test_hsbc_unmatched_corporate_event_remains_unattributed_dividend(self) -> None:
         warnings: list[str] = []

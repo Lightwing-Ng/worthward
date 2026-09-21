@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.33.0`
+Documentation version: `v3.34.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -414,6 +414,17 @@ remain explicitly provisional.
   cancel sale proceeds that were already settled on an earlier date.
 - Cash-only non-USD captures remain separate by source account kind and
   currency; they cannot replace an unrelated portfolio snapshot.
+- A USD cash-only corporate-event payment remains the bank-authoritative net
+  cash row. During the atomic incremental merge, an otherwise unlabelled
+  dividend may inherit a ticker only from the same HSBC account's existing
+  Order Status history and a unique local dividend-action match. An existing
+  manual or statement-backed attribution is preserved verbatim; missing local
+  history, a second plausible ticker, or incomplete eligible-share history
+  leaves the ticker unresolved instead of guessing.
+- A sell reference can contain separate proceeds and fee postings. Both remain
+  attached to the order in ledger sequence; the fee enters commission, cash,
+  and realized proceeds exactly once rather than being hidden with the matched
+  proceeds row or deducted twice from an already-net amount.
 - Account validation is opt-in through local environment variables. No account
   number, balance, position quantity, or order reference is documented here.
 
