@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.31.1
+Code version: v1.33.0
 """
 
 from __future__ import annotations
@@ -253,6 +253,8 @@ def build_style_token_rows(
                 px_token("--mode-switch-thumb-offset", 4, 0),
                 px_token("--mode-switch-label-pad-inline", 12, 0),
                 px_token("--mode-switch-label-min-height", 28, 1),
+                raw_token("--mode-switch-label-color", "var(--theme-muted)"),
+                raw_token("--mode-switch-label-color-active", "var(--accent-contrast)"),
                 raw_token("--mode-switch-thumb-background", "var(--accent-fill)"),
             ],
             "related_styles": [],
@@ -471,9 +473,21 @@ def build_style_token_rows(
                 px_token("--settings-action-package-copy-gap", 4),
                 raw_token("--settings-action-package-background", "var(--frosted-glass-background)"),
                 raw_token("--settings-action-package-border", "var(--frosted-glass-border)"),
-                px_token("--settings-action-package-live-marker-size", 8, 1),
-                raw_token("--settings-action-package-live-marker-color", "var(--theme-accent-positive)"),
-                raw_token("--settings-action-package-live-marker-duration", "1.8s"),
+                px_token("--live-marker-core-size", 6, 1),
+                px_token("--live-marker-inner-ring-size", 16, 1),
+                px_token("--live-marker-outer-ring-size", 24, 1),
+                px_token("--live-marker-ring-border-width", 2, 0),
+                raw_token("--live-marker-inner-start-scale", "0.375"),
+                raw_token("--live-marker-outer-start-scale", "0.25"),
+                raw_token("--live-marker-inner-start-opacity", "0.52"),
+                raw_token("--live-marker-outer-start-opacity", "0.72"),
+                px_token("--live-marker-core-halo-size", 2, 0),
+                raw_token("--live-marker-color", "var(--theme-accent-positive)"),
+                raw_token("--live-marker-duration", "1.8s"),
+                raw_token("--live-marker-stagger", "0.9s"),
+                raw_token("--settings-action-package-live-marker-size", "var(--live-marker-core-size)"),
+                raw_token("--settings-action-package-live-marker-color", "var(--live-marker-color)"),
+                raw_token("--settings-action-package-live-marker-duration", "var(--live-marker-duration)"),
                 raw_token("--style-token-demo-width", "var(--layout-control-width)"),
             ],
             "related_styles": [

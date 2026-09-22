@@ -1,4 +1,4 @@
-/* Code version: v0.44.1 */
+/* Code version: v0.46.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -194,9 +194,21 @@
 	--settings-action-package-background: var(--frosted-glass-background);
 	--settings-action-package-border: var(--frosted-glass-border);
 	--settings-action-package-max-width: var(--layout-content-width);
-	--settings-action-package-live-marker-size: 8px;
-	--settings-action-package-live-marker-color: var(--theme-accent-positive);
-	--settings-action-package-live-marker-duration: 1.8s;
+	--live-marker-core-size: 6px;
+	--live-marker-inner-ring-size: 16px;
+	--live-marker-outer-ring-size: 24px;
+	--live-marker-ring-border-width: 2px;
+	--live-marker-inner-start-scale: 0.375;
+	--live-marker-outer-start-scale: 0.25;
+	--live-marker-inner-start-opacity: 0.52;
+	--live-marker-outer-start-opacity: 0.72;
+	--live-marker-core-halo-size: 2px;
+	--live-marker-color: var(--theme-accent-positive);
+	--live-marker-duration: 1.8s;
+	--live-marker-stagger: 0.9s;
+	--settings-action-package-live-marker-size: var(--live-marker-core-size);
+	--settings-action-package-live-marker-color: var(--live-marker-color);
+	--settings-action-package-live-marker-duration: var(--live-marker-duration);
 	--primary-button-radius: var(--radius-pill);
 	--primary-button-pad-block: 0px;
 	--primary-button-pad-inline: 18px;
@@ -336,6 +348,8 @@
 	--mode-switch-thumb-offset: 4px;
 	--mode-switch-label-pad-inline: 12px;
 	--mode-switch-label-min-height: 28px;
+	--mode-switch-label-color: var(--theme-muted);
+	--mode-switch-label-color-active: var(--accent-contrast);
 	--mode-switch-thumb-background: var(--accent-fill);
 	--mode-switch-thumb-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent), 0 12px 24px var(--accent-shadow-soft);
 	--mode-switch-thumb-shadow-start-edge: inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 42%, transparent), 12px 12px 24px -12px var(--accent-shadow-soft);

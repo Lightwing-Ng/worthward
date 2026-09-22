@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.18.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.20.0."""
 
 from __future__ import annotations
 
@@ -468,7 +468,7 @@ def test_style_tokens_are_alphabetized_without_the_shared_primitives_specimen() 
     assert '>64</span>' in html
 
 
-def test_shared_segmented_and_pagination_controls_use_regular_unselected_weight() -> None:
+def test_shared_segmented_and_pagination_controls_use_semantic_label_states() -> None:
     project_root = Path(__file__).resolve().parents[1]
     forms_css = (project_root / "app/web/static/assets/css/components/forms.css").read_text(encoding="utf-8")
     settings_css = read_css_bundle(project_root / "app/web/static/assets/css/views/settings.css")
@@ -477,13 +477,21 @@ def test_shared_segmented_and_pagination_controls_use_regular_unselected_weight(
     segmented_rule_end = forms_css.index(".segmented-control[data-segmented-pill=", segmented_rule_start)
     segmented_rule = forms_css[segmented_rule_start:segmented_rule_end]
     selected_rule_start = forms_css.index(".segmented-control-option input:checked + span,")
-    selected_rule_end = forms_css.index(".range-mode-shell > .segmented-control-option input:checked + span", selected_rule_start)
+    selected_rule_end = forms_css.index(
+        "/* Fallback for segmented controls", selected_rule_start
+    )
     selected_rule = forms_css[selected_rule_start:selected_rule_end]
     pagination_rule_start = settings_css.index("\n.local-store-page-button {\n") + 1
     pagination_rule_end = settings_css.index(".local-store-page-button.is-active {", pagination_rule_start)
     pagination_rule = settings_css[pagination_rule_start:pagination_rule_end]
     assert "font-weight: var(--font-weight-regular);" in segmented_rule
+    assert "color: var(--mode-switch-label-color);" in segmented_rule
     assert "font-weight: var(--font-weight-bold);" in selected_rule
+    assert "color: var(--mode-switch-label-color-active);" in selected_rule
+    assert (
+        ".range-mode-shell > .segmented-control-option input:checked + span"
+        not in forms_css
+    )
     assert "font-weight: var(--font-weight-regular);" in pagination_rule
 
 
@@ -647,6 +655,17 @@ def test_style_tokens_expose_the_action_package_live_marker_contract() -> None:
     assert "--settings-action-package-live-marker-size" in html
     assert "--settings-action-package-live-marker-color" in html
     assert "--settings-action-package-live-marker-duration" in html
+    for token in (
+        "--live-marker-core-size",
+        "--live-marker-inner-ring-size",
+        "--live-marker-outer-ring-size",
+        "--live-marker-ring-border-width",
+        "--live-marker-inner-start-scale",
+        "--live-marker-outer-start-scale",
+        "--live-marker-duration",
+        "--live-marker-stagger",
+    ):
+        assert token in html
 
 
 def test_style_tokens_expose_the_investment_holdings_allocation_badge_contract() -> None:

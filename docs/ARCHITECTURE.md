@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.123.0`
+Documentation version: `v1.124.0`
 
 ## Reuse and dependency boundaries
 
@@ -1073,6 +1073,24 @@ second broker balance ledger. Its accounting boundaries are explicit:
   from their reverse physical row order. The replay retains the internal
   per-cash-account ledger alongside aggregate currency balances so a settlement
   boundary for one USD subaccount cannot absorb another USD subaccount.
+- A direct cash row becomes a scoped balance boundary only when it satisfies
+  the direct-cash evidence contract; otherwise its amount is an unscoped
+  same-currency delta. A settlement boundary adds its correction to the whole
+  native-currency broker balance, so its correction base is the exact scoped
+  balance plus the unscoped delta of that currency when that scope is the only
+  same-currency scope. With several same-currency scopes and a nonzero unscoped
+  delta, attribution is ambiguous and the boundary fails closed.
+- Direct-cash SHA aliases (`source_sequence_sha256`, `source_file_sha256`,
+  `statement_pdf_source_sha256`) must name one artifact. When a statement PDF
+  corroborates a CSV or pasted-text cash row, the merge keeps the PDF filename,
+  period, and balance fields but records the PDF digest as
+  `statement_pdf_corroboration_sha256`, outside the alias set.
+- USD Savings CSV rows written before the chronological provenance contract
+  lack `source_sequence_sha256` and `ledger_sequence_order`. Merging the
+  current CSV through the import commit pipeline, with the configured HSBC
+  account, upgrades them in place and re-points settlement postings to the
+  same sequence domain. The parser is registered, but no HTTP or UI import
+  mode exposes it yet.
 - Historical equity is settled bank cash plus signed pending-settlement cash.
   When an HSBC buy or sell has matched future SEC postings, each exact posting
   accrues as a payable or receivable on the trade's booking date while the

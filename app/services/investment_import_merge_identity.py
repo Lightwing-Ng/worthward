@@ -1,6 +1,8 @@
 """Investment import domain: merge identity.
 
-Code version: v0.3.0
+Code version: v0.3.1
+- Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
+  is recorded as corroboration instead of a conflicting sequence-digest alias.
 - Fixed: HSBC dividend fallback identity requires exact account, currency,
   amount, and reliable attribution or cash-row evidence.
 """
@@ -914,6 +916,35 @@ def _preserve_hsbc_dividend_attribution_on_cash_merge(
     return merged
 
 
+def _relocate_hsbc_statement_pdf_corroboration_digest(
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep a corroborating statement PDF digest out of the row's sequence aliases.
+
+    ``statement_pdf_source_sha256`` is an alias of the row's own immutable
+    source sequence digest. A CSV or pasted-text cash row that a statement PDF
+    merely corroborates has a different sequence artifact, so storing the PDF
+    digest under the alias makes the row's cash evidence self-contradictory.
+    """
+    source = record.get("source") if isinstance(record.get("source"), dict) else None
+    if source is None or _normalize_text(source.get("source_format")) == "statement_pdf":
+        return record
+    if _normalize_text(source.get("file_kind")).lower() == "hsbc_statement_cash":
+        return record
+    statement_digest = _normalize_text(source.get("statement_pdf_source_sha256")).lower()
+    if not statement_digest:
+        return record
+    sequence_digest = _normalize_text(
+        source.get("source_sequence_sha256") or source.get("source_file_sha256")
+    ).lower()
+    if not sequence_digest or statement_digest == sequence_digest:
+        return record
+    relocated = dict(source)
+    relocated.pop("statement_pdf_source_sha256", None)
+    relocated["statement_pdf_corroboration_sha256"] = statement_digest
+    return {**record, "source": relocated}
+
+
 def _merge_hsbc_cash_account_records(
     current: dict[str, Any],
     incoming: dict[str, Any],
@@ -1149,7 +1180,9 @@ def _merge_transaction_records(
         )
     if _is_hsbc_cash_account_record(current) and _is_hsbc_cash_account_record(incoming):
         return _prune_hsbc_settled_pending_flag(
-            _merge_hsbc_cash_account_records(current, incoming)
+            _relocate_hsbc_statement_pdf_corroboration_digest(
+                _merge_hsbc_cash_account_records(current, incoming)
+            )
         )
     if _is_ibkr_web_trade_refinement_pair(current, incoming):
         current_has_fee = not _is_missing_merge_value(current.get("commission_raw"))

@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.55.0`
+Documentation version: `v1.56.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -8,6 +8,11 @@ It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
 
+- Fixed: Historical HSBC Cash and Equity no longer double count unscoped
+  same-currency replay deltas when a settlement boundary corrects an existing
+  cash scope; ambiguous multi-scope cases fail closed.
+- Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
+  is stored as corroboration instead of a conflicting sequence-digest alias.
 - Fixed: A new unlabelled HSBC USD cash-only corporate-event dividend can now
   acquire a ticker during the atomic ledger merge when exact same-account order
   history and the complete local dividend-action set yield one unique match.

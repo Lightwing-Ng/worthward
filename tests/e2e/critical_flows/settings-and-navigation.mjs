@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.3.0 */
 import {
     expect,
     test,
@@ -227,6 +227,27 @@ test('reports a sustained Longbridge OAuth status connection failure', async ({p
 test('keeps the settings action package aligned and demonstrates maintenance activity safely', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
+    const segmented = page.locator('#segmented-control .segmented-control');
+    const segmentedColors = await segmented.evaluate((shell) => {
+        const resolveColor = (value) => {
+            const probe = document.createElement('span');
+            probe.style.color = value;
+            shell.append(probe);
+            const color = getComputedStyle(probe).color;
+            probe.remove();
+            return color;
+        };
+        return {
+            active: getComputedStyle(shell.querySelector('input:checked + span')).color,
+            activeToken: resolveColor('var(--mode-switch-label-color-active)'),
+            inactive: getComputedStyle(shell.querySelector('input:not(:checked) + span')).color,
+            inactiveToken: resolveColor('var(--mode-switch-label-color)'),
+        };
+    });
+    expect(segmentedColors.active).toBe(segmentedColors.activeToken);
+    expect(segmentedColors.inactive).toBe(segmentedColors.inactiveToken);
+    expect(segmentedColors.active).not.toBe(segmentedColors.inactive);
+
     const actionPackage = page.locator('[data-style-token-action-package]');
     const marker = actionPackage.locator('[data-action-package-live-marker]');
     const copy = actionPackage.locator('[data-action-package-copy]');
@@ -270,6 +291,39 @@ test('keeps the settings action package aligned and demonstrates maintenance act
 
     await liveControl.check();
     await expect(marker).toBeVisible();
+    const liveMarkerContract = await marker.evaluate((element) => {
+        const root = getComputedStyle(document.documentElement);
+        const core = getComputedStyle(element);
+        const outer = getComputedStyle(element, '::before');
+        const inner = getComputedStyle(element, '::after');
+        const px = (value) => Number.parseFloat(value);
+        return {
+            coreSize: px(core.width),
+            duration: outer.animationDuration,
+            innerDelay: inner.animationDelay,
+            innerDiameter: px(inner.width),
+            innerMinimumDiameter: px(inner.width)
+                * Number.parseFloat(root.getPropertyValue('--live-marker-inner-start-scale')),
+            innerName: inner.animationName,
+            outerDiameter: px(outer.width),
+            outerMinimumDiameter: px(outer.width)
+                * Number.parseFloat(root.getPropertyValue('--live-marker-outer-start-scale')),
+            outerName: outer.animationName,
+            ringBorderWidth: px(outer.borderTopWidth),
+        };
+    });
+    expect(liveMarkerContract).toEqual({
+        coreSize: 6,
+        duration: '1.8s',
+        innerDelay: '0.9s',
+        innerDiameter: 16,
+        innerMinimumDiameter: 6,
+        innerName: 'live-marker-breath',
+        outerDiameter: 24,
+        outerMinimumDiameter: 6,
+        outerName: 'live-marker-breath',
+        ringBorderWidth: 2,
+    });
     await button.click();
     await expect(copy).toContainText('Refreshing all cached daily datasets');
     await expect(button).toHaveText('Maintaining');

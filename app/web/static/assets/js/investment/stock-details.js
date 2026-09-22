@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.38.2
+ * Code version: v0.39.0
+ * - Changed: Reuses the shared live-marker primitive for the live price endpoint.
  * - Changed: Loads Investment data utilities v1.120.3 and the shared stable
  *   replay-order helpers.
  * - Optimized: Pointer hover commits are animation-frame coalesced, static
@@ -60,7 +61,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.38.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.39.0';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
@@ -554,11 +555,7 @@ export function createInvestmentStockDetailsUtils({
             <div class="investment-stock-details-price-chart-stage">
                 <canvas class="investment-stock-details-price-chart-canvas"></canvas>
                 <div class="trade-chart-hover-date-label investment-equity-hover-date-label" data-investment-stock-details-hover-date-label aria-hidden="true" hidden><span></span><span></span></div>
-                <div class="investment-stock-details-live-marker" data-investment-stock-details-live-marker hidden aria-hidden="true">
-                    <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-outer"></span>
-                    <span class="investment-stock-details-live-marker-ring investment-stock-details-live-marker-ring-inner"></span>
-                    <span class="investment-stock-details-live-marker-core"></span>
-                </div>
+                <div class="live-marker investment-stock-details-live-marker" data-investment-stock-details-live-marker hidden aria-hidden="true"></div>
             </div>
         `;
         const canvas = chartHost.querySelector('canvas');

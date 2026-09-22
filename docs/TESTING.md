@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.84.0`
+Documentation version: `v1.85.0`
 
 ## Shared modal and floating-banner rows
 
@@ -344,6 +344,14 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   cash projection from cancelling earlier settled sale proceeds, and the
   cash-equivalent endpoint regression verifies that Overview and Holdings use
   the same valid live quote.
+- `tests/test_investment_history_projection.mjs` verifies that a settlement
+  boundary folds unscoped same-currency replay deltas into the only matching
+  cash scope exactly once, and fails closed beside several same-currency
+  scopes. `tests/investment_import_hsbc_statements_mixin.py` verifies that a
+  corroborating statement PDF digest leaves the CSV row's sequence aliases and
+  that the current CSV upgrades a legacy row's chronological provenance. Import
+  simulations must set the configured HSBC account, or deduplication results
+  are not representative.
 - `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade

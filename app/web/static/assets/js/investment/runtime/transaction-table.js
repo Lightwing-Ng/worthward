@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.4.5
+ * Code version: v1.4.6
+ * - Changed: Loads the history projection that folds unscoped same-currency
+ *   replay deltas into an existing settlement cash scope.
  * - Changed: Loads exact-date and safe-decimal HSBC evidence validation.
  * - Fixed: Verified negative cash boundaries remain signed, and duplicate
  *   physical direct-cash rows cannot overwrite broker or aggregate cash.
@@ -24,7 +26,7 @@
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.5';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.6';
 
 export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
     const numericValue = Number(value);

@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -1018,6 +1018,80 @@ class HsbcStatementImportTestsMixin:
         self.assertEqual(
             merged["transactions"][0]["source"]["statement_pdf_source_filename"],
             "eStatementFile_004244.pdf",
+        )
+
+    def test_hsbc_csv_cash_keeps_statement_pdf_digest_out_of_sequence_aliases(
+        self,
+    ) -> None:
+        csv_sha = "a" * 64
+        pdf_sha = "b" * 64
+        legacy_csv_record = {
+            "date": "2026-06-22",
+            "datetime": "2026-06-22 20:00:00",
+            "type": "deposit",
+            "ticker": "",
+            "currency": "USD",
+            "description": "HK000000000000000",
+            "net_amount_raw": "2000.00",
+            "gross_amount_raw": "2000.00",
+            "commission_raw": "0",
+            "source": {
+                "file_kind": "hsbc_usd_savings_csv",
+                "account_type": "USD Savings",
+                "account_number": "000-999999-999",
+                "balance_after_raw": "2500.00",
+                "cash_balance_scope": "account",
+                "cash_balance_authoritative": True,
+                "row_number": 10,
+                "ledger_sequence": 10,
+                "reference_id": "HK000000000000000",
+                "statement_pdf_source_filename": "eStatementFile_000001.pdf",
+                "statement_pdf_source_sha256": pdf_sha,
+                "statement_pdf_statement_period": "2026-06",
+                "statement_pdf_balance_after_raw": "2500.00",
+            },
+            "broker": "hsbc",
+            "account": "000-999999-999",
+        }
+        current_csv_record = deepcopy(legacy_csv_record)
+        current_csv_record["source"] = {
+            key: value
+            for key, value in legacy_csv_record["source"].items()
+            if not key.startswith("statement_pdf_")
+        }
+        current_csv_record["source"].update(
+            {
+                "row_number": 40,
+                "ledger_sequence": 12,
+                "ledger_sequence_order": "chronological",
+                "source_sequence_sha256": csv_sha,
+            }
+        )
+
+        merged = merge_investment_payloads(
+            {
+                "schema_version": 3,
+                "broker": "hsbc",
+                "account": "000-999999-999",
+                "transactions": [legacy_csv_record],
+            },
+            {
+                "schema_version": 3,
+                "broker": "hsbc",
+                "account": "000-999999-999",
+                "transactions": [current_csv_record],
+            },
+        )
+
+        self.assertEqual(len(merged["transactions"]), 1)
+        source = merged["transactions"][0]["source"]
+        self.assertEqual(source["source_sequence_sha256"], csv_sha)
+        self.assertEqual(source["ledger_sequence_order"], "chronological")
+        self.assertEqual(source["ledger_sequence"], 12)
+        self.assertNotIn("statement_pdf_source_sha256", source)
+        self.assertEqual(source["statement_pdf_corroboration_sha256"], pdf_sha)
+        self.assertEqual(
+            source["statement_pdf_source_filename"], "eStatementFile_000001.pdf"
         )
 
     def test_hsbc_historical_statement_does_not_replace_current_cash_snapshot(

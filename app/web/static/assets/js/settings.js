@@ -1,4 +1,4 @@
-/* Code version: v0.27.0 */
+/* Code version: v0.28.0 */
 
 import {
     buildSettingsUrl,
@@ -455,7 +455,7 @@ import {
 			<section class="settings-action-package settings-callout-card-primary local-store-maintain-card" data-action-package-live="true">
 				<span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon icon-store-maintain"></span></span>
 				<div class="settings-action-package-copy settings-callout-text">
-						<p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}" title="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}"></span>${labels.local_store_maintain_title || translateUi("Maintain all data")}</p>
+						<p class="settings-service-name"><span class="live-marker settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}" title="${labels.local_store_maintain_live_marker || translateUi("Live maintenance is active")}"></span>${labels.local_store_maintain_title || translateUi("Maintain all data")}</p>
 						<p class="settings-service-note" data-action-package-copy>${labels.local_store_maintain_pending_note || translateUi("Refreshing all cached daily datasets and protected brand assets. Keep this page open while maintenance is in progress.")}</p>
 				</div>
 				<span class="settings-inline-button settings-inline-button-primary is-pending" aria-hidden="true">${labels.local_store_maintain_pending_button || translateUi("Maintaining")}</span>

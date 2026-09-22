@@ -1,4 +1,4 @@
-/* Investment history-projection regressions. Code version: v1.3.4 */
+/* Investment history-projection regressions. Code version: v1.3.5 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -912,6 +912,61 @@ test('daily settlement replay uses an aggregate-only legacy target balance once'
 
     assert.equal(boundary.broker_running_cash, 1_200);
     assert.deepEqual(boundary.broker_cash_by_currency, {USD: 1_200});
+});
+
+function makeUnscopedDeltaSettlementReplay(scopedBalances, unscopedBalances, total) {
+    const transaction = {
+        broker: 'hsbc', account: 'HSBC-TEST', account_type: 'USD Savings',
+        date: '2026-09-17', type: 'sell', currency: 'USD',
+        aggregate_running_cash: total, aggregate_display_cash: total,
+        aggregate_cash_by_currency: {USD: total}, aggregate_pending_settlement_cash: 0,
+        broker_running_cash: total, broker_display_cash: total,
+        broker_cash_by_currency: {USD: total},
+        calculated_broker_cash_by_currency: {USD: total},
+        calculated_broker_cash_scope_ledger: makeScopeLedger(scopedBalances, unscopedBalances),
+        broker_pending_settlement_cash: 0,
+    };
+    const boundary = {
+        ownerTransactionIndex: 0,
+        broker: 'hsbc', account: 'HSBC-TEST', accountType: 'USD SAVINGS',
+        cashScopeKey: USD_SAVINGS_SCOPE,
+        date: '2026-09-18', currency: 'USD', settlementAmount: 200,
+        settlementBalanceAfter: 1_200, sourceRowSequence: 44, sourceRowNumber: 44,
+        sourceFileKind: 'hsbc_usd_account_text', sourceSequenceSha256: HSBC_SEQUENCE_SHA_A,
+    };
+    return {transaction, boundary};
+}
+
+test('daily settlement replay folds unscoped deltas into the only same-currency scope', () => {
+    const {buildHsbcSettlementReplaySnapshots} = createHistoryProjection();
+    // Legacy direct-cash rows without sequence provenance leave their deltas
+    // unscoped after an earlier zero-balance boundary.
+    const {transaction, boundary} = makeUnscopedDeltaSettlementReplay(
+        {[USD_SAVINGS_SCOPE]: 0},
+        {USD: 45_000},
+        45_000,
+    );
+    const snapshots = buildHsbcSettlementReplaySnapshots([transaction], [boundary]);
+    const settlement = snapshots.at(-1);
+
+    assert.equal(settlement.replay_snapshot_kind, 'hsbc_cash_settlement_boundary');
+    assert.equal(settlement.broker_running_cash, 1_200);
+    assert.deepEqual(settlement.broker_cash_by_currency, {USD: 1_200});
+    assert.equal(settlement.aggregate_running_cash, 1_200);
+});
+
+test('daily settlement replay rejects unscoped deltas beside several same-currency scopes', () => {
+    const {buildHsbcSettlementReplaySnapshots} = createHistoryProjection();
+    const {transaction, boundary} = makeUnscopedDeltaSettlementReplay(
+        {[USD_SAVINGS_SCOPE]: 1_000, [OTHER_USD_SCOPE]: 50},
+        {USD: 500},
+        1_550,
+    );
+    const snapshots = buildHsbcSettlementReplaySnapshots([transaction], [boundary]);
+
+    assert.equal(snapshots.length, 1);
+    assert.notEqual(snapshots[0].replay_snapshot_kind, 'hsbc_cash_settlement_boundary');
+    assert.equal(snapshots[0].broker_running_cash, 1_550);
 });
 
 test('daily settlement replay creates an exact target beside another same-currency scope', () => {

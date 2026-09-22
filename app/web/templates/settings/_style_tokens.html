@@ -1,4 +1,4 @@
-{# Code version: v1.4.0 #}
+{# Code version: v1.5.0 #}
 {% from "_macros.html" import render_style_token_table with context %}
 {% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
@@ -111,7 +111,7 @@
                          data-action-package-pending-copy="{{ labels.local_store_maintain_pending_note }}">
                         <span class="settings-nav-icon-shell settings-action-package-icon-shell settings-callout-icon-shell" aria-hidden="true"><span class="icon {{ row.sample_icon_class }}"></span></span>
                         <div class="settings-action-package-copy settings-callout-text">
-                            <p class="settings-service-name"><span class="settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="{{ labels.local_store_maintain_live_marker }}" title="{{ labels.local_store_maintain_live_marker }}" hidden></span>{{ row.sample_title }}</p>
+                            <p class="settings-service-name"><span class="live-marker settings-action-package-live-marker" data-action-package-live-marker role="img" aria-label="{{ labels.local_store_maintain_live_marker }}" title="{{ labels.local_store_maintain_live_marker }}" hidden></span>{{ row.sample_title }}</p>
                             <p class="settings-service-note" data-action-package-copy>{{ row.sample_copy }}</p>
                         </div>
                         <div class="settings-action-package-form">

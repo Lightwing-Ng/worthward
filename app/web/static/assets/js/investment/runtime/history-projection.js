@@ -1,7 +1,10 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.3.5
+ * Code version: v1.3.6
+ * - Fixed: A settlement boundary in an existing cash scope now includes that
+ *   currency's unscoped replay delta, so legacy direct-cash rows without
+ *   sequence provenance are not double counted in historical Cash and Equity.
  * - Changed: Loads the exact-date, safe-decimal history-evidence contract.
  * - Fixed: Duplicate physical direct-cash identities remain provisional even
  *   when no structured settlement boundary references the disputed row.
@@ -92,9 +95,32 @@ function resolveHsbcRawCashScopeBalance(
                 const exactBalance = parseFiniteNonBlankHsbcNumber(
                     scopedBalances[cashScopeKey],
                 );
-                return exactBalance !== null
-                    ? {balance: exactBalance, resolved: true}
-                    : {balance: null, resolved: false};
+                if (exactBalance === null) return {balance: null, resolved: false};
+                // Replay deltas after the last scoped boundary stay unscoped
+                // but are still added to the currency total that receives this
+                // correction. Fold them into the only same-currency scope, as
+                // the next scoped boundary would; otherwise the correction
+                // counts them twice. Several same-currency scopes are ambiguous.
+                const hasUnscopedBalance = Object.prototype.hasOwnProperty.call(
+                    unscopedBalances,
+                    normalizedCurrency,
+                );
+                if (!hasUnscopedBalance) return {balance: exactBalance, resolved: true};
+                const unscopedBalance = parseFiniteNonBlankHsbcNumber(
+                    unscopedBalances[normalizedCurrency],
+                );
+                const hasOtherSameCurrencyScope = Object.keys(scopedBalances).some(
+                    (scopeKey) => (
+                        scopeKey !== cashScopeKey
+                        && scopeKey.endsWith(`|${normalizedCurrency}`)
+                    ),
+                );
+                if (unscopedBalance === null || (
+                    hasOtherSameCurrencyScope && Math.abs(unscopedBalance) > 1e-9
+                )) {
+                    return {balance: null, resolved: false};
+                }
+                return {balance: exactBalance + unscopedBalance, resolved: true};
             }
             const hasOtherSameCurrencyScope = Object.keys(scopedBalances).some(
                 (scopeKey) => scopeKey.endsWith(`|${normalizedCurrency}`),

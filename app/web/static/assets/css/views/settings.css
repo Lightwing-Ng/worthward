@@ -1,4 +1,4 @@
-/* Code version: v0.35.0 */
+/* Code version: v0.36.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -523,8 +523,7 @@
     position: relative;
 }
 
-.settings-broker-health-indicator,
-.settings-action-package-live-marker {
+.settings-broker-health-indicator {
     position: absolute;
     top: 50%;
     left: calc(var(--settings-action-package-live-marker-size) * -1.25);
@@ -536,41 +535,11 @@
     transform: translateY(-50%);
 }
 
-.settings-broker-health-indicator::before,
-.settings-broker-health-indicator::after,
-.settings-action-package-live-marker::before,
-.settings-action-package-live-marker::after {
+.settings-action-package-live-marker {
     position: absolute;
     top: 50%;
-    left: 50%;
-    width: 16px;
-    height: 16px;
-    border: 1.6px solid color-mix(in srgb, var(--settings-action-package-live-marker-color) 72%, transparent);
-    border-radius: 50%;
-    content: "";
-    opacity: 0.46;
-    transform: translate(-50%, -50%) scale(0.36);
-    animation: settings-action-package-live-breath var(--settings-action-package-live-marker-duration) var(--motion-emphasized) infinite;
-}
-
-.settings-broker-health-indicator::after,
-.settings-action-package-live-marker::after {
-    width: 12px;
-    height: 12px;
-    opacity: 0.28;
-    animation-delay: 0.9s;
-}
-
-@keyframes settings-action-package-live-breath {
-    0% {
-        opacity: 0.44;
-        transform: translate(-50%, -50%) scale(0.36);
-    }
-
-    100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-    }
+    left: calc(var(--live-marker-core-size) * -1.25);
+    transform: translateY(-50%);
 }
 
 .settings-action-package-form {
@@ -616,16 +585,6 @@
     grid-column: 2;
     grid-row: 3;
     justify-self: end;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .settings-broker-health-indicator::before,
-    .settings-broker-health-indicator::after,
-    .settings-action-package-live-marker::before,
-    .settings-action-package-live-marker::after {
-        animation: none;
-        opacity: 0;
-    }
 }
 
 .settings-broker-test-feedback {

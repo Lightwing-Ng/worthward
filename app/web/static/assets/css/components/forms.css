@@ -1,4 +1,4 @@
-/* Code version: v0.25.2 */
+/* Code version: v0.26.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -1704,14 +1704,14 @@ input[type="number"],
 .segmented-control-option input,
 .range-mode-option input { position: absolute; inset: 0; margin: 0; opacity: 0; pointer-events: none; }
 .segmented-control-option span,
-.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-regular); color: var(--theme-muted); transition: color 220ms var(--motion-standard); overflow-wrap: normal; text-wrap: nowrap; white-space: nowrap; }
+.range-mode-option span { position: relative; z-index: 1; box-sizing: border-box; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; min-height: var(--mode-switch-label-min-height); height: 100%; text-align: center; padding: 0 var(--mode-switch-label-pad-inline); border-radius: var(--mode-switch-radius); font-size: var(--font-form-label); line-height: 1.15; font-weight: var(--font-weight-regular); color: var(--mode-switch-label-color); transition: color 220ms var(--motion-standard); overflow-wrap: normal; text-wrap: nowrap; white-space: nowrap; }
 .segmented-control[data-segmented-pill="measured"] .segmented-control-option span {
 	white-space: nowrap;
 }
 .segmented-control-option:hover span,
 .range-mode-option:hover span { transform: none; }
 .segmented-control-option input:checked + span,
-.range-mode-option input:checked + span { z-index: 2; color: var(--color-white-adaptive); font-weight: var(--font-weight-bold); letter-spacing: 0; }
+.range-mode-option input:checked + span { z-index: 2; color: var(--mode-switch-label-color-active); font-weight: var(--font-weight-bold); letter-spacing: 0; }
 .segmented-control-option:has(input:disabled),
 .range-mode-option:has(input:disabled),
 .segmented-control-option[aria-disabled="true"],
@@ -1747,7 +1747,7 @@ input[type="number"],
 }
 .segmented-control--tabs > .segmented-control-option[aria-selected="true"] > span {
 	z-index: 2;
-	color: var(--color-white-adaptive);
+	color: var(--mode-switch-label-color-active);
 	font-weight: var(--font-weight-bold);
 	letter-spacing: 0;
 }
@@ -1763,7 +1763,6 @@ input[type="number"],
 	line-height: 1.35;
 	text-align: center;
 }
-.range-mode-shell > .segmented-control-option input:checked + span { color: var(--theme-muted); }
 /* Fallback for segmented controls rendered without radio inputs (e.g. pending skeleton states). */
 .segmented-control:not(:has(input)):not([role="tablist"])[data-active="period"] > .segmented-control-option:nth-child(1) > span,
 .range-mode-shell:not(:has(input))[data-active="period"] > .segmented-control-option:nth-child(1) > span,
@@ -1781,7 +1780,7 @@ input[type="number"],
 .range-mode-shell:not(:has(input))[data-active="stock_details"] > .segmented-control-option:nth-child(3) > span,
 .segmented-control:not(:has(input)):not([role="tablist"])[data-active="metrics"] > .segmented-control-option:nth-child(4) > span,
 .range-mode-shell:not(:has(input))[data-active="metrics"] > .segmented-control-option:nth-child(4) > span {
-	color: var(--color-white-adaptive);
+	color: var(--mode-switch-label-color-active);
 	font-weight: var(--font-weight-bold);
 	letter-spacing: 0;
 }
@@ -1835,12 +1834,12 @@ input[type="number"],
 .sidebar-form:has(#range_exact:checked) #exact_panel { display: block !important; }
 .sidebar-form:has(#range_period:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span,
 .sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(2) > span {
-	color: var(--color-white-adaptive);
+	color: var(--mode-switch-label-color-active);
 	letter-spacing: 0;
 }
 .sidebar-form:has(#range_period:checked) .range-mode-shell > .segmented-control-option:nth-child(2) > span,
 .sidebar-form:has(#range_exact:checked) .range-mode-shell > .segmented-control-option:nth-child(1) > span {
-	color: var(--theme-muted);
+	color: var(--mode-switch-label-color);
 }
 .chart-tooltip, .field-tooltip { background: var(--tooltip-background); box-shadow: var(--tooltip-shadow); backdrop-filter: var(--tooltip-blur); -webkit-backdrop-filter: var(--tooltip-blur); border: var(--tooltip-border); border-radius: var(--radius-soft); }
 .field-tooltip,

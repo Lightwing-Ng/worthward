@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.5.0-agent-contract.0`
+Policy version: `v1.6.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -46,6 +46,34 @@ discovery. This file remains the canonical guide.
   Holdings Cash, Cash equivalents, and Total equity must remain tied to broker
   balances. Ending-cash and position snapshots may be applied only on or after
   their explicit as-of date.
+- When the Overview equity curve disagrees with the user's facts, reconcile
+  against raw broker evidence before editing code. Rebuild the true per-day
+  balance from the broker's own running-balance column (for example the HSBC
+  USD Savings CSV `Balance`) and decompose each chart point into cash and
+  market value per broker and currency. A hump that vanishes at a later dated
+  balance anchor is a cash double count, not a price or position error. Never
+  make the curve match by editing assertions, clamping values, or inventing
+  records.
+- An HSBC settlement-boundary correction must be computed on the same balance
+  base it is added to. The correction is applied to the whole native-currency
+  broker balance, so its base is the exact scoped balance plus that currency's
+  unscoped replay delta when the scope is the only one in that currency; with
+  several same-currency scopes the boundary fails closed.
+- `statement_pdf_source_sha256` and `statement_pdf_source_row_number` are
+  aliases of a cash row's own immutable sequence identity, not free-form
+  corroboration. A CSV or pasted-text row that a statement PDF only
+  corroborates stores the PDF digest as `statement_pdf_corroboration_sha256`.
+  Writing a different digest into the alias makes the row fail the direct-cash
+  evidence contract and silently turns authoritative balances into unscoped
+  deltas.
+- Import simulations and store repairs must run with the user's broker account
+  configuration, such as `WORTHWARD_HSBC_ACCOUNT_NUMBER`, because account
+  identity participates in merge deduplication. An unconfigured simulation
+  produces false duplicates; do not report a merge defect from it. Verify any
+  store repair on an isolated copy with an isolated server first, back up the
+  production parquet as `investment.parquet.before-<reason>-<timestamp>.bak`,
+  and commit through the normal import commit pipeline rather than writing
+  rows directly. See the 22 Sep 2026 entry in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 - A user-confirmed broker P&L calibration is constrained to its explicit
   broker, account, ticker, and currency scope. It is neither a dated position
   or equity snapshot nor evidence of a reconstructed tax-lot history. Do not

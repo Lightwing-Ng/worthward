@@ -1,7 +1,8 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
+ * - Changed: Reuses the shared live-marker primitive for the live equity endpoint.
  * - Fixed: Initial Holdings uses the shared current-equity calculation so a
  *   dated broker interest accrual is not dropped before realtime quotes arrive.
  * - Added: Extracted from the Investment workspace composition root.
@@ -724,7 +725,7 @@ function renderEquityChartWithEquity(chartPoints) {
         }
 
         runtime.clearInvestmentEquityRangeControlBindings();
-        container.innerHTML = `${runtime.renderInvestmentEquityRangeControl()}<div class="investment-equity-chart-stage"><canvas id="investmentEquityChart"></canvas><div class="trade-chart-hover-line investment-equity-hover-line" data-investment-equity-hover-line aria-hidden="true"></div><div class="trade-chart-hover-date-label investment-equity-hover-date-label" data-investment-equity-hover-date-label aria-hidden="true" hidden><span data-investment-hover-date-line="primary"></span><span data-investment-hover-date-line="secondary"></span></div><div class="investment-equity-live-marker" data-investment-equity-live-marker hidden aria-hidden="true"><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-outer"></span><span class="investment-equity-live-marker-ring investment-equity-live-marker-ring-inner"></span><span class="investment-equity-live-marker-core"></span></div></div>`;
+        container.innerHTML = `${runtime.renderInvestmentEquityRangeControl()}<div class="investment-equity-chart-stage"><canvas id="investmentEquityChart"></canvas><div class="trade-chart-hover-line investment-equity-hover-line" data-investment-equity-hover-line aria-hidden="true"></div><div class="trade-chart-hover-date-label investment-equity-hover-date-label" data-investment-equity-hover-date-label aria-hidden="true" hidden><span data-investment-hover-date-line="primary"></span><span data-investment-hover-date-line="secondary"></span></div><div class="live-marker investment-equity-live-marker" data-investment-equity-live-marker hidden aria-hidden="true"></div></div>`;
         const canvas = document.getElementById('investmentEquityChart');
         const chartStage = container.querySelector('.investment-equity-chart-stage');
         const hoverLine = container.querySelector('[data-investment-equity-hover-line]');
@@ -1677,4 +1678,3 @@ function formatEventType(type) {
         formatEventType,
     };
 }
-

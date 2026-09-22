@@ -1,5 +1,35 @@
 # Known issues and operating constraints
 
+HSBC historical cash double count, 22 Sep 2026: the Overview equity curve showed
+roughly 1.5 times the real portfolio from late June to late August 2026, then
+fell back when a fully evidenced HSBC balance row appeared. Market value was
+correct; only HSBC USD cash was inflated. Two defects combined:
+
+- Legacy USD Savings CSV rows had no chronological sequence provenance and
+  carried a corroborating statement PDF digest in `statement_pdf_source_sha256`.
+  The strict direct-cash contract rejected them, so their amounts became
+  unscoped deltas while the exact USD Savings scope stayed at zero.
+- The history projection computed each settlement correction against that zero
+  scoped balance but added it to the full USD balance, counting every unscoped
+  delta twice. Days with rejected rows also dropped same-day settlement
+  boundaries as sequence-incomparable, delaying buy debits.
+
+Fixes: `history-projection.js` folds the unscoped same-currency delta into the
+only same-currency scope when correcting; the merge stores a corroborating PDF
+digest as `statement_pdf_corroboration_sha256`; and the production ledger was
+repaired by merging the current HSBC USD Savings CSV through the import commit
+pipeline after isolated verification. The pre-repair store is preserved as
+`settings_store/investment.parquet.before-hsbc-usd-csv-provenance-20260922T1059+0800.bak`.
+The repaired curve peaks near the current portfolio value and matches the raw
+CSV running balance. Lessons for agents: reconcile a suspicious curve against
+the broker's raw running balance first; an import simulation without the
+configured HSBC account reports false duplicates; and no HTTP or UI import
+mode yet exists for the USD Savings CSV. A residual IBKR CNH/HKD balance
+remains after FX conversions whose `forex_trade_component` rows carry only
+the FX P&L; its net effect is a few hundred USD and is not yet corrected.
+The Python merge change is adopted by the user-owned 8688 process at its next
+manual restart.
+
 HSBC pending-marker ownership, 22 Sep 2026: Transaction history renders one
 visible trailing `*` on the compact order reference of each genuinely unresolved
 HSBC order. The same state is not repeated before Cash, Equity, or the current
@@ -424,7 +454,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.262.5`
+Documentation version: `v1.263.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-/* Code version: v1.80.7 */
+/* Code version: v1.81.0 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2359,78 +2359,19 @@
     line-height: 10px;
 }
 
-.investment-equity-live-marker {
+.investment-equity-live-marker,
+.investment-stock-details-live-marker {
     position: absolute;
     left: 0;
     top: 0;
-    width: 0;
-    height: 0;
     pointer-events: none;
     transform: translate(-50%, -50%);
     z-index: 2;
 }
 
-.investment-equity-live-marker[hidden] {
+.investment-equity-live-marker[hidden],
+.investment-stock-details-live-marker[hidden] {
     display: none;
-}
-
-.investment-equity-live-marker-ring,
-.investment-equity-live-marker-core {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-    background: var(--theme-accent-positive, #16a34a);
-}
-
-.investment-equity-live-marker-ring {
-    border: 1.6px solid color-mix(in srgb, var(--theme-accent-positive, #16a34a) 72%, transparent);
-    background: transparent;
-    opacity: 0.46;
-}
-
-.investment-equity-live-marker-ring-outer {
-    width: 20px;
-    height: 20px;
-    animation: investment-live-marker-breath-outer 1.8s var(--motion-emphasized) infinite;
-}
-
-.investment-equity-live-marker-ring-inner {
-    width: 14px;
-    height: 14px;
-    opacity: 0.28;
-    animation: investment-live-marker-breath-inner 1.8s var(--motion-emphasized) infinite 0.9s;
-}
-
-.investment-equity-live-marker-core {
-    width: 6px;
-    height: 6px;
-    box-shadow:
-        0 0 0 4px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 18%, transparent),
-        0 0 10px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 42%, transparent);
-}
-
-@keyframes investment-live-marker-breath-outer {
-    0% {
-        opacity: 0.44;
-        transform: translate(-50%, -50%) scale(0.36);
-    }
-    100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-    }
-}
-
-@keyframes investment-live-marker-breath-inner {
-    0% {
-        opacity: 0.26;
-        transform: translate(-50%, -50%) scale(0.48);
-    }
-    100% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(1);
-    }
 }
 
 .investment-chart-stack {
@@ -2740,58 +2681,6 @@
 
 .investment-stock-details-price-chart-canvas {
     height: 100% !important;
-}
-
-.investment-stock-details-live-marker {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 0;
-    height: 0;
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-    z-index: 2;
-}
-
-.investment-stock-details-live-marker[hidden] {
-    display: none;
-}
-
-.investment-stock-details-live-marker-ring,
-.investment-stock-details-live-marker-core {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-    background: var(--theme-accent-positive, #16a34a);
-}
-
-.investment-stock-details-live-marker-ring {
-    border: 1.6px solid color-mix(in srgb, var(--theme-accent-positive, #16a34a) 72%, transparent);
-    background: transparent;
-    opacity: 0.46;
-}
-
-.investment-stock-details-live-marker-ring-outer {
-    width: 20px;
-    height: 20px;
-    animation: investment-live-marker-breath-outer 1.8s var(--motion-emphasized) infinite;
-}
-
-.investment-stock-details-live-marker-ring-inner {
-    width: 14px;
-    height: 14px;
-    opacity: 0.28;
-    animation: investment-live-marker-breath-inner 1.8s var(--motion-emphasized) infinite 0.9s;
-}
-
-.investment-stock-details-live-marker-core {
-    width: 6px;
-    height: 6px;
-    box-shadow:
-        0 0 0 4px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 18%, transparent),
-        0 0 10px color-mix(in srgb, var(--theme-accent-positive, #16a34a) 42%, transparent);
 }
 
 .investment-chart-tooltip-triangle {

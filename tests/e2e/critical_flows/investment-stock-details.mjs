@@ -1,4 +1,4 @@
-/* Code version: v1.0.8 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -504,7 +504,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.80.7';
+            && url.searchParams.get('v') === '1.81.0';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -713,17 +713,57 @@ test('redraws the Overview live endpoint and breathing marker when the first reg
         const chart = window.Chart?.getChart(canvas);
         const lastIndex = chart.data.labels.length - 1;
         const lastValue = Number(chart.data.datasets[0].data[lastIndex]);
+        const root = getComputedStyle(document.documentElement);
+        const outer = getComputedStyle(element, '::before');
+        const inner = getComputedStyle(element, '::after');
+        const core = getComputedStyle(element);
+        const px = (value) => Number.parseFloat(value);
         return {
-            animation: getComputedStyle(element.querySelector('.investment-equity-live-marker-ring-outer')).animationName,
+            animation: outer.animationName,
+            coreSize: px(core.width),
+            duration: outer.animationDuration,
+            innerDelay: inner.animationDelay,
+            innerDiameter: px(inner.width),
+            innerMinimumDiameter: px(inner.width)
+                * Number.parseFloat(root.getPropertyValue('--live-marker-inner-start-scale')),
             left: Number.parseFloat(element.style.left),
+            outerDiameter: px(outer.width),
+            outerMinimumDiameter: px(outer.width)
+                * Number.parseFloat(root.getPropertyValue('--live-marker-outer-start-scale')),
+            ringBorderWidth: px(outer.borderTopWidth),
             top: Number.parseFloat(element.style.top),
             expectedLeft: chart.scales.x.getPixelForValue(lastIndex),
             expectedTop: chart.scales.y.getPixelForValue(lastValue),
         };
     });
-    expect(markerState.animation).toBe('investment-live-marker-breath-outer');
+    expect(markerState.animation).toBe('live-marker-breath');
+    expect(markerState.coreSize).toBe(6);
+    expect(markerState.duration).toBe('1.8s');
+    expect(markerState.innerDelay).toBe('0.9s');
+    expect(markerState.innerDiameter).toBe(16);
+    expect(markerState.innerMinimumDiameter).toBe(6);
+    expect(markerState.outerDiameter).toBe(24);
+    expect(markerState.outerMinimumDiameter).toBe(6);
+    expect(markerState.ringBorderWidth).toBe(2);
     expect(Math.abs(markerState.left - markerState.expectedLeft)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(markerState.top - markerState.expectedTop)).toBeLessThanOrEqual(0.5);
+
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await expect.poll(() => marker.evaluate((element) => {
+        const outer = getComputedStyle(element, '::before');
+        const inner = getComputedStyle(element, '::after');
+        return {
+            innerAnimation: inner.animationName,
+            innerOpacity: Number.parseFloat(inner.opacity),
+            outerAnimation: outer.animationName,
+            outerOpacity: Number.parseFloat(outer.opacity),
+        };
+    })).toEqual({
+        innerAnimation: 'none',
+        innerOpacity: 0.42,
+        outerAnimation: 'none',
+        outerOpacity: 0,
+    });
 });
 
 test('marks Investment Holdings with Longbridge overnight quotes', async ({page}) => {

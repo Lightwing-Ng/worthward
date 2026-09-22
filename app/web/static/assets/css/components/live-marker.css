@@ -1,0 +1,73 @@
+/* Code version: v1.0.0 */
+
+.live-marker {
+	display: inline-block;
+	position: relative;
+	flex: 0 0 var(--live-marker-core-size);
+	width: var(--live-marker-core-size);
+	height: var(--live-marker-core-size);
+	border-radius: var(--radius-pill);
+	background: var(--live-marker-color);
+	box-shadow:
+		0 0 0 var(--live-marker-core-halo-size) color-mix(in srgb, var(--live-marker-color) 18%, transparent),
+		0 0 8px color-mix(in srgb, var(--live-marker-color) 34%, transparent);
+}
+
+.live-marker::before,
+.live-marker::after {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	box-sizing: border-box;
+	border: var(--live-marker-ring-border-width) solid color-mix(in srgb, var(--live-marker-color) 78%, transparent);
+	border-radius: var(--radius-pill);
+	background: transparent;
+	content: "";
+	opacity: var(--live-marker-start-opacity);
+	pointer-events: none;
+	transform: translate(-50%, -50%) scale(var(--live-marker-start-scale));
+	animation: live-marker-breath var(--live-marker-duration) var(--motion-emphasized) infinite;
+}
+
+.live-marker::before {
+	--live-marker-start-opacity: var(--live-marker-outer-start-opacity);
+	--live-marker-start-scale: var(--live-marker-outer-start-scale);
+	width: var(--live-marker-outer-ring-size);
+	height: var(--live-marker-outer-ring-size);
+}
+
+.live-marker::after {
+	--live-marker-start-opacity: var(--live-marker-inner-start-opacity);
+	--live-marker-start-scale: var(--live-marker-inner-start-scale);
+	width: var(--live-marker-inner-ring-size);
+	height: var(--live-marker-inner-ring-size);
+	animation-delay: var(--live-marker-stagger);
+}
+
+@keyframes live-marker-breath {
+	0% {
+		opacity: var(--live-marker-start-opacity);
+		transform: translate(-50%, -50%) scale(var(--live-marker-start-scale));
+	}
+
+	100% {
+		opacity: 0;
+		transform: translate(-50%, -50%) scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.live-marker::before,
+	.live-marker::after {
+		animation: none !important;
+		transform: translate(-50%, -50%) scale(1);
+	}
+
+	.live-marker::before {
+		opacity: 0;
+	}
+
+	.live-marker::after {
+		opacity: 0.42;
+	}
+}
