@@ -1,7 +1,20 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.117.0
+ * Code version: v1.120.3
+ * - Changed: Loads exact-date and safe-decimal HSBC cash-boundary validation.
+ * - Fixed: Every HSBC cash replay, settlement, fee, and ordering consumer now
+ *   shares the exact fail-closed importer evidence contract.
+ * - Fixed: HSBC cash evidence shares the Python importer's supported currency
+ *   and cash-account domain boundary during replay and realized-P&L repair.
+ * - Fixed: HSBC fee-inclusive sell proceeds fail closed unless every cash leg
+ *   shares one complete cash-account and immutable source identity.
+ * - Fixed: HSBC cash ordering and settlement boundaries now fail closed for
+ *   missing source domains and blank balance evidence.
+ * - Fixed: HSBC settlement replay isolates exact cash subaccounts and refuses
+ *   to compare rows across unrelated source-sequence domains.
+ * - Fixed: Pasted HSBC cash rows follow bank ledger sequence during same-day
+ *   replay while downloaded CSV evidence retains its native reverse order.
  * - Fixed: HSBC realized trade proceeds include an evidenced settlement fee
  *   posting once without changing the principal cash row or balance boundary.
  * - Fixed: Current Holdings NAV adds a dated broker interest accrual exactly
@@ -49,8 +62,9 @@
  * - Changed: Dividend and foreign-tax descriptions now use the transaction's
  *   canonical ticker instead of source-provided security names or identifiers.
  * - Changed: Foreign-currency FX conversion no longer makes a current HSBC
- *   cash display provisional. The leading * now identifies only unresolved
- *   HSBC settlement cash, such as a fee that posts on the following day.
+ *   cash display provisional. One trailing * on the unresolved order reference
+ *   identifies pending HSBC settlement without repeating the marker on Cash
+ *   or Equity values.
  * - Added: One broker-current-cash resolver now converts every native-currency
  *   balance, applies pending settlement once, and reports provisional display
  *   state for both aggregate and broker-scoped surfaces.
@@ -223,22 +237,22 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.1.0';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.2.2';
 import {
     createInvestmentInterestAccrualUtils,
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
 import {
     createInvestmentPositionValuationUtils,
-} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.0.0';
+} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.3';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.1.0';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.2.3';
 import {
     createInvestmentSummaryUtils,
-} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.0';
+} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.1';
 import {
     createInvestmentTransactionPresentationUtils,
-} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.1.0';
+} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.4.1';
 
 export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
@@ -543,12 +557,14 @@ export function createInvestmentDataUtils({
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
         compareInvestmentTransactionsForReplay,
+        sortInvestmentTransactionsForReplay,
         getInvestmentReplayIdentity,
         buildHsbcCashSettlementBoundaryPlan,
         getInvestmentCashBalanceBoundary,
         getInvestmentCashBalanceScope,
         getInvestmentCashScopeBalances,
         compareInvestmentTaxLotTransactions,
+        sortInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
         createPositionState,
@@ -680,12 +696,14 @@ export function createInvestmentDataUtils({
         createCashLedgerFromBalances,
         compareInvestmentTransactions,
         compareInvestmentTransactionsForReplay,
+        sortInvestmentTransactionsForReplay,
         getInvestmentReplayIdentity,
         buildHsbcCashSettlementBoundaryPlan,
         getInvestmentCashBalanceBoundary,
         getInvestmentCashBalanceScope,
         getInvestmentCashScopeBalances,
         compareInvestmentTaxLotTransactions,
+        sortInvestmentTaxLotTransactions,
         calculateSnapshotMarketValue,
         closePositionLots,
         createPositionState,
@@ -782,7 +800,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.117.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.3';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

@@ -1,6 +1,18 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.2.0
+Code version: v0.5.1
+- Fixed: Official USD Savings CSV evidence now requires its immutable HSBC,
+  transaction-history, and account metadata before settlement reconciliation.
+- Added: Verified, storage-backed HSBC cash-account paste artifacts can repair
+  legacy settlement provenance during any later HSBC merge.
+- Fixed: HSBC stock-order settlement evidence is limited to USD Savings, while
+  real bank chronology may place a fee before or after its principal.
+- Fixed: Authoritative order repair validates a complete principal/fee pair on
+  a copy before committing, and records the actual CSV or pasted-text source.
+- Fixed: Official USD CSV evidence rejects malformed byte counts, non-finite
+  rows, and same-day orders that balance continuity cannot disambiguate.
+- Fixed: Official USD CSV settlement rows cannot be reused across HSBC
+  accounts or attached to more than one order reference owner.
 """
 
 from __future__ import annotations
@@ -134,11 +146,15 @@ def _attribute_hsbc_cash_only_dividends_from_existing_ledger(
             )
             if not account_identity or account_identity not in events_by_account:
                 continue
-            position_snapshots_by_account[account_identity] = (
-                _ii_artifacts._normalize_snapshot_keys(
-                    raw_snapshot.get("position_snapshot")
-                )
+            normalized_snapshot = _ii_artifacts._normalize_snapshot_keys(
+                raw_snapshot.get("position_snapshot")
             )
+            position_snapshots_by_account[account_identity] = {
+                ticker: position
+                for ticker, position in normalized_snapshot.items()
+                if isinstance(position, dict)
+                and _normalize_text(position.get("currency")).upper() == "USD"
+            }
 
     attribution_warnings: list[str] = []
     attributed_count = 0
@@ -150,6 +166,7 @@ def _attribute_hsbc_cash_only_dividends_from_existing_ledger(
                 _ii_basics._normalize_broker_code(record.get("broker")) == "hsbc"
                 and _hsbc_record_account_identity(record) == account_identity
                 and _normalize_text(record.get("type")).lower() in {"buy", "sell"}
+                and _normalize_text(record.get("currency")).upper() == "USD"
                 and _ii_basics._is_hsbc_order_status_record(record)
             )
         ]
@@ -196,7 +213,7 @@ def _build_hsbc_pasted_snapshot_report(
     account_number: str,
     portfolio_capture: dict[str, Any],
     parsed_order_rows: list[dict[str, str]],
-    cash_records: list[dict[str, Any]],
+    cash_visible_post_dates: list[str],
     portfolio_text: str,
     order_status_text: str,
     cash_account_text: str,
@@ -235,10 +252,11 @@ def _build_hsbc_pasted_snapshot_report(
     ]
     latest_executed_order_date = max(executed_order_dates, default="")
     cash_post_dates = [
-        _normalize_text(record.get("date"))
-        for record in cash_records
-        if isinstance(record, dict) and _normalize_text(record.get("date"))
+        _normalize_text(value)
+        for value in cash_visible_post_dates
+        if _normalize_text(value)
     ]
+    earliest_cash_post_date = min(cash_post_dates, default="")
     latest_cash_post_date = max(cash_post_dates, default="")
     cash_posting_lag = bool(
         latest_executed_order_date
@@ -302,6 +320,7 @@ def _build_hsbc_pasted_snapshot_report(
         "portfolio_market_data_updated_at": market_data_updated_at,
         "order_status_windows": order_status_windows,
         "order_status_coverage": order_status_coverage,
+        "cash_earliest_post_date": earliest_cash_post_date,
         "cash_latest_post_date": latest_cash_post_date,
         "latest_fully_executed_order_date": latest_executed_order_date,
         "cash_posting_status": "awaiting_settlement" if cash_posting_lag else "current",
@@ -387,9 +406,9 @@ def _build_hsbc_cash_only_pasted_payload(
     ]
     _ii_records._sort_transactions(transactions)
     cash_post_dates = [
-        _normalize_text(record.get("date"))
-        for record in cash_records
-        if _normalize_text(record.get("date"))
+        _normalize_text(value)
+        for value in cash_capture.get("visible_post_dates", [])
+        if _normalize_text(value)
     ]
     snapshot_fingerprint = _ii_hsbc_core._build_hsbc_pasted_snapshot_fingerprint(
         cash_account_text=cash_account_text,
@@ -402,6 +421,7 @@ def _build_hsbc_cash_only_pasted_payload(
     usd_ledger = cash_capture.get("ledger_by_currency", {}).get("USD")
     usd_ending = resolved_by_currency.get("USD")
     ending_cash = _decimal_to_str(usd_ending) if usd_ending is not None else None
+    earliest_cash_post_date = min(cash_post_dates, default="")
     latest_cash_post_date = max(cash_post_dates, default="")
     cash_snapshot_source = (
         "hsbc_usd_savings_ledger_balance"
@@ -423,6 +443,7 @@ def _build_hsbc_cash_only_pasted_payload(
         "fingerprint": snapshot_fingerprint,
         "account_number": account,
         "cash_currencies": cash_currencies,
+        "cash_earliest_post_date": earliest_cash_post_date,
         "cash_latest_post_date": latest_cash_post_date,
         "order_status_coverage": {
             "mode": "not_provided",
@@ -622,7 +643,7 @@ def build_investment_payload_from_hsbc_pasted_text(
         account_number=portfolio_account_number,
         portfolio_capture=portfolio_capture,
         parsed_order_rows=parsed_order_rows,
-        cash_records=cash_records,
+        cash_visible_post_dates=cash_capture.get("visible_post_dates", []),
         portfolio_text=portfolio_text,
         order_status_text=order_status_text,
         cash_account_text=cash_account_text,
@@ -1102,7 +1123,13 @@ def _parse_hsbc_usd_savings_csv_rows(
                 row.get("Billing amount")
             )
             balance = _ii_hsbc_cash._parse_decimal_text_or_none(row.get("Balance"))
-            if amount is None or balance is None or amount == ZERO:
+            if (
+                amount is None
+                or balance is None
+                or not amount.is_finite()
+                or not balance.is_finite()
+                or amount == ZERO
+            ):
                 raise ValueError(
                     f"HSBC USD Savings CSV row {row_number} has an invalid Billing amount or Balance."
                 )
@@ -1130,16 +1157,30 @@ def _parse_hsbc_usd_savings_csv_rows(
         raise ValueError(
             "The HSBC USD Savings CSV dates must be in chronological order."
         )
-    rows_descending = parsed_rows if is_descending else list(reversed(parsed_rows))
-    for index in range(len(rows_descending) - 1):
-        newer = rows_descending[index]
-        older = rows_descending[index + 1]
-        expected_newer_balance = older["balance"] + newer["amount"]
-        if newer["balance"] != expected_newer_balance:
+
+    def has_balance_continuity(rows: list[dict[str, Any]]) -> bool:
+        return all(
+            newer["balance"] == older["balance"] + newer["amount"]
+            for newer, older in zip(rows, rows[1:])
+        )
+
+    if is_descending and is_ascending and len(parsed_rows) > 1:
+        input_is_descending = has_balance_continuity(parsed_rows)
+        reversed_rows = list(reversed(parsed_rows))
+        input_is_ascending = has_balance_continuity(reversed_rows)
+        if input_is_descending == input_is_ascending:
             raise ValueError(
-                "HSBC USD Savings CSV balance continuity failed between rows "
-                f"{newer['row_number']} and {older['row_number']}."
+                "The HSBC USD Savings CSV same-day row order is ambiguous."
             )
+        rows_descending = parsed_rows if input_is_descending else reversed_rows
+    else:
+        rows_descending = parsed_rows if is_descending else list(reversed(parsed_rows))
+    if not has_balance_continuity(rows_descending):
+        raise ValueError(
+            "HSBC USD Savings CSV balance continuity failed between rows "
+            f"{rows_descending[0]['row_number']} and "
+            f"{rows_descending[1]['row_number']}."
+        )
     return rows_descending
 
 
@@ -1153,6 +1194,7 @@ def build_investment_payload_from_hsbc_usd_savings_csv(
         raise ValueError("The HSBC USD Savings Transaction History CSV is empty.")
 
     rows_descending = _parse_hsbc_usd_savings_csv_rows(csv_bytes)
+    sequence_domain_sha256 = hashlib.sha256(csv_bytes).hexdigest()
     parsed_rows = rows_descending
 
     account = HSBC_EXPECTED_ACCOUNT_NUMBER
@@ -1161,7 +1203,7 @@ def build_investment_payload_from_hsbc_usd_savings_csv(
     starting_balance = earliest_row["balance"] - earliest_row["amount"]
     warnings: list[str] = []
     all_records: list[dict[str, Any]] = []
-    for row in reversed(rows_descending):
+    for ledger_sequence, row in enumerate(reversed(rows_descending), start=1):
         amount = row["amount"]
         mapped_type = _ii_hsbc_core._classify_hsbc_cash_account_transaction(
             row["description"],
@@ -1170,13 +1212,15 @@ def build_investment_payload_from_hsbc_usd_savings_csv(
         source: dict[str, Any] = {
             "file_kind": "hsbc_usd_savings_csv",
             "row_number": row["row_number"],
-            "ledger_sequence": row["row_number"],
+            "ledger_sequence": ledger_sequence,
+            "ledger_sequence_order": "chronological",
             "account_number": account,
             "account_type": "USD Savings",
             "balance_after_raw": _decimal_to_str(row["balance"]),
             "reference_id": _normalize_whitespace(row["description"]),
             "cash_balance_scope": "account",
             "cash_balance_authoritative": True,
+            "source_sequence_sha256": sequence_domain_sha256,
         }
         record: dict[str, Any] = {
             "date": row["date"].isoformat(),
@@ -1314,13 +1358,23 @@ def _hsbc_usd_savings_csv_settlement_evidence(
     artifacts_by_reference: dict[str, list[dict[str, Any]]] = {}
     seen_digests: set[str] = set()
     for artifact in source_artifacts:
+        if not isinstance(artifact, dict):
+            continue
         if (
-            _normalize_text(artifact.get("source_kind"))
+            _ii_basics._normalize_broker_code(artifact.get("broker")) != "hsbc"
+            or _normalize_text(artifact.get("bundle_role")).lower()
+            != "transaction_history"
+            or not _normalize_text(artifact.get("account"))
+            or _normalize_text(artifact.get("source_kind"))
             != "hsbc_usd_savings_transaction_history_csv"
         ):
             continue
         digest = _normalize_text(artifact.get("sha256")).lower()
-        if not digest or digest in seen_digests:
+        if (
+            digest in seen_digests
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
             continue
         encoded = artifact.get("content_base64")
         if isinstance(encoded, str) and encoded:
@@ -1333,12 +1387,30 @@ def _hsbc_usd_savings_csv_settlement_evidence(
             if storage_key != digest:
                 continue
             evidence_path = investment_evidence_dir_for() / f"{storage_key}.bin"
+            if evidence_path.is_symlink():
+                continue
             try:
                 csv_bytes = evidence_path.read_bytes()
             except OSError:
                 continue
+        raw_byte_count = artifact.get("byte_count")
+        if isinstance(raw_byte_count, bool):
+            continue
+        if isinstance(raw_byte_count, int):
+            byte_count = raw_byte_count
+        elif isinstance(raw_byte_count, str):
+            byte_count_text = raw_byte_count.strip()
+            if not byte_count_text or any(
+                character not in "0123456789" for character in byte_count_text
+            ):
+                continue
+            byte_count = int(byte_count_text)
+        else:
+            continue
+        if byte_count <= 0:
+            continue
         if (
-            len(csv_bytes) != int(artifact.get("byte_count", -1) or -1)
+            len(csv_bytes) != byte_count
             or hashlib.sha256(csv_bytes).hexdigest() != digest
         ):
             continue
@@ -1346,6 +1418,7 @@ def _hsbc_usd_savings_csv_settlement_evidence(
             rows_descending = _parse_hsbc_usd_savings_csv_rows(csv_bytes)
         except ValueError:
             continue
+        artifact_account = _normalize_text(artifact.get("account")).upper()
         seen_digests.add(digest)
         for chronological_sequence, row in enumerate(
             reversed(rows_descending),
@@ -1366,8 +1439,15 @@ def _hsbc_usd_savings_csv_settlement_evidence(
                     "reference": row["description"],
                     "row_number": int(row["row_number"]),
                     "ledger_sequence": chronological_sequence,
+                    "ledger_sequence_order": "chronological",
                     "source_file_kind": "hsbc_usd_savings_csv",
                     "source_file_sha256": digest,
+                    "source_sequence_sha256": digest,
+                    # Preserve the account identity captured with this immutable
+                    # artifact.  The current configured account may change after
+                    # the CSV was imported and must not relabel historical cash.
+                    "account_number": artifact_account,
+                    "account_type": "USD Savings",
                     "statement_period_end": _normalize_text(
                         artifact.get("statement_period_end")
                     ),
@@ -1393,12 +1473,237 @@ def _hsbc_usd_savings_csv_settlement_evidence(
     return selected
 
 
+def _hsbc_persisted_pasted_cash_settlement_evidence(
+    source_artifacts: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Rebuild settlement rows from verified, storage-backed paste evidence."""
+    candidates_by_reference: dict[str, list[dict[str, Any]]] = {}
+    seen_digests: set[str] = set()
+    for artifact in source_artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        if (
+            _ii_basics._normalize_broker_code(artifact.get("broker")) != "hsbc"
+            or _normalize_text(artifact.get("source_kind"))
+            != "hsbc_cash_account_pasted_text"
+            or _normalize_text(artifact.get("bundle_role")).lower()
+            != "cash_account"
+        ):
+            continue
+        digest = _normalize_text(artifact.get("sha256")).lower()
+        storage_key = _normalize_text(artifact.get("storage_key")).lower()
+        artifact_account = _normalize_text(artifact.get("account")).upper()
+        if (
+            not artifact_account
+            or digest in seen_digests
+            or storage_key != digest
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            continue
+        raw_byte_count = artifact.get("byte_count")
+        if isinstance(raw_byte_count, bool):
+            continue
+        if isinstance(raw_byte_count, int):
+            byte_count = raw_byte_count
+        elif isinstance(raw_byte_count, str):
+            byte_count_text = raw_byte_count.strip()
+            if not byte_count_text or any(
+                character not in "0123456789" for character in byte_count_text
+            ):
+                continue
+            byte_count = int(byte_count_text)
+        else:
+            continue
+        if byte_count <= 0:
+            continue
+        evidence_path = investment_evidence_dir_for() / f"{storage_key}.bin"
+        if evidence_path.is_symlink():
+            continue
+        try:
+            source_bytes = evidence_path.read_bytes()
+        except OSError:
+            continue
+        if (
+            len(source_bytes) != byte_count
+            or hashlib.sha256(source_bytes).hexdigest() != digest
+        ):
+            continue
+        try:
+            raw_text = source_bytes.decode("utf-8")
+            capture = _ii_hsbc_core._build_hsbc_cash_account_capture_from_text(
+                raw_text,
+                warnings=[],
+            )
+        except (UnicodeDecodeError, ValueError):
+            continue
+        capture_account = _normalize_text(capture.get("account_number")).upper()
+        if capture_account != artifact_account:
+            continue
+        seen_digests.add(digest)
+        records = capture.get("records")
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            source = record.get("source")
+            if not isinstance(source, dict):
+                continue
+            record_account = _normalize_text(
+                source.get("account_number") or record.get("account")
+            ).upper()
+            currency = _ii_merge_identity._normalize_hsbc_currency_code(
+                record.get("currency")
+            )
+            account_type = _ii_merge_identity._normalize_hsbc_cash_account_type(
+                currency,
+                source.get("account_type"),
+            )
+            source_file_kind = _normalize_text(source.get("file_kind")).lower()
+            reference = _normalize_whitespace(record.get("description"))
+            if (
+                record_account != artifact_account
+                or currency != "USD"
+                or account_type != "SAVINGS"
+                or source_file_kind
+                not in {
+                    "hsbc_usd_account_text",
+                    "hsbc_multi_currency_cash_account_text",
+                }
+                or _normalize_whitespace(source.get("reference_id")) != reference
+            ):
+                continue
+            order_reference = (
+                _ii_hsbc_cash._extract_hsbc_order_reference_from_cash_description(
+                    reference
+                )
+            )
+            row_number = _ii_hsbc_cash._parse_hsbc_positive_sequence_number(
+                source.get("row_number")
+            )
+            ledger_sequence = _ii_hsbc_cash._parse_hsbc_positive_sequence_number(
+                source.get("ledger_sequence")
+            )
+            amount = _ii_hsbc_cash._parse_decimal_text_or_none(
+                record.get("net_amount_raw")
+            )
+            balance_after = _ii_hsbc_cash._parse_decimal_text_or_none(
+                source.get("balance_after_raw")
+            )
+            if (
+                not order_reference
+                or row_number is None
+                or ledger_sequence != row_number
+                or amount is None
+                or not amount.is_finite()
+                or amount == ZERO
+                or balance_after is None
+                or not balance_after.is_finite()
+            ):
+                continue
+            candidate = _ii_hsbc_cash._build_hsbc_cash_settlement_posting(
+                record,
+                role="principal",
+            )
+            if candidate is None:
+                continue
+            candidate.pop("role", None)
+            candidate["source_sequence_sha256"] = digest
+            candidate["source_file_sha256"] = digest
+            candidates_by_reference.setdefault(order_reference, []).append(candidate)
+
+    selected: dict[str, list[dict[str, Any]]] = {}
+    for order_reference, candidates in candidates_by_reference.items():
+        semantic_values: dict[tuple[Any, ...], set[tuple[Any, ...]]] = {}
+        physical_values: dict[tuple[str, int], set[tuple[Any, ...]]] = {}
+        for candidate in candidates:
+            amount = _ii_hsbc_cash._parse_decimal_text_or_none(
+                candidate.get("amount_raw")
+            )
+            balance = _ii_hsbc_cash._parse_decimal_text_or_none(
+                candidate.get("balance_after_raw")
+            )
+            semantic_key = (
+                _normalize_text(candidate.get("account_number")).upper(),
+                _normalize_text(candidate.get("date")),
+                amount,
+                _normalize_whitespace(candidate.get("reference")).upper(),
+                _ii_merge_identity._normalize_hsbc_currency_code(
+                    candidate.get("currency")
+                ),
+            )
+            semantic_values.setdefault(semantic_key, set()).add(
+                (
+                    balance,
+                    _ii_merge_identity._normalize_hsbc_cash_account_type(
+                        candidate.get("currency"),
+                        candidate.get("account_type"),
+                    ),
+                    _normalize_text(candidate.get("source_file_kind")).lower(),
+                )
+            )
+            physical_key = (
+                _normalize_text(candidate.get("source_sequence_sha256")).lower(),
+                int(candidate.get("row_number", 0) or 0),
+            )
+            physical_values.setdefault(physical_key, set()).add(
+                (
+                    semantic_key,
+                    balance,
+                    int(candidate.get("ledger_sequence", 0) or 0),
+                )
+            )
+        conflicting_semantics = {
+            key for key, values in semantic_values.items() if len(values) != 1
+        }
+        conflicting_physical_rows = {
+            key for key, values in physical_values.items() if len(values) != 1
+        }
+        accepted = [
+            candidate
+            for candidate in candidates
+            if (
+                (
+                    _normalize_text(candidate.get("account_number")).upper(),
+                    _normalize_text(candidate.get("date")),
+                    _ii_hsbc_cash._parse_decimal_text_or_none(
+                        candidate.get("amount_raw")
+                    ),
+                    _normalize_whitespace(candidate.get("reference")).upper(),
+                    _ii_merge_identity._normalize_hsbc_currency_code(
+                        candidate.get("currency")
+                    ),
+                )
+                not in conflicting_semantics
+                and (
+                    _normalize_text(
+                        candidate.get("source_sequence_sha256")
+                    ).lower(),
+                    int(candidate.get("row_number", 0) or 0),
+                )
+                not in conflicting_physical_rows
+            )
+        ]
+        if accepted:
+            selected[order_reference] = sorted(
+                accepted,
+                key=_ii_hsbc_cash._hsbc_settlement_posting_sort_key,
+            )
+    return selected
+
+
 def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
     transactions: list[dict[str, Any]],
     source_artifacts: list[dict[str, Any]],
 ) -> int:
-    """Use official USD CSV rows to repair matched order settlement metadata."""
+    """Use verified cash rows to repair matched order settlement metadata."""
     evidence_by_reference = _hsbc_usd_savings_csv_settlement_evidence(source_artifacts)
+    for order_reference, pasted_candidates in (
+        _hsbc_persisted_pasted_cash_settlement_evidence(source_artifacts).items()
+    ):
+        evidence_by_reference.setdefault(order_reference, pasted_candidates)
+    used_evidence_ids: set[int] = set()
     updated_count = 0
     for order_record in transactions:
         if not isinstance(order_record, dict):
@@ -1415,7 +1720,44 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
         order_reference = _normalize_text(
             order_source.get("statement_order_id") or order_source.get("order_id")
         )
-        candidates = evidence_by_reference.get(order_reference, [])
+        order_account = _normalize_text(
+            order_record.get("account")
+            or order_source.get("account")
+            or order_source.get("account_number")
+        ).upper()
+        order_currency = _ii_merge_identity._normalize_hsbc_currency_code(
+            order_record.get("currency")
+        )
+        order_date = _normalize_text(order_record.get("date"))
+        if not order_account or order_currency != "USD" or not order_date:
+            continue
+
+        def candidate_matches_order(candidate: dict[str, Any]) -> bool:
+            if id(candidate) in used_evidence_ids:
+                return False
+            evidence_account = _normalize_text(candidate.get("account_number")).upper()
+            evidence_account_type = (
+                _ii_merge_identity._normalize_hsbc_cash_account_type(
+                    candidate.get("currency"),
+                    candidate.get("account_type"),
+                )
+            )
+            if evidence_account != order_account:
+                return False
+            return (
+                _ii_merge_identity._normalize_hsbc_currency_code(
+                    candidate.get("currency")
+                )
+                == "USD"
+                and evidence_account_type == "SAVINGS"
+                and _normalize_text(candidate.get("date")) >= order_date
+            )
+
+        candidates = [
+            candidate
+            for candidate in evidence_by_reference.get(order_reference, [])
+            if candidate_matches_order(candidate)
+        ]
         if not candidates:
             continue
         expected_amount = _ii_hsbc_cash._parse_decimal_text_or_none(
@@ -1443,9 +1785,8 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
         ]
         if not principal_candidates:
             continue
-        principal = min(
-            principal_candidates,
-            key=lambda candidate: abs(
+        candidate_diffs = {
+            id(candidate): abs(
                 (
                     _ii_hsbc_cash._parse_decimal_text_or_none(
                         candidate.get("amount_raw")
@@ -1453,6 +1794,59 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
                     or ZERO
                 )
                 - (expected_amount or ZERO)
+            )
+            for candidate in principal_candidates
+        }
+        best_diff = min(candidate_diffs.values())
+        best_principal_candidates = [
+            candidate
+            for candidate in principal_candidates
+            if candidate_diffs[id(candidate)] == best_diff
+        ]
+
+        def principal_semantic_signature(
+            candidate: dict[str, Any],
+        ) -> tuple[str, str, str, str, str, str, str]:
+            return (
+                _normalize_text(candidate.get("date")),
+                _decimal_to_str(
+                    _ii_hsbc_cash._parse_decimal_text_or_none(
+                        candidate.get("amount_raw")
+                    )
+                )
+                or "",
+                _decimal_to_str(
+                    _ii_hsbc_cash._parse_decimal_text_or_none(
+                        candidate.get("balance_after_raw")
+                    )
+                )
+                or "",
+                _normalize_whitespace(candidate.get("reference")).upper(),
+                _normalize_text(candidate.get("account_number")).upper(),
+                _normalize_whitespace(candidate.get("account_type")).upper(),
+                _ii_merge_identity._normalize_hsbc_currency_code(
+                    candidate.get("currency")
+                ),
+            )
+
+        if (
+            len(
+                {
+                    principal_semantic_signature(candidate)
+                    for candidate in best_principal_candidates
+                }
+            )
+            != 1
+        ):
+            continue
+        principal = min(
+            best_principal_candidates,
+            key=lambda candidate: (
+                _normalize_text(
+                    candidate.get("source_sequence_sha256")
+                    or candidate.get("source_file_sha256")
+                ).lower(),
+                int(candidate.get("row_number", 0) or 0),
             ),
         )
         principal_amount = _ii_hsbc_cash._parse_decimal_text_or_none(
@@ -1463,6 +1857,25 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
         if expected_amount is not None and abs(
             principal_amount - expected_amount
         ) > Decimal("0.01"):
+            continue
+        principal_identity = (
+            _normalize_text(principal.get("account_number")).upper(),
+            _normalize_whitespace(principal.get("account_type")).upper(),
+            _ii_merge_identity._normalize_hsbc_currency_code(principal.get("currency")),
+            _normalize_text(principal.get("date")),
+            _normalize_text(principal.get("source_file_kind")).lower(),
+            _normalize_text(
+                principal.get("source_sequence_sha256")
+                or principal.get("source_file_sha256")
+            ).lower(),
+        )
+        if not all(principal_identity[1:]):
+            continue
+        try:
+            principal_sequence = int(principal.get("ledger_sequence", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if principal_sequence <= 0:
             continue
         fee_candidates = [
             candidate
@@ -1478,7 +1891,61 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
                 is not None
                 and ZERO > candidate_amount >= Decimal("-1.00")
             )
+            and (
+                _normalize_text(candidate.get("account_number")).upper(),
+                _normalize_whitespace(candidate.get("account_type")).upper(),
+                _ii_merge_identity._normalize_hsbc_currency_code(
+                    candidate.get("currency")
+                ),
+                _normalize_text(candidate.get("date")),
+                _normalize_text(candidate.get("source_file_kind")).lower(),
+                _normalize_text(
+                    candidate.get("source_sequence_sha256")
+                    or candidate.get("source_file_sha256")
+                ).lower(),
+            )
+            == principal_identity
+            and int(candidate.get("ledger_sequence", 0) or 0) != principal_sequence
         ]
+        fee_sequences = [
+            int(candidate.get("ledger_sequence", 0) or 0)
+            for candidate in fee_candidates
+        ]
+        if (
+            len(set(fee_sequences)) != len(fee_sequences)
+            or (expected_sign > 0 and len(fee_candidates) != 1)
+        ):
+            continue
+        fee_total = sum(
+            abs(
+                _ii_hsbc_cash._parse_decimal_text_or_none(
+                    candidate.get("amount_raw")
+                )
+                or ZERO
+            )
+            for candidate in fee_candidates
+        )
+        if expected_sign > 0:
+            normalized_order = (
+                order_record.get("normalized")
+                if isinstance(order_record.get("normalized"), dict)
+                else {}
+            )
+            declared_fee_amounts = [
+                abs(parsed_fee)
+                for raw_fee in (
+                    order_source.get("cash_flow_fee_amount_raw"),
+                    order_record.get("commission_raw"),
+                    normalized_order.get("commission"),
+                )
+                if (
+                    (parsed_fee := _ii_hsbc_cash._parse_decimal_text_or_none(raw_fee))
+                    is not None
+                    and parsed_fee != ZERO
+                )
+            ]
+            if any(declared_fee != fee_total for declared_fee in declared_fee_amounts):
+                continue
         postings = [
             {
                 **principal,
@@ -1502,63 +1969,87 @@ def _reconcile_hsbc_orders_with_authoritative_cash_evidence(
             ),
             _normalize_text(order_source.get("cash_settlement_source_file_sha256")),
         )
-        order_source["cash_settlement_postings"] = postings
-        order_source["cash_settlement_amount_raw"] = (
+        next_order_record = deepcopy(order_record)
+        next_order_source = deepcopy(order_source)
+        next_order_source["cash_settlement_postings"] = postings
+        next_order_source["cash_settlement_amount_raw"] = (
             _decimal_to_str(principal_amount) or "0"
         )
-        order_source["cash_settlement_date"] = _normalize_text(principal.get("date"))
-        order_source["cash_settlement_reference"] = _normalize_whitespace(
+        next_order_source["cash_settlement_date"] = _normalize_text(
+            principal.get("date")
+        )
+        next_order_source["cash_settlement_reference"] = _normalize_whitespace(
             principal.get("reference")
         )
-        order_source["cash_settlement_authoritative_source"] = (
+        principal_source_kind = _normalize_text(
+            principal.get("source_file_kind")
+        ).lower()
+        next_order_source["cash_settlement_authoritative_source"] = (
             "hsbc_usd_savings_transaction_history_csv"
+            if principal_source_kind == "hsbc_usd_savings_csv"
+            else "hsbc_cash_account_pasted_text"
         )
-        order_source["cash_settlement_source_file_sha256"] = _normalize_text(
+        next_order_source["cash_settlement_source_file_sha256"] = _normalize_text(
             principal.get("source_file_sha256")
         )
-        _ii_hsbc_cash._finalize_hsbc_order_settlement_balance(order_source)
         if fee_candidates:
-            fee_total = sum(
-                abs(
-                    _ii_hsbc_cash._parse_decimal_text_or_none(
-                        candidate.get("amount_raw")
-                    )
-                    or ZERO
-                )
-                for candidate in fee_candidates
+            next_order_source["cash_flow_fee_amount_raw"] = (
+                _decimal_to_str(fee_total) or "0"
             )
-            order_source["cash_flow_fee_amount_raw"] = _decimal_to_str(fee_total) or "0"
-            order_source["cash_flow_fee_row_numbers"] = [
+            next_order_source["cash_flow_fee_row_numbers"] = [
                 int(candidate.get("row_number", 0) or 0) for candidate in fee_candidates
             ]
             commission_text = _decimal_to_str(-fee_total) or "0"
-            order_record["commission_raw"] = commission_text
+            next_order_record["commission_raw"] = commission_text
             normalized = (
-                order_record.get("normalized")
-                if isinstance(order_record.get("normalized"), dict)
+                next_order_record.get("normalized")
+                if isinstance(next_order_record.get("normalized"), dict)
                 else {}
             )
             normalized["commission"] = commission_text
             normalized["commission_display"] = _decimal_to_str(fee_total) or "0"
-            order_record["normalized"] = normalized
-        order_record["net_amount_raw"] = _decimal_to_str(principal_amount) or "0"
+            next_order_record["normalized"] = normalized
+        next_order_record["net_amount_raw"] = _decimal_to_str(principal_amount) or "0"
         normalized = (
-            order_record.get("normalized")
-            if isinstance(order_record.get("normalized"), dict)
+            next_order_record.get("normalized")
+            if isinstance(next_order_record.get("normalized"), dict)
             else {}
         )
-        normalized["net_amount"] = order_record["net_amount_raw"]
-        normalized["accounting_adjustment_amount"] = order_record["net_amount_raw"]
-        order_record["normalized"] = normalized
-        order_record["source"] = order_source
+        normalized["net_amount"] = next_order_record["net_amount_raw"]
+        normalized["accounting_adjustment_amount"] = next_order_record[
+            "net_amount_raw"
+        ]
+        next_order_record["normalized"] = normalized
+        next_order_record["source"] = next_order_source
+        if not _ii_hsbc_cash._hsbc_settlement_postings_have_valid_sequence_order(
+            postings,
+            order_source=next_order_source,
+            order_record=next_order_record,
+            order_account=order_account,
+            order_currency=order_currency,
+        ):
+            continue
+        _ii_hsbc_cash._finalize_hsbc_order_settlement_balance(
+            next_order_source,
+            order_record=next_order_record,
+        )
+        used_evidence_ids.update(
+            id(posting) for posting in [principal, *fee_candidates]
+        )
+        order_record.clear()
+        order_record.update(next_order_record)
         next_signature = (
-            _normalize_text(order_source.get("cash_settlement_balance_after_raw")),
+            _normalize_text(
+                next_order_source.get("cash_settlement_balance_after_raw")
+            ),
             json.dumps(
-                order_source.get("cash_settlement_postings", []),
+                next_order_source.get("cash_settlement_postings", []),
                 ensure_ascii=False,
                 sort_keys=True,
             ),
-            _normalize_text(order_source.get("cash_settlement_source_file_sha256")),
+            _normalize_text(
+                next_order_source.get("cash_settlement_source_file_sha256")
+            ),
         )
         if previous_signature != next_signature:
             updated_count += 1
@@ -1575,7 +2066,10 @@ def _reconcile_hsbc_order_settlement_balances_from_postings(
         if _ii_basics._normalize_broker_code(record.get("broker")) != "hsbc":
             continue
         source = record.get("source") if isinstance(record.get("source"), dict) else {}
-        if _ii_hsbc_cash._finalize_hsbc_order_settlement_balance(source):
+        if _ii_hsbc_cash._finalize_hsbc_order_settlement_balance(
+            source,
+            order_record=record,
+        ):
             updated_count += 1
         record["source"] = source
     return updated_count

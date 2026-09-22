@@ -1,11 +1,15 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.0.0
+ * Code version: v1.3.0
+ * - Added: Keep a complete accessible allocation value while glyph slots stay
+ *   visual-only.
+ * - Added: Semantic allocation-badge values reuse the shared numeric parser before
+ *   applying the production glyph-slot presentation.
  * - Added: Isolated style-token lifecycle and preview rendering behind a controller factory.
  */
 
-import {getNumericDisplayParts} from '../numeric-display.js?v=numeric-display-v1.1.0';
+import {getNumericDisplayParts} from '../numeric-display.js?v=numeric-display-v1.3.0';
 
 export function createSettingsStyleTokenController({
     setActionPackageLiveState,
@@ -68,6 +72,26 @@ export function createSettingsStyleTokenController({
             if (!(element instanceof HTMLElement)) return;
             const value = (element.dataset.inlineBackground || "").trim();
             if (value) element.style.background = value;
+        });
+
+        document.querySelectorAll("[data-style-token-allocation-badge-value]").forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const value = String(element.dataset.numericDisplayValue || element.textContent || "").trim();
+            element.replaceChildren();
+            element.setAttribute("aria-label", value);
+            getNumericDisplayParts(value).forEach((part) => {
+                const partElement = document.createElement("span");
+                partElement.className = part.className;
+                partElement.setAttribute("aria-hidden", "true");
+                Array.from(part.text).forEach((glyph) => {
+                    const glyphElement = document.createElement("span");
+                    glyphElement.className = "investment-holdings-allocation-badge-glyph";
+                    glyphElement.textContent = glyph;
+                    partElement.append(glyphElement);
+                });
+                element.append(partElement);
+            });
+            element.dataset.numericDisplayRendered = value;
         });
 
     };
@@ -1059,8 +1083,11 @@ export function createSettingsStyleTokenController({
     };
 
     const appendNumericDisplayParts = (element, value) => {
+        element.setAttribute("aria-label", value);
         getNumericDisplayParts(value).forEach((part) => {
-            element.append(createStyleTokenDemoElement("span", part.className, part.text));
+            const partElement = createStyleTokenDemoElement("span", part.className, part.text);
+            partElement.setAttribute("aria-hidden", "true");
+            element.append(partElement);
         });
         return element;
     };
@@ -1478,7 +1505,7 @@ export function createSettingsStyleTokenController({
                 || "600");
         const labelFontFamily = cardStyles.fontFamily
             || rootStyles.fontFamily
-            || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            || '"Univers Next for HSBC"';
         const labelFont = `${labelFontWeight} ${labelFontSize}px ${labelFontFamily}`;
         const isStockDetailsChart = chartKind === "stock_details";
         const isTradePriceChart = chartKind === "price";

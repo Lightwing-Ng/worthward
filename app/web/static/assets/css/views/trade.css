@@ -1,4 +1,4 @@
-/* Code version: v3.77.0 */
+/* Code version: v3.78.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -451,10 +451,10 @@
     transform: none;
     z-index: calc(var(--layer-surface-content) + 2);
     width: calc(
-        (var(--settings-round-icon-button-size) * 3)
+        (var(--circular-icon-button-size) * 3)
         + (var(--investment-share-action-gap) * 2)
     );
-    height: var(--settings-round-icon-button-size);
+    height: var(--circular-icon-button-size);
 }
 
 .backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"])
@@ -465,7 +465,7 @@
 /* A visible output drawer owns a rail above the chart heading. */
 .backtest-trade-performance-card:has(> .investment-share-actions[data-share-placement="summary-panel"]:not([hidden]))
     > .backtest-view-surface {
-    padding-block-start: calc(var(--backtest-share-action-inset-block-start) + var(--settings-round-icon-button-size));
+    padding-block-start: calc(var(--backtest-share-action-inset-block-start) + var(--circular-icon-button-size));
 }
 
 .backtest-section-resizer {
@@ -1003,21 +1003,21 @@
 
 .export-transactions-button,
 .investment-share-action-button {
-    width: var(--settings-round-icon-button-size);
-    height: var(--settings-round-icon-button-size);
+    width: var(--circular-icon-button-size);
+    height: var(--circular-icon-button-size);
     padding: 0;
-    border-radius: var(--settings-round-icon-button-radius);
+    border-radius: var(--circular-icon-button-radius);
     border: 0;
-    background: var(--settings-round-icon-button-background);
-    box-shadow: var(--settings-round-icon-button-shadow);
+    background: var(--circular-icon-button-background);
+    box-shadow: var(--circular-icon-button-shadow);
     backdrop-filter: var(--glass-chip-blur);
     -webkit-backdrop-filter: var(--glass-chip-blur);
-    color: var(--settings-round-icon-button-color);
+    color: var(--circular-icon-button-color);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: var(--settings-round-icon-button-size);
-    min-height: var(--settings-round-icon-button-size);
+    min-width: var(--circular-icon-button-size);
+    min-height: var(--circular-icon-button-size);
     flex-shrink: 0;
     cursor: pointer;
     transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard), transform 460ms var(--motion-press);
@@ -1027,20 +1027,20 @@
 .export-transactions-button:focus-visible,
 .investment-share-action-button:hover,
 .investment-share-action-button:focus-visible {
-    background: var(--settings-round-icon-button-background-hover);
-    color: var(--settings-round-icon-button-color-hover);
-    box-shadow: var(--settings-round-icon-button-shadow-hover);
+    background: var(--circular-icon-button-background-hover);
+    color: var(--circular-icon-button-color-hover);
+    box-shadow: var(--circular-icon-button-shadow-hover);
 }
 
 .export-transactions-button:active,
 .investment-share-action-button:active {
-    box-shadow: var(--settings-round-icon-button-shadow-active);
+    box-shadow: var(--circular-icon-button-shadow-active);
 }
 
 .export-transactions-button .icon,
 .investment-share-action-button .icon {
-    width: var(--settings-round-icon-button-icon-size);
-    height: var(--settings-round-icon-button-icon-size);
+    width: var(--circular-icon-button-icon-size);
+    height: var(--circular-icon-button-icon-size);
     background-color: currentColor;
     mask-repeat: no-repeat;
     -webkit-mask-repeat: no-repeat;
@@ -1294,6 +1294,11 @@
     max-inline-size: 100%;
     overflow-wrap: anywhere;
     white-space: normal;
+}
+
+[data-numeric-display-value],
+[data-numeric-display-cell] {
+    --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
 .workspace-metric-value-major,

@@ -1,7 +1,7 @@
 /**
  * Daily equity and ticker-summary composition utilities.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
  * - Fixed: Daily equity materializes reported interest-accrual statement dates
  *   and fails closed when a dated FX conversion is unavailable.
  * - Added: A daily equity point on a reported broker interest-accrual as-of
@@ -20,8 +20,9 @@ export function createInvestmentSummaryUtils(runtime) {
     const calculateSnapshotMarketValue = (...args) => runtime.calculateSnapshotMarketValue(...args);
     const combineAuthoritativeCostBasisStatus = (...args) => runtime.combineAuthoritativeCostBasisStatus(...args);
     const compareInvestmentReplaySnapshots = (...args) => runtime.compareInvestmentReplaySnapshots(...args);
-    const compareInvestmentTaxLotTransactions = (...args) => runtime.compareInvestmentTaxLotTransactions(...args);
+    const sortInvestmentTaxLotTransactions = (...args) => runtime.sortInvestmentTaxLotTransactions(...args);
     const compareInvestmentTransactionsForReplay = (...args) => runtime.compareInvestmentTransactionsForReplay(...args);
+    const sortInvestmentTransactionsForReplay = (...args) => runtime.sortInvestmentTransactionsForReplay(...args);
     const convertAmountToBaseCurrency = (...args) => runtime.convertAmountToBaseCurrency(...args);
     const convertAmountToBaseCurrencyAtLatestRate = (...args) => runtime.convertAmountToBaseCurrencyAtLatestRate(...args);
     const createPositionState = (...args) => runtime.createPositionState(...args);
@@ -76,8 +77,8 @@ export function createInvestmentSummaryUtils(runtime) {
         // Chart replay is keyed by the ledger booking date.  Do not trust the
         // execution timestamp to establish day order: broker imports may carry
         // a later booking date with an earlier history timestamp.
-        const canonicalTransactions = [...processedTransactions].sort(
-            (left, right) => compareInvestmentTransactionsForReplay(left, right),
+        const canonicalTransactions = sortInvestmentTransactionsForReplay(
+            processedTransactions,
         );
         const chartTransactions = (
             Array.isArray(replaySnapshots) && replaySnapshots.length
@@ -353,9 +354,7 @@ export function createInvestmentSummaryUtils(runtime) {
     ) {
         const tickerMap = new Map();
         const lotScopeMap = new Map();
-        const orderedTransactions = [...transactions].sort((left, right) => (
-            compareInvestmentTaxLotTransactions(left, right)
-        ));
+        const orderedTransactions = sortInvestmentTaxLotTransactions(transactions);
         const tickerPriceIndex = buildTickerPriceIndex(tickerClosePrices);
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedTransactions, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();

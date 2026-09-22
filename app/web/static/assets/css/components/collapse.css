@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.2 */
 /* One trailing disclosure affordance for every native details control. */
 details > summary {
 	display: grid;
@@ -22,7 +22,7 @@ details > summary::after {
 	background-color: currentColor;
 	mask: var(--collapse-icon-closed) center/contain no-repeat;
 	-webkit-mask: var(--collapse-icon-closed) center/contain no-repeat;
-	transform: rotate(0deg);
+	transform: rotate(var(--collapse-icon-closed-rotation));
 	transform-origin: center;
 	transition: transform 180ms var(--motion-standard);
 	pointer-events: none;
@@ -30,7 +30,7 @@ details > summary::after {
 details[open] > summary::after {
 	mask-image: var(--collapse-icon-open);
 	-webkit-mask-image: var(--collapse-icon-open);
-	transform: rotate(180deg);
+	transform: rotate(var(--collapse-icon-open-rotation));
 }
 
 .ui-collapse {
@@ -58,4 +58,10 @@ details[open] > summary::after {
 }
 .ui-collapse-body:has(> .ui-collapse) {
 	padding-inline-end: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	details > summary::after {
+		transition: none;
+	}
 }

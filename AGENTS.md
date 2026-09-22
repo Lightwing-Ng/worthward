@@ -1,5 +1,7 @@
 # Agent guide compatibility pointer
 
+Documentation version: `v1.1.0`
+
 Canonical agent guide: [`docs/AGENTS.md`](docs/AGENTS.md)
 
 Documentation map and repository ownership:
@@ -8,6 +10,9 @@ Documentation map and repository ownership:
 Shared UI synchronization workflow:
 [`docs/SHARED_UI_WORKFLOW.md`](docs/SHARED_UI_WORKFLOW.md)
 
+Shared typography contract:
+[`../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md`](../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md)
+
 The following safety rules apply before reading the canonical guide:
 
 - Preserve unrelated user changes; the worktree may be intentionally dirty.
@@ -15,3 +20,6 @@ The following safety rules apply before reading the canonical guide:
 - Never write synthetic, fabricated, placeholder, sample, demo, E2E, or debugging records into production stores.
 - IBKR is file-import-only; do not add direct broker transports, sessions, credentials, market-data, or order-routing integrations.
 - Do not alter live-order authorization or default PIN behavior without explicit instruction.
+- Preserve `UniversNextforHSBC.ttc` as the sole Western typeface source and do not
+  restore a platform, generic Western, or monospace font bypass. Follow the shared
+  typography contract before changing fonts, typography tokens, or generated faces.

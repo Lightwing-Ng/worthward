@@ -1,7 +1,22 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.148.0
+ * Code version: v2.151.8
+ * - Changed: HSBC pending settlement uses one visible asterisk on the compact
+ *   order reference instead of repeating it on Cash and Equity values.
+ * - Fixed: HSBC available-cash replay accepts only provenance-validated
+ *   direct-cash calibration rows.
+ * - Fixed: HSBC cash adoption is fail-closed across main replay, history,
+ *   realized proceeds, and same-day ordering under one importer contract.
+ * - Fixed: Malformed HSBC direct cash identities remain provisional and
+ *   cannot authorize a historical settlement boundary.
+ * - Changed: Loads the bounded HSBC history-evidence replay module chain.
+ * - Fixed: HSBC trailing settlement fees cannot cross cash subaccounts,
+ *   currencies, dates, or immutable source-sequence domains.
+ * - Fixed: HSBC same-day cash evidence fails closed across incomparable source
+ *   domains, and settled sale fees leave no trade-day cash residual.
+ * - Fixed: HSBC Transaction History preserves same-day bank chronology,
+ *   settlement proceeds, and foreign-currency cash across transfer reordering.
  * - Fixed: HSBC realized P&L includes separately evidenced sell-settlement
  *   fees exactly once while retaining the bank's cash boundary.
  * - Fixed: Initial and realtime Holdings now share one current NAV calculation,
@@ -27,8 +42,8 @@
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.0.0';
 import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.0.1';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.1.0';
-import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.1.0';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.2.0';
+import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.2.0';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.1';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
@@ -38,8 +53,8 @@ import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-t
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
 import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.0';
-import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.1.0';
-import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.3.1';
+import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.4.5';
+import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
 
 import {
     INVESTMENT_CHART_ORBIT_MODULE_VERSION,
@@ -62,7 +77,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.117.0';
+} from './investment/data-utils.js?v=investment-data-utils-v1.120.3';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -93,12 +108,12 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.35.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.38.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.3';
+} from './investment/realtime.js?v=investment-realtime-v1.3.5';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -136,13 +151,13 @@ import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
     renderNumericDisplayContent as renderWorkspaceMetricValueContent,
-} from './numeric-display.js?v=numeric-display-v1.1.0';
+} from './numeric-display.js?v=numeric-display-v1.3.0';
 
 const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.148.0',
+    entry: 'v2.151.8',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -703,6 +718,8 @@ Object.assign(runtime, createInvestmentDataUtils({
             }
         },
         compareInvestmentTransactions: runtime.compareInvestmentTransactions,
+        sortInvestmentTransactionsForReplay: runtime.sortInvestmentTransactionsForReplay,
+        sortInvestmentTaxLotTransactions: runtime.sortInvestmentTaxLotTransactions,
         constrainTickerDatesToSharedRange: runtime.constrainTickerDatesToSharedRange,
         convertAmountToBaseCurrency: runtime.convertAmountToBaseCurrency,
         createPositionState: runtime.createPositionState,

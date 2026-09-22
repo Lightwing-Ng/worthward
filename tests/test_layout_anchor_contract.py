@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.23.0
+Code version: v0.25.0
 """
 
 from pathlib import Path
@@ -40,6 +40,62 @@ def _css_code_version(path: Path) -> str:
     assert first_line.startswith("/* Code version: v")
     assert first_line.endswith(" */")
     return first_line.removeprefix("/* Code version: ").removesuffix(" */")
+
+
+def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() -> None:
+    tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
+    shell = _read(ASSET_ROOT / "css/layout/shell.css")
+    responsive = _read(ASSET_ROOT / "css/utilities/responsive.css")
+
+    expected_tokens = {
+        "size": "36px",
+        "icon-size": "18px",
+        "radius": "var(--radius-pill)",
+        "background": "var(--circular-icon-button-material)",
+        "background-hover": "var(--frosted-glass-background-hover)",
+        "border": "var(--frosted-glass-border)",
+        "shadow": "var(--frosted-glass-shadow)",
+        "shadow-hover": "var(--frosted-glass-shadow-hover)",
+        "shadow-active": "var(--frosted-glass-shadow-active)",
+        "color": "color-mix(in srgb, var(--theme-text) 70%, transparent)",
+        "color-hover": "var(--accent-text)",
+    }
+    for suffix, value in expected_tokens.items():
+        assert f"--circular-icon-button-{suffix}: {value};" in tokens
+        assert (
+            f"--settings-round-icon-button-{suffix}: "
+            f"var(--circular-icon-button-{suffix});"
+        ) in tokens
+    assert (
+        "--circular-icon-button-material: "
+        "var(--frosted-glass-background);"
+    ) in tokens
+
+    primitive_rule = shell[
+        shell.index(".circular-icon-button,") : shell.index(
+            ".circular-icon-button:hover,"
+        )
+    ]
+    for suffix in ("size", "radius", "background", "border", "shadow", "color"):
+        assert f"var(--circular-icon-button-{suffix})" in primitive_rule
+    assert ".circular-icon-button .icon," in shell
+    assert "var(--circular-icon-button-icon-size)" in shell
+    assert responsive.count("--circular-icon-button-size: 44px;") == 2
+    assert "--settings-round-icon-button-size: 44px;" not in responsive
+    assert "var(--settings-round-icon-button-" not in "\n".join(
+        _read(path)
+        for path in (ASSET_ROOT / "css").rglob("*.css")
+    )
+
+    for relative_path in (
+        "base.html",
+        "_macros.html",
+        "investment.html",
+        "backtest.html",
+        "price_compare.html",
+        "settings/_general.html",
+    ):
+        assert "circular-icon-button" in _read(TEMPLATE_ROOT / relative_path)
 
 
 def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
@@ -109,7 +165,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         assert fragment in workspace
 
     for fragment in (
-        "--settings-round-icon-button-size: 44px;",
+        "--circular-icon-button-size: 44px;",
         "--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));",
         "--layout-global-action-inline-size: calc(",
         "--layout-sidebar-overlay-inline-size: min(",
@@ -180,7 +236,7 @@ def test_sidebar_dock_stays_icon_only_at_every_breakpoint() -> None:
         assert obsolete_fragment not in responsive
 
 
-def test_modal_and_notice_content_start_below_the_dismiss_row() -> None:
+def test_modal_and_notice_use_aligned_title_and_body_rows() -> None:
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
     settings = _read(ASSET_ROOT / "css/views/settings.css")
 
@@ -197,17 +253,35 @@ def test_modal_and_notice_content_start_below_the_dismiss_row() -> None:
         assert "var(--workspace-modal-close-size)" not in columns
         assert "var(--workspace-modal-icon-size)" in columns
         assert "minmax(0, 1fr)" in columns
-        assert "var(--workspace-modal-close-size)" in rows
+        assert "var(--workspace-modal-title-row-min-height)" in rows
         assert "row-gap: var(--workspace-modal-row-gap);" in rule
 
     for fragment in (
-        ".workspace-modal-icon {\n    grid-column: 1;\n    grid-row: 2 / span 2;",
-        ".workspace-modal-title {\n    grid-column: 2;\n    grid-row: 2;",
-        ".workspace-modal-copy {\n    grid-column: 2;\n    grid-row: 3;",
+        ".workspace-modal-icon {\n    grid-column: 1;\n    grid-row: 2;",
+        ".workspace-modal-title {\n    grid-column: 2;\n    grid-row: 1;",
+        ".workspace-modal-copy {\n    grid-column: 2;\n    grid-row: 2;",
+        ".workspace-modal-list {\n    grid-column: 2;\n    grid-row: 2;",
         ".notice-floating-banner-icon {\n    grid-column: 1;\n    grid-row: 2;",
         ".notice-floating-banner-content {\n    grid-column: 2;\n    grid-row: 2;",
+        ".notice-floating-banner-content:has(> .notice-floating-banner-heading) {\n    display: contents;",
+        ".notice-floating-banner-heading {\n    grid-column: 2;\n    grid-row: 1;",
+        ".notice-floating-banner-list {\n    grid-column: 2;\n    grid-row: 2;",
+        ".notice-floating-banner-copy {\n    grid-column: 2;\n    grid-row: 2;",
     ):
         assert fragment in workspace
+
+    tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
+    assert (
+        "--workspace-modal-title-row-min-height: "
+        "var(--workspace-modal-close-size);"
+    ) in tokens
+    assert "--workspace-modal-list-padding-inline-start: 1.35rem;" in tokens
+    assert "--workspace-modal-list-marker-gap: 0.18rem;" in tokens
+    assert (
+        "padding-inline-start: var(--workspace-modal-list-padding-inline-start);"
+        in workspace
+    )
+    assert "padding-inline-start: var(--workspace-modal-list-marker-gap);" in workspace
 
     assert (
         'data-style-token-density="compact"] .workspace-modal-dialog'
@@ -224,7 +298,7 @@ def test_compare_share_and_date_rows_use_the_same_summary_grid() -> None:
     share_script = _read(ASSET_ROOT / "js/workspace-share.js")
 
     for fragment in (
-        "padding-block-start: calc(var(--settings-round-icon-button-size) + var(--layout-global-action-gap));",
+        "padding-block-start: calc(var(--circular-icon-button-size) + var(--layout-global-action-gap));",
         "right: var(--layout-edge-gap);",
         "#compare_summary_panel > .compare-summary-date-range {",
         "margin-inline-start: var(--workspace-article-pad-inline);",

@@ -1,4 +1,4 @@
-"""Regression tests for the shared floating-banner presentation contract. Code version: v0.2.8."""
+"""Regression tests for the shared floating-banner presentation contract. Code version: v0.3.0."""
 
 from pathlib import Path
 
@@ -17,19 +17,63 @@ def test_all_floating_banner_surfaces_use_the_shared_banner_macro() -> None:
         assert "render_notice_banner" in template
 
 
-def test_shared_banner_css_uses_top_aligned_icon_and_hanging_numbered_copy() -> None:
+def test_shared_banner_css_aligns_title_body_icon_and_hanging_numbered_copy() -> None:
     css = (STATIC_ROOT / "css/views/workspace.css").read_text(encoding="utf-8")
+    icon_rule_start = css.index(".notice-floating-banner-icon {")
+    icon_rule = css[icon_rule_start : css.index("\n}", icon_rule_start)]
 
     assert "align-items: start !important;" in css
     assert "align-self: start;" in css
-    assert "margin-top: 2px;" in css
+    assert "margin-top" not in icon_rule
     assert ".notice-floating-banner-content" in css
+    assert ".notice-floating-banner-content:has(> .notice-floating-banner-heading)" in css
+    assert "display: contents;" in css
     assert ".notice-floating-banner-copy" in css
-    assert ".notice-floating-banner-copy {\n    margin: 8px 0 0;\n    color: var(--text);" in css
+    assert (
+        ".notice-floating-banner-copy {\n"
+        "    grid-column: 2;\n"
+        "    grid-row: 2;\n"
+        "    align-self: start;\n"
+        "    margin: 0;"
+    ) in css
     assert "font-weight: var(--font-weight-regular);" in css
     assert "list-style-position: outside;" in css
+    assert "padding-inline-start: var(--workspace-modal-list-padding-inline-start);" in css
+    assert "padding-inline-start: var(--workspace-modal-list-marker-gap);" in css
+    assert ".workspace-modal-list" in css
     assert ".notice-floating-banner-emphasis-danger" in css
     assert ".notice-floating-banner-icon-success" in css
+
+
+def test_shared_banner_macro_emits_one_valid_body_element_per_title() -> None:
+    macro = (TEMPLATES_ROOT / "_macros.html").read_text(encoding="utf-8")
+    specimen = (
+        TEMPLATES_ROOT / "settings/_style_tokens.html"
+    ).read_text(encoding="utf-8")
+
+    assert '<ol class="notice-floating-banner-list">{{ caller() }}</ol>' in macro
+    assert '<p class="notice-floating-banner-copy">{{ caller() }}</p>' in macro
+    assert "numbered=true" in specimen
+    assert '<li{% if loop.first %}' in specimen
+    assert '<p class="notice-floating-banner-copy"><ol' not in specimen
+
+
+def test_dynamic_banner_message_containers_use_explicit_title_and_body_classes() -> None:
+    investment_template = (TEMPLATES_ROOT / "investment.html").read_text(encoding="utf-8")
+    live_trading_template = (TEMPLATES_ROOT / "live_trading.html").read_text(encoding="utf-8")
+    investment_javascript = (
+        STATIC_ROOT / "js/investment/runtime/stock-history-filters.js"
+    ).read_text(encoding="utf-8")
+    live_trading_javascript = (
+        STATIC_ROOT / "js/live-trading.js"
+    ).read_text(encoding="utf-8")
+
+    for template in (investment_template, live_trading_template):
+        assert "message_container=true" in template
+
+    for javascript in (investment_javascript, live_trading_javascript):
+        assert '<p class="notice-floating-banner-heading">' in javascript
+        assert '<p class="notice-floating-banner-copy">' in javascript
 
 
 def test_ibkr_feedback_contains_plain_title_rich_emphasis_and_numbered_list() -> None:

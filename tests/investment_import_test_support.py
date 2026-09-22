@@ -1,7 +1,10 @@
 """Shared fixtures for split investment-import regression suites.
 
-Code version: v0.1.0
+Code version: v0.2.2
+- Added: HSBC authoritative-settlement helpers for evidence-boundary tests.
 """
+
+# ruff: noqa: F401
 
 from __future__ import annotations
 
@@ -40,10 +43,19 @@ from app.services.investment_import import (
     LONGBRIDGE_IMPORT_WINDOW_DAYS,
     LONGBRIDGE_ORDER_IMPORT_WINDOW_DAYS,
     _build_hsbc_cash_account_records_from_text,
+    _attribute_hsbc_corporate_event_dividends,
     _extract_futuhk_pdf_text,
     _extract_statement_pdf_text,
+    _enrich_hsbc_orders_with_statement_cash_evidence,
+    _finalize_hsbc_order_settlement_balance,
+    _hsbc_usd_savings_csv_settlement_evidence,
+    _reconcile_hsbc_orders_with_authoritative_cash_evidence,
+    _match_hsbc_orders_to_cash_settlements,
+    _match_hsbc_statement_cash_record,
+    _mark_hsbc_trade_settlement_history_hidden,
     _parse_ibkr_statement_period,
     _parse_hsbc_order_status_plain_text,
+    _parse_hsbc_usd_savings_csv_rows,
     _summarize_hsbc_pending_settlement_cash,
     _replay_holdings,
     _sort_transactions,
@@ -75,6 +87,10 @@ from app.services.investment_import import (
     validate_hsbc_pasted_text,
     validate_investment_internal_transfer_binding,
     validate_investment_security_transfer_attribution,
+)
+from app.services.investment_import_hsbc_cash import (
+    _hsbc_settlement_postings_have_valid_sequence_order,
+    _repair_hsbc_pasted_cash_settlement_posting_provenance,
 )
 from scripts.verify_investment_evidence import (
     plan_missing_investment_evidence_recovery,

@@ -1,11 +1,55 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.0.0
- * - Added: Isolated replay projections from the transaction-table renderer.
+ * Code version: v1.3.5
+ * - Changed: Loads the exact-date, safe-decimal history-evidence contract.
+ * - Fixed: Duplicate physical direct-cash identities remain provisional even
+ *   when no structured settlement boundary references the disputed row.
+ * - Fixed: Available-cash calibration can override replay cash only when the
+ *   owning row satisfies the same immutable direct-cash evidence contract.
+ * - Fixed: Scalar-only legacy settlement metadata cannot create history cash
+ *   deltas, and structured legs require exact canonical raw evidence.
+ * - Fixed: Incomplete direct-cash identities cannot become authoritative
+ *   history boundaries or clear an evidenced settlement correction.
+ * - Changed: HSBC history evidence normalization and immutable identity checks
+ *   are composed from a bounded helper module without changing replay policy.
+ * - Fixed: Conflicting direct cash aliases and global SHA-plus-row collisions
+ *   invalidate synthetic settlement boundaries and remain provisional.
+ * - Fixed: Trailing blank-balance settlement postings can adjust a cash
+ *   boundary only inside the exact account, currency, source, date, and
+ *   immutable source-sequence domain of that boundary.
+ * - Fixed: Blank settlement balances remain unavailable, exact target cash
+ *   scopes can be created from authoritative balances, and same-day
+ *   sequence-incomparable boundaries no longer overwrite cash evidence.
+ * - Fixed: HSBC settlement history corrections are isolated by cash
+ *   subaccount and clear only against comparable source-sequence evidence.
+ * - Fixed: HSBC settlement boundaries remain scoped to their native currency,
+ *   and an older cash row cannot clear a newer settlement correction.
  */
 
+import {
+    createHsbcHistoryEvidenceUtils,
+} from './history-evidence.js?v=investment-history-evidence-v1.0.3';
+
 export function createInvestmentHistoryProjectionRuntime(runtime, context) {
+const {
+            getHsbcCashEvidenceState,
+            getHsbcCashScopeDescriptor,
+            getHsbcDirectCashPhysicalEvidenceIdentity,
+            getHsbcStructuredPostingPhysicalEvidenceIdentity,
+            hasConsistentHsbcStructuredSettlementAliases,
+            isHsbcCashFileKindCurrencyCompatible,
+            isHsbcCashEvidenceTransaction,
+            isSupportedHsbcCashCurrency,
+            normalizeHsbcCashAccountType,
+            normalizeHsbcCashCurrency,
+            normalizeHsbcCashScopeToken,
+            normalizeHsbcDecimalText,
+            normalizeHsbcEvidenceDate,
+            parseFiniteNonBlankHsbcNumber,
+            parseHsbcPositiveSequenceNumber,
+        } = createHsbcHistoryEvidenceUtils(runtime, context);
+
 function getHsbcSettlementScopeKey(txn) {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
             const brokerCode = runtime.normalizeInvestmentBroker(
@@ -17,21 +61,198 @@ function getHsbcSettlementScopeKey(txn) {
             return `${brokerCode}|${account}`;
         }
 
+
+function cloneHsbcCashScopeLedger(ledger) {
+            return {
+                unscopedBalances: {...(ledger?.unscopedBalances || {})},
+                scopedBalances: {...(ledger?.scopedBalances || {})},
+                scopedCurrencies: {...(ledger?.scopedCurrencies || {})},
+            };
+        }
+
+function resolveHsbcRawCashScopeBalance(
+            cashScopeLedger,
+            cashScopeKey,
+            currency,
+            aggregateBalances = null,
+            {allowMissingExactScope = false} = {},
+        ) {
+            const normalizedCurrency = String(
+                currency || context.baseCurrency,
+            ).trim().toUpperCase() || context.baseCurrency;
+            const scopedBalances = cashScopeLedger?.scopedBalances
+                && typeof cashScopeLedger.scopedBalances === 'object'
+                ? cashScopeLedger.scopedBalances
+                : {};
+            const unscopedBalances = cashScopeLedger?.unscopedBalances
+                && typeof cashScopeLedger.unscopedBalances === 'object'
+                ? cashScopeLedger.unscopedBalances
+                : {};
+            if (Object.prototype.hasOwnProperty.call(scopedBalances, cashScopeKey)) {
+                const exactBalance = parseFiniteNonBlankHsbcNumber(
+                    scopedBalances[cashScopeKey],
+                );
+                return exactBalance !== null
+                    ? {balance: exactBalance, resolved: true}
+                    : {balance: null, resolved: false};
+            }
+            const hasOtherSameCurrencyScope = Object.keys(scopedBalances).some(
+                (scopeKey) => scopeKey.endsWith(`|${normalizedCurrency}`),
+            );
+            if (hasOtherSameCurrencyScope) {
+                const hasAggregateBalance = Boolean(
+                    aggregateBalances
+                    && typeof aggregateBalances === 'object'
+                    && Object.prototype.hasOwnProperty.call(
+                        aggregateBalances,
+                        normalizedCurrency,
+                    )
+                );
+                const hasExplicitUnscopedBalance = Object.prototype.hasOwnProperty.call(
+                    unscopedBalances,
+                    normalizedCurrency,
+                );
+                const explicitUnscopedBalance = hasExplicitUnscopedBalance
+                    ? parseFiniteNonBlankHsbcNumber(unscopedBalances[normalizedCurrency])
+                    : 0;
+                const sameCurrencyScopedBalances = Object.entries(scopedBalances)
+                    .filter(([scopeKey]) => scopeKey.endsWith(`|${normalizedCurrency}`))
+                    .map(([, value]) => parseFiniteNonBlankHsbcNumber(value));
+                const aggregateBalance = parseFiniteNonBlankHsbcNumber(
+                    aggregateBalances?.[normalizedCurrency],
+                );
+                const hasInvalidKnownBalance = (
+                    (hasExplicitUnscopedBalance && explicitUnscopedBalance === null)
+                    || sameCurrencyScopedBalances.some((value) => value === null)
+                    || (hasAggregateBalance && aggregateBalance === null)
+                );
+                const implicitUnscopedBalance = aggregateBalance === null
+                    ? 0
+                    : aggregateBalance
+                        - sameCurrencyScopedBalances.reduce((total, value) => total + value, 0)
+                        - explicitUnscopedBalance;
+                const hasUnattributedSameCurrencyBalance = (
+                    hasInvalidKnownBalance
+                    || Math.abs(explicitUnscopedBalance) > 1e-9
+                    || Math.abs(implicitUnscopedBalance) > 1e-9
+                );
+                return (
+                    allowMissingExactScope
+                    && (hasAggregateBalance || hasExplicitUnscopedBalance)
+                    && !hasUnattributedSameCurrencyBalance
+                )
+                    ? {balance: 0, resolved: true}
+                    : {balance: null, resolved: false};
+            }
+            const hasExplicitUnscopedBalance = Object.prototype.hasOwnProperty.call(
+                unscopedBalances,
+                normalizedCurrency,
+            );
+            if (hasExplicitUnscopedBalance) {
+                const explicitUnscopedBalance = parseFiniteNonBlankHsbcNumber(
+                    unscopedBalances[normalizedCurrency],
+                );
+                return explicitUnscopedBalance === null
+                    ? {balance: null, resolved: false}
+                    : {balance: explicitUnscopedBalance, resolved: true};
+            }
+            const hasAggregateBalance = Boolean(
+                aggregateBalances
+                && typeof aggregateBalances === 'object'
+                && Object.prototype.hasOwnProperty.call(aggregateBalances, normalizedCurrency)
+            );
+            const aggregateBalance = hasAggregateBalance
+                ? parseFiniteNonBlankHsbcNumber(aggregateBalances[normalizedCurrency])
+                : 0;
+            if (!hasAggregateBalance) {
+                const hasAnyAggregateEvidence = Boolean(
+                    aggregateBalances
+                    && typeof aggregateBalances === 'object'
+                    && Object.keys(aggregateBalances).length
+                );
+                return allowMissingExactScope && hasAnyAggregateEvidence
+                    ? {balance: 0, resolved: true}
+                    : {balance: null, resolved: false};
+            }
+            return aggregateBalance === null
+                ? {balance: null, resolved: false}
+                : {balance: aggregateBalance, resolved: true};
+        }
+
+function getHsbcScopedCorrectionBalances(correctionsByScope) {
+            const balances = {};
+            (correctionsByScope instanceof Map ? correctionsByScope : new Map()).forEach((entry) => {
+                applyCashBalanceCorrection(balances, entry?.currency, entry?.amount);
+            });
+            return balances;
+        }
+
+function setHsbcScopedCorrection(correctionsByScope, cashScopeKey, currency, amount) {
+            if (!(correctionsByScope instanceof Map) || !cashScopeKey) return;
+            const numericAmount = Number(amount);
+            if (!Number.isFinite(numericAmount) || Math.abs(numericAmount) <= 1e-9) {
+                correctionsByScope.delete(cashScopeKey);
+                return;
+            }
+            correctionsByScope.set(cashScopeKey, {
+                amount: numericAmount,
+                currency: String(currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency,
+            });
+        }
+
+function addHsbcScopedCorrection(correctionsByScope, cashScopeKey, currency, amount) {
+            if (!(correctionsByScope instanceof Map) || !cashScopeKey) return;
+            const existing = correctionsByScope.get(cashScopeKey);
+            setHsbcScopedCorrection(
+                correctionsByScope,
+                cashScopeKey,
+                currency,
+                (Number(existing?.amount) || 0) + (Number(amount) || 0),
+            );
+        }
+
 function isAuthoritativeHsbcCashTransaction(txn) {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
             const brokerCode = runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn));
             const normalizedType = runtime.getNormalizedTransactionType(txn);
-            const balanceAfter = Number(source.balance_after_raw);
+            const cashEvidence = getHsbcCashEvidenceState(txn);
+            const balanceAfter = parseFiniteNonBlankHsbcNumber(
+                source.balance_after_raw ?? source.balance_after,
+            );
             return (
                 brokerCode === 'hsbc'
                 && !['buy', 'sell'].includes(normalizedType)
-                && Number.isFinite(balanceAfter)
-                && (
-                    source.cash_balance_authoritative === true
-                    || String(source.file_kind || '').trim().toLowerCase() === 'hsbc_usd_account_text'
-                )
+                && cashEvidence.isConsistent
+                && balanceAfter !== null
+                && source.cash_balance_authoritative === true
+                && [
+                    'hsbc_usd_account_text',
+                    'hsbc_usd_savings_csv',
+                ].includes(String(source.file_kind || '').trim().toLowerCase())
             );
         }
+
+function getValidatedHsbcAvailableCashAfter(txn) {
+            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+            const rawAvailableCash = source.available_cash_after_raw;
+            if (
+                !isAuthoritativeHsbcCashTransaction(txn)
+                || source.available_cash_calibration_source
+                    !== 'hsbc_usd_savings_available_balance'
+                || source.cash_replay_pending_settlement === true
+                || runtime.isHsbcSettlementActuallyPending(source)
+                || (
+                    source.cash_settlement_balance_after_raw !== undefined
+                    && source.cash_settlement_balance_after_raw !== null
+                    && String(source.cash_settlement_balance_after_raw).trim() !== ''
+                )
+                || typeof rawAvailableCash !== 'string'
+                || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(rawAvailableCash)
+                || !normalizeHsbcDecimalText(rawAvailableCash)
+            ) return null;
+            return parseFiniteNonBlankHsbcNumber(rawAvailableCash);
+        }
+
 
 function addCashBalanceCorrection(targetBalances, correctionBalances) {
             const nextBalances = runtime.cloneCashLedgerBalances(targetBalances || {});
@@ -95,29 +316,250 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
             const transactionsForReplay = Array.isArray(canonicalTransactions)
                 ? canonicalTransactions
                 : [];
-            const boundariesForReplay = Array.isArray(settlementBoundaries)
+            let boundariesForReplay = (Array.isArray(settlementBoundaries)
                 ? settlementBoundaries
-                : [];
-            if (!boundariesForReplay.length) return transactionsForReplay;
+                : []).map((boundary) => {
+                const currency = String(
+                    boundary?.currency || context.baseCurrency,
+                ).trim().toUpperCase() || context.baseCurrency;
+                const cashScopeKey = String(
+                    boundary?.cashScopeKey
+                    || getHsbcCashScopeDescriptor({
+                        broker: boundary?.broker || 'hsbc',
+                        account: boundary?.account,
+                        account_type: boundary?.accountType,
+                        currency,
+                        source: {file_kind: boundary?.sourceFileKind},
+                    }).cashScopeKey,
+                ).trim();
+                return {...boundary, cashScopeKey, currency};
+            }).filter((boundary) => boundary.cashScopeKey);
+            let boundariesForAccrual = [...boundariesForReplay];
+            const settledBoundariesByCashTransactionIndex = new Map();
+            const incomparableOwnerTransactionIndexes = new Set();
+            const boundaryOwnersByIdentity = new Map();
+            const directCashEvidenceByIdentity = new Map();
+            transactionsForReplay.forEach((txn) => {
+                const identityKey = getHsbcDirectCashPhysicalEvidenceIdentity(txn);
+                if (!identityKey) return;
+                if (!directCashEvidenceByIdentity.has(identityKey)) {
+                    directCashEvidenceByIdentity.set(identityKey, []);
+                }
+                directCashEvidenceByIdentity.get(identityKey).push({
+                    date: normalizeHsbcEvidenceDate(txn?.date),
+                    evidence: getHsbcCashEvidenceState(txn),
+                });
+            });
+            boundariesForReplay.forEach((boundary) => {
+                const ownerTransactionIndex = Number(boundary?.ownerTransactionIndex);
+                if (!Number.isInteger(ownerTransactionIndex)) return;
+                const rowNumber = parseHsbcPositiveSequenceNumber(
+                    boundary?.sourceRowNumber,
+                );
+                const cashScopeKey = String(boundary?.cashScopeKey || '').trim();
+                const sourceSequenceSha256 = String(
+                    boundary?.sourceSequenceSha256 || '',
+                ).trim().toLowerCase();
+                if (
+                    !cashScopeKey
+                    || !/^[0-9a-f]{64}$/.test(sourceSequenceSha256)
+                    || rowNumber === null
+                ) {
+                    incomparableOwnerTransactionIndexes.add(ownerTransactionIndex);
+                    return;
+                }
+                const identityKey = JSON.stringify([
+                    sourceSequenceSha256,
+                    rowNumber,
+                ]);
+                if (!boundaryOwnersByIdentity.has(identityKey)) {
+                    boundaryOwnersByIdentity.set(identityKey, []);
+                }
+                boundaryOwnersByIdentity.get(identityKey).push(ownerTransactionIndex);
+                const directEvidence = directCashEvidenceByIdentity.get(identityKey) || [];
+                const boundaryDate = normalizeHsbcEvidenceDate(boundary?.date);
+                const boundaryFileKind = String(
+                    boundary?.sourceFileKind || '',
+                ).trim().toLowerCase();
+                if (
+                    directEvidence.length > 1
+                    || directEvidence.some(({date: directDate, evidence}) => (
+                        !evidence.isConsistent
+                        || !directDate
+                        || directDate !== boundaryDate
+                        || evidence.descriptor.cashScopeKey !== cashScopeKey
+                        || evidence.descriptor.sourceFileKind !== boundaryFileKind
+                    ))
+                ) {
+                    incomparableOwnerTransactionIndexes.add(ownerTransactionIndex);
+                }
+            });
+            boundaryOwnersByIdentity.forEach((ownerIndexes) => {
+                if (ownerIndexes.length <= 1) return;
+                ownerIndexes.forEach((ownerIndex) => {
+                    incomparableOwnerTransactionIndexes.add(ownerIndex);
+                });
+            });
+            boundariesForReplay = boundariesForReplay.filter((boundary) => (
+                !incomparableOwnerTransactionIndexes.has(
+                    Number(boundary?.ownerTransactionIndex),
+                )
+            ));
+            boundariesForReplay = boundariesForReplay.filter((boundary) => {
+                const boundaryDate = runtime.normalizeLedgerDate(boundary?.date);
+                if (!boundaryDate) return false;
+                let sameScopeCashCount = 0;
+                let comparableSequenceDomainCount = 0;
+                let sameSequenceCandidateCount = 0;
+                const exactCashTransactionIndexes = [];
+                transactionsForReplay.forEach((txn, transactionIndex) => {
+                    if (
+                        runtime.normalizeLedgerDate(txn?.date) !== boundaryDate
+                        || !isHsbcCashEvidenceTransaction(txn)
+                    ) {
+                        return;
+                    }
+                    const cashEvidence = getHsbcCashEvidenceState(txn);
+                    const descriptor = cashEvidence.descriptor;
+                    if (descriptor.cashScopeKey !== boundary.cashScopeKey) return;
+                    sameScopeCashCount += 1;
+                    const boundaryFileKind = String(
+                        boundary?.sourceFileKind || '',
+                    ).trim().toLowerCase();
+                    const boundarySha256 = String(
+                        boundary?.sourceSequenceSha256 || '',
+                    ).trim().toLowerCase();
+                    const boundarySequenceDirection = Number(
+                        boundary?.sourceSequenceDirection,
+                    ) || (boundaryFileKind === 'hsbc_usd_savings_csv' ? -1 : 1);
+                    const boundarySequence = Number(
+                        boundarySequenceDirection < 0
+                            ? boundary?.sourceRowNumber
+                            : boundary?.sourceRowSequence,
+                    );
+                    const transactionSequence = Number(
+                        descriptor.sourceSequenceDirection < 0
+                            ? descriptor.rowNumber
+                            : descriptor.ledgerSequence,
+                    );
+                    const hasExactSequenceDomain = (
+                        cashEvidence.isConsistent
+                        && boundaryFileKind
+                        && boundaryFileKind === descriptor.sourceFileKind
+                        && /^[0-9a-f]{64}$/.test(boundarySha256)
+                        && boundarySha256 === descriptor.sourceSequenceSha256
+                        && boundarySequenceDirection
+                            === descriptor.sourceSequenceDirection
+                        && Number.isFinite(boundarySequence)
+                        && Number.isFinite(transactionSequence)
+                        && boundarySequence > 0
+                        && transactionSequence > 0
+                    );
+                    if (!hasExactSequenceDomain) {
+                        return;
+                    }
+                    comparableSequenceDomainCount += 1;
+                    if (boundarySequence === transactionSequence) {
+                        sameSequenceCandidateCount += 1;
+                        const directAmount = cashEvidence.amount;
+                        const boundaryAmount = parseFiniteNonBlankHsbcNumber(
+                            boundary?.settlementAmount,
+                        );
+                        const directBalance = cashEvidence.balance;
+                        const boundaryBalance = parseFiniteNonBlankHsbcNumber(
+                            boundary?.settlementBalanceAfter,
+                        );
+                        const amountMatches = (
+                            directAmount !== null
+                            && boundaryAmount !== null
+                            && Math.abs(directAmount - boundaryAmount) <= 1e-6
+                        );
+                        const balanceMatches = (
+                            directBalance === null
+                            || boundaryBalance === null
+                            || Math.abs(directBalance - boundaryBalance) <= 1e-6
+                        );
+                        if (amountMatches && balanceMatches) {
+                            exactCashTransactionIndexes.push(transactionIndex);
+                        }
+                    }
+                });
+                if (
+                    sameSequenceCandidateCount === 1
+                    && exactCashTransactionIndexes.length === 1
+                ) {
+                    const [transactionIndex] = exactCashTransactionIndexes;
+                    if (!settledBoundariesByCashTransactionIndex.has(transactionIndex)) {
+                        settledBoundariesByCashTransactionIndex.set(transactionIndex, []);
+                    }
+                    settledBoundariesByCashTransactionIndex
+                        .get(transactionIndex).push(boundary);
+                    return false;
+                }
+                if (
+                    sameSequenceCandidateCount > 0
+                    || sameScopeCashCount > comparableSequenceDomainCount
+                ) {
+                    const ownerTransactionIndex = Number(
+                        boundary?.ownerTransactionIndex,
+                    );
+                    if (Number.isInteger(ownerTransactionIndex)) {
+                        incomparableOwnerTransactionIndexes.add(ownerTransactionIndex);
+                    }
+                    return false;
+                }
+                return true;
+            });
+            settledBoundariesByCashTransactionIndex.forEach((boundaries) => {
+                if (boundaries.length === 1) return;
+                boundaries.forEach((boundary) => {
+                    const ownerTransactionIndex = Number(
+                        boundary?.ownerTransactionIndex,
+                    );
+                    if (Number.isInteger(ownerTransactionIndex)) {
+                        incomparableOwnerTransactionIndexes.add(ownerTransactionIndex);
+                    }
+                });
+            });
+            settledBoundariesByCashTransactionIndex.forEach((boundaries, index) => {
+                const retained = boundaries.filter((boundary) => (
+                    !incomparableOwnerTransactionIndexes.has(
+                        Number(boundary?.ownerTransactionIndex),
+                    )
+                ));
+                if (retained.length) {
+                    settledBoundariesByCashTransactionIndex.set(index, retained);
+                } else {
+                    settledBoundariesByCashTransactionIndex.delete(index);
+                }
+            });
+            boundariesForAccrual = boundariesForAccrual.filter((boundary) => (
+                !incomparableOwnerTransactionIndexes.has(
+                    Number(boundary?.ownerTransactionIndex),
+                )
+            ));
+            if (!boundariesForAccrual.length) return transactionsForReplay;
 
             const brokerCorrectionsByCode = new Map();
-            const aggregateCorrectionsByCurrency = {};
             const brokerSettlementAccrualsByCode = new Map();
             const aggregateSettlementAccrualsByCurrency = {};
             const settlementAccrualsByOwnerTransactionIndex = new Map();
             const latestRawBrokerBalances = new Map();
+            const latestRawBrokerScopeLedgers = new Map();
             let latestRawAggregateBalances = {};
             let activeTransaction = null;
             let replaySnapshotOrder = 0;
             const snapshots = [];
 
-            boundariesForReplay.forEach((boundary) => {
+            boundariesForAccrual.forEach((boundary) => {
                 const ownerTransactionIndex = Number(boundary?.ownerTransactionIndex);
-                const settlementAmount = Number(boundary?.settlementAmount);
+                const settlementAmount = parseFiniteNonBlankHsbcNumber(
+                    boundary?.settlementAmount,
+                );
                 if (
                     !Number.isInteger(ownerTransactionIndex)
                     || ownerTransactionIndex < 0
-                    || !Number.isFinite(settlementAmount)
+                    || settlementAmount === null
                     || Math.abs(settlementAmount) <= 1e-9
                 ) {
                     return;
@@ -131,9 +573,21 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
             const getBrokerCorrections = (brokerCode) => {
                 const normalizedBrokerCode = runtime.normalizeInvestmentBroker(brokerCode);
                 if (!brokerCorrectionsByCode.has(normalizedBrokerCode)) {
-                    brokerCorrectionsByCode.set(normalizedBrokerCode, {});
+                    brokerCorrectionsByCode.set(normalizedBrokerCode, new Map());
                 }
                 return brokerCorrectionsByCode.get(normalizedBrokerCode);
+            };
+            const getBrokerCorrectionBalances = (brokerCode) => (
+                getHsbcScopedCorrectionBalances(getBrokerCorrections(brokerCode))
+            );
+            const getAggregateCorrectionBalances = () => {
+                const balances = {};
+                brokerCorrectionsByCode.forEach((corrections) => {
+                    Object.entries(getHsbcScopedCorrectionBalances(corrections)).forEach(
+                        ([currency, amount]) => applyCashBalanceCorrection(balances, currency, amount),
+                    );
+                });
+                return balances;
             };
             const getBrokerSettlementAccruals = (brokerCode) => {
                 const normalizedBrokerCode = runtime.normalizeInvestmentBroker(brokerCode);
@@ -153,13 +607,10 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                     balances[normalizedCurrency] = nextValue;
                 }
             };
-            const resetBrokerCurrencyCorrection = (brokerCode, currency) => {
+            const resetBrokerCashScopeCorrection = (brokerCode, cashScopeKey) => {
+                if (!cashScopeKey) return;
                 const corrections = getBrokerCorrections(brokerCode);
-                const normalizedCurrency = String(currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency;
-                const existingCorrection = Number(corrections[normalizedCurrency]) || 0;
-                if (Math.abs(existingCorrection) <= 1e-9) return;
-                delete corrections[normalizedCurrency];
-                applyCorrection(aggregateCorrectionsByCurrency, normalizedCurrency, -existingCorrection);
+                corrections.delete(cashScopeKey);
             };
             const buildSnapshotFromTransaction = (
                 txn,
@@ -177,10 +628,10 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                 );
                 const aggregateCorrections = isAuthoritativeCurrentCashSnapshot
                     ? {}
-                    : aggregateCorrectionsByCurrency;
+                    : getAggregateCorrectionBalances();
                 const brokerCorrections = isAuthoritativeCurrentCashSnapshot
                     ? {}
-                    : getBrokerCorrections(brokerCode);
+                    : getBrokerCorrectionBalances(brokerCode);
                 const aggregateSettlementAccruals = isAuthoritativeCurrentCashSnapshot
                     ? {}
                     : aggregateSettlementAccrualsByCurrency;
@@ -294,7 +745,66 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                 };
             };
 
-            const replayEvents = [
+            const getCashEvidenceSequence = (event) => {
+                if (event.kind === 'boundary') {
+                    const boundary = event.boundary || {};
+                    const sourceFileKind = String(
+                        boundary.sourceFileKind || '',
+                    ).trim().toLowerCase();
+                    const direction = Number(boundary.sourceSequenceDirection)
+                        || (sourceFileKind === 'hsbc_usd_savings_csv' ? -1 : 1);
+                    const sequence = Number(
+                        direction < 0
+                            ? boundary.sourceRowNumber
+                            : boundary.sourceRowSequence,
+                    );
+                    return {
+                        broker: runtime.normalizeInvestmentBroker(boundary.broker || 'hsbc'),
+                        cashScopeKey: String(boundary.cashScopeKey || '').trim(),
+                        direction,
+                        sequence: Number.isFinite(sequence) && sequence > 0 ? sequence : null,
+                        sourceFileKind,
+                        sourceSequenceSha256: String(
+                            boundary.sourceSequenceSha256 || '',
+                        ).trim().toLowerCase(),
+                    };
+                }
+                const txn = event.txn || {};
+                const source = txn.source && typeof txn.source === 'object' ? txn.source : {};
+                const sourceFileKind = String(source.file_kind || '').trim().toLowerCase();
+                const cashEvidence = getHsbcCashEvidenceState(txn);
+                const descriptor = cashEvidence.descriptor;
+                const direction = descriptor.sourceSequenceDirection;
+                const sequence = parseHsbcPositiveSequenceNumber(
+                    direction < 0
+                        ? (source.row_number ?? source.ledger_sequence)
+                        : (source.ledger_sequence ?? source.row_number),
+                );
+                const isHsbcCashEvidence = (
+                    runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === 'hsbc'
+                    && !['buy', 'sell'].includes(runtime.getNormalizedTransactionType(txn))
+                    && [
+                        'hsbc_usd_account_text',
+                        'hsbc_usd_savings_csv',
+                        'hsbc_multi_currency_cash_account_text',
+                        'hsbc_statement_cash',
+                    ].includes(sourceFileKind)
+                );
+                return {
+                    broker: runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)),
+                    cashScopeKey: descriptor.cashScopeKey,
+                    direction,
+                    sequence: isHsbcCashEvidence && cashEvidence.isConsistent
+                        ? sequence
+                        : null,
+                    sourceFileKind,
+                    sourceSequenceSha256: cashEvidence.isConsistent
+                        ? descriptor.sourceSequenceSha256
+                        : '',
+                };
+            };
+            const replayEventsByDate = new Map();
+            [
                 ...transactionsForReplay.map((txn, index) => ({
                     kind: 'transaction',
                     date: runtime.normalizeLedgerDate(txn?.date),
@@ -307,72 +817,49 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                     index,
                     boundary,
                 })),
-            ].filter((event) => event.date).sort((left, right) => {
-                if (left.date !== right.date) return left.date.localeCompare(right.date);
-                if (left.kind === 'boundary' && right.kind === 'boundary') {
-                    const leftBoundary = left.boundary || {};
-                    const rightBoundary = right.boundary || {};
-                    const sameSettlementScope = (
-                        runtime.normalizeInvestmentBroker(leftBoundary.broker || 'hsbc')
-                            === runtime.normalizeInvestmentBroker(rightBoundary.broker || 'hsbc')
-                        && String(leftBoundary.account || '').trim()
-                            === String(rightBoundary.account || '').trim()
-                        && String(leftBoundary.currency || context.baseCurrency).trim().toUpperCase()
-                            === String(rightBoundary.currency || context.baseCurrency).trim().toUpperCase()
-                    );
-                    if (sameSettlementScope && left.index !== right.index) {
-                        return left.index - right.index;
-                    }
-                }
-                const getCashEvidenceSequence = (event) => {
-                    if (event.kind === 'boundary') {
-                        const boundary = event.boundary || {};
-                        const sequence = Number(boundary.sourceRowSequence);
-                        return {
-                            broker: runtime.normalizeInvestmentBroker(boundary.broker || 'hsbc'),
-                            account: String(boundary.account || '').trim(),
-                            sequence: Number.isFinite(sequence) && sequence > 0 ? sequence : null,
-                            sourceFileKind: String(boundary.sourceFileKind || '').trim().toLowerCase(),
-                        };
-                    }
-                    const txn = event.txn || {};
-                    const source = txn.source && typeof txn.source === 'object' ? txn.source : {};
-                    const sourceFileKind = String(source.file_kind || '').trim().toLowerCase();
-                    const sequence = Number(source.ledger_sequence ?? source.row_number);
-                    const isHsbcCashEvidence = (
-                        runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === 'hsbc'
-                        && !['buy', 'sell'].includes(runtime.getNormalizedTransactionType(txn))
-                        && sourceFileKind.startsWith('hsbc_')
-                        && sourceFileKind.includes('cash')
-                    );
-                    return {
-                        broker: runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)),
-                        account: String(txn.account || source.account || source.account_number || '').trim(),
-                        sequence: isHsbcCashEvidence && Number.isFinite(sequence) && sequence > 0
-                            ? sequence
-                            : null,
-                        sourceFileKind,
-                    };
-                };
-                const leftEvidence = getCashEvidenceSequence(left);
-                const rightEvidence = getCashEvidenceSequence(right);
-                if (
-                    leftEvidence.broker === 'hsbc'
-                    && rightEvidence.broker === 'hsbc'
-                    && leftEvidence.account === rightEvidence.account
-                    && leftEvidence.sequence !== null
-                    && rightEvidence.sequence !== null
-                    && leftEvidence.sequence !== rightEvidence.sequence
-                ) {
-                    // `ledger_sequence` is assigned in posted-ledger order,
-                    // even when the source CSV itself is displayed newest-first.
-                    // Keep same-day settlement boundaries chronological so the
-                    // final balance includes every later principal and fee leg.
-                    return leftEvidence.sequence - rightEvidence.sequence;
-                }
-                if (left.kind !== right.kind) return left.kind === 'transaction' ? -1 : 1;
-                return left.index - right.index;
+            ].filter((event) => event.date).forEach((event) => {
+                if (!replayEventsByDate.has(event.date)) replayEventsByDate.set(event.date, []);
+                replayEventsByDate.get(event.date).push(event);
             });
+            const replayEvents = [...replayEventsByDate.entries()]
+                .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
+                .flatMap(([, dateEvents]) => {
+                    const reordered = [...dateEvents];
+                    const exactDomains = new Map();
+                    dateEvents.forEach((event, slot) => {
+                        const evidence = getCashEvidenceSequence(event);
+                        if (
+                            evidence.broker !== 'hsbc'
+                            || !evidence.cashScopeKey
+                            || !evidence.sourceFileKind
+                            || !/^[0-9a-f]{64}$/.test(evidence.sourceSequenceSha256)
+                            || evidence.sequence === null
+                        ) return;
+                        const domainKey = [
+                            evidence.cashScopeKey,
+                            evidence.sourceFileKind,
+                            evidence.sourceSequenceSha256,
+                            evidence.direction,
+                        ].join('|');
+                        if (!exactDomains.has(domainKey)) exactDomains.set(domainKey, []);
+                        exactDomains.get(domainKey).push({event, evidence, slot});
+                    });
+                    exactDomains.forEach((members) => {
+                        const orderedMembers = members.sort((left, right) => (
+                            left.evidence.direction * (
+                                left.evidence.sequence - right.evidence.sequence
+                            )
+                            || left.slot - right.slot
+                        ));
+                        const occupiedSlots = members
+                            .map(({slot}) => slot)
+                            .sort((left, right) => left - right);
+                        occupiedSlots.forEach((slot, index) => {
+                            reordered[slot] = orderedMembers[index].event;
+                        });
+                    });
+                    return reordered;
+                });
 
             replayEvents.forEach((event) => {
                 replaySnapshotOrder += 1;
@@ -383,8 +870,34 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                         || runtime.getTickerQuoteCurrency(txn?.ticker)
                         || context.baseCurrency;
                     if (isAuthoritativeHsbcCashTransaction(txn)) {
-                        resetBrokerCurrencyCorrection(brokerCode, transactionCurrency);
+                        resetBrokerCashScopeCorrection(
+                            brokerCode,
+                            getHsbcCashScopeDescriptor(txn).cashScopeKey,
+                        );
                     }
+                    (settledBoundariesByCashTransactionIndex.get(event.index) || []).forEach(
+                        (boundary) => {
+                            const settledAmount = parseFiniteNonBlankHsbcNumber(
+                                boundary?.settlementAmount,
+                            );
+                            const settledCurrency = String(
+                                boundary?.currency
+                                || transactionCurrency
+                                || context.baseCurrency,
+                            ).trim().toUpperCase() || context.baseCurrency;
+                            if (settledAmount === null) return;
+                            applyCorrection(
+                                getBrokerSettlementAccruals(brokerCode),
+                                settledCurrency,
+                                -settledAmount,
+                            );
+                            applyCorrection(
+                                aggregateSettlementAccrualsByCurrency,
+                                settledCurrency,
+                                -settledAmount,
+                            );
+                        },
+                    );
                     latestRawAggregateBalances = runtime.cloneCashLedgerBalances(
                         txn?.aggregate_cash_by_currency || txn?.cash_by_currency || {},
                     );
@@ -399,13 +912,19 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                             || {},
                         ),
                     );
+                    latestRawBrokerScopeLedgers.set(
+                        brokerCode,
+                        cloneHsbcCashScopeLedger(txn?.calculated_broker_cash_scope_ledger),
+                    );
                     (settlementAccrualsByOwnerTransactionIndex.get(event.index) || []).forEach(
                         (boundary) => {
-                            const settlementAmount = Number(boundary?.settlementAmount);
+                            const settlementAmount = parseFiniteNonBlankHsbcNumber(
+                                boundary?.settlementAmount,
+                            );
                             const currency = String(
                                 boundary?.currency || transactionCurrency || context.baseCurrency,
                             ).trim().toUpperCase() || context.baseCurrency;
-                            if (!Number.isFinite(settlementAmount)) return;
+                            if (settlementAmount === null) return;
                             applyCorrection(
                                 getBrokerSettlementAccruals(brokerCode),
                                 currency,
@@ -427,17 +946,44 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                 const boundary = event.boundary;
                 const brokerCode = runtime.normalizeInvestmentBroker(boundary?.broker || 'hsbc');
                 const currency = String(boundary?.currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency;
+                const cashScopeKey = String(
+                    boundary?.cashScopeKey
+                    || getHsbcCashScopeDescriptor({
+                        broker: brokerCode,
+                        account: boundary?.account,
+                        account_type: boundary?.accountType,
+                        currency,
+                        source: {file_kind: boundary?.sourceFileKind},
+                    }).cashScopeKey,
+                ).trim();
+                if (!cashScopeKey) return;
+                const settlementAmount = parseFiniteNonBlankHsbcNumber(
+                    boundary?.settlementAmount,
+                );
                 const brokerCorrections = getBrokerCorrections(brokerCode);
-                const rawBrokerBalances = latestRawBrokerBalances.get(brokerCode) || {};
-                const currentBrokerBalance = (Number(rawBrokerBalances[currency]) || 0)
-                    + (Number(brokerCorrections[currency]) || 0);
-                const settlementBalanceAfter = Number(boundary?.settlementBalanceAfter);
-                const settlementAmount = Number(boundary?.settlementAmount);
-                const boundaryCorrection = Number.isFinite(settlementBalanceAfter)
-                    ? settlementBalanceAfter - currentBrokerBalance
-                    : settlementAmount;
-                if (!Number.isFinite(boundaryCorrection)) return;
-                if (Number.isFinite(settlementAmount)) {
+                const existingScopeCorrection = Number(
+                    brokerCorrections.get(cashScopeKey)?.amount,
+                ) || 0;
+                const settlementBalanceAfter = parseFiniteNonBlankHsbcNumber(
+                    boundary?.settlementBalanceAfter,
+                );
+                const rawBrokerScopeLedger = latestRawBrokerScopeLedgers.get(brokerCode);
+                const rawScopeBalance = resolveHsbcRawCashScopeBalance(
+                    rawBrokerScopeLedger,
+                    cashScopeKey,
+                    currency,
+                    latestRawBrokerBalances.get(brokerCode) || {},
+                    {
+                        allowMissingExactScope: (
+                            settlementBalanceAfter !== null
+                            || brokerCorrections.has(cashScopeKey)
+                        ),
+                    },
+                );
+                if (!rawScopeBalance.resolved) {
+                    return;
+                }
+                if (settlementAmount !== null) {
                     applyCorrection(
                         getBrokerSettlementAccruals(brokerCode),
                         currency,
@@ -449,8 +995,17 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                         -settlementAmount,
                     );
                 }
-                applyCorrection(brokerCorrections, currency, boundaryCorrection);
-                applyCorrection(aggregateCorrectionsByCurrency, currency, boundaryCorrection);
+                const currentBrokerBalance = rawScopeBalance.balance + existingScopeCorrection;
+                const boundaryCorrection = settlementBalanceAfter !== null
+                    ? settlementBalanceAfter - currentBrokerBalance
+                    : settlementAmount;
+                if (boundaryCorrection === null || !Number.isFinite(boundaryCorrection)) return;
+                addHsbcScopedCorrection(
+                    brokerCorrections,
+                    cashScopeKey,
+                    currency,
+                    boundaryCorrection,
+                );
                 snapshots.push(buildSnapshotFromTransaction(
                     activeTransaction,
                     event.date,
@@ -462,102 +1017,671 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
 
 function getHsbcHistorySettlementCashBoundary(txn) {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-            const transactionDate = runtime.normalizeLedgerDate(txn?.date);
+            const transactionDate = normalizeHsbcEvidenceDate(txn?.date);
             const transactionType = runtime.getNormalizedTransactionType(txn);
             if (!['buy', 'sell'].includes(transactionType)) return null;
             const postings = Array.isArray(source.cash_settlement_postings)
                 ? source.cash_settlement_postings
                 : [];
-            const settlementDate = runtime.normalizeLedgerDate(source.cash_settlement_date)
-                || runtime.normalizeLedgerDate(postings.find((posting) => posting?.date)?.date);
-            if (!transactionDate || !settlementDate || settlementDate <= transactionDate) return null;
-
-            const postingWithBoundary = [...postings].reverse().find((posting) => (
-                Number.isFinite(Number(posting?.balance_after_raw ?? posting?.balance_after))
-            ));
-            const balanceAfter = Number(
-                postingWithBoundary?.balance_after_raw
-                ?? postingWithBoundary?.balance_after
-                ?? source.cash_settlement_balance_after_raw,
+            if (
+                postings.length
+                && !hasConsistentHsbcStructuredSettlementAliases(txn, postings)
+            ) return null;
+            const normalizeOrderReference = (value) => {
+                const match = String(value || '')
+                    .trim().toUpperCase().match(/^([PS])[- ]?(\d+)$/);
+                return match ? `${match[1]}-${match[2]}` : '';
+            };
+            const transactionOrderReference = normalizeOrderReference(
+                source.statement_order_id || source.order_id,
             );
-            if (!Number.isFinite(balanceAfter)) return null;
+            const extractPostingOrderReference = (posting) => {
+                const normalized = String(posting?.reference || '')
+                    .trim().replace(/\s+/g, ' ');
+                const match = normalized.match(
+                    /^REF\s+([PS])(\d+)001\s+SEC(?:\s+\(\d{2}[A-Z]{3}\d{2}\))?$/i,
+                );
+                return match ? `${match[1].toUpperCase()}-${match[2]}` : '';
+            };
+            const getPostingIdentity = (posting) => {
+                const accountNumber = normalizeHsbcCashScopeToken(posting?.account_number);
+                const currency = normalizeHsbcCashCurrency(posting?.currency);
+                const accountType = normalizeHsbcCashAccountType(
+                    posting?.account_type,
+                    currency,
+                );
+                const settlementDate = normalizeHsbcEvidenceDate(posting?.date);
+                const sourceFileKind = String(
+                    posting?.source_file_kind || '',
+                ).trim().toLowerCase();
+                const sourceSequenceSha256 = String(
+                    posting?.source_sequence_sha256
+                    || posting?.source_file_sha256
+                    || posting?.statement_pdf_source_sha256
+                    || '',
+                ).trim().toLowerCase();
+                const rowNumber = parseHsbcPositiveSequenceNumber(
+                    posting?.row_number,
+                );
+                const statementRowRaw = posting?.statement_pdf_source_row_number;
+                const hasStatementRowAlias = statementRowRaw !== undefined
+                    && statementRowRaw !== null
+                    && String(statementRowRaw).trim() !== '';
+                const statementRowNumber = hasStatementRowAlias
+                    ? parseHsbcPositiveSequenceNumber(statementRowRaw)
+                    : null;
+                const sequenceOrder = String(
+                    posting?.ledger_sequence_order || '',
+                ).trim().toLowerCase();
+                const hasChronologicalSequence = sequenceOrder === 'chronological';
+                const sequenceDirection = (
+                    sourceFileKind === 'hsbc_usd_savings_csv'
+                    && !hasChronologicalSequence
+                ) ? -1 : 1;
+                const sequenceValue = parseHsbcPositiveSequenceNumber(
+                    sequenceDirection < 0
+                        ? posting?.row_number
+                        : posting?.ledger_sequence,
+                );
+                if (
+                    !accountNumber
+                    || !accountType
+                    || !isSupportedHsbcCashCurrency(currency)
+                    || !settlementDate
+                    || ![
+                        'hsbc_usd_account_text',
+                        'hsbc_usd_savings_csv',
+                        'hsbc_multi_currency_cash_account_text',
+                        'hsbc_statement_cash',
+                    ].includes(sourceFileKind)
+                    || !isHsbcCashFileKindCurrencyCompatible(
+                        sourceFileKind,
+                        currency,
+                    )
+                    || !['', 'chronological'].includes(sequenceOrder)
+                    || !/^[0-9a-f]{64}$/.test(sourceSequenceSha256)
+                    || rowNumber === null
+                    || (hasStatementRowAlias && statementRowNumber !== rowNumber)
+                    || sequenceValue === null
+                    || !transactionOrderReference
+                    || (
+                        sourceFileKind !== 'hsbc_statement_cash'
+                        && extractPostingOrderReference(posting)
+                            !== transactionOrderReference
+                    )
+                ) {
+                    return null;
+                }
+                return {
+                    accountNumber,
+                    accountType,
+                    currency,
+                    settlementDate,
+                    sourceFileKind,
+                    sourceSequenceSha256,
+                    rowNumber,
+                    sequenceOrder,
+                    sequenceDirection,
+                    sequenceValue,
+                };
+            };
+            const hasSamePostingIdentity = (left, right) => Boolean(
+                left
+                && right
+                && left.accountNumber === right.accountNumber
+                && left.accountType === right.accountType
+                && left.currency === right.currency
+                && left.settlementDate === right.settlementDate
+                && left.sourceFileKind === right.sourceFileKind
+                && left.sourceSequenceSha256 === right.sourceSequenceSha256
+                && left.sequenceOrder === right.sequenceOrder
+                && left.sequenceDirection === right.sequenceDirection
+            );
+            const principalPostings = postings.filter((posting) => (
+                String(posting?.role || '').trim().toLowerCase() === 'principal'
+            ));
+            if (
+                principalPostings.length !== 1
+                || postings.some((posting) => (
+                    !posting
+                    || typeof posting !== 'object'
+                    || !['principal', 'fee'].includes(
+                        String(posting.role || '').trim().toLowerCase(),
+                    )
+                ))
+            ) {
+                return null;
+            }
+            const principalPosting = principalPostings[0];
+            const principalIdentity = getPostingIdentity(principalPosting);
+            const transactionAccount = normalizeHsbcCashScopeToken(
+                txn?.account || source.account || source.account_number,
+            );
+            const transactionCurrency = normalizeHsbcCashCurrency(txn?.currency);
+            const sourceSettlementDate = normalizeHsbcEvidenceDate(
+                source.cash_settlement_date,
+            );
+            const sourceSettlementAmount = parseFiniteNonBlankHsbcNumber(
+                source.cash_settlement_amount_raw,
+            );
+            const sourceSettlementAmountExact = normalizeHsbcDecimalText(
+                source.cash_settlement_amount_raw,
+            );
+            if (
+                !principalIdentity
+                || !transactionAccount
+                || principalIdentity.accountNumber !== transactionAccount
+                || !transactionCurrency
+                || principalIdentity.currency !== transactionCurrency
+                || !sourceSettlementDate
+                || principalIdentity.settlementDate !== sourceSettlementDate
+                || sourceSettlementAmount === null
+            ) {
+                return null;
+            }
+            const participatingPostings = postings.map((posting) => ({
+                identity: getPostingIdentity(posting),
+                posting,
+            }));
+            if (participatingPostings.some(({identity, posting}) => {
+                const sequenceDelta = principalIdentity.sequenceDirection
+                    * (identity?.sequenceValue - principalIdentity.sequenceValue);
+                const role = String(posting?.role || '').trim().toLowerCase();
+                return (
+                    !hasSamePostingIdentity(identity, principalIdentity)
+                    || (role === 'principal' && sequenceDelta !== 0)
+                    || (role === 'fee' && sequenceDelta <= 0)
+                );
+            })) {
+                return null;
+            }
+            const postingSequenceKeys = participatingPostings.map(({identity}) => (
+                `${identity.sequenceDirection}:${identity.sequenceValue}`
+            ));
+            if (new Set(postingSequenceKeys).size !== postingSequenceKeys.length) {
+                return null;
+            }
+            const physicalPostingKeys = participatingPostings.map(({identity}) => (
+                `${identity.sourceSequenceSha256}:${identity.rowNumber}`
+            ));
+            if (new Set(physicalPostingKeys).size !== physicalPostingKeys.length) {
+                return null;
+            }
+            if (participatingPostings.some(({posting}) => {
+                const rawBalance = posting?.balance_after_raw;
+                return rawBalance !== undefined
+                    && rawBalance !== null
+                    && String(rawBalance).trim() !== ''
+                    && parseFiniteNonBlankHsbcNumber(rawBalance) === null;
+            })) {
+                return null;
+            }
+            const postingAmounts = participatingPostings.map(({posting}) => ({
+                amount: parseFiniteNonBlankHsbcNumber(
+                    posting?.amount_raw,
+                ),
+                role: String(posting?.role || '').trim().toLowerCase(),
+            }));
+            if (postingAmounts.some(({amount}) => amount === null)) return null;
+            const principalAmount = postingAmounts.find(({role}) => role === 'principal')?.amount;
+            const principalBalance = parseFiniteNonBlankHsbcNumber(
+                principalPosting?.balance_after_raw,
+            );
+            const feeAmounts = postingAmounts.filter(({role}) => role === 'fee')
+                .map(({amount}) => amount);
+            if (
+                principalBalance === null
+                || normalizeHsbcDecimalText(principalPosting?.amount_raw)
+                    !== sourceSettlementAmountExact
+                || (transactionType === 'buy' && principalAmount >= 0)
+                || (transactionType === 'sell' && principalAmount <= 0)
+                || feeAmounts.some((amount) => amount >= 0)
+            ) {
+                return null;
+            }
+            const commissionInputs = [
+                txn?.normalized?.commission,
+                txn?.commission_raw,
+            ].filter((value) => (
+                value !== undefined
+                && value !== null
+                && String(value).trim() !== ''
+            ));
+            const commissions = commissionInputs.map(Number);
+            if (
+                commissions.some((commission) => !Number.isFinite(commission))
+                || commissionInputs.length !== 2
+                || commissions.some((commission) => (
+                    Math.abs(commission - commissions[0]) > 1e-6
+                ))
+            ) {
+                return null;
+            }
+            const commission = commissions[0] ?? 0;
+            const feeTotal = feeAmounts.reduce((total, amount) => total + amount, 0);
+            const rawTransactionAmount = typeof runtime.getTransactionAmount === 'function'
+                ? runtime.getTransactionAmount(txn)
+                : (
+                    txn?.normalized?.net_amount
+                    ?? txn?.net_amount_raw
+                    ?? txn?.amount
+                    ?? txn?.cash
+                );
+            const transactionAmount = parseFiniteNonBlankHsbcNumber(rawTransactionAmount);
+            const evidencedNetAmount = principalAmount + feeTotal;
+            if (
+                commission > 1e-9
+                || (commission < -1e-9 && (
+                    !feeAmounts.length
+                    || Math.abs(commission - feeTotal) > 1e-6
+                ))
+                || (Math.abs(commission) <= 1e-9 && feeAmounts.length)
+                || transactionAmount === null
+                || (
+                    Math.abs(transactionAmount - principalAmount) > 1e-6
+                    && Math.abs(transactionAmount - evidencedNetAmount) > 1e-6
+                )
+            ) {
+                return null;
+            }
+            const postingWithBoundary = participatingPostings.filter(({posting}) => (
+                parseFiniteNonBlankHsbcNumber(
+                    posting?.balance_after_raw,
+                ) !== null
+            )).reduce((latest, candidate) => {
+                if (!latest) return candidate;
+                return principalIdentity.sequenceDirection
+                    * (candidate.identity.sequenceValue - latest.identity.sequenceValue) > 0
+                    ? candidate
+                    : latest;
+            }, null);
+            if (!postingWithBoundary) return null;
+            const trailingPostings = participatingPostings.filter(({identity, posting}) => (
+                parseFiniteNonBlankHsbcNumber(
+                    posting?.balance_after_raw,
+                ) === null
+                && principalIdentity.sequenceDirection
+                    * (identity.sequenceValue
+                        - postingWithBoundary.identity.sequenceValue) > 0
+            )).sort((left, right) => (
+                principalIdentity.sequenceDirection
+                    * (left.identity.sequenceValue - right.identity.sequenceValue)
+            ));
+            let previousParticipatingPosting = postingWithBoundary;
+            for (const trailingPosting of trailingPostings) {
+                const sequenceDelta = principalIdentity.sequenceDirection * (
+                    trailingPosting.identity.sequenceValue
+                    - previousParticipatingPosting.identity.sequenceValue
+                );
+                if (sequenceDelta !== 1) return null;
+                previousParticipatingPosting = trailingPosting;
+            }
+            const trailingCashDelta = trailingPostings.reduce((total, posting) => {
+                const amount = parseFiniteNonBlankHsbcNumber(
+                    posting?.posting?.amount_raw,
+                );
+                return amount === null ? total : total + amount;
+            }, 0);
+            const settlementDate = principalIdentity.settlementDate;
+            if (!transactionDate || !settlementDate || settlementDate < transactionDate) return null;
+            const postedBalanceAfter = parseFiniteNonBlankHsbcNumber(
+                postingWithBoundary.posting?.balance_after_raw,
+            );
+            if (postedBalanceAfter === null) return null;
+            const balanceAfter = postedBalanceAfter + trailingCashDelta;
+            const currency = principalIdentity.currency;
+            const descriptor = getHsbcCashScopeDescriptor(txn, {
+                accountNumber: principalPosting?.account_number,
+                accountType: principalPosting?.account_type,
+                currency,
+                ledgerSequence: postingWithBoundary.posting?.ledger_sequence,
+                rowNumber: postingWithBoundary.posting?.row_number,
+                sourceFileKind: principalPosting?.source_file_kind,
+                sourceSequenceDirection: postingWithBoundary.identity.sequenceDirection,
+                ledgerSequenceOrder: postingWithBoundary.posting?.ledger_sequence_order,
+                sourceSequenceSha256: (
+                    principalPosting?.source_sequence_sha256
+                    || principalPosting?.source_file_sha256
+                    || principalPosting?.statement_pdf_source_sha256
+                ),
+            });
             return {
-                currency: String(
-                    postingWithBoundary?.currency
-                    || txn?.currency
-                    || context.baseCurrency,
-                ).trim().toUpperCase() || context.baseCurrency,
+                ...descriptor,
                 balanceAfter,
+                matchBalanceAfter: postedBalanceAfter,
+                postingProvenanceKeys: participatingPostings.map(({identity}) => (
+                    JSON.stringify([
+                        identity.sourceSequenceSha256,
+                        identity.rowNumber,
+                    ])
+                )),
+                settlementAmount: parseFiniteNonBlankHsbcNumber(
+                    postingWithBoundary.posting?.amount_raw,
+                ),
+                settlementDate,
             };
         }
 
 function setHsbcHistoryCashBoundary(
-            corrections,
-            currency,
-            balanceAfter,
-            baseCash,
-            ledgerDate,
+            correctionsByScope,
+            boundary,
+            rawCashScopeLedger = null,
+            rawCashBalances = null,
         ) {
-            const normalizedCurrency = String(currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency;
-            delete corrections[normalizedCurrency];
-            const otherCurrencyCorrection = getCashCorrectionInBaseCurrency(corrections, ledgerDate);
-            const targetCorrectionInBase = Number(balanceAfter) - Number(baseCash) - otherCurrencyCorrection;
-            if (!Number.isFinite(targetCorrectionInBase)) return;
-            const oneUnitInBase = runtime.convertAmountToBaseCurrency(
-                1,
-                normalizedCurrency,
-                ledgerDate,
-                context.fxTimeline,
-                context.baseCurrency,
+            const cashScopeKey = String(boundary?.cashScopeKey || '').trim();
+            const balanceAfter = parseFiniteNonBlankHsbcNumber(boundary?.balanceAfter);
+            if (!cashScopeKey || balanceAfter === null) return false;
+            const rawScopeBalance = resolveHsbcRawCashScopeBalance(
+                rawCashScopeLedger,
+                cashScopeKey,
+                boundary?.currency,
+                rawCashBalances,
+                {allowMissingExactScope: true},
             );
-            const targetCorrection = Math.abs(oneUnitInBase) > 1e-9
-                ? targetCorrectionInBase / oneUnitInBase
-                : targetCorrectionInBase;
-            if (!Number.isFinite(targetCorrection)) return;
-            applyCashBalanceCorrection(corrections, normalizedCurrency, targetCorrection);
+            if (!rawScopeBalance.resolved) return false;
+            setHsbcScopedCorrection(
+                correctionsByScope,
+                cashScopeKey,
+                boundary?.currency,
+                balanceAfter - rawScopeBalance.balance,
+            );
+            return true;
         }
 
 function getHsbcHistorySettlementCashDeltas(txn) {
-            const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-            const transactionDate = runtime.normalizeLedgerDate(txn?.date);
-            const settlementDate = runtime.normalizeLedgerDate(source.cash_settlement_date);
-            if (!transactionDate || !settlementDate || settlementDate <= transactionDate) return [];
-            const postings = Array.isArray(source.cash_settlement_postings)
-                ? source.cash_settlement_postings
-                : [];
-            if (postings.length) {
-                return postings.map((posting) => ({
-                    currency: String(posting?.currency || txn?.currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency,
-                    amount: Number(posting?.amount_raw ?? posting?.amount),
-                })).filter((posting) => Number.isFinite(posting.amount));
-            }
-            const principal = Number(source.cash_settlement_amount_raw);
-            if (!Number.isFinite(principal)) return [];
-            const fee = Number(source.cash_flow_fee_amount_raw);
-            return [{
-                currency: String(txn?.currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency,
-                amount: principal,
-            }, ...(Number.isFinite(fee) && fee > 0 ? [{
-                currency: String(txn?.currency || context.baseCurrency).trim().toUpperCase() || context.baseCurrency,
-                amount: -fee,
-            }] : [])];
+            // Scalar-only settlement metadata predates immutable per-posting
+            // identities. It cannot safely change cash without structured legs.
+            return [];
         }
 
 function applyHsbcHistoryPresentationProjection(processedTransactions) {
-            const historyCorrectionsByScope = new Map();
+            const historyCorrectionsByCashScope = new Map();
+            const settlementBoundariesByCashScope = new Map();
             const pendingScopes = new Set();
-            const getHistoryCorrections = (scopeKey) => {
-                if (!historyCorrectionsByScope.has(scopeKey)) {
-                    historyCorrectionsByScope.set(scopeKey, {});
+            const ambiguousCashScopes = new Set();
+            const rememberSettlementBoundary = (boundary) => {
+                const cashScopeKey = String(boundary?.cashScopeKey || '').trim();
+                const nextDate = runtime.normalizeLedgerDate(boundary?.settlementDate);
+                if (!cashScopeKey || !nextDate) return;
+                if (!settlementBoundariesByCashScope.has(cashScopeKey)) {
+                    settlementBoundariesByCashScope.set(cashScopeKey, []);
                 }
-                return historyCorrectionsByScope.get(scopeKey);
+                settlementBoundariesByCashScope.get(cashScopeKey).push({
+                    ...boundary,
+                    settlementDate: nextDate,
+                });
             };
-            (Array.isArray(processedTransactions) ? processedTransactions : []).forEach((txn) => {
+            const cashTransactions = Array.isArray(processedTransactions)
+                ? processedTransactions
+                : [];
+            const settlementBoundaryByTransactionIndex = new Map();
+            const rawOwnersByPostingProvenance = new Map();
+            cashTransactions.forEach((txn, index) => {
+                const source = txn?.source && typeof txn.source === 'object'
+                    ? txn.source
+                    : {};
+                if (
+                    runtime.normalizeInvestmentBroker(
+                        txn?.broker || source.broker || runtime.getTransactionBrokerCode(txn),
+                    ) !== 'hsbc'
+                ) return;
+                const postings = Array.isArray(source.cash_settlement_postings)
+                    ? source.cash_settlement_postings
+                    : [];
+                postings.forEach((posting) => {
+                    const provenanceKey = (
+                        getHsbcStructuredPostingPhysicalEvidenceIdentity(posting)
+                    );
+                    if (!provenanceKey) return;
+                    if (!rawOwnersByPostingProvenance.has(provenanceKey)) {
+                        rawOwnersByPostingProvenance.set(provenanceKey, new Set());
+                    }
+                    rawOwnersByPostingProvenance.get(provenanceKey).add(index);
+                });
+            });
+            const rawConflictingBoundaryOwnerIndexes = new Set();
+            rawOwnersByPostingProvenance.forEach((ownerIndexes) => {
+                if (ownerIndexes.size <= 1) return;
+                ownerIndexes.forEach((ownerIndex) => {
+                    rawConflictingBoundaryOwnerIndexes.add(ownerIndex);
+                });
+            });
+            const ownersByPostingProvenance = new Map();
+            cashTransactions.forEach((txn, index) => {
+                const boundary = getHsbcHistorySettlementCashBoundary(txn);
+                if (!boundary) return;
+                settlementBoundaryByTransactionIndex.set(index, boundary);
+                (Array.isArray(boundary.postingProvenanceKeys)
+                    ? boundary.postingProvenanceKeys
+                    : []).forEach((provenanceKey) => {
+                    if (!ownersByPostingProvenance.has(provenanceKey)) {
+                        ownersByPostingProvenance.set(provenanceKey, new Set());
+                    }
+                    ownersByPostingProvenance.get(provenanceKey).add(index);
+                });
+            });
+            const conflictingBoundaryOwnerIndexes = new Set();
+            rawConflictingBoundaryOwnerIndexes.forEach((ownerIndex) => {
+                conflictingBoundaryOwnerIndexes.add(ownerIndex);
+                const boundary = settlementBoundaryByTransactionIndex.get(ownerIndex);
+                if (boundary?.cashScopeKey) {
+                    ambiguousCashScopes.add(boundary.cashScopeKey);
+                }
+            });
+            ownersByPostingProvenance.forEach((ownerIndexes) => {
+                if (ownerIndexes.size <= 1) return;
+                ownerIndexes.forEach((ownerIndex) => {
+                    conflictingBoundaryOwnerIndexes.add(ownerIndex);
+                    const boundary = settlementBoundaryByTransactionIndex.get(ownerIndex);
+                    if (boundary?.cashScopeKey) {
+                        ambiguousCashScopes.add(boundary.cashScopeKey);
+                    }
+                });
+            });
+            const inconsistentDirectCashDomains = new Set();
+            const directCashEvidenceByPhysicalIdentity = new Map();
+            cashTransactions.forEach((txn) => {
+                if (!isHsbcCashEvidenceTransaction(txn)) return;
+                const cashEvidence = getHsbcCashEvidenceState(txn);
+                const cashScopeKey = String(
+                    cashEvidence.descriptor?.cashScopeKey || '',
+                ).trim();
+                const cashDate = normalizeHsbcEvidenceDate(txn?.date);
+                if (!cashEvidence.isConsistent && cashScopeKey && cashDate) {
+                    inconsistentDirectCashDomains.add(
+                        JSON.stringify([cashScopeKey, cashDate]),
+                    );
+                }
+                const physicalIdentity = getHsbcDirectCashPhysicalEvidenceIdentity(txn);
+                if (physicalIdentity) {
+                    if (!directCashEvidenceByPhysicalIdentity.has(physicalIdentity)) {
+                        directCashEvidenceByPhysicalIdentity.set(physicalIdentity, []);
+                    }
+                    directCashEvidenceByPhysicalIdentity.get(physicalIdentity).push({
+                        date: cashDate,
+                        evidence: cashEvidence,
+                    });
+                }
+            });
+            const conflictingDirectCashPhysicalIdentities = new Set(
+                [...directCashEvidenceByPhysicalIdentity.entries()]
+                    .filter(([, group]) => group.length > 1)
+                    .map(([physicalIdentity]) => physicalIdentity),
+            );
+            settlementBoundaryByTransactionIndex.forEach((boundary, ownerIndex) => {
+                const domainKey = JSON.stringify([
+                    String(boundary?.cashScopeKey || '').trim(),
+                    normalizeHsbcEvidenceDate(boundary?.settlementDate),
+                ]);
+                if (!inconsistentDirectCashDomains.has(domainKey)) return;
+                conflictingBoundaryOwnerIndexes.add(ownerIndex);
+                if (boundary?.cashScopeKey) {
+                    ambiguousCashScopes.add(boundary.cashScopeKey);
+                }
+            });
+            settlementBoundaryByTransactionIndex.forEach((boundary, ownerIndex) => {
+                const boundaryDate = normalizeHsbcEvidenceDate(
+                    boundary?.settlementDate,
+                );
+                const boundaryFileKind = String(
+                    boundary?.sourceFileKind || '',
+                ).trim().toLowerCase();
+                const matchingDirectEvidenceGroups = (
+                    Array.isArray(boundary?.postingProvenanceKeys)
+                        ? boundary.postingProvenanceKeys
+                        : []
+                ).map((identityKey) => (
+                    directCashEvidenceByPhysicalIdentity.get(identityKey) || []
+                )).filter((group) => group.length);
+                const hasPhysicalEvidenceConflict = matchingDirectEvidenceGroups.some(
+                    (group) => (
+                        group.length > 1
+                        || group.some(({date: directDate, evidence}) => !(
+                            evidence.isConsistent
+                            && directDate
+                            && directDate === boundaryDate
+                            && evidence.descriptor.cashScopeKey === boundary.cashScopeKey
+                            && evidence.descriptor.sourceFileKind === boundaryFileKind
+                        ))
+                    ),
+                );
+                if (!hasPhysicalEvidenceConflict) return;
+                conflictingBoundaryOwnerIndexes.add(ownerIndex);
+                if (boundary?.cashScopeKey) {
+                    ambiguousCashScopes.add(boundary.cashScopeKey);
+                }
+            });
+            const classifyCashAgainstBoundary = (txn, cashEvidence, boundary) => {
+                const cashDescriptor = cashEvidence?.descriptor;
+                if (!cashDescriptor?.cashScopeKey || !cashEvidence.isConsistent) {
+                    return 'incomparable';
+                }
+                const cashDate = runtime.normalizeLedgerDate(txn?.date);
+                if (!cashDate) return 'incomparable';
+                if (cashDate < boundary.settlementDate) return 'before';
+                if (cashDate > boundary.settlementDate) return 'after';
+                const boundarySha256 = String(
+                    boundary?.sourceSequenceSha256 || '',
+                ).trim().toLowerCase();
+                if (
+                    !cashDescriptor.sourceSequenceSha256
+                    || !boundarySha256
+                    || cashDescriptor.sourceSequenceSha256 !== boundarySha256
+                    || !cashDescriptor.sourceFileKind
+                    || cashDescriptor.sourceFileKind !== boundary.sourceFileKind
+                ) {
+                    return 'incomparable';
+                }
+                const boundarySequenceDirection = Number(
+                    boundary?.sourceSequenceDirection,
+                ) || (
+                    cashDescriptor.sourceFileKind === 'hsbc_usd_savings_csv' ? -1 : 1
+                );
+                if (
+                    cashDescriptor.sourceSequenceDirection
+                    !== boundarySequenceDirection
+                ) return 'incomparable';
+                const cashSequence = cashDescriptor.sourceSequenceDirection < 0
+                    ? cashDescriptor.rowNumber
+                    : cashDescriptor.ledgerSequence;
+                const boundarySequence = boundarySequenceDirection < 0
+                    ? boundary.rowNumber
+                    : boundary.ledgerSequence;
+                if (!Number.isFinite(cashSequence) || !Number.isFinite(boundarySequence)) {
+                    return 'incomparable';
+                }
+                const sequenceDelta = boundarySequenceDirection
+                    * (cashSequence - boundarySequence);
+                if (sequenceDelta < 0) return 'before';
+                if (sequenceDelta > 0) return 'after';
+
+                const sameSequenceCandidates = cashTransactions.filter((candidate) => {
+                    if (
+                        runtime.normalizeLedgerDate(candidate?.date) !== cashDate
+                        || !isHsbcCashEvidenceTransaction(candidate)
+                    ) return false;
+                    const candidateEvidence = getHsbcCashEvidenceState(candidate);
+                    const candidateDescriptor = candidateEvidence.descriptor;
+                    const candidateSequence = candidateDescriptor.sourceSequenceDirection < 0
+                        ? candidateDescriptor.rowNumber
+                        : candidateDescriptor.ledgerSequence;
+                    return (
+                        candidateDescriptor.cashScopeKey === cashDescriptor.cashScopeKey
+                        && candidateDescriptor.sourceFileKind === boundary.sourceFileKind
+                        && candidateDescriptor.sourceSequenceSha256 === boundarySha256
+                        && candidateDescriptor.sourceSequenceDirection
+                            === boundarySequenceDirection
+                        && candidateSequence === boundarySequence
+                    );
+                });
+                const exactCandidates = sameSequenceCandidates.filter((candidate) => {
+                    const candidateEvidence = getHsbcCashEvidenceState(candidate);
+                    const boundaryAmount = parseFiniteNonBlankHsbcNumber(
+                        boundary?.settlementAmount ?? boundary?.amount,
+                    );
+                    const boundaryBalance = parseFiniteNonBlankHsbcNumber(
+                        boundary?.matchBalanceAfter ?? boundary?.balanceAfter,
+                    );
+                    return (
+                        candidateEvidence.isConsistent
+                        && candidateEvidence.amount !== null
+                        && boundaryAmount !== null
+                        && Math.abs(candidateEvidence.amount - boundaryAmount) <= 1e-6
+                        && (
+                            candidateEvidence.balance === null
+                            || boundaryBalance === null
+                            || Math.abs(candidateEvidence.balance - boundaryBalance) <= 1e-6
+                        )
+                    );
+                });
+                if (
+                    sameSequenceCandidates.length === 1
+                    && exactCandidates.length === 1
+                    && exactCandidates[0] === txn
+                ) {
+                    const exactEvidence = getHsbcCashEvidenceState(exactCandidates[0]);
+                    const boundaryBalance = parseFiniteNonBlankHsbcNumber(
+                        boundary?.matchBalanceAfter ?? boundary?.balanceAfter,
+                    );
+                    return exactEvidence.balance === null || boundaryBalance === null
+                        ? 'exact-unresolved-balance'
+                        : 'exact';
+                }
+                return 'incomparable';
+            };
+            const canCashRowClearSettlementBoundary = (txn, cashEvidence) => {
+                const cashDescriptor = cashEvidence?.descriptor;
+                if (!cashDescriptor?.cashScopeKey) return false;
+                const boundaries = settlementBoundariesByCashScope.get(
+                    cashDescriptor.cashScopeKey,
+                ) || [];
+                return boundaries.length > 0 && boundaries.every((boundary) => (
+                    ['exact', 'exact-unresolved-balance', 'after'].includes(
+                        classifyCashAgainstBoundary(txn, cashEvidence, boundary),
+                    )
+                ));
+            };
+            const hasSequenceIncomparableSameDayBoundary = (txn, cashEvidence) => {
+                const cashDescriptor = cashEvidence?.descriptor;
+                if (!cashDescriptor?.cashScopeKey) return false;
+                const cashDate = runtime.normalizeLedgerDate(txn?.date);
+                if (!cashDate) return false;
+                return (settlementBoundariesByCashScope.get(
+                    cashDescriptor.cashScopeKey,
+                ) || []).some((boundary) => (
+                    cashDate === boundary.settlementDate
+                    && classifyCashAgainstBoundary(
+                        txn,
+                        cashEvidence,
+                        boundary,
+                    ) === 'incomparable'
+                ));
+            };
+            cashTransactions.forEach((txn, transactionIndex) => {
                 const brokerCode = runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn));
                 if (brokerCode !== 'hsbc') return;
                 const scopeKey = getHsbcSettlementScopeKey(txn);
                 const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-                const corrections = getHistoryCorrections(scopeKey);
                 if (runtime.isHsbcSettlementActuallyPending(source)) {
                     pendingScopes.add(scopeKey);
                 }
@@ -566,27 +1690,137 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
                     ? Number(txn.broker_display_cash)
                     : (Number(txn?.broker_running_cash));
                 const ledgerDate = runtime.normalizeLedgerDate(txn?.date);
-                const settlementBoundary = getHsbcHistorySettlementCashBoundary(txn);
+                const settlementBoundary = settlementBoundaryByTransactionIndex.get(
+                    transactionIndex,
+                ) || null;
                 if (settlementBoundary) {
-                    setHsbcHistoryCashBoundary(
-                        corrections,
-                        settlementBoundary.currency,
-                        settlementBoundary.balanceAfter,
-                        baseCash,
-                        ledgerDate,
+                    if (conflictingBoundaryOwnerIndexes.has(transactionIndex)) {
+                        ambiguousCashScopes.add(settlementBoundary.cashScopeKey);
+                    } else {
+                        const applied = setHsbcHistoryCashBoundary(
+                            historyCorrectionsByCashScope,
+                            settlementBoundary,
+                            txn?.calculated_broker_cash_scope_ledger || null,
+                            txn?.calculated_broker_cash_by_currency
+                                || txn?.broker_cash_by_currency
+                                || null,
+                        );
+                        rememberSettlementBoundary(settlementBoundary);
+                        if (!applied) {
+                            ambiguousCashScopes.add(settlementBoundary.cashScopeKey);
+                        }
+                    }
+                } else if (
+                    Array.isArray(source.cash_settlement_postings)
+                    && source.cash_settlement_postings.length
+                ) {
+                    const principalPostings = source.cash_settlement_postings.filter(
+                        (posting) => String(
+                            posting?.role || '',
+                        ).trim().toLowerCase() === 'principal',
                     );
+                    const principalPosting = principalPostings.length === 1
+                        ? principalPostings[0]
+                        : null;
+                    const transactionAccount = normalizeHsbcCashScopeToken(
+                        txn?.account || source.account || source.account_number,
+                    );
+                    const postingAccount = normalizeHsbcCashScopeToken(
+                        principalPosting?.account_number,
+                    );
+                    const transactionCurrency = normalizeHsbcCashScopeToken(txn?.currency);
+                    const postingCurrency = normalizeHsbcCashScopeToken(
+                        principalPosting?.currency,
+                    );
+                    const settlementDate = runtime.normalizeLedgerDate(
+                        source.cash_settlement_date,
+                    );
+                    if (
+                        principalPosting
+                        && transactionAccount
+                        && postingAccount === transactionAccount
+                        && transactionCurrency
+                        && postingCurrency === transactionCurrency
+                        && settlementDate
+                        && runtime.normalizeLedgerDate(principalPosting?.date)
+                            === settlementDate
+                    ) {
+                        const descriptor = getHsbcCashScopeDescriptor(txn, {
+                            accountNumber: principalPosting?.account_number,
+                            accountType: principalPosting?.account_type,
+                            currency: postingCurrency,
+                            ledgerSequence: principalPosting?.ledger_sequence,
+                            rowNumber: principalPosting?.row_number,
+                            sourceFileKind: principalPosting?.source_file_kind,
+                            sourceSequenceSha256: (
+                                principalPosting?.source_sequence_sha256
+                                || principalPosting?.source_file_sha256
+                                || principalPosting?.statement_pdf_source_sha256
+                            ),
+                        });
+                        if (descriptor.cashScopeKey) {
+                            rememberSettlementBoundary({
+                                ...descriptor,
+                                settlementDate,
+                            });
+                            ambiguousCashScopes.add(descriptor.cashScopeKey);
+                        }
+                    }
                 } else {
                     getHsbcHistorySettlementCashDeltas(txn).forEach((posting) => {
-                        applyCashBalanceCorrection(corrections, posting.currency, posting.amount);
+                        if (!posting.cashScopeKey) return;
+                        addHsbcScopedCorrection(
+                            historyCorrectionsByCashScope,
+                            posting.cashScopeKey,
+                            posting.currency,
+                            posting.amount,
+                        );
+                        rememberSettlementBoundary(posting);
                     });
                 }
 
-                const transactionCurrency = runtime.formatTransactionCurrency(txn)
-                    || runtime.getTickerQuoteCurrency(txn?.ticker)
-                    || context.baseCurrency;
-                if (isAuthoritativeHsbcCashTransaction(txn)) {
-                    const normalizedCurrency = String(transactionCurrency).trim().toUpperCase() || context.baseCurrency;
-                    delete corrections[normalizedCurrency];
+                let hasInconsistentCashEvidence = false;
+                if (isHsbcCashEvidenceTransaction(txn)) {
+                    const cashEvidence = getHsbcCashEvidenceState(txn);
+                    const cashDescriptor = cashEvidence.descriptor;
+                    const physicalIdentity = getHsbcDirectCashPhysicalEvidenceIdentity(
+                        txn,
+                    );
+                    hasInconsistentCashEvidence = (
+                        !cashEvidence.isConsistent
+                        || conflictingDirectCashPhysicalIdentities.has(
+                            physicalIdentity,
+                        )
+                    );
+                    if (hasInconsistentCashEvidence) {
+                        historyCorrectionsByCashScope.delete(
+                            cashDescriptor.cashScopeKey,
+                        );
+                        if (cashDescriptor.cashScopeKey) {
+                            ambiguousCashScopes.add(cashDescriptor.cashScopeKey);
+                        }
+                    } else if (hasSequenceIncomparableSameDayBoundary(txn, cashEvidence)) {
+                        historyCorrectionsByCashScope.delete(cashDescriptor.cashScopeKey);
+                        ambiguousCashScopes.add(cashDescriptor.cashScopeKey);
+                    } else if (canCashRowClearSettlementBoundary(txn, cashEvidence)) {
+                        const boundaryClassifications = (
+                            settlementBoundariesByCashScope.get(
+                                cashDescriptor.cashScopeKey,
+                            ) || []
+                        ).map((boundary) => (
+                            classifyCashAgainstBoundary(txn, cashEvidence, boundary)
+                        ));
+                        historyCorrectionsByCashScope.delete(cashDescriptor.cashScopeKey);
+                        settlementBoundariesByCashScope.delete(cashDescriptor.cashScopeKey);
+                        if (
+                            boundaryClassifications.includes('exact-unresolved-balance')
+                            || !isAuthoritativeHsbcCashTransaction(txn)
+                        ) {
+                            ambiguousCashScopes.add(cashDescriptor.cashScopeKey);
+                        } else {
+                            ambiguousCashScopes.delete(cashDescriptor.cashScopeKey);
+                        }
+                    }
                 }
                 const pendingCashBoundary = runtime.isHsbcSettlementActuallyPending(source)
                     ? runtime.getInvestmentBrokerEndingCashInBaseCurrency(brokerCode)
@@ -597,16 +1831,28 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
                 const historyCash = pendingCashBoundary !== null
                     && Number.isFinite(Number(pendingCashBoundary))
                     ? Number(pendingCashBoundary) + (Number(txn?.broker_pending_settlement_cash) || 0)
-                    : baseCash + getCashCorrectionInBaseCurrency(corrections, ledgerDate);
+                    : baseCash + getCashCorrectionInBaseCurrency(
+                        getHsbcScopedCorrectionBalances(historyCorrectionsByCashScope),
+                        ledgerDate,
+                    );
                 const brokerMarketValue = Number(txn?.broker_market_value ?? txn?.market_value) || 0;
-                const isProvisional = pendingScopes.has(scopeKey);
+                const cashScopeKey = settlementBoundary?.cashScopeKey
+                    || getHsbcCashScopeDescriptor(txn).cashScopeKey;
+                const hasAmbiguousCashSequence = ambiguousCashScopes.has(cashScopeKey);
+                const isProvisional = pendingScopes.has(scopeKey)
+                    || hasAmbiguousCashSequence
+                    || hasInconsistentCashEvidence;
                 txn.history_broker_cash = historyCash;
                 txn.history_broker_equity = historyCash + brokerMarketValue;
                 txn.history_cash_is_provisional = isProvisional;
                 txn.history_equity_is_provisional = isProvisional;
-                txn.history_balance_provisional_reason = isProvisional
-                    ? 'An earlier or current HSBC order in this account has not reached a matched SEC cash settlement. Cash and Equity are provisional until HSBC posts every settlement leg.'
-                    : '';
+                txn.history_balance_provisional_reason = hasInconsistentCashEvidence
+                    ? 'This HSBC cash row has incomplete or inconsistent immutable source-sequence evidence. Cash and Equity use the direct bank balance and remain provisional for that cash subaccount.'
+                    : (hasAmbiguousCashSequence
+                    ? 'A same-day HSBC cash row and settlement boundary do not share comparable source-sequence evidence. Cash and Equity use the direct cash row and remain provisional for that cash subaccount.'
+                    : (isProvisional
+                        ? 'An earlier or current HSBC order in this account has not reached a matched SEC cash settlement. Cash and Equity are provisional until HSBC posts every settlement leg.'
+                        : ''));
             });
         }
 
@@ -696,6 +1942,8 @@ function applyAuthoritativeCurrentBrokerHistoryBoundary(processedTransactions) {
     return {
         getHsbcSettlementScopeKey,
         isAuthoritativeHsbcCashTransaction,
+        getHsbcDirectCashPhysicalEvidenceIdentity,
+        getValidatedHsbcAvailableCashAfter,
         addCashBalanceCorrection,
         applyCashBalanceCorrection,
         getCashCorrectionInBaseCurrency,
@@ -711,4 +1959,3 @@ function applyAuthoritativeCurrentBrokerHistoryBoundary(processedTransactions) {
         applyAuthoritativeCurrentBrokerHistoryBoundary,
     };
 }
-

@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.7 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.8 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -269,7 +269,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.35.0');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.74.3');
+    expect(desktop.appScript).toContain('app-v0.74.6');
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');
@@ -627,7 +627,7 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
         'aria-label',
         'Holdout direction accuracy: 65.00%',
     );
-    expect(await menu.locator('.lstm-training-history-identifier').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(await menu.locator('.lstm-training-history-identifier').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('Univers Next for HSBC');
     const buttonWidth = await menu.locator('.lstm-training-action').evaluate((node) => node.getBoundingClientRect().width);
     expect(buttonWidth).toBeLessThan(await menu.evaluate((node) => node.getBoundingClientRect().width) - 50);
 
@@ -672,7 +672,7 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
     await expect(menu.locator('.lstm-training-history-details').first()).toContainText('Selected parameters:');
     await expect(menu.locator('.lstm-training-history-details').first()).not.toContainText('Objective CRPS skill vs baseline');
-    expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('Univers Next for HSBC');
     await page.reload();
     expect(await page.locator('[data-strategy-param-input][name]').evaluateAll((inputs) => Object.fromEntries(inputs.map((input) => {
         const kind = input.closest('[data-strategy-param-kind]').dataset.strategyParamKind;

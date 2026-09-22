@@ -1,6 +1,6 @@
 """One tick-selection owner and an explicit shared-chart load contract.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -58,6 +58,27 @@ def test_every_classic_tick_consumer_loads_after_the_shared_axis_owner() -> None
 
     for asset in CLASSIC_TICK_CONSUMERS:
         assert base_template.index(asset) > shared_position, asset
+
+
+def test_shared_axis_owner_sets_chart_font_before_every_page_chart_consumer() -> None:
+    base_template = _read(BASE_TEMPLATE)
+    shared_source = _read(JAVASCRIPT_ROOT / "chart-axis-utils.js")
+    shared_position = base_template.index(SHARED_AXIS_ASSET)
+
+    assert base_template.index("assets/css/app.css") < shared_position
+    assert shared_position < base_template.index("{% block page_scripts %}")
+    assert "Chart?.defaults?.font" in shared_source
+    assert 'getPropertyValue("--font-family-base")' in shared_source
+    assert 'chart.update("none")' in shared_source
+    assert "globalScope.document?.fonts?.ready" in shared_source
+
+    chart_constructor = re.compile(r"\bnew\s+(?:window\.)?Chart\s*\(")
+    consumers = [
+        path.relative_to(PROJECT_ROOT)
+        for path in JAVASCRIPT_ROOT.rglob("*.js")
+        if "vendor" not in path.parts and chart_constructor.search(_read(path))
+    ]
+    assert consumers
 
 
 def test_module_tick_consumers_depend_on_the_deferred_module_ordering() -> None:

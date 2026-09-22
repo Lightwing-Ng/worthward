@@ -1,5 +1,5 @@
-/* Code version: v1.29.1 */
-/* Keep dismiss actions above modal content without reserving a full-height rail. */
+/* Code version: v1.30.1 */
+/* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
@@ -325,13 +325,13 @@
 @media (max-width: 900px) {
     .workspace-controls-overlay-shell {
         --workspace-title-rail-collapsed-pad-inline-start: calc(
-            var(--settings-round-icon-button-size) * 2
+            var(--circular-icon-button-size) * 2
             + var(--layout-edge-gap) * 3
         );
         --workspace-controls-overlay-content-start: calc(
             var(--global-quick-actions-top)
             - var(--sidebar-overlay-inset-top)
-            + var(--settings-round-icon-button-size)
+            + var(--circular-icon-button-size)
             + var(--layout-edge-gap)
         );
     }
@@ -361,15 +361,15 @@
         top: var(--global-quick-actions-top);
         left: calc(
             var(--layout-global-anchor-left)
-            + var(--settings-round-icon-button-size)
+            + var(--circular-icon-button-size)
             + var(--layout-edge-gap)
         );
         z-index: var(--layer-sidebar-toggle);
         display: inline-flex;
-        width: var(--settings-round-icon-button-size);
-        min-width: var(--settings-round-icon-button-size);
-        height: var(--settings-round-icon-button-size);
-        min-height: var(--settings-round-icon-button-size);
+        width: var(--circular-icon-button-size);
+        min-width: var(--circular-icon-button-size);
+        height: var(--circular-icon-button-size);
+        min-height: var(--circular-icon-button-size);
         margin: 0;
         touch-action: manipulation;
     }
@@ -448,7 +448,7 @@
         top: var(--sidebar-overlay-inset-top);
         left: calc(
             var(--sidebar-overlay-inset-left)
-            + var(--settings-round-icon-button-size)
+            + var(--circular-icon-button-size)
             + var(--layout-edge-gap)
         );
     }
@@ -490,8 +490,8 @@
     right: var(--layout-edge-gap);
     transform: none;
     z-index: calc(var(--layer-surface-content) + 2);
-    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
-    height: var(--settings-round-icon-button-size);
+    width: calc((var(--circular-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    height: var(--circular-icon-button-size);
 }
 
 .portfolio-summary-main {
@@ -1657,8 +1657,7 @@
         var(--workspace-modal-icon-size)
         minmax(0, 1fr);
     grid-template-rows:
-        var(--workspace-modal-close-size)
-        auto
+        minmax(var(--workspace-modal-title-row-min-height), auto)
         auto;
     column-gap: var(--workspace-modal-column-gap);
     row-gap: var(--workspace-modal-row-gap);
@@ -1679,7 +1678,7 @@
 
 .workspace-modal-icon {
     grid-column: 1;
-    grid-row: 2 / span 2;
+    grid-row: 2;
     --loading-spinner-size: var(--workspace-modal-icon-size);
     width: var(--workspace-modal-icon-size);
     height: var(--workspace-modal-icon-size);
@@ -1694,7 +1693,7 @@
 
 .workspace-modal-title {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1;
     margin: 0;
     align-self: center;
     text-align: left;
@@ -1706,12 +1705,26 @@
 
 .workspace-modal-copy {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 2;
     margin: 0;
+    align-self: start;
     text-align: left;
     font-size: var(--font-form-label);
     line-height: 1.45;
     color: var(--muted);
+}
+
+.workspace-modal-list {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
+    padding-inline-start: var(--workspace-modal-list-padding-inline-start);
+    align-self: start;
+    list-style-position: outside;
+}
+
+.workspace-modal-list li {
+    padding-inline-start: var(--workspace-modal-list-marker-gap);
 }
 
 .notice[data-dismissible-notice],
@@ -1742,14 +1755,14 @@
     z-index: var(--layer-chart-tooltip);
 }
 
-/* Let floating-banner content start below the dismiss row and use the full body width. */
+/* Keep titles in the dismiss row and align the body with the topic icon below. */
 .notice-floating-banner {
     display: grid !important;
     grid-template-columns:
         var(--workspace-modal-icon-size)
         minmax(0, 1fr);
     grid-template-rows:
-        var(--workspace-modal-close-size)
+        minmax(var(--workspace-modal-title-row-min-height), auto)
         auto;
     column-gap: var(--workspace-modal-column-gap);
     row-gap: var(--workspace-modal-row-gap);
@@ -1787,7 +1800,6 @@
     grid-column: 1;
     grid-row: 2;
     align-self: start;
-    margin-top: 2px;
     background-color: var(--accent-fill);
 }
 
@@ -1796,12 +1808,18 @@
     grid-row: 2;
     min-width: 0;
     margin: 0;
-    margin-right: 0;
     align-self: start;
     font-weight: var(--font-weight-regular);
 }
 
+.notice-floating-banner-content:has(> .notice-floating-banner-heading) {
+    display: contents;
+}
+
 .notice-floating-banner-heading {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
     margin: 0;
     color: var(--text);
     font-size: var(--font-ui-lg);
@@ -1811,8 +1829,11 @@
 }
 
 .notice-floating-banner-list {
-    margin: 8px 0 0;
-    padding-inline-start: 1.35rem;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    margin: 0;
+    padding-inline-start: var(--workspace-modal-list-padding-inline-start);
     color: inherit;
     font-size: var(--font-form-label);
     font-weight: var(--font-weight-regular);
@@ -1821,7 +1842,10 @@
 }
 
 .notice-floating-banner-copy {
-    margin: 8px 0 0;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    margin: 0;
     color: var(--text);
     font-size: var(--font-form-label);
     font-weight: var(--font-weight-regular);
@@ -1829,7 +1853,7 @@
 }
 
 .notice-floating-banner-list li {
-    padding-inline-start: 0.18rem;
+    padding-inline-start: var(--workspace-modal-list-marker-gap);
 }
 
 .notice-floating-banner-list li + li {

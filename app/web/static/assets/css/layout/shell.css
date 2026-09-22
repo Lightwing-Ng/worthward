@@ -1,4 +1,4 @@
-/* Code version: v3.32.0 */
+/* Code version: v3.33.0 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -6,46 +6,53 @@
 }
 .app-shell.is-sidebar-open { --sidebar-layout-transition-delay: 40ms; }
 .sidebar { width: var(--sidebar-shell-width); flex: 0 0 var(--sidebar-shell-width); padding: var(--sidebar-shell-padding); border: var(--sidebar-shell-border); border-radius: var(--sidebar-shell-radius); background: var(--sidebar-shell-background); box-shadow: var(--sidebar-shell-shadow); backdrop-filter: var(--sidebar-shell-blur); -webkit-backdrop-filter: var(--sidebar-shell-blur); overflow-y: auto; overflow-x: visible; scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom); margin-left: 0; opacity: 1; transform: none; will-change: transform, opacity; transform-origin: left center; transition: opacity var(--motion-duration-emphasized) var(--motion-standard) var(--sidebar-layout-transition-delay), transform var(--sidebar-layout-transition-duration) var(--sidebar-layout-transition-easing) var(--sidebar-layout-transition-delay); }
+.circular-icon-button,
 .settings-round-icon-button,
 .global-quick-action-button,
 .sidebar-toggle {
-	width: var(--settings-round-icon-button-size);
-	height: var(--settings-round-icon-button-size);
+	width: var(--circular-icon-button-size);
+	min-width: var(--circular-icon-button-size);
+	height: var(--circular-icon-button-size);
+	min-height: var(--circular-icon-button-size);
 	padding: 0;
-	border: var(--settings-round-icon-button-border);
-	border-radius: var(--settings-round-icon-button-radius);
-	background: var(--settings-round-icon-button-background);
-	box-shadow: var(--settings-round-icon-button-shadow);
+	border: var(--circular-icon-button-border);
+	border-radius: var(--circular-icon-button-radius);
+	background: var(--circular-icon-button-background);
+	box-shadow: var(--circular-icon-button-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	box-sizing: border-box;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	color: var(--settings-round-icon-button-color);
+	color: var(--circular-icon-button-color);
 	cursor: pointer;
 	transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard), color 160ms var(--motion-standard), transform 460ms var(--motion-press);
 }
+.circular-icon-button:hover,
+.circular-icon-button:focus-visible,
 .settings-round-icon-button:hover,
 .settings-round-icon-button:focus-visible,
 .global-quick-action-button:hover,
 .global-quick-action-button:focus-visible,
 .sidebar-toggle:hover,
 .sidebar-toggle:focus-visible {
-	background: var(--settings-round-icon-button-background-hover);
-	color: var(--settings-round-icon-button-color-hover);
-	box-shadow: var(--settings-round-icon-button-shadow-hover);
+	background: var(--circular-icon-button-background-hover);
+	color: var(--circular-icon-button-color-hover);
+	box-shadow: var(--circular-icon-button-shadow-hover);
 }
+.circular-icon-button:active,
 .settings-round-icon-button:active,
 .global-quick-action-button:active,
 .sidebar-toggle:active {
-	box-shadow: var(--settings-round-icon-button-shadow-active);
+	box-shadow: var(--circular-icon-button-shadow-active);
 }
+.circular-icon-button .icon,
 .settings-round-icon-button .icon,
 .global-quick-action-button .icon,
 .sidebar-toggle .icon {
-	width: var(--settings-round-icon-button-icon-size);
-	height: var(--settings-round-icon-button-icon-size);
+	width: var(--circular-icon-button-icon-size);
+	height: var(--circular-icon-button-icon-size);
 	background-color: currentColor;
 	mask-repeat: no-repeat;
 	-webkit-mask-repeat: no-repeat;
@@ -56,21 +63,21 @@
 }
 .global-quick-actions {
 	--global-quick-action-gap: var(--layout-global-action-gap);
-	--global-quick-action-step: calc(var(--settings-round-icon-button-size) + var(--global-quick-action-gap));
+	--global-quick-action-step: calc(var(--circular-icon-button-size) + var(--global-quick-action-gap));
 	position: fixed;
 	top: var(--global-quick-actions-top);
 	right: var(--global-quick-actions-right);
 	z-index: var(--layer-fixed-dock);
-	width: calc((var(--settings-round-icon-button-size) * 2) + var(--global-quick-action-gap));
-	height: var(--settings-round-icon-button-size);
+	width: calc((var(--circular-icon-button-size) * 2) + var(--global-quick-action-gap));
+	height: var(--circular-icon-button-size);
 	isolation: isolate;
 }
 .global-quick-actions > .global-quick-action-button {
 	position: absolute;
 	top: 0;
 	right: 0;
-	min-width: var(--settings-round-icon-button-size);
-	min-height: var(--settings-round-icon-button-size);
+	min-width: var(--circular-icon-button-size);
+	min-height: var(--circular-icon-button-size);
 }
 .global-quick-actions > .global-language-toggle {
 	right: var(--global-quick-action-step);

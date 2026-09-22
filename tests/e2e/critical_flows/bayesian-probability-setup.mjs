@@ -1252,7 +1252,7 @@ export async function prepareBayesianProbabilityField(page) {
     ]);
     expect(contract.dateLabelBackground).toBe('rgb(0, 85, 204)');
     expect(contract.dateLabelColor).toBe('rgb(255, 255, 255)');
-    expect(contract.dateLabelFontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(contract.dateLabelFontFamily).toContain('Univers Next for HSBC');
     expect(contract.dateLabelFontSize).toBe('12px');
     expect(contract.dateLabelLineHeight).toBe('10px');
     expect(contract.domXPathStable).toBe(true);

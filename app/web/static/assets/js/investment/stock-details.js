@@ -1,8 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.35.0
- * - Changed: Loads Investment data utilities v1.117.0.
+ * Code version: v0.38.2
+ * - Changed: Loads Investment data utilities v1.120.3 and the shared stable
+ *   replay-order helpers.
  * - Optimized: Pointer hover commits are animation-frame coalesced, static
  *   trade-marker Glow fields are cached, and theme changes update in place.
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
@@ -13,7 +14,7 @@ import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.117.0';
+} from './data-utils.js?v=investment-data-utils-v1.120.3';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -55,11 +56,11 @@ import {
 } from './stock-details-range.js?v=investment-stock-details-range-v1.0.0';
 import {
     createInvestmentStockDetailsMetrics,
-} from './stock-details-metrics.js?v=investment-stock-details-metrics-v1.0.0';
+} from './stock-details-metrics.js?v=investment-stock-details-metrics-v1.1.0';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.35.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.38.2';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
@@ -139,7 +140,8 @@ export function createInvestmentStockDetailsUtils({
     clearInvestmentStockDetailHighlights,
     clearInvestmentStockDetailsVisibleLayoutTimer,
     compareInvestmentTransactions,
-    compareInvestmentTaxLotTransactions = compareInvestmentTransactions,
+    sortInvestmentTransactionsForReplay,
+    sortInvestmentTaxLotTransactions,
     constrainTickerDatesToSharedRange,
     convertAmountToBaseCurrency,
     createPositionState,
@@ -218,16 +220,15 @@ export function createInvestmentStockDetailsUtils({
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(processedTransactions, tickerPriceIndex);
         let lastKnownTickerPrice = null;
         const detailRowsBySourceIndex = new Map();
-        sourceTransactions
-            .map((txn, sourceIndex) => ({txn, sourceIndex}))
-            .filter(({txn}) => getInvestmentCanonicalTicker(txn?.ticker) === normalizedTicker)
-            .sort((left, right) => compareInvestmentTaxLotTransactions(
-                left.txn,
-                right.txn,
-                left.sourceIndex,
-                right.sourceIndex,
-            ))
-            .forEach(({txn, sourceIndex}) => {
+        const sourceIndexes = new Map(
+            sourceTransactions.map((txn, sourceIndex) => [txn, sourceIndex]),
+        );
+        sortInvestmentTaxLotTransactions(
+            sourceTransactions.filter(
+                (txn) => getInvestmentCanonicalTicker(txn?.ticker) === normalizedTicker,
+            ),
+        ).forEach((txn) => {
+            const sourceIndex = sourceIndexes.get(txn);
             const normalizedType = getNormalizedTransactionType(txn);
             const lotScopeKey = getTransactionLotScopeKey(txn, normalizedTicker);
             if (!stockStates.has(lotScopeKey)) {
@@ -296,8 +297,9 @@ export function createInvestmentStockDetailsUtils({
         buildInvestmentFxRateTimeline,
         buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
-        compareInvestmentTaxLotTransactions,
         compareInvestmentTransactions,
+        sortInvestmentTaxLotTransactions,
+        sortInvestmentTransactionsForReplay,
         convertAmountToBaseCurrency,
         createPositionState,
         formatHoldingsMoney,
@@ -384,9 +386,9 @@ export function createInvestmentStockDetailsUtils({
             pnlSummary.quoteCurrency || getTickerQuoteCurrency(normalizedTicker) || baseCurrency,
         ).trim().toUpperCase() || baseCurrency;
         const processedTransactions = getInvestmentProcessedTransactionsCache();
-        const orderedTransactions = [...(
-            Array.isArray(processedTransactions) ? processedTransactions : []
-        )].sort((left, right) => compareInvestmentTransactions(left, right));
+        const orderedTransactions = sortInvestmentTransactionsForReplay(
+            Array.isArray(processedTransactions) ? processedTransactions : [],
+        );
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const canonicalReconciliation = pnlSummary.realizedPnlReconciliation;
         const realizedPnlByDate = (

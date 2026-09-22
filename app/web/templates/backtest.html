@@ -1,4 +1,4 @@
-{# Code version: v0.12.0 #}
+{# Code version: v0.12.1 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions, render_backtest_transaction_colgroup, render_backtest_transaction_header with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -9,7 +9,7 @@
 
 {% block page_overlay_controls %}
     <button type="button"
-            class="sidebar-icon-button sidebar-secondary-button workspace-controls-toggle backtest-parameter-toggle"
+            class="circular-icon-button sidebar-icon-button sidebar-secondary-button workspace-controls-toggle backtest-parameter-toggle"
             id="backtest_parameter_toggle"
             data-workspace-controls-toggle
             data-backtest-parameter-toggle

@@ -1,7 +1,7 @@
 /**
  * Investment stock-details metric and range composition.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
  * - Added: Isolated position-range, realized P&L, and broker metric builders.
  */
 
@@ -10,8 +10,9 @@ export function createInvestmentStockDetailsMetrics({
     buildInvestmentFxRateTimeline,
     buildRenderedSplitFactorHints,
     buildTickerPriceIndex,
-    compareInvestmentTaxLotTransactions,
     compareInvestmentTransactions,
+    sortInvestmentTaxLotTransactions,
+    sortInvestmentTransactionsForReplay,
     convertAmountToBaseCurrency,
     createPositionState,
     formatHoldingsMoney,
@@ -202,17 +203,20 @@ export function createInvestmentStockDetailsMetrics({
 
     function buildInvestmentStockDetailBrokerMetrics(detailRows, ticker, lastPrice) {
         const normalizedTicker = getInvestmentCanonicalTicker(ticker);
-        const orderedRows = [...(Array.isArray(detailRows) ? detailRows : [])]
-            .reverse()
-            .sort((left, right) => compareInvestmentTaxLotTransactions(left, right));
+        const orderedRows = sortInvestmentTaxLotTransactions(
+            [...(Array.isArray(detailRows) ? detailRows : [])].reverse(),
+        );
         if (!normalizedTicker || !orderedRows.length) return [];
         const priceHistoryRows = window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {};
         const tickerPriceIndex = buildTickerPriceIndex(normalizePriceHistoryPayload(priceHistoryRows));
         const renderedSplitFactorHints = buildRenderedSplitFactorHints(orderedRows, tickerPriceIndex);
         const baseCurrency = getInvestmentBaseCurrency();
         const quoteCurrency = getTickerQuoteCurrency(normalizedTicker) || baseCurrency;
-        const orderedTransactions = [...(Array.isArray(getInvestmentProcessedTransactionsCache()) ? getInvestmentProcessedTransactionsCache() : [])]
-            .sort((left, right) => compareInvestmentTransactions(left, right));
+        const orderedTransactions = sortInvestmentTransactionsForReplay(
+            Array.isArray(getInvestmentProcessedTransactionsCache())
+                ? getInvestmentProcessedTransactionsCache()
+                : [],
+        );
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const valuationDate = normalizeInvestmentLedgerDate(
             orderedRows[orderedRows.length - 1]?.date

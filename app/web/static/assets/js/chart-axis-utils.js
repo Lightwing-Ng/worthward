@@ -1,7 +1,9 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.7.0
+ * Code version: v1.8.0
+ * - Added: One global Chart.js font owner resolves the computed base family
+ *   before any chart is created and refreshes Canvas metrics after fonts load.
  * - Added: One market-session resolver and one New York / market-local
  *   timezone conversion owner shared by charting and SVG export.
  * - Added: Shared rounded y-axis value badges preserve the Investment chart's
@@ -31,6 +33,72 @@
     ]);
     const SAFE_IMAGE_URL_PROTOCOLS = new Set(["http:", "https:"]);
     const SAFE_IMAGE_URL_BASE = "https://worthward.invalid";
+
+    /**
+     * Resolve the computed interface stack so Canvas uses the same Western
+     * family as DOM text. Never pass an unresolved CSS variable to Chart.js.
+     */
+    const resolveChartFontFamily = () => {
+        const documentObject = globalScope.document;
+        const readComputedStyle = globalScope.getComputedStyle;
+        if (!documentObject || typeof readComputedStyle !== "function") return "";
+        const root = documentObject.documentElement;
+        if (root) {
+            const tokenFamily = String(
+                readComputedStyle(root).getPropertyValue("--font-family-base") || "",
+            ).trim();
+            if (tokenFamily) return tokenFamily;
+        }
+        const body = documentObject.body;
+        return body ? String(readComputedStyle(body).fontFamily || "").trim() : "";
+    };
+
+    const refreshChartFontMetrics = () => {
+        const instances = globalScope.Chart?.instances;
+        const charts = instances instanceof Map
+            ? Array.from(instances.values())
+            : Object.values(instances || {});
+        charts.forEach((chart) => {
+            if (typeof chart?.update === "function") chart.update("none");
+        });
+        return charts.length;
+    };
+
+    const syncChartFontDefaults = ({refreshExisting = false, forceRefresh = false} = {}) => {
+        const chartFont = globalScope.Chart?.defaults?.font;
+        if (!chartFont) return "";
+        const family = resolveChartFontFamily();
+        if (!family) return "";
+        const changed = chartFont.family !== family;
+        chartFont.family = family;
+        if (refreshExisting && (changed || forceRefresh)) refreshChartFontMetrics();
+        return family;
+    };
+
+    const installChartFontDefaults = () => {
+        syncChartFontDefaults();
+        const fontsReady = globalScope.document?.fonts?.ready;
+        if (fontsReady && typeof fontsReady.then === "function") {
+            Promise.resolve(fontsReady).then(() => {
+                const refresh = () => syncChartFontDefaults({
+                    refreshExisting: true,
+                    forceRefresh: true,
+                });
+                if (typeof globalScope.requestAnimationFrame === "function") {
+                    globalScope.requestAnimationFrame(refresh);
+                } else {
+                    refresh();
+                }
+            }).catch(() => {});
+        }
+        if (typeof globalScope.addEventListener === "function") {
+            globalScope.addEventListener("worthward:theme-mode-change", () => {
+                syncChartFontDefaults({refreshExisting: true});
+            });
+        }
+    };
+
+    installChartFontDefaults();
 
     /**
      * Choose stable x-axis tick indexes for a series of `count` points.
@@ -456,8 +524,12 @@
         getTimezoneOffsetMinutes,
         newYorkWallMsToMarketParts,
         marketMinuteToNewYorkSerialMinute,
+        resolveChartFontFamily,
+        refreshChartFontMetrics,
+        syncChartFontDefaults,
+        installChartFontDefaults,
         DEFAULT_MARKET_TIME_CONFIG,
-        CHART_AXIS_UTILS_VERSION: "v1.7.0",
+        CHART_AXIS_UTILS_VERSION: "v1.8.0",
     });
 
     globalScope.WORTHWARD_CHART_AXIS = api;

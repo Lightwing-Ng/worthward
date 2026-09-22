@@ -1,4 +1,4 @@
-"""Shared Price Field contract tests. Code version: v1.6.0."""
+"""Shared Price Field contract tests. Code version: v1.6.1."""
 
 from __future__ import annotations
 
@@ -269,12 +269,21 @@ class PriceFieldContractTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         css = (root / "app/web/static/assets/css/components/collapse.css").read_text()
         tokens = (root / "app/web/static/assets/css/foundation/tokens.css").read_text()
+        template = (root / "app/web/templates/_collapse.html").read_text()
         self.assertIn("M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z", tokens)
+        self.assertIn("--collapse-icon-closed-rotation: -90deg;", tokens)
+        self.assertIn("--collapse-icon-open-rotation: 0deg;", tokens)
         self.assertNotIn("arrowtriangle.down.circle", tokens)
         self.assertIn("details > summary::after", css)
         self.assertIn("details[open] > summary::after", css)
+        self.assertIn("rotate(var(--collapse-icon-closed-rotation))", css)
+        self.assertIn("rotate(var(--collapse-icon-open-rotation))", css)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", css)
+        self.assertIn("transition: none;", css)
         self.assertNotIn("summary::before", css)
         self.assertNotIn("triangle.fill.svg", css)
+        self.assertIn('<details class="ui-collapse {{ class_name }}"', template)
+        self.assertIn("<summary>{{ title }}</summary>", template)
 
 
 if __name__ == "__main__":

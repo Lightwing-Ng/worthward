@@ -1,25 +1,25 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.14.2`
+Documentation version: `v1.20.0`
 
-This is the normative spatial contract for Worthward and its sibling
-`agenticContext` project. The two implementations may have
-different product surfaces, but shared shell geometry, token meanings, ownership
-boundaries, and acceptance tolerances are the same.
+This is the normative spatial contract for Worthward and its sibling projects,
+`agenticContext` and `neoMe`. The three implementations may have different product
+surfaces, but every adopted shared component keeps the same shell geometry, token
+meaning, ownership boundary, and acceptance tolerance.
 
 ## Western typeface contract
 
-Publicly distributed projects must not bundle a proprietary interface typeface
-without explicit redistribution rights. Worthward resolves ordinary Western
-text through the shared `--font-family-base` role and the operating-system stack:
-Apple system UI on macOS and iOS, Segoe UI on Windows, and the browser's generic
-sans-serif fallback elsewhere. CJK platform families remain explicit glyph
-coverage fallbacks. `--font-family-mono` remains a compatibility role that may
-alias the same base stack.
+All three projects follow
+`/Users/lightwing/Desktop/shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md`.
+The maintainer has explicitly approved the bundled Univers Next for HSBC source for
+these projects. The shared base and former monospace roles resolve Western glyphs
+through that family; operating-system Western stacks and separate technical
+typefaces are not fallbacks. CJK platform families remain explicit glyph-coverage
+fallbacks after the approved family.
 
-Vendored KaTeX mathematical fonts remain an explicit content-font exception and
-must not be promoted into the interface font stack. Any future bundled interface
-font must carry a redistribution license compatible with the repository license.
+Vendored KaTeX mathematical fonts remain the scoped content-font exception and
+must not be promoted into the interface stack. A future source change requires an
+explicit maintainer instruction and one synchronized three-project contract update.
 
 ## Canonical dimensions
 
@@ -60,6 +60,13 @@ The Collapse specimen has no placeholder explanatory paragraph.
   The mask's glass base is stationary; only its internal highlight animates.
   Whole chart/history-card masks and translating glass overlays are not part of
   the optimistic-loading contract.
+- Collapse uses native `details > summary + .ui-collapse-body` semantics. Its
+  summary is a two-column grid with one flexible text track and one trailing
+  affordance track. The sole affordance is a 12px by 8px current-color chevron:
+  it points right while closed and down while open through the shared rotation
+  tokens. Keyboard activation and focus-visible treatment remain native, and
+  reduced-motion preference removes the chevron transition. Product surfaces may
+  adapt body spacing, but must not redefine the marker, direction, or state motion.
 - Shared workspace-modal and floating-notice dismiss buttons use standard error red
   (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
   focusing within the owning modal/notice, not the entire page. Keyboard focus
@@ -67,13 +74,124 @@ The Collapse specimen has no placeholder explanatory paragraph.
   do not intercept pointer events. Each shared workspace modal and floating notice uses `12px`
   padding on all four sides. Its circular `24px` dismiss target sits in the upper
   left with equal `12px` CSS top and left insets, so the center has the same distance
-  from both axes; any surface border contributes equally. The dismiss target owns
-  the first grid row without reserving a full-height column. The status icon and
-  content begin together in the second row: the icon reuses the surface's left
-  inset, while the title and copy share the flexible column after the standard gap.
+  from both axes; any surface border contributes equally. A two-column, two-row
+  semantic grid leaves the dismiss target absolutely positioned instead of reserving
+  a content rail. The first row has a minimum height of
+  `--workspace-modal-title-row-min-height`, which resolves to the dismiss size; the
+  title occupies its flexible second column and is vertically centered on the dismiss
+  target. In the second row, the unchanged `36px` topic icon starts at the surface's
+  left inset and the paragraph or list starts at the same top coordinate in the
+  flexible column after the standard gap. Row gap is the only vertical separation:
+  neither the topic icon nor the body adds a private top margin. Ordered and unordered
+  body lists use outside markers and hanging wrapped lines. Their shared indentation
+  is owned by `--workspace-modal-list-padding-inline-start` and
+  `--workspace-modal-list-marker-gap`, not local list literals. A dynamic message wrapper
+  exposes one direct title and one direct paragraph or list; without a title, that
+  wrapper remains explicitly assigned to the body row.
+- Circular icon actions use the `.circular-icon-button` primitive. Its canonical
+  `--circular-icon-button-*` token family owns the `36px` desktop target, `18px`
+  current-color glyph, pill radius, Frosted Glass material, and idle, hover, active,
+  and focus-visible states. Responsive layouts may raise the shared target to `44px`.
+  Product-specific class names are adapters only; the legacy
+  `--settings-round-icon-button-*` names remain compatibility aliases and do not own
+  independent values.
+- Numeric values may split integer, fractional, and suffix glyphs only as a visual
+  presentation. The owning value keeps one complete `aria-label`; every generated
+  fragment, including allocation-badge glyph slots, is `aria-hidden="true"` so
+  assistive technology reads the original numeric value exactly once.
+- Monetary values declare an ISO 4217 `data-currency-code`. Currencies with minor
+  units, including CNY/RMB and USD, reuse the shared `0.76` fractional scale;
+  zero-minor-unit currencies such as JPY stay in one same-size major fragment.
+  Minor-unit behavior is never inferred from a symbol, table position, or locale,
+  and the authored display string remains the complete accessible name.
+- Pagination reuses `.local-store-pagination`, `.local-store-page-button`, and the
+  shared `local-store-pagination.js` builder. Non-active controls use
+  `--local-store-pagination-button-color`; hover and focus-visible both resolve to
+  the shared blue `--local-store-pagination-button-color-hover`. Arrow masks inherit
+  `currentColor`, so glyph and page text cannot diverge. Reduced Motion preserves
+  state and geometry while shortening motion.
+- A standard scrollable table is
+  `.scrollable-data-table-shell.local-store-pagination-host`. Its controller may
+  prepend the production `[data-table-visual-overlay]`; after that overlay, the shell
+  keeps a direct fixed `table.scrollable-data-table[data-table-header]`, followed by a direct
+  `.scrollable-data-table-scroll[data-table-scroll]` containing
+  `table.scrollable-data-table[data-table-body]`. A floating shared pagination nav
+  may be the final direct child. The shell, header, cell, summary, row, and scrollbar
+  geometry come only from `--scrollable-data-table-*`; a specimen must use this
+  production DOM and token family rather than a parallel demo table.
+- A standard segmented control is emitted by `render_segmented_control` with the
+  `.segmented-control` shell and explicit `data-option-count`. Its default geometry
+  is shrink-wrapped and centered (`width: fit-content; max-width: 100%;
+  margin-inline: auto`) with equal grid tracks
+  (`repeat(var(--segmented-option-count), minmax(0, 1fr))`), centered labels, a
+  `32px` shell, and `28px` options. Start/end alignment and measured overflow are
+  explicit adapters; route CSS must not silently stretch the default primitive.
 
 These rules are not tied to the annotation's 1,024px viewport. Existing desktop,
 overlay, and compact breakpoints and role-based shell geometry remain unchanged.
+
+### Standard single-value Shared select
+
+The standard Shared select is the reusable replacement for an ordinary single-value
+native `<select>`. A product-specific multi-select, searchable picker, model chooser,
+or table-header filter may reuse its visual tokens and keyboard controller, but remains
+an explicit adapter and must not be reported as a migrated standard select until it
+implements this complete contract.
+
+- The native `<select>` remains the sole form and application-state authority. It is
+  retained inside the owning `[data-shared-select-field]`, hidden, marked
+  `aria-hidden="true"`, and removed from the tab order with `tabindex="-1"`.
+- The visible trigger is a `button[type="button"]` with
+  `aria-haspopup="listbox"`, current `aria-expanded`, and `aria-controls` pointing to
+  exactly one menu. Its accessible name contains the field label and current option.
+  The menu has `role="listbox"` and a field-specific accessible name.
+- Each rendered option is a `button[type="button"][role="option"]` with stable identity,
+  `tabindex="-1"`, and current `aria-selected`. Disabled native options remain disabled
+  and expose `aria-disabled="true"`. Text-only options use direct check and text
+  children; optional media adds one explicit media column between them.
+- Pointer or keyboard commit first updates native `value`, `selected`, and
+  `defaultSelected`, then synchronizes the trigger and option states, closes the menu,
+  and dispatches exactly one bubbling native `change` event when the value changed.
+  Choosing the current value only closes the menu. Programmatic option replacement or
+  value assignment must call the adapter's refresh boundary so native, trigger, and
+  listbox state cannot diverge.
+- Only one Shared select menu is open in a document. Trigger activation toggles it;
+  pointer activation outside the owner closes it. A hidden or disabled backing select
+  cannot expose an operable trigger.
+- Worthward's `select-controller.js` v1.0.1 is the byte-identical keyboard core in all
+  three projects. It uses DOM focus, opens Arrow Up or Arrow Down on the selected
+  enabled option, opens Home or End on the corresponding boundary, clamps navigation,
+  skips hidden or disabled options, and never changes selection during navigation.
+  Enter or Space commits once. Escape is consumed, closes, and restores trigger focus.
+  Tab closes without preventing native traversal. Rendering, pointer dismissal, native
+  synchronization, and optional portal placement remain adapter-owned.
+- The trigger uses `--shared-select-trigger-material`; a standard menu uses
+  `--shared-select-dropdown-material`. Both resolve to the shared translucent Frosted
+  Glass surface with its standard border, shadow, hover shadow, and blur. A deliberately
+  opaque product menu is an explicitly named local variant, not the default material.
+- The cross-project semantic token surface is named identically:
+  `--shared-select-trigger-material`, `--shared-select-trigger-material-hover`,
+  `--shared-select-dropdown-material`, `--shared-select-border`,
+  `--shared-select-shadow`, `--shared-select-shadow-hover`, `--shared-select-blur`,
+  `--shared-select-trigger-padding-inline-end`, `--shared-select-dropdown-max-width`,
+  the existing control/dropdown/option geometry tokens, and the
+  `--shared-select-chevron-*` mask, width, height, inline-end, rotation, and duration
+  tokens. Local compatibility aliases may resolve into this surface; component rules
+  consume the canonical names.
+- The trigger affordance is one 12px by 8px `currentColor` down-chevron. It points down
+  while closed and rotates 180 degrees to point up while open, using the shared 180ms
+  standard easing. Reduced motion removes that transition. The affordance is a distinct
+  mask or pseudo-element so a material `background` declaration cannot erase it.
+- The trigger is 30px high with a pill radius. The menu opens 4px from the trigger, uses
+  10px padding and the shared soft radius, and is bounded by
+  `min(360px, 55vh)`. Options are at least 36px high with `9px 10px` padding and a pill
+  radius. Standard field and menu width is `min(parent inline size, 384px)`.
+- The field and its ordinary ancestors stay paint-visible. When a known clipping or
+  modal owner requires a body portal, the adapter measures the trigger, uses fixed
+  positioning inside a pointer-transparent overlay, preserves the same inline width
+  contract, selects above or below placement from available viewport space, and
+  repositions on resize or external scroll. Internal menu scrolling does not move the
+  portal.
 
 ### Spatial tokens
 
@@ -103,7 +221,8 @@ documented product-specific result surface owns the full parent inline size.
 ### Sidebar shell tokens
 
 The current agenticContext Agent sidebar is the measured shared-shell reference.
-Both projects expose the outer `<aside>` as `data-layout-role="sidebar-shell"` and
+Each project exposing this shared shell marks the outer `<aside>` as
+`data-layout-role="sidebar-shell"` and
 consume one semantic `--sidebar-shell-*` token family instead of restating the
 material on individual pages.
 
@@ -273,6 +392,6 @@ attributes or temporary preview markers.
 Each project must provide static contract tests for tokens, roles, and overflow
 ownership, focused functional tests for its affected surfaces, and rendered browser
 checks at desktop, overlay/iPad, and compact widths. The final entry in the
-private sibling synchronization ledger may be marked `Synchronized` only after
-both projects pass their complete gates and the same geometry is measured on isolated
-verification ports.
+private sibling synchronization ledger may be marked `Synchronized` only after every
+applicable project passes its complete gate and the same geometry is measured on
+isolated verification ports.

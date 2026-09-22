@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.4.3-agent-contract.0`
+Policy version: `v1.5.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -16,6 +16,15 @@ discovery. This file remains the canonical guide.
 - For HSBC pending-sell transaction history, model each visible row with a virtual post-trade holding snapshot obtained by reverse-replaying the authoritative broker position snapshot. Value those holdings with the last available close from that trading day's intraday series, fall back to the existing daily close when intraday data is unavailable, and calculate row Equity as displayed cash plus row Market value. This is an explicit display projection, not an assertion about the exact execution timestamp.
 - IBKR is a file-import-only integration. Do not reintroduce Flex Web Service, Client Portal, Gateway, broker credentials, sessions, market-data, order-routing, or direct broker transports without an explicit user-directed architecture and security decision.
 - Use American English for code comments and repository documentation.
+- The repository maintainer has explicitly authorized the bundled Univers Next for
+  HSBC collection. Preserve `app/web/static/assets/fonts/UniversNextforHSBC.ttc`
+  as the sole Western typeface source for all interface text, including technical,
+  code, path, URL, and diagnostic text. Standalone TTF files may exist only as
+  deterministic browser transports derived from that TTC. Do not replace or add a
+  platform, generic Western, or monospace font stack. KaTeX mathematical glyphs are
+  the sole scoped exception. Follow
+  [`../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md`](../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md)
+  before changing font assets, declarations, or typography tokens.
 - Follow the existing file-level `Code version:` convention for versioned source files. Do not bump it for comments, formatting, or documentation-only edits. Bump the patch component for a behavior-preserving refactor or localized bug fix, for example `v0.25.2` to `v0.25.3`. Bump the minor component and reset the patch component for a module-local public behavior, validation, persistence, security, or API-contract change, for example `v0.25.2` to `v0.26.0`. Bump the major component and reset lower components only for a coordinated cross-module breaking contract or schema migration. Increment exactly one component per coherent change and never skip versions merely to reflect task size.
 - For a versioned Markdown document, bump its documentation version whenever factual or contractual content changes. Record test baselines only from a dated command result, never from an estimate.
 - Treat [`README.md`](README.md) as the documentation map and ownership
@@ -59,9 +68,11 @@ discovery. This file remains the canonical guide.
    pattern, then read the optional private sibling synchronization ledger when it
    is available in a maintainer checkout. `Worthward` is the canonical complete
    baseline and final convergence target; a Cache-first improvement is a `Candidate review`
-   until it is promoted here. Update the ledger whenever one project advances first, do
-   not edit the sibling unless the task authorizes both projects, and include the ledger's
-   required pending-sync reminder in the handoff until parity is verified.
+   until it is promoted here. Update the ledger whenever one project advances first; do
+   not edit any other project unless the task authorizes that project, and include the
+   ledger's required pending-sync reminders until every applicable project has verified evidence.
+   Read the shared typography contract referenced above for every font or
+   typography-family change; its three-project invariant is not optional.
 3. Search with `rg` when available; otherwise use a recursive fallback such as
    `grep -R`, and inspect the current implementation before editing. After any
    static-file-producing operation, run the shared numbered-copy housekeeping

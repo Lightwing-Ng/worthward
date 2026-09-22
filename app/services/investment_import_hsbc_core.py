@@ -1,6 +1,8 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.1.0
+Code version: v0.3.0
+- Fixed: Pasted cash evidence periods include visible zero-net postings even
+  though those rows remain excluded from the economic transaction ledger.
 """
 
 from __future__ import annotations
@@ -781,6 +783,8 @@ def _build_hsbc_pasted_text_source_artifact(
     statement_period_start: str = "",
     statement_period_end: str = "",
     statement_generated_at: str = "",
+    cash_earliest_post_date: str = "",
+    cash_latest_post_date: str = "",
 ) -> dict[str, Any]:
     """Build one immutable artifact from the exact UTF-8 parser input."""
     source_bytes = raw_text.encode("utf-8")
@@ -794,7 +798,7 @@ def _build_hsbc_pasted_text_source_artifact(
     period = "/".join(
         value for value in (statement_period_start, statement_period_end) if value
     )
-    return {
+    artifact = {
         "evidence_schema_version": "1.0",
         "sha256": digest,
         "byte_count": len(source_bytes),
@@ -817,6 +821,10 @@ def _build_hsbc_pasted_text_source_artifact(
         "content_encoding": "base64",
         "content_base64": base64.b64encode(source_bytes).decode("ascii"),
     }
+    if cash_earliest_post_date and cash_latest_post_date:
+        artifact["cash_earliest_post_date"] = cash_earliest_post_date
+        artifact["cash_latest_post_date"] = cash_latest_post_date
+    return artifact
 
 
 def _build_hsbc_pasted_text_source_artifacts(
@@ -852,7 +860,24 @@ def _build_hsbc_pasted_text_source_artifacts(
         else _normalize_text(snapshot_report.get("cash_latest_post_date"))
     )
     if not statement_period_start and not portfolio_text and not order_status_text:
-        statement_period_start = statement_period_end
+        # A cash-account capture is a visible, potentially truncated transaction
+        # range rather than a complete bank statement period.
+        statement_period_start = _normalize_text(
+            snapshot_report.get("cash_earliest_post_date")
+        )
+    cash_only_capture = bool(
+        cash_account_text and not portfolio_text and not order_status_text
+    )
+    cash_earliest_post_date = (
+        _normalize_text(snapshot_report.get("cash_earliest_post_date"))
+        if cash_only_capture
+        else ""
+    )
+    cash_latest_post_date = (
+        _normalize_text(snapshot_report.get("cash_latest_post_date"))
+        if cash_only_capture
+        else ""
+    )
     market_data = snapshot_report.get("portfolio_market_data_updated_at")
     statement_generated_at = (
         _normalize_text(market_data.get("raw")) if isinstance(market_data, dict) else ""
@@ -874,6 +899,12 @@ def _build_hsbc_pasted_text_source_artifacts(
                 statement_period_start=statement_period_start,
                 statement_period_end=statement_period_end,
                 statement_generated_at=statement_generated_at,
+                cash_earliest_post_date=(
+                    cash_earliest_post_date if role == "cash_account" else ""
+                ),
+                cash_latest_post_date=(
+                    cash_latest_post_date if role == "cash_account" else ""
+                ),
             )
         )
     return artifacts
@@ -1344,6 +1375,10 @@ def _attribute_hsbc_corporate_event_dividends(
         record
         for record in cash_records
         if _normalize_text(record.get("type")).lower() == "dividend"
+        and _ii_merge_identity._normalize_hsbc_currency_code(
+            record.get("currency")
+        )
+        == "USD"
         and _normalize_whitespace(record.get("description"))
         .upper()
         .startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX)
@@ -1351,14 +1386,25 @@ def _attribute_hsbc_corporate_event_dividends(
     if not corporate_event_records:
         return
 
+    usd_order_records = [
+        record
+        for record in order_records
+        if _ii_merge_identity._normalize_hsbc_currency_code(record.get("currency"))
+        == "USD"
+    ]
     candidate_tickers = {
         normalize_ticker(ticker)
-        for ticker in position_snapshot
+        for ticker, position in position_snapshot.items()
         if normalize_ticker(ticker)
+        and isinstance(position, dict)
+        and _ii_merge_identity._normalize_hsbc_currency_code(
+            position.get("currency")
+        )
+        == "USD"
     }
     candidate_tickers.update(
         normalize_ticker(_normalize_text(record.get("ticker")))
-        for record in order_records
+        for record in usd_order_records
         if normalize_ticker(_normalize_text(record.get("ticker")))
     )
     dividend_actions: dict[str, list[dict[str, str]]] = {}
@@ -1398,7 +1444,7 @@ def _attribute_hsbc_corporate_event_dividends(
                     or ZERO
                 )
                 eligible_quantity = _hsbc_order_quantity_before_date(
-                    order_records,
+                    usd_order_records,
                     ticker,
                     ex_date,
                 )
@@ -1556,18 +1602,11 @@ def _hsbc_pasted_cash_account_sections(raw_text: str) -> list[dict[str, Any]]:
 def _hsbc_cash_balance_component_key(currency: str, account_type: Any) -> str:
     """Return a stable balance key that keeps HSBC cash account kinds distinct."""
     normalized_currency = _ii_merge_identity._normalize_hsbc_currency_code(currency)
-    normalized_type = _normalize_text(account_type).upper()
-    normalized_type = re.sub(
-        r"^(?:USD|HKD|CNH|CNY|RMB)\s+",
-        "",
-        normalized_type,
+    normalized_type = _ii_merge_identity._normalize_hsbc_cash_account_type(
+        normalized_currency,
+        account_type,
     )
-    if re.fullmatch(
-        r"FOREIGN CURRENCY SAVINGS(?:\s+(?:USD|HKD|CNH|CNY|RMB))?",
-        normalized_type,
-    ):
-        normalized_type = "SAVINGS"
-    normalized_type = _normalize_whitespace(normalized_type) or "UNSPECIFIED"
+    normalized_type = normalized_type or "UNSPECIFIED"
     return f"{normalized_currency}:{normalized_type}"
 
 
@@ -1731,6 +1770,7 @@ def _build_hsbc_pasted_cash_account_section(
     dict[str, Decimal],
     dict[str, Decimal],
     dict[str, Decimal | None],
+    list[str],
     int,
 ]:
     raw_lines = section.get("lines") if isinstance(section.get("lines"), list) else []
@@ -1780,7 +1820,14 @@ def _build_hsbc_pasted_cash_account_section(
         -1,
     )
     if table_start < 0:
-        return [], available_by_currency, ledger_by_currency, {}, row_number_start
+        return (
+            [],
+            available_by_currency,
+            ledger_by_currency,
+            {},
+            [],
+            row_number_start,
+        )
     table_end = next(
         (
             index
@@ -1838,6 +1885,7 @@ def _build_hsbc_pasted_cash_account_section(
     cash_records: list[dict[str, Any]] = []
     starting_by_currency: dict[str, Decimal] = {}
     ending_by_currency: dict[str, Decimal] = {}
+    visible_post_dates: list[str] = []
     current_row_number = row_number_start
     for row_index, row in enumerate(ordered_rows):
         amount_cells = row["amount_cells"]
@@ -1884,6 +1932,11 @@ def _build_hsbc_pasted_cash_account_section(
         )
         if not currency:
             continue
+        transaction_day = _parse_hsbc_human_date(
+            row["transaction_date"],
+            f"HSBC {currency} cash row {current_row_number} date",
+        )
+        visible_post_dates.append(transaction_day.isoformat())
         if signed_amount == ZERO:
             warnings.append(
                 f"HSBC {currency} cash row {current_row_number}: skipped zero-value row {row['description']!r}."
@@ -1892,10 +1945,6 @@ def _build_hsbc_pasted_cash_account_section(
         if currency not in starting_by_currency:
             starting_by_currency[currency] = balance_after - signed_amount
         ending_by_currency[currency] = balance_after
-        transaction_day = _parse_hsbc_human_date(
-            row["transaction_date"],
-            f"HSBC {currency} cash row {current_row_number} date",
-        )
         mapped_type = _classify_hsbc_cash_account_transaction(
             row["description"], signed_amount
         )
@@ -1956,6 +2005,7 @@ def _build_hsbc_pasted_cash_account_section(
         available_by_currency,
         ledger_by_currency,
         ending_by_currency,
+        visible_post_dates,
         current_row_number,
     )
 
@@ -1986,6 +2036,7 @@ def _build_hsbc_cash_account_capture_from_text_single(
     ledger_component_post_dates: dict[str, str] = {}
     ending_component_post_dates: dict[str, str] = {}
     errors: list[str] = []
+    visible_post_dates: list[str] = []
     next_row_number = 1
     for section in _hsbc_pasted_cash_account_sections(raw_text):
         section_label = _normalize_text(section.get("account_type")) or "cash account"
@@ -1995,6 +2046,7 @@ def _build_hsbc_cash_account_capture_from_text_single(
                 section_available,
                 section_ledger,
                 section_ending,
+                section_visible_post_dates,
                 next_row_number,
             ) = _build_hsbc_pasted_cash_account_section(
                 section,
@@ -2006,6 +2058,7 @@ def _build_hsbc_cash_account_capture_from_text_single(
             errors.append(f"HSBC {section_label} section: {exc}")
             continue
         combined_records.extend(section_records)
+        visible_post_dates.extend(section_visible_post_dates)
         account_type = _normalize_text(section.get("account_type"))
         section_post_dates = _hsbc_cash_component_post_dates_from_records(
             section_records
@@ -2048,6 +2101,11 @@ def _build_hsbc_cash_account_capture_from_text_single(
     )
     if not available_by_currency:
         raise ValueError("No supported HSBC cash-account balances were found.")
+    sequence_domain_sha256 = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+    for record in combined_records:
+        source = record.get("source")
+        if isinstance(source, dict):
+            source["source_sequence_sha256"] = sequence_domain_sha256
     return {
         "account_number": account_number,
         "available_by_currency": available_by_currency,
@@ -2063,6 +2121,7 @@ def _build_hsbc_cash_account_capture_from_text_single(
         "available_component_post_dates": available_component_post_dates,
         "ledger_component_post_dates": ledger_component_post_dates,
         "ending_component_post_dates": ending_component_post_dates,
+        "visible_post_dates": sorted(set(visible_post_dates)),
         "records": combined_records,
     }
 
@@ -2083,6 +2142,7 @@ def _build_hsbc_cash_account_capture_from_text(
     ledger_component_post_dates: dict[str, str] = {}
     ending_component_post_dates: dict[str, str] = {}
     combined_records: list[dict[str, Any]] = []
+    visible_post_dates: list[str] = []
     seen_keys: set[tuple[str, ...]] = set()
     errors: list[str] = []
     for chunk_index, chunk in enumerate(chunks, start=1):
@@ -2100,6 +2160,7 @@ def _build_hsbc_cash_account_capture_from_text(
                 "The pasted HSBC cash-account text chunks belong to different accounts."
             )
         account_number = chunk_account
+        visible_post_dates.extend(capture.get("visible_post_dates", []))
         _merge_hsbc_cash_component_values(
             available_balance_components,
             available_component_post_dates,
@@ -2151,5 +2212,6 @@ def _build_hsbc_cash_account_capture_from_text(
         "available_component_post_dates": available_component_post_dates,
         "ledger_component_post_dates": ledger_component_post_dates,
         "ending_component_post_dates": ending_component_post_dates,
+        "visible_post_dates": sorted(set(visible_post_dates)),
         "records": combined_records,
     }

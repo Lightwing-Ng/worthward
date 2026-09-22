@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentFundingMetricsRuntime} from '../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
@@ -178,9 +178,28 @@ function makeHsbcSellSettlement({
     transaction.normalized.net_amount = String(netAmount);
     transaction.commission_raw = String(commission);
     transaction.normalized.commission = String(commission);
+    transaction.source.statement_order_id = 'S-100001';
+    transaction.source.cash_settlement_date = '2026-08-05';
+    transaction.source.cash_settlement_amount_raw = String(principalAmount);
     transaction.source.cash_settlement_postings = [
-        {role: 'principal', amount_raw: String(principalAmount)},
-        {role: 'fee', amount_raw: String(feeAmount)},
+        {
+            role: 'principal', amount_raw: String(principalAmount),
+            date: '2026-08-05', account_number: '000-999999-999',
+            account_type: 'USD Savings', currency: 'USD',
+            source_file_kind: 'hsbc_usd_account_text',
+            source_sequence_sha256: 'a'.repeat(64), ledger_sequence: 1,
+            row_number: 1, balance_after_raw: '1000',
+            reference: 'REF S100001001 SEC',
+        },
+        {
+            role: 'fee', amount_raw: String(feeAmount),
+            date: '2026-08-05', account_number: '000-999999-999',
+            account_type: 'USD Savings', currency: 'USD',
+            source_file_kind: 'hsbc_usd_account_text',
+            source_sequence_sha256: 'a'.repeat(64), ledger_sequence: 2,
+            row_number: 2, balance_after_raw: '',
+            reference: 'REF S100001001 SEC',
+        },
     ];
     return transaction;
 }
@@ -243,6 +262,129 @@ test('HSBC sell settlement evidence includes a separate fee exactly once', () =>
     const malformedPosting = makeHsbcSellSettlement();
     malformedPosting.source.cash_settlement_postings[1].amount_raw = 'not-a-number';
     assert.equal(getTransactionEvidencedTradeCashAmount(malformedPosting), 59.99);
+
+    const subToleranceMismatch = makeHsbcSellSettlement();
+    subToleranceMismatch.source.cash_settlement_postings[0].amount_raw = '59.9900005';
+    assert.equal(getTransactionEvidencedTradeCashAmount(subToleranceMismatch), 59.99);
+
+    const missingCanonicalAmount = makeHsbcSellSettlement();
+    missingCanonicalAmount.source.cash_settlement_postings[1].amount = '-0.01';
+    delete missingCanonicalAmount.source.cash_settlement_postings[1].amount_raw;
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingCanonicalAmount), 59.99);
+
+    const missingCanonicalBalance = makeHsbcSellSettlement();
+    missingCanonicalBalance.source.cash_settlement_postings[0].balance_after = '1000';
+    delete missingCanonicalBalance.source.cash_settlement_postings[0].balance_after_raw;
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingCanonicalBalance), 59.99);
+
+    const foreignFee = makeHsbcSellSettlement();
+    Object.assign(foreignFee.source.cash_settlement_postings[1], {
+        account_number: '111-222222-333',
+        account_type: 'HKD Savings',
+        currency: 'HKD',
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(foreignFee), 59.99);
+
+    const missingFeeDomain = makeHsbcSellSettlement();
+    delete missingFeeDomain.source.cash_settlement_postings[1].source_sequence_sha256;
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingFeeDomain), 59.99);
+
+    const malformedDomain = makeHsbcSellSettlement();
+    malformedDomain.source.cash_settlement_postings.forEach((posting) => {
+        posting.source_sequence_sha256 = 'not-a-digest';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(malformedDomain), 59.99);
+
+    const conflictingStatementDigest = makeHsbcSellSettlement();
+    conflictingStatementDigest.source.cash_settlement_postings[1]
+        .statement_pdf_source_sha256 = 'b'.repeat(64);
+    assert.equal(
+        getTransactionEvidencedTradeCashAmount(conflictingStatementDigest),
+        59.99,
+    );
+
+    for (const [label, field, value] of [
+        ['missing row', 'row_number', undefined],
+        ['fractional row', 'row_number', 2.5],
+        ['boolean row', 'row_number', true],
+        ['fractional sequence', 'ledger_sequence', 2.5],
+        ['boolean sequence', 'ledger_sequence', true],
+    ]) {
+        const invalidSequenceIdentity = makeHsbcSellSettlement();
+        if (value === undefined) {
+            delete invalidSequenceIdentity.source.cash_settlement_postings[1][field];
+        } else {
+            invalidSequenceIdentity.source.cash_settlement_postings[1][field] = value;
+        }
+        assert.equal(
+            getTransactionEvidencedTradeCashAmount(invalidSequenceIdentity),
+            59.99,
+            label,
+        );
+    }
+
+    const reusedPhysicalRow = makeHsbcSellSettlement();
+    reusedPhysicalRow.source.cash_settlement_postings[1].row_number = 1;
+    assert.equal(getTransactionEvidencedTradeCashAmount(reusedPhysicalRow), 59.99);
+
+    const wrongSourceKind = makeHsbcSellSettlement();
+    wrongSourceKind.source.cash_settlement_postings.forEach((posting) => {
+        posting.source_file_kind = 'hsbc_order_status_text';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(wrongSourceKind), 59.99);
+
+    const csvWithoutChronology = makeHsbcSellSettlement();
+    csvWithoutChronology.source.cash_settlement_postings.forEach((posting) => {
+        posting.source_file_kind = 'hsbc_usd_savings_csv';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(csvWithoutChronology), 59.99);
+
+    const usdCurrentPosting = makeHsbcSellSettlement();
+    usdCurrentPosting.account_type = 'USD Current';
+    usdCurrentPosting.source.account_type = 'USD Current';
+    usdCurrentPosting.source.cash_settlement_postings.forEach((posting) => {
+        posting.account_type = 'USD Current';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(usdCurrentPosting), 59.99);
+
+    const mismatchedSettlementDate = makeHsbcSellSettlement();
+    mismatchedSettlementDate.source.cash_settlement_date = '2026-08-06';
+    assert.equal(getTransactionEvidencedTradeCashAmount(mismatchedSettlementDate), 59.99);
+
+    const settlementBeforeTrade = makeHsbcSellSettlement();
+    settlementBeforeTrade.source.cash_settlement_date = '2026-08-03';
+    settlementBeforeTrade.source.cash_settlement_postings.forEach((posting) => {
+        posting.date = '2026-08-03';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(settlementBeforeTrade), 59.99);
+
+    const unorderedFee = makeHsbcSellSettlement();
+    unorderedFee.source.cash_settlement_postings[1].ledger_sequence = 1;
+    assert.equal(getTransactionEvidencedTradeCashAmount(unorderedFee), 59.99);
+
+    const duplicatedFee = makeHsbcSellSettlement({commission: '-0.02'});
+    duplicatedFee.source.cash_settlement_postings.push({
+        ...duplicatedFee.source.cash_settlement_postings[1],
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(duplicatedFee), 59.99);
+
+    const malformedFeeBalance = makeHsbcSellSettlement();
+    malformedFeeBalance.source.cash_settlement_postings[1].balance_after_raw = 'NaN';
+    assert.equal(getTransactionEvidencedTradeCashAmount(malformedFeeBalance), 59.99);
+
+    const mismatchedOrderReference = makeHsbcSellSettlement();
+    mismatchedOrderReference.source.cash_settlement_postings.forEach((posting) => {
+        posting.reference = 'REF S200002001 SEC';
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(mismatchedOrderReference), 59.99);
+
+    const unknownLeg = makeHsbcSellSettlement();
+    unknownLeg.source.cash_settlement_postings.push({
+        ...unknownLeg.source.cash_settlement_postings[1],
+        role: 'mystery',
+        amount_raw: '-25',
+    });
+    assert.equal(getTransactionEvidencedTradeCashAmount(unknownLeg), 59.99);
 });
 
 for (const calculationMethod of [

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.2 */
 (() => {
     const create = (context) => {
         const {
@@ -199,9 +199,12 @@
 
         const syncNativeSelectSelection = (select, selectedValue) => {
             if (!(select instanceof HTMLSelectElement)) return;
-            const normalizedValue = String(selectedValue || "");
+            const normalizedValue = String(selectedValue ?? "");
+            const selectedOption = Array.from(select.options).find(
+                (option) => option.value === normalizedValue,
+            );
             Array.from(select.options).forEach((option) => {
-                const isSelected = Boolean(normalizedValue) && option.value === normalizedValue;
+                const isSelected = option === selectedOption;
                 option.defaultSelected = isSelected;
                 option.selected = isSelected;
                 if (isSelected) {
@@ -398,6 +401,13 @@
         const syncSharedSelectTriggerLabel = (field) => {
             const parts = getSharedSelectParts(field);
             if (!parts) return;
+            const isDisabled = parts.select.disabled;
+            if (parts.trigger.disabled !== isDisabled) parts.trigger.disabled = isDisabled;
+            if (isDisabled) {
+                parts.field.setAttribute("aria-disabled", "true");
+            } else {
+                parts.field.removeAttribute("aria-disabled");
+            }
             const selectedOption = Array.from(parts.select.options).find((option) => option.value === parts.select.value);
             const nextLabel = selectedOption?.textContent?.trim()
                 || parts.triggerLabel.dataset.fallbackLabel
@@ -438,13 +448,16 @@
             Array.from(parts.select.options).forEach((option, optionIndex) => {
                 const optionButton = document.createElement("button");
                 optionButton.type = "button";
-                optionButton.disabled = option.disabled || option.parentElement?.disabled === true;
+                const isDisabled = option.disabled || option.parentElement?.disabled === true;
+                optionButton.disabled = isDisabled;
+                optionButton.hidden = option.hidden;
                 optionButton.className = "trade-strategy-dropdown-option";
                 optionButton.id = `${parts.dropdown.id || parts.select.id || "shared_select"}_option_${optionIndex}`;
                 optionButton.tabIndex = -1;
                 optionButton.dataset.value = option.value;
                 optionButton.setAttribute("role", "option");
                 optionButton.setAttribute("aria-selected", option.value === currentSelection ? "true" : "false");
+                if (isDisabled) optionButton.setAttribute("aria-disabled", "true");
                 if (option.value === currentSelection) {
                     optionButton.classList.add("is-selected", "is-active");
                 }

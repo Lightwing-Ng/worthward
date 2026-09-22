@@ -1,4 +1,4 @@
-/* Code version: v0.40.3 */
+/* Code version: v0.44.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -28,6 +28,8 @@
 	--collapse-icon-gap: 8px;
 	--collapse-icon-closed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z' fill='currentColor'/%3E%3C/svg%3E");
 	--collapse-icon-open: var(--collapse-icon-closed);
+	--collapse-icon-closed-rotation: -90deg;
+	--collapse-icon-open-rotation: 0deg;
 	--collapse-summary-padding: 10px 0;
 	--collapse-body-padding: 0 10px 10px;
 	--collapse-font-size: var(--font-size-5);
@@ -96,7 +98,7 @@
 	--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);
 	--layout-global-action-gap: 10px;
 	--layout-global-action-inline-size: calc(
-		(var(--settings-round-icon-button-size) * 2)
+		(var(--circular-icon-button-size) * 2)
 		+ var(--layout-global-action-gap)
 	);
 	--sidebar-overlay-inset-top: var(--layout-page-inset-top);
@@ -142,13 +144,13 @@
 	);
 	--sidebar-toggle-top: var(--page-edge-pad);
 	--sidebar-toggle-left: var(--page-edge-pad);
-	--sidebar-toggle-center-offset: calc(var(--layout-global-anchor-top) + (var(--settings-round-icon-button-size) / 2));
+	--sidebar-toggle-center-offset: calc(var(--layout-global-anchor-top) + (var(--circular-icon-button-size) / 2));
 	--workspace-mobile-collapsed-offset: calc(var(--sidebar-toggle-center-offset) - var(--layout-page-inset-top));
 	--workspace-title-safe-top: 60px;
-	--workspace-title-rail-control-height: var(--settings-round-icon-button-size);
+	--workspace-title-rail-control-height: var(--circular-icon-button-size);
 	--workspace-title-rail-pad-block-start: var(--page-edge-pad);
 	--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
-	--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
+	--workspace-title-rail-collapsed-pad-inline-start: calc(var(--circular-icon-button-size) + 22px);
 	--sidebar-bottom-pad: 96px;
 	--sidebar-dock-hit-size: 56px;
 	--settings-nav-item-block-size: 48px;
@@ -208,21 +210,34 @@
 	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
 	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
 	--primary-button-font-weight: var(--font-weight-medium);
-	--settings-round-icon-button-size: 36px;
-	--settings-round-icon-button-icon-size: 18px;
-	--settings-round-icon-button-radius: var(--radius-pill);
-	--settings-round-icon-button-background: var(--frosted-glass-background);
-	--settings-round-icon-button-background-hover: var(--frosted-glass-background-hover);
-	--settings-round-icon-button-border: var(--frosted-glass-border);
-	--settings-round-icon-button-shadow: var(--frosted-glass-shadow);
-	--settings-round-icon-button-shadow-hover: var(--frosted-glass-shadow-hover);
-	--settings-round-icon-button-shadow-active: var(--frosted-glass-shadow-active);
-	--settings-round-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
-	--settings-round-icon-button-color-hover: var(--accent-text);
+	--circular-icon-button-size: 36px;
+	--circular-icon-button-icon-size: 18px;
+	--circular-icon-button-radius: var(--radius-pill);
+	--circular-icon-button-material: var(--frosted-glass-background);
+	--circular-icon-button-background: var(--circular-icon-button-material);
+	--circular-icon-button-background-hover: var(--frosted-glass-background-hover);
+	--circular-icon-button-border: var(--frosted-glass-border);
+	--circular-icon-button-shadow: var(--frosted-glass-shadow);
+	--circular-icon-button-shadow-hover: var(--frosted-glass-shadow-hover);
+	--circular-icon-button-shadow-active: var(--frosted-glass-shadow-active);
+	--circular-icon-button-color: color-mix(in srgb, var(--theme-text) 70%, transparent);
+	--circular-icon-button-color-hover: var(--accent-text);
+	/* Compatibility aliases for existing Worthward-specific adapters. */
+	--settings-round-icon-button-size: var(--circular-icon-button-size);
+	--settings-round-icon-button-icon-size: var(--circular-icon-button-icon-size);
+	--settings-round-icon-button-radius: var(--circular-icon-button-radius);
+	--settings-round-icon-button-background: var(--circular-icon-button-background);
+	--settings-round-icon-button-background-hover: var(--circular-icon-button-background-hover);
+	--settings-round-icon-button-border: var(--circular-icon-button-border);
+	--settings-round-icon-button-shadow: var(--circular-icon-button-shadow);
+	--settings-round-icon-button-shadow-hover: var(--circular-icon-button-shadow-hover);
+	--settings-round-icon-button-shadow-active: var(--circular-icon-button-shadow-active);
+	--settings-round-icon-button-color: var(--circular-icon-button-color);
+	--settings-round-icon-button-color-hover: var(--circular-icon-button-color-hover);
 	--strategy-tune-button-size: var(--shared-select-control-height);
 	--strategy-tune-button-icon-size: 14px;
 	--strategy-tune-button-radius: var(--radius-pill);
-	--strategy-tune-button-material: var(--settings-round-icon-button-background);
+	--strategy-tune-button-material: var(--circular-icon-button-background);
 	--strategy-tune-button-active-background: var(--color-white-adaptive);
 	--strategy-tune-button-active-border: 1px solid var(--theme-accent-primary);
 	--strategy-tune-button-active-color: var(--theme-accent-primary);
@@ -309,6 +324,8 @@
 	--local-store-pagination-button-border: 1px solid var(--accent-border-strong);
 	--local-store-pagination-button-shadow: var(--frosted-glass-shadow);
 	--local-store-pagination-button-blur: var(--frosted-glass-blur);
+	--local-store-pagination-button-color: var(--theme-text);
+	--local-store-pagination-button-color-hover: var(--accent-text);
 	--local-store-pagination-motion-duration: var(--motion-duration-spatial);
 	--local-store-pagination-motion-easing: var(--motion-bouncy);
 	--mode-switch-radius: var(--radius-pill);
@@ -349,9 +366,12 @@
 	--workspace-modal-close-offset: 12px;
 	--workspace-modal-close-size: 24px;
 	--workspace-modal-close-center-offset: calc(var(--workspace-modal-close-offset) + (var(--workspace-modal-close-size) / 2));
+	--workspace-modal-title-row-min-height: var(--workspace-modal-close-size);
 	--workspace-modal-icon-size: 36px;
 	--workspace-modal-column-gap: 12px;
 	--workspace-modal-row-gap: 4px;
+	--workspace-modal-list-padding-inline-start: 1.35rem;
+	--workspace-modal-list-marker-gap: 0.18rem;
 	--workspace-modal-title-margin-end: 0px;
 	--live-trading-pin-dialog-width: 392px;
 	--live-trading-pin-dialog-radius: var(--workspace-modal-radius);
@@ -422,6 +442,7 @@
 	--scrollable-data-table-summary-padding: 6px 8px;
 	--scrollable-data-table-header-height: 28px;
 	--scrollable-data-table-min-width: 376px;
+	--scrollable-data-table-header-material: var(--frosted-glass-background);
 	--scrollable-data-table-header-color: var(--theme-muted);
 	--scrollable-data-table-scrollbar-gutter: stable;
 	--scrollable-data-table-row-background: var(--panel-strong);
@@ -432,11 +453,27 @@
 	--scrollable-data-table-summary-blur: var(--frosted-glass-blur);
 	--shared-select-dropdown-padding: 10px;
 	--shared-select-dropdown-radius: var(--radius-soft);
+	--shared-select-dropdown-max-width: var(--layout-control-width);
 	--shared-select-dropdown-max-height: min(360px, 55vh);
 	--shared-select-option-padding: 9px 10px;
 	--shared-select-option-min-height: 36px;
 	--shared-select-option-radius: var(--radius-pill);
 	--shared-select-option-gap: 8px;
+	--shared-select-trigger-material: var(--frosted-glass-background);
+	--shared-select-trigger-material-hover: var(--frosted-glass-background-hover);
+	--shared-select-dropdown-material: var(--frosted-glass-background);
+	--shared-select-border: var(--frosted-glass-border);
+	--shared-select-shadow: var(--frosted-glass-shadow);
+	--shared-select-shadow-hover: var(--frosted-glass-shadow-hover);
+	--shared-select-blur: var(--frosted-glass-blur);
+	--shared-select-trigger-padding-inline-end: 36px;
+	--shared-select-chevron-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1.41 1.59 6 6.17l4.59-4.58L12 3l-6 5-6-5z'/%3E%3C/svg%3E");
+	--shared-select-chevron-width: 12px;
+	--shared-select-chevron-height: 8px;
+	--shared-select-chevron-inline-end: 12px;
+	--shared-select-chevron-closed-rotation: 0deg;
+	--shared-select-chevron-open-rotation: 180deg;
+	--shared-select-chevron-transition-duration: 180ms;
 	--secondary-button-min-height: 32px;
 	--investment-holdings-cell-padding: 4px 6px;
 	--investment-holdings-allocation-badge-inline-size: 52px;
@@ -551,9 +588,10 @@
 	--font-weight-medium: 500;
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
-	--font-family-brand: -apple-system, BlinkMacSystemFont, "Segoe UI";
+	--font-family-brand: "Univers Next for HSBC";
 	--font-family-cjk: "PingFang SC", "PingFang TC", "PingFang HK", "Microsoft YaHei", "Microsoft JhengHei", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
 	--font-family-base: var(--font-family-brand), var(--font-family-cjk);
+	/* Technical, code, path, URL, and diagnostic text use the same Western family. */
 	--font-family-mono: var(--font-family-base);
 	--font-mono: var(--font-family-mono);
 	--font-ui-xs: var(--font-size-1);
@@ -641,10 +679,10 @@ body::-webkit-scrollbar-button,
 }
 [hidden] { display: none !important; }
 body { margin: 0; height: 100vh; min-height: 100svh; overflow: hidden; font-family: var(--font-family-base); font-synthesis: none; font-weight: var(--font-weight-regular); color: var(--text); background: var(--bg); }
-.page { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--layout-page-inset-top) var(--layout-page-inset-right) var(--layout-page-inset-bottom) var(--layout-page-inset-left); display: flex; align-items: stretch; overflow: visible; position: relative; }
+.page { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--circular-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); width: min(1560px, 100%); max-width: 100%; height: 100vh; min-height: 100svh; margin: 0 auto; padding: var(--layout-page-inset-top) var(--layout-page-inset-right) var(--layout-page-inset-bottom) var(--layout-page-inset-left); display: flex; align-items: stretch; overflow: visible; position: relative; }
 .page.sidebar-memory-collapsed,
 html.sidebar-memory-collapsed .page { --sidebar-toggle-x: 0px; }
-.app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--settings-round-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: var(--layer-surface-content); width: 100%; height: 100%; min-height: 0; }
+.app-shell { --sidebar-toggle-x: calc(var(--sidebar-width) - var(--circular-icon-button-size) - var(--layout-edge-gap) - var(--sidebar-toggle-left)); display: flex; gap: var(--app-shell-gap); align-items: stretch; position: relative; z-index: var(--layer-surface-content); width: 100%; height: 100%; min-height: 0; }
 @supports (height: 100dvh) {
 	body {
 		height: 100dvh;

@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.0
+Code version: v0.3.0
+- Changed: A sell cash match commits only with its complete same-scope fee row.
 """
 
 from __future__ import annotations
@@ -17,8 +18,129 @@ from tests.investment_import_test_support import (
     normalize_investment_payload_tickers,
 )
 
+from app.services.investment_import_hsbc_cash import (
+    _match_hsbc_orders_to_cash_settlements,
+)
+
 
 class HsbcReconciliationImportTestsMixin:
+    def test_hsbc_cash_matcher_rejects_fee_from_another_cash_scope(self) -> None:
+        order = {
+            "date": "2026-09-17",
+            "type": "sell",
+            "ticker": "QQQI",
+            "currency": "USD",
+            "account": "ACCOUNT-A",
+            "net_amount_raw": "59.99",
+            "normalized": {"net_amount": "59.99"},
+            "source": {"order_id": "S-900001"},
+        }
+
+        def cash_record(
+            *,
+            amount: str,
+            account: str,
+            account_type: str,
+            currency: str,
+            row_number: int,
+        ) -> dict[str, object]:
+            return {
+                "date": "2026-09-18",
+                "type": "deposit" if Decimal(amount) > 0 else "fee",
+                "currency": currency,
+                "account": account,
+                "description": "REF S900001001 SEC",
+                "net_amount_raw": amount,
+                "source": {
+                    "file_kind": "hsbc_usd_account_text",
+                    "source_sequence_sha256": "a" * 64,
+                    "row_number": row_number,
+                    "ledger_sequence": row_number,
+                    "account_number": account,
+                    "account_type": account_type,
+                    "balance_after_raw": "1200.00" if amount == "59.99" else "",
+                },
+            }
+
+        principal = cash_record(
+            amount="59.99",
+            account="ACCOUNT-A",
+            account_type="USD Savings",
+            currency="USD",
+            row_number=44,
+        )
+        foreign_fee = cash_record(
+            amount="-0.01",
+            account="ACCOUNT-B",
+            account_type="HKD Savings",
+            currency="HKD",
+            row_number=45,
+        )
+
+        _match_hsbc_orders_to_cash_settlements(
+            [order],
+            [principal, foreign_fee],
+            [],
+        )
+
+        self.assertNotIn("cash_settlement_postings", order["source"])
+        self.assertEqual(order["net_amount_raw"], "59.99")
+        self.assertNotIn("cash_flow_fee_amount_raw", order["source"])
+        self.assertNotIn("presentation_hidden", principal)
+        self.assertNotIn("presentation_hidden", foreign_fee)
+
+    def test_hsbc_cash_matcher_rejects_ambiguous_principal_domains(self) -> None:
+        def order() -> dict[str, object]:
+            return {
+                "date": "2026-09-17",
+                "type": "sell",
+                "ticker": "QQQI",
+                "currency": "USD",
+                "account": "ACCOUNT-A",
+                "net_amount_raw": "59.99",
+                "normalized": {"net_amount": "59.99"},
+                "source": {"order_id": "S-900001"},
+            }
+
+        def principal(account_type: str, digest: str) -> dict[str, object]:
+            return {
+                "date": "2026-09-18",
+                "type": "deposit",
+                "currency": "USD",
+                "account": "ACCOUNT-A",
+                "description": "REF S900001001 SEC",
+                "net_amount_raw": "59.99",
+                "source": {
+                    "file_kind": "hsbc_usd_account_text",
+                    "source_sequence_sha256": digest,
+                    "row_number": 44,
+                    "ledger_sequence": 44,
+                    "account_number": "ACCOUNT-A",
+                    "account_type": account_type,
+                    "balance_after_raw": "1200.00",
+                },
+            }
+
+        usd_savings = principal("USD Savings", "a" * 64)
+        foreign_currency_savings = principal(
+            "Foreign Currency Savings USD",
+            "b" * 64,
+        )
+        for candidates in (
+            [usd_savings, foreign_currency_savings],
+            [foreign_currency_savings, usd_savings],
+        ):
+            candidate_order = order()
+            _match_hsbc_orders_to_cash_settlements(
+                [candidate_order],
+                deepcopy(candidates),
+                [],
+            )
+            self.assertNotIn(
+                "cash_settlement_postings",
+                candidate_order["source"],
+            )
+
     def test_hsbc_pasted_import_annotates_unsettled_orders_from_available_cash(
         self,
     ) -> None:

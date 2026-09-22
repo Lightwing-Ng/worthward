@@ -1,4 +1,4 @@
-{# Code version: v0.8.0 #}
+{# Code version: v0.10.0 #}
 
 {% macro render_notice_banner(
     title='',
@@ -30,7 +30,7 @@
     <div class="notice-floating-banner-content">
         {% if title %}<p class="notice-floating-banner-heading">{{ title }}</p>{% endif %}
         {% if caller is defined %}
-            {% if numbered %}<div class="notice-floating-banner-list">{{ caller() }}</div>{% else %}<p class="notice-floating-banner-copy">{{ caller() }}</p>{% endif %}
+            {% if numbered %}<ol class="notice-floating-banner-list">{{ caller() }}</ol>{% else %}<p class="notice-floating-banner-copy">{{ caller() }}</p>{% endif %}
         {% endif %}
     </div>
     {% endif %}
@@ -238,25 +238,25 @@
 
 {% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, show_standard_xlsx=false, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None, placement=none) -%}
 <div class="investment-share-actions" data-layout-role="result-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %}{% if show_standard_xlsx %} data-standard-xlsx-action{% endif %}{% if placement %} data-share-placement="{{ placement }}"{% endif %} hidden>
-    <button type="button" class="investment-share-action-button" id="share_capture_button"
+    <button type="button" class="circular-icon-button investment-share-action-button" id="share_capture_button"
             aria-label="{{ capture_label }}" title="{{ capture_label }}">
         <span class="icon"
               style="-webkit-mask-image: url(/static/images/photo.badge.arrow.down.svg); mask-image: url(/static/images/photo.badge.arrow.down.svg);"></span>
     </button>
-    <button type="button" class="investment-share-action-button" id="share_mask_button"
+    <button type="button" class="circular-icon-button investment-share-action-button" id="share_mask_button"
             aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false"{% if not show_mask %} hidden aria-hidden="true" tabindex="-1"{% endif %}>
         <span class="icon"
               style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);"></span>
     </button>
     {% if show_standard_xlsx %}
-    <button type="button" class="investment-share-action-button standard-investment-xlsx-button"
+    <button type="button" class="circular-icon-button investment-share-action-button standard-investment-xlsx-button"
             id="export_standard_xlsx_button"
             aria-label="Export Standard XLSX" title="Export Standard XLSX">
         <span class="icon"
               style="-webkit-mask-image: url(/static/images/arrow.down.document.fill.svg); mask-image: url(/static/images/arrow.down.document.fill.svg);"></span>
     </button>
     {% endif %}
-    <button type="button" class="export-transactions-button" id="export_transactions_button" data-layout-role="result-action"
+    <button type="button" class="circular-icon-button export-transactions-button" id="export_transactions_button" data-layout-role="result-action"
             aria-label="{{ anchor_label }}" title="{{ anchor_title or anchor_label }}">
         <span class="icon"
               style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>

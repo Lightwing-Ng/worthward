@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.5.0`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -38,10 +38,17 @@ dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
 
-Shared workspace modals and floating notices reserve their first grid row for the
-upper-left dismiss target. The icon and content start in the next row, with the
-icon aligned to the surface's left padding and the text in the adjacent flexible
-column. Do not restore a dismiss column that consumes the full content height.
+Shared workspace modals and floating notices use a two-column, two-row semantic
+grid. The absolutely positioned upper-left dismiss target stays out of flow. The
+title occupies the flexible first-row cell and centers on that dismiss target;
+the unchanged topic icon and the paragraph or list share the second-row start.
+Use the shared row gap rather than icon or body top margins. Dynamic banner
+content contains one direct heading and one direct body element; a heading-less
+fallback is assigned explicitly to the body row. Numbered copy uses a semantic
+`ol` with outside markers so wrapped lines keep a hanging indent. Its list inset
+and marker gap come from `--workspace-modal-list-padding-inline-start` and
+`--workspace-modal-list-marker-gap`. Do not restore
+a dismiss column that consumes the full content height.
 
 Ticker inputs share one leading-slot geometry in `components/forms.css`: the
 logo center is half the input height from its leading edge and vertically
@@ -53,10 +60,12 @@ containing body omits trailing padding. Parent and child disclosure chevrons
 therefore share the same trailing edge at every nesting level.
 
 The shared `ui-collapse` primitive owns native disclosure markers and token-driven
-header/body spacing. Native disclosures use the agenticContext browser-picker
-chevron: 12px by 8px, current text color, down when closed and rotated 180
-degrees when open, with the same 180ms standard easing. Render it through `templates/_collapse.html`; use the
-`Collapse` row in Style tokens to edit its standard values. Backtest common
+header/body spacing. Native disclosures use one 12px by 8px current-color chevron:
+the closed state rotates the down-chevron mask -90 degrees to point right, and the
+open state returns it to 0 degrees to point down. The 90-degree transition uses
+the standard 180ms easing and is disabled for reduced motion. Render it through
+`templates/_collapse.html`; use the `Collapse` row in Style tokens to edit its
+standard values. Backtest common
 controls, strategy parameters, training factors, and private action slots all
 reuse it. Settings strategy cards retain their dense card-specific branch while
 inheriting the same primitive. Do not restore model-specific accordion CSS.
@@ -74,6 +83,14 @@ behavior. Run the static cache-version contract and browser checks after a
 manifest or load-order change.
 
 ## Field-label typography
+
+The font-family layer follows
+[`../../../../../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md`](../../../../../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md).
+`foundation/fonts.css` exposes only deterministic standalone faces from the
+pinned Univers Next for HSBC TTC, while `foundation/tokens.css` routes ordinary
+and technical Western text through that one family. Do not add a platform or
+monospace Western bypass. CJK glyph fallback and scoped KaTeX mathematical fonts
+do not create an alternate interface family.
 
 Ordinary form labels, ticker field headings, switch captions, and strategy parameter
 labels use `--font-ui-lg` (15px) and `--font-weight-regular` (400), matching the

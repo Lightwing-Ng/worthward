@@ -1,6 +1,6 @@
 """Investment import domain: records.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 from __future__ import annotations
@@ -2193,8 +2193,12 @@ def _sort_transactions(transactions: list[dict[str, Any]]) -> None:
         if file_kind in HSBC_CASH_ACCOUNT_FILE_KINDS:
             ledger_sequence = int(source.get("ledger_sequence", 0) or 0)
             if file_kind == "hsbc_usd_savings_csv" and ledger_sequence:
-                # HSBC's downloaded USD Savings CSV is newest-first. Reverse
-                # its source row order before the chronological replay.
+                if (
+                    _normalize_text(source.get("ledger_sequence_order")).lower()
+                    == "chronological"
+                ):
+                    return (0, ledger_sequence, row_number)
+                # Legacy payloads stored raw newest-first row numbers here.
                 return (0, -ledger_sequence, -row_number)
             if ledger_sequence:
                 return (0, ledger_sequence, row_number)

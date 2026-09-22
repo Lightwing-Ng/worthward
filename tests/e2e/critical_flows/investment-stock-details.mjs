@@ -1,4 +1,4 @@
-/* Code version: v1.0.5 */
+/* Code version: v1.0.8 */
 import {
     expect,
     test,
@@ -504,7 +504,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.80.5';
+            && url.searchParams.get('v') === '1.80.7';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
@@ -1356,6 +1356,56 @@ test('anchors HSBC History cash to an evidenced future SEC settlement balance', 
     await expect(sellRow.locator('td').nth(9)).not.toContainText('*');
 });
 
+test('renders one visible marker for one unsettled HSBC EUV sale', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc'],
+        transactions: [{
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            date: '2026-09-21',
+            type: 'sell',
+            ticker: 'EUV',
+            currency: 'USD',
+            quantity: 5,
+            price: 24.15,
+            amount: 120.75,
+            source: {
+                file_kind: 'hsbc_order_status_text',
+                cash_replay_pending_settlement: true,
+                order_id: 'S-657689',
+                statement_order_id: 'S-657689',
+            },
+        }],
+        summary: {
+            authoritative_current_cash_brokers: ['hsbc'],
+        },
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc',
+                account_id: 'HSBC-TEST',
+                cash_snapshot_authoritative: true,
+                ending_cash_base_currency: '21779.45',
+                ending_cash_by_currency: {USD: '21779.45'},
+                hsbc_pending_settlement_cash: '120.750',
+                hsbc_broker_cash_estimate: '21900.200',
+                position_snapshot_as_of: '2026-09-21',
+            },
+        },
+        priceHistoryByTicker: {
+            EUV: [{date: '2026-09-21', close: 24.15}],
+        },
+    });
+    await page.goto('/trade/investment');
+
+    const sellRow = page.locator('#investment_history_row_1');
+    await expect(sellRow).toContainText('EUV @ 24.15 × 5 · S-657689*');
+    await expect(sellRow.locator('td').nth(9)).not.toContainText('*');
+    await expect(sellRow.locator('td').nth(10)).not.toContainText('*');
+    await expect.poll(() => page.locator('#investment_history').evaluate((body) => (
+        body.innerText.match(/\*/g) || []
+    ).length)).toBe(1);
+});
+
 test('keeps HSBC unsettled buy history sequential while current cash stays current', async ({page}) => {
     const pendingBuys = [
         ['DRAM', 5, 57.00, 285.00],
@@ -1445,8 +1495,10 @@ test('keeps HSBC unsettled buy history sequential while current cash stays curre
     // The fixture's authoritative cash is 23,413.41. Apply the first pending
     // buy (-285.00), then all pending buys (-938.90), without replaying the
     // older 3,231.60 settlement correction on top of that cash anchor.
-    await expect(firstBuyRow.locator('td').nth(9)).toContainText('*23,128.41');
-    await expect(latestBuyRow.locator('td').nth(9)).toContainText('*22,474.51');
+    await expect(firstBuyRow.locator('td').nth(9)).toContainText('23,128.41');
+    await expect(firstBuyRow.locator('td').nth(9)).not.toContainText('*');
+    await expect(latestBuyRow.locator('td').nth(9)).toContainText('22,474.51');
+    await expect(latestBuyRow.locator('td').nth(9)).not.toContainText('*');
     await expect(
         page.locator('#investment_history .investment-history-cell-left')
             .filter({hasText: 'DRAM @ 57.00 × 5'})
@@ -1457,5 +1509,5 @@ test('keeps HSBC unsettled buy history sequential while current cash stays curre
     const currentCash = page.locator(
         '#investment_holdings_panel [data-investment-live-field="summary_cash_balance"]',
     );
-    await expect(currentCash).toHaveAttribute('data-investment-live-display', '*22,474.51');
+    await expect(currentCash).toHaveAttribute('data-investment-live-display', '22,474.51');
 });

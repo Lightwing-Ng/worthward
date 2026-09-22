@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import fs from 'node:fs';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
@@ -66,6 +66,8 @@ export const {
     compareInvestmentTaxLotTransactions,
     compareInvestmentTransactions,
     compareInvestmentTransactionsForReplay,
+    sortInvestmentTransactionsForReplay,
+    sortInvestmentTaxLotTransactions,
     buildValuationStatus,
     normalizePriceHistoryPayload,
     sumKolRewardRealizedIncomeInBaseCurrency,

@@ -1,4 +1,4 @@
-/* Code version: v1.6.1 */
+/* Code version: v1.8.0 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -77,6 +77,15 @@ for (const width of [1024, 800, 390]) {
         await expect(metricLabel).toHaveCSS('font-weight', '400');
         await expect(metricLabel).toHaveCSS('line-height', 'normal');
         await expect(metricLabel).toHaveCSS('color', 'rgb(11, 12, 12)');
+        const monetaryValue = page.locator('[data-style-token-card="scrollable-table"] span[data-numeric-display-value][data-currency-code="USD"]');
+        await expect(monetaryValue).toHaveAttribute('aria-label', '$7,089.68');
+        await expect(monetaryValue.locator('.workspace-metric-value-major')).toHaveText('$7,089');
+        await expect(monetaryValue.locator('.workspace-metric-value-minor')).toHaveText('.68');
+        const monetarySizes = await monetaryValue.evaluate((node) => ({
+            major: Number.parseFloat(getComputedStyle(node.querySelector('.workspace-metric-value-major')).fontSize),
+            minor: Number.parseFloat(getComputedStyle(node.querySelector('.workspace-metric-value-minor')).fontSize),
+        }));
+        expect(Math.abs((monetarySizes.minor / monetarySizes.major) - 0.76)).toBeLessThan(0.01);
         await expectFieldTitle(page.locator('.style-token-scrollable-table thead th:nth-child(2)'));
         await expectFieldTitle(page.locator('.style-token-settings-input-label'));
         for (const id of ['modal-dialog', 'modal-dialog-banner-message']) {
@@ -91,25 +100,53 @@ for (const width of [1024, 800, 390]) {
                 const icon = node.querySelector('.workspace-modal-icon');
                 const title = node.querySelector('.workspace-modal-title, .notice-floating-banner-heading');
                 const copy = node.querySelector('.workspace-modal-copy, .notice-floating-banner-copy, .notice-floating-banner-list');
+                const content = node.querySelector('.notice-floating-banner-content');
+                const hangingItem = node.querySelector('.notice-floating-banner-list li:last-child');
+                const hangingRange = hangingItem ? document.createRange() : null;
+                hangingRange?.selectNodeContents(hangingItem);
+                const hangingLineRects = hangingRange
+                    ? Array.from(hangingRange.getClientRects(), rect => ({left: rect.left, width: rect.width}))
+                    : [];
                 return {
                     centerTop: button.offsetTop + (button.offsetHeight / 2),
                     centerLeft: button.offsetLeft + (button.offsetWidth / 2),
+                    titleCenterY: title.offsetTop + (title.offsetHeight / 2),
                     iconLeft: icon.offsetLeft,
                     iconTop: icon.offsetTop,
                     iconWidth: icon.offsetWidth,
                     closeLeft: button.offsetLeft,
                     closeBottom: button.offsetTop + button.offsetHeight,
                     titleLeft: title.offsetLeft,
-                    titleTop: title.offsetTop,
                     copyLeft: copy.offsetLeft,
+                    copyTop: copy.offsetTop,
+                    contentOwnsTitle: content ? title.parentElement === content : null,
+                    contentOwnsBody: content ? copy.parentElement === content : null,
+                    contentDisplay: content ? getComputedStyle(content).display : null,
+                    hangingLineRects,
+                    bodyElementCount: content
+                        ? content.querySelectorAll(':scope > .notice-floating-banner-copy, :scope > .notice-floating-banner-list').length
+                        : null,
+                    overflow: node.scrollWidth - node.clientWidth,
                 };
             });
             expect(Math.abs(geometry.centerTop - geometry.centerLeft)).toBeLessThanOrEqual(1);
+            expect(Math.abs(geometry.titleCenterY - geometry.centerTop)).toBeLessThanOrEqual(1);
             expect(Math.abs(geometry.iconLeft - geometry.closeLeft)).toBeLessThanOrEqual(1);
             expect(geometry.iconTop - geometry.closeBottom).toBeGreaterThanOrEqual(4);
             expect(geometry.titleLeft - geometry.iconLeft - geometry.iconWidth).toBe(12);
-            expect(Math.abs(geometry.titleTop - geometry.iconTop)).toBeLessThanOrEqual(2);
+            expect(Math.abs(geometry.copyTop - geometry.iconTop)).toBeLessThanOrEqual(1);
             expect(geometry.copyLeft).toBe(geometry.titleLeft);
+            expect(geometry.overflow).toBeLessThanOrEqual(0);
+            if (id === 'modal-dialog-banner-message') {
+                expect(geometry.contentOwnsTitle).toBe(true);
+                expect(geometry.contentOwnsBody).toBe(true);
+                expect(geometry.contentDisplay).toBe('contents');
+                expect(geometry.bodyElementCount).toBe(1);
+                expect(geometry.hangingLineRects.length).toBeGreaterThanOrEqual(2);
+                for (const line of geometry.hangingLineRects.slice(1)) {
+                    expect(Math.abs(line.left - geometry.hangingLineRects[0].left)).toBeLessThanOrEqual(1);
+                }
+            }
             await page.mouse.move(0, 0);
             await expect(close).toHaveCSS('opacity', '0');
             await close.locator('..').hover();
@@ -124,12 +161,86 @@ for (const width of [1024, 800, 390]) {
     });
 }
 
-test('touch users can discover dismiss actions without hover', async ({browser}) => {
+for (const width of [1024, 390]) {
+    test(`dynamic banner content keeps explicit rows at ${width}px`, async ({page}) => {
+        await page.setViewportSize({width, height: 863});
+        await page.goto('/settings/style-tokens');
+        const surface = page.locator('#modal-dialog-banner-message .style-token-modal-demo');
+        const content = surface.locator('.notice-floating-banner-content');
+
+        await content.evaluate((node) => {
+            node.textContent = 'Heading-free status copy stays aligned with its unchanged topic icon.';
+        });
+        const fallback = await surface.evaluate((node) => {
+            const icon = node.querySelector('.notice-floating-banner-icon');
+            const message = node.querySelector('.notice-floating-banner-content');
+            return {
+                display: getComputedStyle(message).display,
+                iconTop: icon.offsetTop,
+                messageTop: message.offsetTop,
+                overflow: node.scrollWidth - node.clientWidth,
+            };
+        });
+        expect(fallback.display).toBe('block');
+        expect(Math.abs(fallback.messageTop - fallback.iconTop)).toBeLessThanOrEqual(1);
+        expect(fallback.overflow).toBeLessThanOrEqual(0);
+
+        await content.evaluate((node) => {
+            node.innerHTML = [
+                '<p class="notice-floating-banner-heading">Dynamic status updated</p>',
+                '<p class="notice-floating-banner-copy">A long dynamic paragraph stays in the body row and wraps without escaping the notice surface.</p>',
+            ].join('');
+        });
+        const populated = await surface.evaluate((node) => {
+            const close = node.querySelector('.dismiss-button');
+            const icon = node.querySelector('.notice-floating-banner-icon');
+            const content = node.querySelector('.notice-floating-banner-content');
+            const heading = content.querySelector('.notice-floating-banner-heading');
+            const copy = content.querySelector('.notice-floating-banner-copy');
+            return {
+                display: getComputedStyle(content).display,
+                closeCenter: close.offsetTop + (close.offsetHeight / 2),
+                headingCenter: heading.offsetTop + (heading.offsetHeight / 2),
+                iconTop: icon.offsetTop,
+                copyTop: copy.offsetTop,
+                childCount: content.children.length,
+                overflow: node.scrollWidth - node.clientWidth,
+            };
+        });
+        expect(populated.display).toBe('contents');
+        expect(populated.childCount).toBe(2);
+        expect(Math.abs(populated.headingCenter - populated.closeCenter)).toBeLessThanOrEqual(1);
+        expect(Math.abs(populated.copyTop - populated.iconTop)).toBeLessThanOrEqual(1);
+        expect(populated.overflow).toBeLessThanOrEqual(0);
+    });
+}
+
+test('floating banner preserves its reduced-motion path', async ({page}) => {
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await page.goto('/settings/style-tokens');
+    const banner = page.locator('#modal-dialog-banner-message .style-token-modal-demo');
+    await expect(banner).toHaveCSS('animation-duration', '0.001s');
+    await expect(banner).toHaveCSS('animation-delay', '0s');
+});
+
+test('touch users can discover shared actions without hover', async ({browser}) => {
     const context = await browser.newContext({hasTouch: true, isMobile: true, viewport: {width: 390, height: 863}});
     const page = await context.newPage();
     await page.goto('http://127.0.0.1:8699/settings/style-tokens');
     for (const close of await page.locator('.style-token-demo .dismiss-button').all()) {
         await expect(close).toHaveCSS('opacity', '1');
     }
+    const circular = page.locator('[data-style-token-card="circular-icon-button"] .circular-icon-button').first();
+    await expect(circular).toHaveCSS('width', '44px');
+    await expect(circular).toHaveCSS('height', '44px');
+    await circular.tap();
+
+    const segmentedOption = page.locator('[data-style-token-card="segmented-control"] .segmented-control-option').nth(1);
+    await segmentedOption.tap();
+    await expect(segmentedOption.locator('input')).toBeChecked();
+
+    const pagination = page.locator('[data-style-token-card="pagination"] .local-store-pagination');
+    await expect(pagination).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await context.close();
 });

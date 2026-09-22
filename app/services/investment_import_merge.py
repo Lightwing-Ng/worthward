@@ -1,6 +1,8 @@
 """Investment import domain: merge.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Fixed: Re-imported HSBC pasted cash can restore missing immutable posting
+  provenance without changing existing settlement economics.
 """
 
 from __future__ import annotations
@@ -554,14 +556,24 @@ def merge_investment_payloads(
     )
     hsbc_cash_settlement_merge_warnings: list[str] = []
     if incoming_broker == "hsbc" and incoming_hsbc_cash_settlement_evidence:
-        merged_hsbc_order_records = [
+        all_merged_hsbc_order_records = [
             record
             for record in merged_transactions
             if (
                 _ii_basics._normalize_broker_code(record.get("broker")) == "hsbc"
                 and _normalize_text(record.get("type")).lower() in {"buy", "sell"}
                 and _ii_basics._is_hsbc_order_status_record(record)
-                and not (
+            )
+        ]
+        _ii_hsbc_cash._repair_hsbc_pasted_cash_settlement_posting_provenance(
+            all_merged_hsbc_order_records,
+            incoming_hsbc_cash_settlement_evidence,
+        )
+        merged_hsbc_order_records = [
+            record
+            for record in all_merged_hsbc_order_records
+            if (
+                not (
                     _normalize_text(
                         (record.get("source") or {}).get("cash_settlement_amount_raw")
                     )

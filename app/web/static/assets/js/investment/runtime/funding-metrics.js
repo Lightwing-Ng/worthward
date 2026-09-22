@@ -1,7 +1,7 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  * - Fixed: HSBC sell-settlement principal adjustments and separately posted
  *   fees reconcile to all-in realized proceeds without hiding the fee category.
  * - Fixed: Holdings metrics reuse the canonical current Total equity instead
@@ -434,10 +434,9 @@ function getHoldingsSummaryMetrics(
                 .map((summary) => runtime.getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
-        const sortedTransactions = safeTransactions
-            .map((txn, index) => ({ txn, index }))
-            .sort((left, right) => runtime.compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
-            .map(({ txn }, sortedIndex) => ({
+        const sortedTransactions = runtime.sortInvestmentTransactionsForReplay(
+            safeTransactions,
+        ).map((txn, sortedIndex) => ({
                 txn,
                 ledgerNo: sortedIndex + 1,
             }));
@@ -489,34 +488,36 @@ function getHoldingsSummaryMetrics(
     }
 
 function getSortedInvestmentMetricTransactions(transactions) {
-        return (Array.isArray(transactions) ? transactions : [])
-            .map((txn, index) => ({ txn, index }))
-            .sort((left, right) => runtime.compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
-            .map(({ txn, index }, sortedIndex) => ({
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const sourceIndexes = new Map(
+            safeTransactions.map((txn, sourceIndex) => [txn, sourceIndex]),
+        );
+        return runtime.sortInvestmentTransactionsForReplay(safeTransactions)
+            .map((txn, sortedIndex) => ({
                 txn,
                 ledgerNo: sortedIndex + 1,
-                sourceIndex: index,
+                sourceIndex: sourceIndexes.get(txn),
             }));
     }
 
 function getSortedInvestmentTaxLotMetricTransactions(transactions) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        const sourceIndexes = new Map(
+            safeTransactions.map((txn, sourceIndex) => [txn, sourceIndex]),
+        );
         const displayLedgerNos = new Map(
             getSortedInvestmentMetricTransactions(safeTransactions)
                 .map(({sourceIndex, ledgerNo}) => [sourceIndex, ledgerNo]),
         );
-        return safeTransactions
-            .map((txn, sourceIndex) => ({
-                txn,
-                sourceIndex,
-                ledgerNo: displayLedgerNos.get(sourceIndex) ?? sourceIndex + 1,
-            }))
-            .sort((left, right) => runtime.compareInvestmentTaxLotTransactions(
-                left.txn,
-                right.txn,
-                left.sourceIndex,
-                right.sourceIndex,
-            ));
+        return runtime.sortInvestmentTaxLotTransactions(safeTransactions)
+            .map((txn) => {
+                const sourceIndex = sourceIndexes.get(txn);
+                return {
+                    txn,
+                    sourceIndex,
+                    ledgerNo: displayLedgerNos.get(sourceIndex) ?? sourceIndex + 1,
+                };
+            });
     }
 
 function getLatestInvestmentMetricPrice(ticker, latestPrices) {
@@ -852,8 +853,9 @@ function formatInvestmentMetricTooltipRowLabel(entry) {
 
 function renderMetricValueWithTooltip(metric, { keyPrefix = '' } = {}) {
         const sortedLedgerEntries = Array.isArray(window.WORTHWARD_INVESTMENT_DATA?.transactions)
-            ? [...window.WORTHWARD_INVESTMENT_DATA.transactions]
-                .sort((left, right) => runtime.compareInvestmentTransactions(left, right))
+            ? runtime.sortInvestmentTransactionsForReplay(
+                window.WORTHWARD_INVESTMENT_DATA.transactions,
+            )
                 .map((txn, index) => ({
                     ledgerNo: index + 1,
                     date: String(txn?.date || ''),

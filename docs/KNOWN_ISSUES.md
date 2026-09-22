@@ -1,5 +1,51 @@
 # Known issues and operating constraints
 
+HSBC pending-marker ownership, 22 Sep 2026: Transaction history renders one
+visible trailing `*` on the compact order reference of each genuinely unresolved
+HSBC order. The same state is not repeated before Cash, Equity, or the current
+cash total; those values retain their evidence explanation in accessible title
+and supporting copy. With the current production ledger, the sole marker belongs
+to the 21 Sep 2026 sale of 5 EUV shares. The user-owned 8688 process was not
+restarted, so manual restart remains the adoption boundary for this source and
+asset-chain change.
+
+Shared modal and banner alignment, 21 Sep 2026: centered progress dialogs and
+top floating notices now use one two-column, two-row contract. Their title shares
+the dismiss control's centerline, while the unchanged topic icon and body copy or
+list share the next row's top edge. Numbered copy retains hanging wrapped lines,
+and dynamic message containers preserve the same structure. The user-owned 8688
+process was deliberately not restarted, so this source change is not live there
+until the owner performs the normal manual restart and verifies the served asset
+versions.
+
+HSBC post-import audit follow-up, 21 Sep 2026: the source now keeps pasted cash
+rows in ledger sequence, prevents a transfer constraint from delaying its
+receipt behind unrelated same-day transactions, scopes settlement corrections
+to the exact customer account, cash account type, and native currency, and
+prevents an older or sequence-incomparable same-day cash row from clearing
+newer settlement evidence. Zero balances remain explicit at this boundary, so
+another same-currency subaccount or foreign-currency balance is retained.
+Settlement evidence is now a closed immutable domain: SHA and row aliases must
+agree, one physical `(SHA-256, row)` belongs to one owner and one posting, and
+provenance repair commits only after whole-order validation. Invalid calendar
+dates, non-integral rows, conflicting direct-cash aliases, and ambiguous
+same-day CSV balance order stay provisional and cannot create a synthetic cash
+boundary. Direct cash also requires the producer's exact file-kind, account,
+currency, authority flag, account scope, nonzero type/sign, balance, SHA, row,
+and ledger-sequence matrix. Structured settlement legs require canonical raw
+amount and balance fields plus exact decimal identity; scalar-only legacy
+summaries cannot change cash or realized proceeds.
+Cash-only dividend candidate inputs now accept only
+explicitly USD same-account Order Status rows and position-snapshot entries;
+eligible quantity remains Order Status-derived. Cash-only evidence periods
+describe the earliest-to-latest visible posting range, and identical evidence
+can correct the legacy one-day metadata on re-import. The production investment
+stores were not rewritten. The user-owned
+8688 process was deliberately not restarted during this repair, so neither the
+Python changes nor the new `investment-v2.151.8` asset chain should be treated
+as adopted there until the owner performs the normal manual restart and checks
+the served versions.
+
 HSBC cash-only dividend attribution, 21 Sep 2026: a newly pasted USD
 corporate-event payment can now be attributed during the atomic incremental
 merge when the existing same-account Order Status ledger and the complete local
@@ -378,7 +424,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.260.0`
+Documentation version: `v1.262.5`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

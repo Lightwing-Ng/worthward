@@ -1,4 +1,4 @@
-/* Shared chart axis helper contracts. Code version: v1.4.2 */
+/* Shared chart axis helper contracts. Code version: v1.5.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -115,6 +115,97 @@ test('exposes a versioned shared chart axis API', () => {
     assert.equal(typeof utils.readThemeTokens, 'function');
     assert.equal(typeof utils.readThemeToken, 'function');
     assert.equal(typeof utils.normalizeSafeImageUrl, 'function');
+    assert.equal(typeof utils.resolveChartFontFamily, 'function');
+    assert.equal(typeof utils.refreshChartFontMetrics, 'function');
+    assert.equal(typeof utils.syncChartFontDefaults, 'function');
+    assert.equal(typeof utils.installChartFontDefaults, 'function');
+});
+
+test('owns the global Chart font and refreshes Canvas metrics after fonts load', async () => {
+    const propertyNames = [
+        'document',
+        'getComputedStyle',
+        'Chart',
+        'requestAnimationFrame',
+        'addEventListener',
+    ];
+    const originalDescriptors = Object.fromEntries(propertyNames.map((name) => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name),
+    ]));
+    const root = {};
+    const body = {};
+    const listeners = {};
+    const updateModes = [];
+    let tokenFamily = '"Univers Next for HSBC", "PingFang SC", sans-serif';
+
+    try {
+        globalThis.document = {
+            documentElement: root,
+            body,
+            fonts: {ready: Promise.resolve()},
+        };
+        globalThis.getComputedStyle = (element) => ({
+            fontFamily: element === body ? '"Body fallback", sans-serif' : '',
+            getPropertyValue: (name) => (
+                element === root && name === '--font-family-base' ? tokenFamily : ''
+            ),
+        });
+        globalThis.Chart = {
+            defaults: {font: {family: 'Helvetica Neue'}},
+            instances: {
+                primary: {update: (mode) => updateModes.push(mode)},
+            },
+        };
+        globalThis.requestAnimationFrame = (callback) => {
+            callback();
+            return 1;
+        };
+        globalThis.addEventListener = (name, callback) => {
+            listeners[name] = callback;
+        };
+
+        utils.installChartFontDefaults();
+        assert.equal(globalThis.Chart.defaults.font.family, tokenFamily);
+        assert.deepEqual(updateModes, []);
+
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.deepEqual(updateModes, ['none']);
+
+        listeners['worthward:theme-mode-change']();
+        assert.deepEqual(updateModes, ['none']);
+
+        tokenFamily = '"Univers Next for HSBC", "Microsoft YaHei", sans-serif';
+        listeners['worthward:theme-mode-change']();
+        assert.equal(globalThis.Chart.defaults.font.family, tokenFamily);
+        assert.deepEqual(updateModes, ['none', 'none']);
+
+        tokenFamily = '';
+        assert.equal(utils.resolveChartFontFamily(), '"Body fallback", sans-serif');
+    } finally {
+        for (const name of propertyNames) {
+            const descriptor = originalDescriptors[name];
+            if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+            else delete globalThis[name];
+        }
+    }
+});
+
+test('leaves Chart defaults unchanged when no computed family is available', () => {
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+    const originalChart = Object.getOwnPropertyDescriptor(globalThis, 'Chart');
+    try {
+        delete globalThis.document;
+        globalThis.Chart = {defaults: {font: {family: 'vendor-default'}}};
+        assert.equal(utils.syncChartFontDefaults(), '');
+        assert.equal(globalThis.Chart.defaults.font.family, 'vendor-default');
+    } finally {
+        if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+        else delete globalThis.document;
+        if (originalChart) Object.defineProperty(globalThis, 'Chart', originalChart);
+        else delete globalThis.Chart;
+    }
 });
 
 test('draws a blue rounded y-axis badge on the rendered decimal anchor', () => {

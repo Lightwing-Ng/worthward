@@ -1,14 +1,16 @@
 """
 Tests for CSS foundation token registry and runtime default drift protection.
 
-Code version: v0.13.5
+Code version: v0.15.2
 """
 
 from __future__ import annotations
 
 import ast
 from collections import Counter
+import hashlib
 import re
+import struct
 import unittest
 from pathlib import Path
 
@@ -28,11 +30,23 @@ from tests.app_test_utils import read_app_bundle
 from tests.css_test_utils import read_css_bundle
 from tests.runtime_test_utils import read_runtime_bundle
 from tests.template_test_utils import read_template_bundle
+from scripts.build_web_fonts import FACE_NAMES, FACE_SHA256, checksum, extract_face
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STYLE_TOKEN_ROWS_PATH = REPO_ROOT / "app" / "web" / "style_token_rows.py"
 WEB_CSS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "css"
 WEB_FONTS_ROOT = REPO_ROOT / "app" / "web" / "static" / "assets" / "fonts"
+EXPECTED_FACE_SHA256 = {
+    "Bold": "78e041ed15c14b3347ce8778cf6e9360cf3c03e3ea6db959feecc24a786ec393",
+    "Light": "fb63962132cb74c6193cb87c213f145483485eb71b6dd02c71cc1b99e3c29b6c",
+    "LightItalic": "9ef5d41486539167e011f48814a48effb53fc31dc4345c82a603f70bc6666501",
+    "Medium": "d657dccff328844e0f1bbef8622cb1d37b3f1ccb7146553d738056ceb9876866",
+    "Regular": "13376b6923f0f48e659ac924daadb1627a04735e72310a757f802a2e5bfe386f",
+    "Thin": "822280033b9d46a1f3110cf32047cb333108ff90352b8bbd8d15d9eea53bd951",
+    "ThinItalic": "1f10597f20df775a7777417aa2ad312f554d40a03c6b0d2bc16f5a62df98d96a",
+    "UltraLight": "a83c12df49fc84cc1cf8563d54fa27b09d2a2b14fa4073ec377902db0812124e",
+    "UltraLightItalic": "6ecd693ac92032174e5259e85f36ca6a5b5d3379c0a6607a300220008ae94016",
+}
 
 
 def read_text(path: Path) -> str:
@@ -160,17 +174,20 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertIn('type="number" inputmode="numeric"', compare_template)
         self.assertIn('type="number" inputmode="numeric"', app_js)
 
-    def test_public_runtime_uses_only_the_system_interface_font_stack(self) -> None:
+    def test_public_runtime_uses_only_the_approved_interface_font(self) -> None:
         fonts_css = read_text(WEB_CSS_ROOT / "foundation" / "fonts.css")
         tokens_css = read_text(FOUNDATION_TOKENS_CSS_PATH)
 
-        self.assertNotIn("@font-face", fonts_css)
+        self.assertEqual(fonts_css.count("@font-face"), len(FACE_NAMES))
         self.assertEqual(
-            [path.name for path in WEB_FONTS_ROOT.iterdir()],
-            ["README.md"],
+            sorted(path.name for path in WEB_FONTS_ROOT.iterdir()),
+            sorted(
+                ["README.md", "UniversNextforHSBC.ttc"]
+                + [f"UniversNextforHSBC-{face}.ttf" for face in FACE_NAMES]
+            ),
         )
         self.assertIn(
-            '--font-family-brand: -apple-system, BlinkMacSystemFont, "Segoe UI";',
+            '--font-family-brand: "Univers Next for HSBC";',
             tokens_css,
         )
         self.assertIn(
@@ -180,10 +197,40 @@ class WebTokenRegistryTests(unittest.TestCase):
         self.assertIn("--font-family-mono: var(--font-family-base);", tokens_css)
         self.assertIn("font-synthesis: none", tokens_css)
 
-    def test_production_runtime_has_no_bundled_western_font_family(self) -> None:
+    def test_approved_font_source_and_browser_transports_are_reproducible(self) -> None:
+        source_path = WEB_FONTS_ROOT / "UniversNextforHSBC.ttc"
+        source = source_path.read_bytes()
+
+        self.assertEqual(
+            hashlib.sha256(source).hexdigest(),
+            "e10a317b9da0016c24a9fce70ccbd33eb39458da15253d5abfe051d8cc33e21a",
+        )
+        self.assertEqual(source[:4], b"ttcf")
+        self.assertEqual(struct.unpack_from(">I", source, 8)[0], len(FACE_NAMES))
+        self.assertEqual(FACE_SHA256, EXPECTED_FACE_SHA256)
+        for index, face in enumerate(FACE_NAMES):
+            offset = struct.unpack_from(">I", source, 12 + index * 4)[0]
+            derived_path = WEB_FONTS_ROOT / f"UniversNextforHSBC-{face}.ttf"
+            derived = derived_path.read_bytes()
+            self.assertEqual(derived, extract_face(source, offset), face)
+            self.assertEqual(
+                hashlib.sha256(derived).hexdigest(),
+                EXPECTED_FACE_SHA256[face],
+                face,
+            )
+            self.assertEqual(checksum(derived), 0xB1B0AFBA, face)
+
+    def test_production_runtime_has_no_alternate_western_font_family(self) -> None:
+        approved_cjk_fallback = (
+            '--font-family-cjk: "PingFang SC", "PingFang TC", "PingFang HK", '
+            '"Microsoft YaHei", "Microsoft JhengHei", "Hiragino Sans GB", '
+            '"Noto Sans CJK SC", sans-serif;'
+        )
         forbidden = re.compile(
-            r"GDS Transport|Univers Next for HSBC|Georgia|SF Pro|SFMono|Menlo|Monaco|"
-            r"Consolas|Liberation Mono|Courier New|Times New Roman|"
+            r"-apple-system|BlinkMacSystemFont|Segoe UI|GDS Transport|Georgia|"
+            r"Arial|Helvetica|Roboto|San Francisco|"
+            r"SF Pro|SFMono|SF Mono|Menlo|Monaco|Consolas|Liberation Mono|"
+            r"Courier New|Times New Roman|ui-monospace|system-ui|sans-serif|"
             r"(?:^|[^A-Za-z])Inter(?:[^A-Za-z]|$)|monospace",
         )
         runtime_roots = (
@@ -199,7 +246,11 @@ class WebTokenRegistryTests(unittest.TestCase):
                     or "vendor" in path.parts
                 ):
                     continue
-                if forbidden.search(read_text(path)):
+                source = read_text(path)
+                if path == FOUNDATION_TOKENS_CSS_PATH:
+                    self.assertEqual(source.count(approved_cjk_fallback), 1)
+                    source = source.replace(approved_cjk_fallback, "")
+                if forbidden.search(source):
                     violations.append(str(path.relative_to(REPO_ROOT)))
 
         self.assertEqual(violations, [])
@@ -240,7 +291,12 @@ class WebTokenRegistryTests(unittest.TestCase):
         )
         source_counts = Counter(re.findall(r"--[a-z][a-z0-9_-]*", source_text))
         for token_name in SHARED_STYLE_TOKEN_NAMES:
-            minimum_references = 2 if token_name.startswith("--sidebar-shell-") else 3
+            minimum_references = (
+                2
+                if token_name.startswith("--sidebar-shell-")
+                or token_name == "--circular-icon-button-material"
+                else 3
+            )
             self.assertGreaterEqual(
                 source_counts[token_name],
                 minimum_references,

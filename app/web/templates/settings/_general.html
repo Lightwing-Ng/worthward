@@ -1,4 +1,4 @@
-{# Code version: v1.0.1 #}
+{# Code version: v1.0.2 #}
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
             <p class="settings-general-kicker">{{ translate_ui('Appearance') }}</p>
@@ -53,10 +53,10 @@
                     <button type="button" class="settings-language-tab segmented-control-option" data-language-tab="history" role="tab" aria-selected="{{ 'true' if settings_tab == 'history' else 'false' }}" tabindex="{{ '0' if settings_tab == 'history' else '-1' }}"><span>{{ translate_ui('History') }}</span></button>
                 </div>
                 <div class="settings-language-file-actions" aria-label="{{ translate_ui('Language mapping file actions') }}">
-                    <button type="button" class="settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="{{ translate_ui('Upload i18n mapping') }}" title="{{ translate_ui('Upload i18n mapping') }}">
+                    <button type="button" class="circular-icon-button settings-round-icon-button settings-language-file-button settings-language-file-button-upload" data-language-upload-trigger aria-label="{{ translate_ui('Upload i18n mapping') }}" title="{{ translate_ui('Upload i18n mapping') }}">
                         <span class="icon icon-language-upload" aria-hidden="true"></span>
                     </button>
-                    <a class="settings-round-icon-button settings-language-file-button settings-language-file-button-download" href="/api/settings/language/mapping.xlsx" download aria-label="{{ translate_ui('Download i18n mapping') }}" title="{{ translate_ui('Download i18n mapping') }}">
+                    <a class="circular-icon-button settings-round-icon-button settings-language-file-button settings-language-file-button-download" href="/api/settings/language/mapping.xlsx" download aria-label="{{ translate_ui('Download i18n mapping') }}" title="{{ translate_ui('Download i18n mapping') }}">
                         <span class="icon icon-language-download" aria-hidden="true"></span>
                     </a>
                     <input type="file" name="language_mapping_xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-language-upload-input hidden>

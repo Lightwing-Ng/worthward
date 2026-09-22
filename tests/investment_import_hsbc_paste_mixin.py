@@ -1,6 +1,8 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.3.0
+Code version: v0.5.2
+- Changed: Official CSV settlement repair fixtures declare their immutable
+  account identity explicitly.
 """
 
 from __future__ import annotations
@@ -135,6 +137,19 @@ class HsbcPasteImportTestsMixin:
                     file_kind="hsbc_dividend_statement",
                 ),
             ),
+            "one_sided_reference_without_cash_identity": (
+                dividend_record(
+                    attribution_status="",
+                    balance_after="",
+                    corporate_action_reference="REFERENCE-1",
+                    description="DIVIDEND PAYMENT",
+                    file_kind="hsbc_dividend_statement",
+                ),
+                dividend_record(
+                    attribution_status="matched_local_market_action",
+                    corporate_action_reference="",
+                ),
+            ),
             "amounts": (
                 dividend_record(amount="9.00"),
                 dividend_record(amount="9.01"),
@@ -153,6 +168,19 @@ class HsbcPasteImportTestsMixin:
         portfolio_text, order_status_text, cash_account_text = (
             self._synthetic_hsbc_paste_snapshot()
         )
+        cash_account_text = cash_account_text.replace(
+            "Download",
+            "\n".join(
+                [
+                    "21 Jun 2026",
+                    "NET ZERO TEST",
+                    "1.00",
+                    "1.00",
+                    "60.99",
+                    "Download",
+                ]
+            ),
+        )
 
         payload = build_investment_payload_from_hsbc_pasted_text(
             portfolio_text=portfolio_text,
@@ -162,6 +190,7 @@ class HsbcPasteImportTestsMixin:
 
         snapshot = payload["summary"]["hsbc_snapshot"]
         self.assertEqual(snapshot["status"], "validated")
+        self.assertEqual(snapshot["cash_earliest_post_date"], "2026-06-21")
         self.assertEqual(snapshot["cash_latest_post_date"], "2026-07-15")
         self.assertEqual(snapshot["latest_fully_executed_order_date"], "2026-07-14")
         self.assertEqual(snapshot["order_status_windows"][0]["end_date"], "2026-07-15")
@@ -198,6 +227,10 @@ class HsbcPasteImportTestsMixin:
         }
         self.assertEqual(
             set(artifacts_by_role), {"cash_account", "portfolio", "order_status"}
+        )
+        self.assertEqual(
+            artifacts_by_role["cash_account"]["statement_period"],
+            "2026-04-01/2026-07-15",
         )
         self.assertEqual(
             base64.b64decode(artifacts_by_role["portfolio"]["content_base64"]),
@@ -839,6 +872,111 @@ class HsbcPasteImportTestsMixin:
         self.assertEqual(order["source"]["cash_settlement_amount_raw"], "-61.00")
         self.assertEqual(order["source"]["cash_settlement_balance_after_raw"], "60.00")
 
+        original_posting = order["source"]["cash_settlement_postings"][0]
+        sequence_sha256 = cash_only_payload["source_artifacts"][0]["sha256"]
+        self.assertEqual(original_posting["source_sequence_sha256"], sequence_sha256)
+        self.assertEqual(original_posting["account_number"], "000-999999-999")
+        self.assertEqual(original_posting["account_type"], "USD Savings")
+
+        legacy_payload = deepcopy(merged)
+        legacy_order = next(
+            transaction
+            for transaction in legacy_payload["transactions"]
+            if transaction.get("source", {}).get("statement_order_id") == "P-900001"
+        )
+        legacy_posting = legacy_order["source"]["cash_settlement_postings"][0]
+        for field_name in (
+            "source_sequence_sha256",
+            "account_number",
+            "account_type",
+        ):
+            legacy_posting.pop(field_name)
+        economic_before = {
+            field_name: deepcopy(legacy_order.get(field_name))
+            for field_name in (
+                "quantity_raw",
+                "price_raw",
+                "gross_amount_raw",
+                "commission_raw",
+                "net_amount_raw",
+                "normalized",
+            )
+        }
+        transaction_count_before = len(legacy_payload["transactions"])
+
+        repaired = merge_investment_payloads(legacy_payload, cash_only_payload)
+        repaired_order = next(
+            transaction
+            for transaction in repaired["transactions"]
+            if transaction.get("source", {}).get("statement_order_id") == "P-900001"
+        )
+        repaired_posting = repaired_order["source"]["cash_settlement_postings"][0]
+        self.assertEqual(len(repaired["transactions"]), transaction_count_before)
+        self.assertEqual(
+            {
+                field_name: repaired_order.get(field_name)
+                for field_name in economic_before
+            },
+            economic_before,
+        )
+        self.assertEqual(repaired_posting["source_sequence_sha256"], sequence_sha256)
+        self.assertEqual(repaired_posting["account_number"], "000-999999-999")
+        self.assertEqual(repaired_posting["account_type"], "USD Savings")
+
+        repaired_again = merge_investment_payloads(repaired, cash_only_payload)
+        repaired_again_order = next(
+            transaction
+            for transaction in repaired_again["transactions"]
+            if transaction.get("source", {}).get("statement_order_id") == "P-900001"
+        )
+        self.assertEqual(
+            repaired_again_order["source"]["cash_settlement_postings"],
+            repaired_order["source"]["cash_settlement_postings"],
+        )
+        self.assertEqual(len(repaired_again["transactions"]), transaction_count_before)
+
+        for mismatch in (
+            "date",
+            "amount",
+            "balance",
+            "reference",
+            "sequence",
+            "account",
+        ):
+            with self.subTest(pasted_posting_mismatch=mismatch):
+                mismatched_cash = deepcopy(cash_only_payload)
+                evidence = mismatched_cash["hsbc_cash_settlement_evidence"][0]
+                if mismatch == "date":
+                    evidence["date"] = "2026-07-16"
+                elif mismatch == "amount":
+                    evidence["net_amount_raw"] = "-60.99"
+                elif mismatch == "balance":
+                    evidence["source"]["balance_after_raw"] = "60.01"
+                elif mismatch == "reference":
+                    evidence["description"] = "REF P900002001 SEC"
+                    evidence["source"]["reference_id"] = "REF P900002001 SEC"
+                elif mismatch == "sequence":
+                    evidence["source"]["source_sequence_sha256"] = "not-a-digest"
+                else:
+                    evidence["account"] = "000-999999-998"
+                    evidence["source"]["account_number"] = "000-999999-998"
+                rejected = merge_investment_payloads(
+                    deepcopy(legacy_payload),
+                    mismatched_cash,
+                )
+                rejected_order = next(
+                    transaction
+                    for transaction in rejected["transactions"]
+                    if transaction.get("source", {}).get("statement_order_id")
+                    == "P-900001"
+                )
+                rejected_posting = rejected_order["source"]["cash_settlement_postings"][
+                    0
+                ]
+                self.assertNotIn("source_sequence_sha256", rejected_posting)
+                self.assertNotIn("account_number", rejected_posting)
+                self.assertNotIn("account_type", rejected_posting)
+
     def test_hsbc_statement_legacy_currency_totals_do_not_double_count_pasted_subaccounts(
         self,
     ) -> None:
@@ -1342,6 +1480,42 @@ class HsbcPasteImportTestsMixin:
             dividend["source"]["source_file_sha256"],
             artifacts_by_role["investment_statement"]["sha256"],
         )
+        statement_cash_records = [
+            record
+            for record in payload["transactions"]
+            if record.get("source", {}).get("file_kind") == "hsbc_statement_cash"
+        ]
+        self.assertTrue(statement_cash_records)
+        self.assertTrue(
+            all(
+                record["source"]["source_sequence_sha256"]
+                == artifacts_by_role["composite_statement"]["sha256"]
+                for record in statement_cash_records
+            )
+        )
+        trade = next(
+            record for record in payload["transactions"] if record["type"] == "buy"
+        )
+        postings = trade["source"]["cash_settlement_postings"]
+        self.assertEqual(len(postings), 1)
+        self.assertEqual(postings[0]["role"], "principal")
+        self.assertEqual(
+            postings[0]["source_sequence_sha256"],
+            artifacts_by_role["composite_statement"]["sha256"],
+        )
+        self.assertEqual(postings[0]["account_number"], "000-999999-999")
+        self.assertEqual(postings[0]["account_type"], "Foreign Currency Savings USD")
+        self.assertEqual(postings[0]["currency"], "USD")
+
+        reimported = merge_investment_payloads(payload, payload)
+        reimported_trade = next(
+            record
+            for record in reimported["transactions"]
+            if record.get("source", {}).get("statement_order_id") == "P-900"
+        )
+        self.assertEqual(
+            reimported_trade["source"]["cash_settlement_postings"], postings
+        )
 
     def test_hsbc_statement_reimport_preserves_richer_same_source_classification(
         self,
@@ -1423,6 +1597,7 @@ class HsbcPasteImportTestsMixin:
                 "cash_settlement_date": "2026-06-18",
                 "cash_settlement_amount_raw": "117.01",
                 "cash_settlement_balance_after_raw": "4360.53",
+                "cash_settlement_account_type": "USD Savings",
                 "cash_settlement_source_row_number": 10,
                 "cash_flow_fee_amount_raw": "0.01",
                 "cash_flow_fee_row_numbers": [11],
@@ -1491,6 +1666,16 @@ class HsbcPasteImportTestsMixin:
                 for posting in postings
             )
         )
+        self.assertTrue(
+            all(posting["source_sequence_sha256"] == "b" * 64 for posting in postings)
+        )
+        self.assertTrue(
+            all(
+                posting["account_number"] == "000-999999-999"
+                and posting["account_type"] == "USD Savings"
+                for posting in postings
+            )
+        )
         incremental = merged["summary"]["incremental_import"]
         self.assertEqual(
             incremental["enriched_hsbc_statement_settlement_posting_count"],
@@ -1524,23 +1709,36 @@ class HsbcPasteImportTestsMixin:
                     "source": {
                         "file_kind": "hsbc_order_status_text",
                         "statement_order_id": "S-223761",
+                        "cash_settlement_date": "2026-07-16",
                         "cash_settlement_amount_raw": "269.99",
-                        "cash_settlement_balance_after_raw": "25236.79",
+                        "cash_settlement_balance_after_raw": "25506.78",
                         "cash_settlement_postings": [
                             {
                                 "date": "2026-07-16",
                                 "amount_raw": "-0.01",
                                 "balance_after_raw": "25236.79",
-                                "row_number": 40,
-                                "ledger_sequence": 40,
+                                "reference": "REF S223761001 SEC",
+                                "row_number": 41,
+                                "ledger_sequence": 41,
+                                "source_file_kind": "hsbc_usd_account_text",
+                                "source_sequence_sha256": "a" * 64,
+                                "account_number": "000-999999-999",
+                                "account_type": "USD Savings",
+                                "currency": "USD",
                                 "role": "fee",
                             },
                             {
                                 "date": "2026-07-16",
                                 "amount_raw": "269.99",
                                 "balance_after_raw": "25506.78",
-                                "row_number": 41,
-                                "ledger_sequence": 41,
+                                "reference": "REF S223761001 SEC",
+                                "row_number": 40,
+                                "ledger_sequence": 40,
+                                "source_file_kind": "hsbc_usd_account_text",
+                                "source_sequence_sha256": "a" * 64,
+                                "account_number": "000-999999-999",
+                                "account_type": "USD Savings",
+                                "currency": "USD",
                                 "role": "principal",
                             },
                         ],
@@ -1555,7 +1753,7 @@ class HsbcPasteImportTestsMixin:
         self.assertEqual(updated_count, 1)
         self.assertEqual(
             order["source"]["cash_settlement_balance_after_raw"],
-            "25506.78",
+            "25236.79",
         )
         self.assertEqual(
             order["source"]["cash_settlement_source_row_number"],
@@ -1657,6 +1855,14 @@ class HsbcPasteImportTestsMixin:
             csv_text.encode("utf-8"),
             filename="TransactionHistoryUSDSavings.csv",
         )
+        csv_payload["source_artifacts"][0]["account"] = "000-999999-999"
+        csv_digest = hashlib.sha256(csv_text.encode("utf-8")).hexdigest()
+        self.assertTrue(
+            all(
+                transaction["source"]["source_sequence_sha256"] == csv_digest
+                for transaction in csv_payload["transactions"]
+            )
+        )
 
         merged = merge_investment_payloads(order_payload, csv_payload)
         order = next(
@@ -1677,6 +1883,10 @@ class HsbcPasteImportTestsMixin:
             order["source"]["cash_settlement_postings"][0]["source_file_kind"],
             "hsbc_usd_savings_csv",
         )
+        posting = order["source"]["cash_settlement_postings"][0]
+        self.assertEqual(posting["source_sequence_sha256"], csv_digest)
+        self.assertEqual(posting["account_number"], "000-999999-999")
+        self.assertEqual(posting["account_type"], "USD Savings")
 
     def test_hsbc_settlement_reconciliation_uses_mill_price_precision(self) -> None:
         payload = {

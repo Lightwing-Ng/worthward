@@ -1,4 +1,4 @@
-/* Code version: v0.25.0 */
+/* Code version: v0.25.2 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -312,7 +312,7 @@ input[type="number"],
 	color: var(--text);
 }
 .trade-strategy-select,
-.backtest-shared-select-trigger {
+.backtest-shared-select-trigger.form-select {
 	padding-right: var(--sidebar-form-control-padding-inline);
 	font-size: var(--font-form-control);
 	line-height: 1;
@@ -330,7 +330,7 @@ input[type="number"],
 .trade-strategy-select option,
 .backtest-shared-select-native option { color: var(--theme-text); }
 .trade-strategy-select,
-.backtest-shared-select-trigger {
+.backtest-shared-select-trigger.form-select {
 	transform: translateZ(0);
 	will-change: transform, box-shadow, background;
 }
@@ -875,21 +875,49 @@ input[type="number"],
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:hover,
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus,
 .trade-strategy-select.trade-strategy-trigger.backtest-shared-select-trigger:focus-visible {
-	border: var(--frosted-glass-border) !important;
+	border: var(--shared-select-border) !important;
 }
-.backtest-shared-select-trigger {
-	background: var(--frosted-glass-background);
-	border: var(--frosted-glass-border) !important;
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+.backtest-shared-select-trigger.form-select {
+	position: relative;
+	padding-inline-end: var(--shared-select-trigger-padding-inline-end);
+	background: var(--shared-select-trigger-material);
+	border: var(--shared-select-border) !important;
+	box-shadow: var(--shared-select-shadow);
+	backdrop-filter: var(--shared-select-blur);
+	-webkit-backdrop-filter: var(--shared-select-blur);
 }
-.backtest-shared-select-trigger:hover,
-.backtest-shared-select-trigger:focus,
-.backtest-shared-select-trigger:focus-visible {
-	background: var(--frosted-glass-background-hover);
-	border: var(--frosted-glass-border) !important;
-	box-shadow: var(--frosted-glass-shadow-hover);
+.backtest-shared-select-trigger.form-select:hover,
+.backtest-shared-select-trigger.form-select:focus,
+.backtest-shared-select-trigger.form-select:focus-visible {
+	background: var(--shared-select-trigger-material-hover);
+	border: var(--shared-select-border) !important;
+	box-shadow: var(--shared-select-shadow-hover);
+	outline: none;
+}
+.backtest-shared-select-trigger::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	inset-inline-end: var(--shared-select-chevron-inline-end);
+	width: var(--shared-select-chevron-width);
+	height: var(--shared-select-chevron-height);
+	background-color: currentColor;
+	-webkit-mask: var(--shared-select-chevron-mask) center / contain no-repeat;
+	mask: var(--shared-select-chevron-mask) center / contain no-repeat;
+	transform: translateY(-50%) rotate(var(--shared-select-chevron-closed-rotation));
+	transform-origin: center;
+	transition: transform var(--shared-select-chevron-transition-duration) var(--motion-standard);
+	pointer-events: none;
+}
+.backtest-shared-select-trigger[aria-expanded="true"]::after {
+	transform: translateY(-50%) rotate(var(--shared-select-chevron-open-rotation));
+}
+.backtest-shared-select-trigger > .trade-strategy-trigger-chevron {
+	display: none;
+}
+/* Product-owned compact broker filters retain their dedicated centered chevron. */
+.investment-broker-filter-trigger.backtest-shared-select-trigger::after {
+	content: none;
 }
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger,
 .workspace-mode-controls-surface[data-backtest-parameter-panel] #period_panel .backtest-shared-select-trigger:hover,
@@ -922,10 +950,10 @@ input[type="number"],
 	padding: var(--shared-select-dropdown-padding);
 	border-radius: var(--shared-select-dropdown-radius);
 	color: var(--text);
-	background: var(--frosted-glass-opaque-background);
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	background: var(--shared-select-dropdown-material);
+	box-shadow: var(--shared-select-shadow);
+	backdrop-filter: var(--shared-select-blur);
+	-webkit-backdrop-filter: var(--shared-select-blur);
 	border: 0;
 	z-index: var(--layer-global-popover);
 	isolation: isolate;
@@ -949,12 +977,13 @@ input[type="number"],
 }
 .backtest-shared-select-dropdown {
 	position: absolute;
+	max-width: min(100%, var(--shared-select-dropdown-max-width));
 	color: var(--text);
-	background: var(--frosted-glass-surface);
-	border: var(--frosted-glass-border);
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	background: var(--shared-select-dropdown-material);
+	border: var(--shared-select-border);
+	box-shadow: var(--shared-select-shadow);
+	backdrop-filter: var(--shared-select-blur);
+	-webkit-backdrop-filter: var(--shared-select-blur);
 	isolation: isolate;
 	z-index: var(--layer-global-popover);
 }
@@ -1108,8 +1137,8 @@ input[type="number"],
 	padding: 0;
 	border-radius: var(--strategy-tune-button-radius);
 	background: var(--strategy-tune-button-material);
-	border: var(--settings-round-icon-button-border);
-	box-shadow: var(--settings-round-icon-button-shadow);
+	border: var(--circular-icon-button-border);
+	box-shadow: var(--circular-icon-button-shadow);
 	backdrop-filter: var(--frosted-glass-blur);
 	-webkit-backdrop-filter: var(--frosted-glass-blur);
 	color: var(--theme-muted);
@@ -1119,8 +1148,8 @@ input[type="number"],
 }
 .trade-strategy-tune-button:hover,
 .trade-strategy-tune-button:focus-visible {
-	background: var(--settings-round-icon-button-background-hover);
-	box-shadow: var(--settings-round-icon-button-shadow-hover);
+	background: var(--circular-icon-button-background-hover);
+	box-shadow: var(--circular-icon-button-shadow-hover);
 	color: var(--accent-text);
 	transform: translateY(-1px);
 }
@@ -1471,6 +1500,9 @@ input[type="number"],
 	will-change: transform, opacity, filter;
 }
 @media (prefers-reduced-motion: reduce) {
+	.backtest-shared-select-trigger::after {
+		transition: none !important;
+	}
 	.suggestions.is-open,
 	.trade-strategy-dropdown:not([hidden]),
 	.date-picker-popover:not([hidden]) {
@@ -1975,11 +2007,11 @@ input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 .date-picker-toolbar { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; gap: 8px; margin-bottom: 10px; }
 .date-picker-title { min-width: 0; min-height: 28px; padding: 0 4px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); box-shadow: none; font-size: var(--font-form-control); line-height: 1.2; font-weight: var(--font-weight-bold); text-align: center; }
 .date-picker-title:hover, .date-picker-title:focus-visible { transform: none; background: var(--accent-surface-soft); color: var(--accent-text); box-shadow: none; outline: none; }
-.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--settings-round-icon-button-radius); border: var(--settings-round-icon-button-border); background: var(--settings-round-icon-button-background); color: var(--settings-round-icon-button-color); box-shadow: var(--settings-round-icon-button-shadow); backdrop-filter: var(--frosted-glass-blur); -webkit-backdrop-filter: var(--frosted-glass-blur); display: inline-grid; place-items: center; }
-.date-picker-nav:hover, .date-picker-nav:focus-visible { transform: none; box-shadow: var(--settings-round-icon-button-shadow-hover); background: var(--settings-round-icon-button-background-hover); color: var(--settings-round-icon-button-color-hover); }
-.date-picker-nav:active { box-shadow: var(--settings-round-icon-button-shadow-active); }
+.date-picker-nav { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: var(--circular-icon-button-radius); border: var(--circular-icon-button-border); background: var(--circular-icon-button-background); color: var(--circular-icon-button-color); box-shadow: var(--circular-icon-button-shadow); backdrop-filter: var(--frosted-glass-blur); -webkit-backdrop-filter: var(--frosted-glass-blur); display: inline-grid; place-items: center; }
+.date-picker-nav:hover, .date-picker-nav:focus-visible { transform: none; box-shadow: var(--circular-icon-button-shadow-hover); background: var(--circular-icon-button-background-hover); color: var(--circular-icon-button-color-hover); }
+.date-picker-nav:active { box-shadow: var(--circular-icon-button-shadow-active); }
 .date-picker-nav.is-disabled { cursor: not-allowed; opacity: 0.38; }
-.date-picker-nav.is-disabled:hover, .date-picker-nav.is-disabled:focus-visible { transform: none; background: var(--settings-round-icon-button-background); color: var(--settings-round-icon-button-color); box-shadow: var(--settings-round-icon-button-shadow); }
+.date-picker-nav.is-disabled:hover, .date-picker-nav.is-disabled:focus-visible { transform: none; background: var(--circular-icon-button-background); color: var(--circular-icon-button-color); box-shadow: var(--circular-icon-button-shadow); }
 .date-picker-nav .icon { width: 14px; height: 14px; background-color: currentColor; }
 .date-picker-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 6px; color: var(--muted); font-size: var(--font-ui-xs); line-height: 1; font-weight: var(--font-weight-bold); text-align: center; }
 .date-picker-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -2038,12 +2070,12 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 	white-space: nowrap;
 }
 .sidebar-icon-button {
-	width: var(--settings-round-icon-button-size);
-	min-width: var(--settings-round-icon-button-size);
-	height: var(--settings-round-icon-button-size);
-	min-height: var(--settings-round-icon-button-size);
+	width: var(--circular-icon-button-size);
+	min-width: var(--circular-icon-button-size);
+	height: var(--circular-icon-button-size);
+	min-height: var(--circular-icon-button-size);
 	padding: 0;
-	border-radius: var(--settings-round-icon-button-radius);
+	border-radius: var(--circular-icon-button-radius);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -2060,9 +2092,9 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 	place-items: center;
 }
 .sidebar-secondary-button {
-	background: var(--settings-round-icon-button-background);
-	color: var(--settings-round-icon-button-color);
-	box-shadow: var(--settings-round-icon-button-shadow);
+	background: var(--circular-icon-button-background);
+	color: var(--circular-icon-button-color);
+	box-shadow: var(--circular-icon-button-shadow);
 }
 .sidebar-secondary-button .icon-plus {
 	background-color: currentColor;
@@ -2070,9 +2102,9 @@ button:hover { transform: translateY(-1px); box-shadow: none; }
 .sidebar-secondary-button:hover,
 .sidebar-secondary-button:focus-visible {
 	transform: none;
-	box-shadow: var(--settings-round-icon-button-shadow-hover);
-	background: var(--settings-round-icon-button-background-hover);
-	color: var(--settings-round-icon-button-color-hover);
+	box-shadow: var(--circular-icon-button-shadow-hover);
+	background: var(--circular-icon-button-background-hover);
+	color: var(--circular-icon-button-color-hover);
 }
 .chart-panel { padding: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 

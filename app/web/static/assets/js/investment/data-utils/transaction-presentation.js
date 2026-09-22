@@ -1,7 +1,20 @@
 /**
  * Transaction presentation, lot-scope, and replay-order utilities.
  *
- * Code version: v1.1.0
+ * Code version: v1.4.1
+ * - Fixed: HSBC replay ordering shares the complete direct-cash evidence
+ *   boundary and cannot be influenced by malformed producer metadata.
+ * - Fixed: Cash replay ordering rejects conflicting aliases, invalid calendar
+ *   dates, and mismatched statement-PDF physical-row identities.
+ * - Fixed: HSBC cash evidence now has a transitive total group order; exact
+ *   source sequences remain ordered even when another cash scope is between
+ *   them in the original array.
+ * - Fixed: Legacy HSBC cash rows without an immutable source digest no longer
+ *   compare row numbers across captures or cash subaccounts.
+ * - Fixed: HSBC cash sequence ordering is limited to one account type,
+ *   currency, and source-sequence domain.
+ * - Fixed: Pasted HSBC cash-account rows follow their chronological ledger
+ *   sequence while downloaded newest-first CSV rows retain reverse ordering.
  * - Fixed: Same-time tax-lot ordering groups rows by broker account before
  *   comparing account-local sequences, keeping the comparator transitive.
  */
@@ -527,6 +540,14 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
 
     function getHsbcOrderExecutionSequence(txn) {
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const fileKind = String(source.file_kind || '').trim().toLowerCase();
+        const normalizedType = getNormalizedTransactionType(txn);
+        if (
+            !['buy', 'sell'].includes(normalizedType)
+            || !['hsbc_order_status_text', 'hsbc_order_status_capture'].includes(fileKind)
+        ) {
+            return Number.NaN;
+        }
         const sourceRank = Number(source.order_status_source_row_number ?? source.row_number);
         if (!Number.isFinite(sourceRank) || sourceRank <= 0) return Number.NaN;
         const pageOrder = String(source.order_status_page_order || 'newest_first').trim().toLowerCase();
@@ -819,6 +840,37 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         return Number.isFinite(sequence) ? sequence : null;
     }
 
+    function isHsbcCashLedgerEvidence(txn) {
+        const broker = String(
+            txn?.broker || txn?.source?.broker || '',
+        ).trim().toLowerCase();
+        const normalizedType = getNormalizedTransactionType(txn);
+        const fileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
+        return broker === 'hsbc'
+            && !['buy', 'sell'].includes(normalizedType)
+            && [
+            'hsbc_usd_account_text',
+            'hsbc_usd_savings_csv',
+            'hsbc_multi_currency_cash_account_text',
+            'hsbc_statement_cash',
+            ].includes(fileKind);
+    }
+
+    function getHsbcCashLedgerOrder(txn) {
+        const evidence = runtime.getHsbcCashEvidenceState(txn);
+        if (!evidence?.isConsistent) return null;
+        const descriptor = evidence.descriptor;
+        const sequenceDomain = (
+            `${descriptor.sourceFileKind}|sha256:${descriptor.sourceSequenceSha256}`
+        );
+        return {
+            scopeKey: descriptor.cashScopeKey,
+            sequenceDomain,
+            direction: descriptor.sourceSequenceDirection,
+            sequence: descriptor.ledgerSequence,
+        };
+    }
+
     function getInvestmentReplayIdentity(txn) {
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
         return JSON.stringify([
@@ -864,59 +916,12 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         if (leftDate !== rightDate) {
             return leftDate.localeCompare(rightDate);
         }
-        const leftSavingsSequence = getHsbcUsdSavingsCsvLedgerSequence(leftTxn);
-        const rightSavingsSequence = getHsbcUsdSavingsCsvLedgerSequence(rightTxn);
-        if (
-            leftSavingsSequence !== null
-            && rightSavingsSequence !== null
-            && leftSavingsSequence !== rightSavingsSequence
-        ) {
-            // HSBC's downloaded USD Savings CSV is newest-first. Larger source
-            // rows therefore belong earlier in the chronological replay.
-            return rightSavingsSequence - leftSavingsSequence;
-        }
-        const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
-        const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
-        if (leftBroker === 'hsbc' && rightBroker === 'hsbc') {
-            const leftCategory = getHsbcSortCategory(leftTxn);
-            const rightCategory = getHsbcSortCategory(rightTxn);
-            if (leftCategory !== rightCategory) {
-                return leftCategory - rightCategory;
-            }
-            const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
-            const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
-            if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
-                return leftSequence - rightSequence;
-            }
-        }
-        if (leftBroker === 'schwab' && rightBroker === 'schwab') {
-            const leftAccount = String(
-                leftTxn?.account_id
-                ?? leftTxn?.account
-                ?? leftTxn?.source?.account_id
-                ?? leftTxn?.source?.account
-                ?? leftTxn?.source?.account_number
-                ?? '',
-            ).trim();
-            const rightAccount = String(
-                rightTxn?.account_id
-                ?? rightTxn?.account
-                ?? rightTxn?.source?.account_id
-                ?? rightTxn?.source?.account
-                ?? rightTxn?.source?.account_number
-                ?? '',
-            ).trim();
-            const leftSequence = getSchwabDateOnlyTradeSequence(leftTxn);
-            const rightSequence = getSchwabDateOnlyTradeSequence(rightTxn);
-            if (
-                leftAccount
-                && leftAccount === rightAccount
-                && Number.isFinite(leftSequence)
-                && Number.isFinite(rightSequence)
-                && leftSequence !== rightSequence
-            ) {
-                return leftSequence - rightSequence;
-            }
+        if (isHsbcCashLedgerEvidence(leftTxn) || isHsbcCashLedgerEvidence(rightTxn)) {
+            // Cash source sequences are partial orders.  Applying them inside a
+            // pairwise comparator creates cycles when another cash domain or a
+            // non-cash row sits between two members.  The array-level replay
+            // sorter reorders exact domains inside their occupied slots.
+            return leftIndex - rightIndex;
         }
         const leftCashCategory = getSameTimeCashSafetySortCategory(leftTxn);
         const rightCashCategory = getSameTimeCashSafetySortCategory(rightTxn);
@@ -930,11 +935,6 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         }
         if (leftCashCategory === 2 && leftCashAmount !== rightCashAmount) {
             return rightCashAmount - leftCashAmount;
-        }
-        const leftRow = Number(leftTxn?.source?.row_number);
-        const rightRow = Number(rightTxn?.source?.row_number);
-        if (Number.isFinite(leftRow) && Number.isFinite(rightRow) && leftRow !== rightRow) {
-            return leftRow - rightRow;
         }
         const leftIdentity = getInvestmentReplayIdentity(leftTxn);
         const rightIdentity = getInvestmentReplayIdentity(rightTxn);
@@ -963,6 +963,182 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
             return leftDatetime.localeCompare(rightDatetime);
         }
         return compareInvestmentTransactions(leftTxn, rightTxn, leftIndex, rightIndex);
+    }
+
+    function sortInvestmentTransactionsForReplay(transactions = []) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        if (typeof runtime.registerHsbcSettlementPostingOwnerConflicts === 'function') {
+            runtime.registerHsbcSettlementPostingOwnerConflicts(safeTransactions);
+        }
+        const indexedTransactions = safeTransactions.map(
+            (txn, index) => {
+                const cashOrder = isHsbcCashLedgerEvidence(txn)
+                    ? getHsbcCashLedgerOrder(txn)
+                    : null;
+                const exactGroupKey = cashOrder?.sequenceDomain
+                    ? [
+                        cashOrder.scopeKey,
+                        cashOrder.sequenceDomain,
+                        cashOrder.direction,
+                    ].join('|')
+                    : '';
+                const date = String(txn?.date || '').slice(0, 10);
+                return {
+                    cashGroupKey: exactGroupKey,
+                    index,
+                    isHsbcCashEvidence: isHsbcCashLedgerEvidence(txn),
+                    replayOrder: Number(txn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]),
+                    replayBucketKey: date,
+                    txn,
+                };
+            },
+        );
+        if (indexedTransactions.every((item) => Number.isInteger(item.replayOrder))) {
+            return indexedTransactions
+                .sort((left, right) => left.replayOrder - right.replayOrder)
+                .map((item) => item.txn);
+        }
+
+        const buckets = new Map();
+        indexedTransactions.forEach((item) => {
+            if (!buckets.has(item.replayBucketKey)) {
+                buckets.set(item.replayBucketKey, []);
+            }
+            buckets.get(item.replayBucketKey).push(item);
+        });
+        const orderedBuckets = [...buckets.values()].sort((left, right) => {
+            const leftItem = left[0];
+            const rightItem = right[0];
+            const leftDate = String(leftItem?.txn?.date || '').slice(0, 10);
+            const rightDate = String(rightItem?.txn?.date || '').slice(0, 10);
+            if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+            return leftItem.index - rightItem.index;
+        });
+
+        return orderedBuckets.flatMap((bucket) => {
+            const reordered = [...bucket].sort((left, right) => {
+                const leftDatetime = String(
+                    left?.txn?.datetime || left?.txn?.date || '',
+                );
+                const rightDatetime = String(
+                    right?.txn?.datetime || right?.txn?.date || '',
+                );
+                if (leftDatetime !== rightDatetime) {
+                    return leftDatetime.localeCompare(rightDatetime);
+                }
+                if (left.isHsbcCashEvidence || right.isHsbcCashEvidence) {
+                    return left.index - right.index;
+                }
+                const leftCashCategory = getSameTimeCashSafetySortCategory(left.txn);
+                const rightCashCategory = getSameTimeCashSafetySortCategory(right.txn);
+                if (leftCashCategory !== rightCashCategory) {
+                    return leftCashCategory - rightCashCategory;
+                }
+                const leftCashAmount = getTransactionCashSortAmount(left.txn);
+                const rightCashAmount = getTransactionCashSortAmount(right.txn);
+                if (
+                    [0, 2].includes(leftCashCategory)
+                    && leftCashAmount !== rightCashAmount
+                ) {
+                    return rightCashAmount - leftCashAmount;
+                }
+                const leftIdentity = getInvestmentReplayIdentity(left.txn);
+                const rightIdentity = getInvestmentReplayIdentity(right.txn);
+                if (leftIdentity !== rightIdentity) {
+                    return leftIdentity.localeCompare(rightIdentity);
+                }
+                return left.index - right.index;
+            });
+            const cashGroups = new Map();
+            reordered.forEach((item, bucketIndex) => {
+                if (!item.cashGroupKey) return;
+                if (!cashGroups.has(item.cashGroupKey)) cashGroups.set(item.cashGroupKey, []);
+                cashGroups.get(item.cashGroupKey).push({bucketIndex, item});
+            });
+            cashGroups.forEach((members) => {
+                const orderedMembers = members.map(({item}) => item).sort((left, right) => {
+                    const leftOrder = getHsbcCashLedgerOrder(left.txn);
+                    const rightOrder = getHsbcCashLedgerOrder(right.txn);
+                    return leftOrder.direction * (leftOrder.sequence - rightOrder.sequence)
+                        || left.index - right.index;
+                });
+                const occupiedSlots = members
+                    .map(({bucketIndex}) => bucketIndex)
+                    .sort((left, right) => left - right);
+                occupiedSlots.forEach((slot, index) => {
+                    reordered[slot] = orderedMembers[index];
+                });
+            });
+
+            const nonCashSlots = reordered
+                .map((item, bucketIndex) => ({bucketIndex, item}))
+                .filter(({item}) => !item.isHsbcCashEvidence);
+            const orderedNonCash = nonCashSlots.map(({item}) => item).sort((left, right) => (
+                compareInvestmentTransactionsForReplay(
+                    left.txn,
+                    right.txn,
+                    left.index,
+                    right.index,
+                )
+            ));
+            const localSequenceGroups = new Map();
+            orderedNonCash.forEach((item, listIndex) => {
+                const broker = String(
+                    item.txn?.broker || item.txn?.source?.broker || '',
+                ).trim().toLowerCase();
+                const account = String(
+                    item.txn?.account_id
+                    ?? item.txn?.account
+                    ?? item.txn?.source?.account_id
+                    ?? item.txn?.source?.account
+                    ?? item.txn?.source?.account_number
+                    ?? '',
+                ).trim().toUpperCase();
+                const sequence = broker === 'hsbc'
+                    ? getHsbcOrderExecutionSequence(item.txn)
+                    : broker === 'schwab'
+                        ? getSchwabDateOnlyTradeSequence(item.txn)
+                        : null;
+                if (!account || !Number.isFinite(sequence)) return;
+                const groupKey = `${broker}|${account}`;
+                if (!localSequenceGroups.has(groupKey)) localSequenceGroups.set(groupKey, []);
+                localSequenceGroups.get(groupKey).push({item, listIndex, sequence});
+            });
+            localSequenceGroups.forEach((members) => {
+                const orderedMembers = members.map(({item, sequence}) => ({
+                    item,
+                    sequence,
+                })).sort((left, right) => (
+                    left.sequence - right.sequence
+                    || left.item.index - right.item.index
+                ));
+                const occupiedSlots = members
+                    .map(({listIndex}) => listIndex)
+                    .sort((left, right) => left - right);
+                occupiedSlots.forEach((slot, index) => {
+                    orderedNonCash[slot] = orderedMembers[index].item;
+                });
+            });
+            const replayOrderMembers = orderedNonCash
+                .map((item, listIndex) => ({item, listIndex}))
+                .filter(({item}) => Number.isInteger(item.replayOrder));
+            const orderedReplayMembers = replayOrderMembers
+                .map(({item}) => item)
+                .sort((left, right) => (
+                    left.replayOrder - right.replayOrder
+                    || left.index - right.index
+                ));
+            replayOrderMembers
+                .map(({listIndex}) => listIndex)
+                .sort((left, right) => left - right)
+                .forEach((slot, index) => {
+                    orderedNonCash[slot] = orderedReplayMembers[index];
+                });
+            nonCashSlots.forEach(({bucketIndex}, index) => {
+                reordered[bucketIndex] = orderedNonCash[index];
+            });
+            return reordered.map((item) => item.txn);
+        });
     }
 
     function compareInvestmentReplaySnapshots(leftSnapshot, rightSnapshot, leftIndex = 0, rightIndex = 0) {
@@ -995,16 +1171,21 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         return '';
     }
 
-    function compareInvestmentTaxLotTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
-        const leftReplayOrder = Number(leftTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
-        const rightReplayOrder = Number(rightTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
-        if (
-            Number.isInteger(leftReplayOrder)
-            && Number.isInteger(rightReplayOrder)
-            && leftReplayOrder !== rightReplayOrder
-        ) {
-            return leftReplayOrder - rightReplayOrder;
-        }
+    function getInvestmentTaxLotBrokerAccount(txn) {
+        return {
+            broker: String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase(),
+            account: String(
+                txn?.account_id
+                ?? txn?.account
+                ?? txn?.source?.account_id
+                ?? txn?.source?.account
+                ?? txn?.source?.account_number
+                ?? '',
+            ).trim().toUpperCase(),
+        };
+    }
+
+    function compareInvestmentTaxLotBaseline(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
         const leftDatetime = getInvestmentTaxLotOrderDatetime(leftTxn);
         const rightDatetime = getInvestmentTaxLotOrderDatetime(rightTxn);
         if (leftDatetime !== rightDatetime) {
@@ -1012,58 +1193,171 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         }
         const leftDate = String(leftTxn?.date || '');
         const rightDate = String(rightTxn?.date || '');
-        if (leftDate !== rightDate) {
-            return leftDate.localeCompare(rightDate);
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        const leftScope = getInvestmentTaxLotBrokerAccount(leftTxn);
+        const rightScope = getInvestmentTaxLotBrokerAccount(rightTxn);
+        if (leftScope.broker !== rightScope.broker) {
+            return leftScope.broker.localeCompare(rightScope.broker);
         }
-        const leftBroker = String(leftTxn?.broker || leftTxn?.source?.broker || '').trim().toLowerCase();
-        const rightBroker = String(rightTxn?.broker || rightTxn?.source?.broker || '').trim().toLowerCase();
-        const leftAccount = String(
-            leftTxn?.account_id
-            ?? leftTxn?.account
-            ?? leftTxn?.source?.account_id
-            ?? leftTxn?.source?.account
-            ?? leftTxn?.source?.account_number
-            ?? '',
-        ).trim();
-        const rightAccount = String(
-            rightTxn?.account_id
-            ?? rightTxn?.account
-            ?? rightTxn?.source?.account_id
-            ?? rightTxn?.source?.account
-            ?? rightTxn?.source?.account_number
-            ?? '',
-        ).trim();
-        // Source row numbers and execution sequences are only comparable
-        // within one broker account. Grouping same-time rows by account first
-        // keeps the comparator transitive, so another broker's row numbers can
-        // no longer reorder a same-day buy/sell pair during a full sort.
-        if (leftBroker !== rightBroker) return leftBroker.localeCompare(rightBroker);
-        if (leftAccount !== rightAccount) return leftAccount.localeCompare(rightAccount);
-        if (leftBroker === 'hsbc') {
-            const leftSequence = getHsbcOrderExecutionSequence(leftTxn);
-            const rightSequence = getHsbcOrderExecutionSequence(rightTxn);
-            if (Number.isFinite(leftSequence) && Number.isFinite(rightSequence) && leftSequence !== rightSequence) {
-                return leftSequence - rightSequence;
-            }
+        if (leftScope.account !== rightScope.account) {
+            return leftScope.account.localeCompare(rightScope.account);
         }
-        if (leftBroker === 'schwab') {
-            const leftSequence = getSchwabDateOnlyTradeSequence(leftTxn);
-            const rightSequence = getSchwabDateOnlyTradeSequence(rightTxn);
-            if (
-                leftAccount
-                && Number.isFinite(leftSequence)
-                && Number.isFinite(rightSequence)
-                && leftSequence !== rightSequence
-            ) {
-                return leftSequence - rightSequence;
-            }
-        }
-        const leftRow = Number(leftTxn?.source?.row_number ?? leftIndex);
-        const rightRow = Number(rightTxn?.source?.row_number ?? rightIndex);
-        if (Number.isFinite(leftRow) && Number.isFinite(rightRow) && leftRow !== rightRow) {
-            return leftRow - rightRow;
-        }
+        const leftRawRow = leftTxn?.source?.row_number;
+        const rightRawRow = rightTxn?.source?.row_number;
+        const leftRow = Number(leftRawRow);
+        const rightRow = Number(rightRawRow);
+        const leftHasRow = String(leftRawRow ?? '').trim() !== '' && Number.isFinite(leftRow);
+        const rightHasRow = String(rightRawRow ?? '').trim() !== '' && Number.isFinite(rightRow);
+        if (leftHasRow !== rightHasRow) return leftHasRow ? -1 : 1;
+        if (leftHasRow && leftRow !== rightRow) return leftRow - rightRow;
+        const leftIdentity = getInvestmentReplayIdentity(leftTxn);
+        const rightIdentity = getInvestmentReplayIdentity(rightTxn);
+        if (leftIdentity !== rightIdentity) return leftIdentity.localeCompare(rightIdentity);
         return leftIndex - rightIndex;
+    }
+
+    function compareInvestmentTaxLotTransactions(leftTxn, rightTxn, leftIndex = 0, rightIndex = 0) {
+        const leftReplayOrder = Number(leftTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        const rightReplayOrder = Number(rightTxn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]);
+        const leftHasReplayOrder = Number.isInteger(leftReplayOrder);
+        const rightHasReplayOrder = Number.isInteger(rightReplayOrder);
+        if (leftHasReplayOrder !== rightHasReplayOrder) {
+            return leftHasReplayOrder ? -1 : 1;
+        }
+        if (leftHasReplayOrder && leftReplayOrder !== rightReplayOrder) {
+            return leftReplayOrder - rightReplayOrder;
+        }
+        const leftDatetime = getInvestmentTaxLotOrderDatetime(leftTxn);
+        const rightDatetime = getInvestmentTaxLotOrderDatetime(rightTxn);
+        if (leftDatetime !== rightDatetime) return leftDatetime.localeCompare(rightDatetime);
+        const leftDate = String(leftTxn?.date || '');
+        const rightDate = String(rightTxn?.date || '');
+        if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+        const leftScope = getInvestmentTaxLotBrokerAccount(leftTxn);
+        const rightScope = getInvestmentTaxLotBrokerAccount(rightTxn);
+        if (leftScope.broker !== rightScope.broker) {
+            return leftScope.broker.localeCompare(rightScope.broker);
+        }
+        if (leftScope.account !== rightScope.account) {
+            return leftScope.account.localeCompare(rightScope.account);
+        }
+        if (
+            leftScope.broker === rightScope.broker
+            && leftScope.account === rightScope.account
+        ) {
+            const leftSequence = leftScope.broker === 'hsbc'
+                ? getHsbcOrderExecutionSequence(leftTxn)
+                : leftScope.broker === 'schwab'
+                    ? getSchwabDateOnlyTradeSequence(leftTxn)
+                    : null;
+            const rightSequence = rightScope.broker === 'hsbc'
+                ? getHsbcOrderExecutionSequence(rightTxn)
+                : rightScope.broker === 'schwab'
+                    ? getSchwabDateOnlyTradeSequence(rightTxn)
+                    : null;
+            const leftHasSequence = Number.isFinite(leftSequence);
+            const rightHasSequence = Number.isFinite(rightSequence);
+            if (leftHasSequence !== rightHasSequence) return leftHasSequence ? -1 : 1;
+            if (leftHasSequence && leftSequence !== rightSequence) {
+                return leftSequence - rightSequence;
+            }
+        }
+        return compareInvestmentTaxLotBaseline(leftTxn, rightTxn, leftIndex, rightIndex);
+    }
+
+    function sortInvestmentTaxLotTransactions(transactions = []) {
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+        if (typeof runtime.registerHsbcSettlementPostingOwnerConflicts === 'function') {
+            runtime.registerHsbcSettlementPostingOwnerConflicts(safeTransactions);
+        }
+        const indexedTransactions = safeTransactions
+            .map((txn, index) => ({
+                index,
+                replayOrder: Number(txn?.[INVESTMENT_REPLAY_ORDER_SYMBOL]),
+                txn,
+            }));
+        if (indexedTransactions.every((item) => Number.isInteger(item.replayOrder))) {
+            return indexedTransactions
+                .sort((left, right) => (
+                    left.replayOrder - right.replayOrder
+                    || compareInvestmentTaxLotBaseline(
+                        left.txn,
+                        right.txn,
+                        left.index,
+                        right.index,
+                    )
+                ))
+                .map((item) => item.txn);
+        }
+
+        const ordered = indexedTransactions.sort((left, right) => (
+            compareInvestmentTaxLotBaseline(
+                left.txn,
+                right.txn,
+                left.index,
+                right.index,
+            )
+        ));
+        const localSequenceGroups = new Map();
+        ordered.forEach((item, slot) => {
+            const scope = getInvestmentTaxLotBrokerAccount(item.txn);
+            const sequence = scope.broker === 'hsbc'
+                ? getHsbcOrderExecutionSequence(item.txn)
+                : scope.broker === 'schwab'
+                    ? getSchwabDateOnlyTradeSequence(item.txn)
+                    : null;
+            if (!scope.account || !Number.isFinite(sequence)) return;
+            const groupKey = JSON.stringify([
+                getInvestmentTaxLotOrderDatetime(item.txn),
+                String(item.txn?.date || ''),
+                scope.broker,
+                scope.account,
+            ]);
+            if (!localSequenceGroups.has(groupKey)) localSequenceGroups.set(groupKey, []);
+            localSequenceGroups.get(groupKey).push({item, sequence, slot});
+        });
+        localSequenceGroups.forEach((members) => {
+            const orderedMembers = members.map(({item, sequence}) => ({
+                item,
+                sequence,
+            })).sort((left, right) => (
+                left.sequence - right.sequence
+                || compareInvestmentTaxLotBaseline(
+                    left.item.txn,
+                    right.item.txn,
+                    left.item.index,
+                    right.item.index,
+                )
+            ));
+            const occupiedSlots = members
+                .map(({slot}) => slot)
+                .sort((left, right) => left - right);
+            occupiedSlots.forEach((slot, index) => {
+                ordered[slot] = orderedMembers[index].item;
+            });
+        });
+
+        const replayOrderMembers = ordered
+            .map((item, slot) => ({item, slot}))
+            .filter(({item}) => Number.isInteger(item.replayOrder));
+        const orderedReplayMembers = replayOrderMembers
+            .map(({item}) => item)
+            .sort((left, right) => (
+                left.replayOrder - right.replayOrder
+                || compareInvestmentTaxLotBaseline(
+                    left.txn,
+                    right.txn,
+                    left.index,
+                    right.index,
+                )
+            ));
+        replayOrderMembers
+            .map(({slot}) => slot)
+            .sort((left, right) => left - right)
+            .forEach((slot, index) => {
+                ordered[slot] = orderedReplayMembers[index];
+            });
+        return ordered.map((item) => item.txn);
     }
 
     return {
@@ -1115,11 +1409,15 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         getTransactionBrokerRealizedPnl,
         hasPartialTaxLotHistorySource,
         getHsbcUsdSavingsCsvLedgerSequence,
+        getHsbcCashLedgerOrder,
+        isHsbcCashLedgerEvidence,
         getInvestmentReplayIdentity,
         compareInvestmentTransactions,
         compareInvestmentTransactionsForReplay,
+        sortInvestmentTransactionsForReplay,
         compareInvestmentReplaySnapshots,
         getInvestmentTaxLotOrderDatetime,
         compareInvestmentTaxLotTransactions,
+        sortInvestmentTaxLotTransactions,
     };
 }

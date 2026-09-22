@@ -1,7 +1,11 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.3.1
+ * Code version: v1.4.1
+ * - Fixed: Conflicting HSBC direct-cash identities cannot clear a dated cash
+ *   snapshot adjustment during workspace projection.
+ * - Fixed: Transfer constraints move only their required predecessor ahead of
+ *   a receipt, preserving unrelated same-day broker chronology.
  * - Fixed: Currency-less IBKR Transactions CSV cash rows display the workspace
  *   base currency in Transaction history.
  * - Fixed: A persisted same-day cash-transfer binding replays its withdrawal
@@ -926,10 +930,30 @@ function reorderInvestmentTransactionsForBoundTransfers(
         });
 
         const ready = transactions.filter((txn) => (indegree.get(txn) || 0) === 0);
+        const earliestConstrainedIndex = new Map(
+            transactions.map((txn) => [txn, originalIndex.get(txn)]),
+        );
+        for (let iteration = 0; iteration < transactions.length; iteration += 1) {
+            let changed = false;
+            successors.forEach((targetList, sourceTxn) => {
+                const nextIndex = Math.min(
+                    earliestConstrainedIndex.get(sourceTxn),
+                    ...targetList.map((targetTxn) => earliestConstrainedIndex.get(targetTxn)),
+                );
+                if (nextIndex < earliestConstrainedIndex.get(sourceTxn)) {
+                    earliestConstrainedIndex.set(sourceTxn, nextIndex);
+                    changed = true;
+                }
+            });
+            if (!changed) break;
+        }
         const reordered = [];
         const emitted = new Set();
         while (ready.length) {
-            ready.sort((left, right) => originalIndex.get(left) - originalIndex.get(right));
+            ready.sort((left, right) => (
+                earliestConstrainedIndex.get(left) - earliestConstrainedIndex.get(right)
+                || originalIndex.get(left) - originalIndex.get(right)
+            ));
             const txn = ready.shift();
             if (emitted.has(txn)) continue;
             emitted.add(txn);
@@ -1019,6 +1043,7 @@ function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) 
                 baseCurrency: runtime.getInvestmentBaseCurrency(),
                 getRowDateTime: (txn) => txn?.datetime,
                 getBoundaryCurrencies: (txn) => {
+                    if (txn?.cash_balance_evidence_conflict === true) return [];
                     const boundary = runtime.getInvestmentCashBalanceBoundary(txn);
                     return boundary?.currency ? [boundary.currency] : [];
                 },
@@ -1554,4 +1579,3 @@ function measureSegmentedInlineContentWidth(element, renderSafetyPx = runtime.SE
         measureSegmentedInlineContentWidth,
     };
 }
-

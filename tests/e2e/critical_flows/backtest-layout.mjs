@@ -128,12 +128,12 @@ test('keeps the Bayesian Price Field axis column fixed and shares chart typograp
         0,
     );
     for (const font of [geometry.yTick, geometry.xTick]) {
-        expect(font.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
+        expect(font.fontFamily).toContain('Univers Next for HSBC');
         expect(font.fontSize).toBe('12px');
         expect(font.fontWeight).toBe('400');
         expect(font.lineHeight).toBe('10px');
     }
-    expect(geometry.chartYAxisFont.family).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(geometry.chartYAxisFont.family).toContain('Univers Next for HSBC');
     expect(geometry.chartYAxisFont.size).toBe(12);
     expect(String(geometry.chartYAxisFont.weight)).toBe('400');
 });
@@ -253,7 +253,7 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
     ]);
     expect(badges.background).toBe('rgb(0, 85, 204)');
     expect(badges.color).toBe('rgb(255, 255, 255)');
-    expect(badges.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(badges.fontFamily).toContain('Univers Next for HSBC');
     expect(badges.fontSize).toBe('12px');
     expect(badges.lineHeight).toBe('10px');
     expect(badges.dateCenterX).toBeCloseTo(badges.lineCenterX, 1);

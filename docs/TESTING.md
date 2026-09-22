@@ -1,6 +1,20 @@
 # Testing guide
 
-Documentation version: `v1.81.0`
+Documentation version: `v1.84.0`
+
+## Shared modal and floating-banner rows
+
+`tests/e2e/style-token-alignment.spec.mjs` measures the real Style tokens route at
+1,024px, 800px, and 390px. For both the centered modal and the floating banner it
+checks equal dismiss-center edge distances, exact title-to-dismiss vertical
+centering, second-row topic-icon/body top alignment, the 12px icon-to-copy gap,
+and zero surface or document overflow. The banner specimen also validates one
+direct heading and one direct semantic-list body, plus the hanging indent of a
+wrapped second item. `tests/test_layout_anchor_contract.py` and
+`tests/test_banner_contract.py` protect the two-row token/CSS mapping, dynamic
+message-container fallback, shared list-indentation tokens, and valid `ol > li`
+macro structure. The browser suite also exercises the reduced-motion duration and
+touch-visible dismiss control.
 
 ## Prices secondary-sidebar overlay
 
@@ -346,9 +360,13 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   one immutable source bundle, compact row values do not replace exact
   quantity-times-price valuation, visible-order mismatches retain explicit
   partial-history scope, and a broker-export archive can restore only its exact
-  SHA-256 subset without concealing the remaining gaps. Cash-only dividend
-  regressions prove that the atomic merge can attribute one new corporate event
-  from exact same-account order history, preserves an older explicit
+  SHA-256 subset without concealing the remaining gaps. Cash-only captures
+  retain their earliest and latest visible posting dates as evidence-range
+  metadata, including correcting legacy one-day metadata when the identical
+  evidence bytes are re-imported. Cash-only dividend regressions prove that the
+  atomic merge can draw candidate names only from same-account USD orders or
+  USD snapshot positions, derive eligible quantity only from order history,
+  reject non-USD and missing-currency candidates, and preserve an older explicit
   attribution and its metadata, excludes empty-account, other-account, and
   other-broker decoys, fails closed for two plausible tickers or a local-history
   read error, and remains idempotent.
@@ -361,6 +379,13 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   already-net amount shapes, missing commission fields, malformed evidence,
   non-HSBC decoys, and a Metrics breakdown with no unexplained reconciliation
   residue.
+  Evidence-boundary regressions additionally reject cross-account, cash-type,
+  currency, date, source-kind, reference, digest-alias, physical-row, and owner
+  amount conflicts; malformed posting containers and fee-row lists cannot
+  partially repair an order. Browser replay tests cover strict calendar dates,
+  safe integer rows, statement-PDF row aliases, global SHA-plus-row ownership,
+  standalone malformed direct cash, owner-wide provisional state, and removal
+  of synthetic boundaries when immutable evidence conflicts.
 - `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
   template structure, standard-export archive health, exact named ranges and
   validation ranges through the full selected scope, stable Reference ID and
@@ -451,9 +476,16 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   reduce the actual aggregate Cash, Cash equivalents, or Total equity.
   HSBC pending-sell coverage verifies that dated cash boundaries do not create
   a false one-day equity loss; overlapping matched buy settlements verify that
-  one boundary cannot clear another transaction's payable. Internal-transfer
-  coverage verifies both historical bridge continuity and current Holdings
-  equality.
+  one boundary cannot clear another transaction's payable. The History
+  regression also proves that pasted cash rows follow ascending ledger sequence
+  while newest-first CSV rows normalize into chronological replay, a
+  bound-transfer predecessor advances without delaying its receipt, a
+  ledger-older or sequence-incomparable same-day cash row cannot clear a newer
+  settlement boundary, and a USD settlement correction retains both foreign
+  cash and a second USD cash subaccount even when the corrected scope's raw
+  balance is zero.
+  Internal-transfer coverage verifies both historical bridge continuity and
+  current Holdings equality.
   It also verifies that the fixed summary's realtime Today's net P&L can be
   positive while Cumulative P&L remains negative, and that both update after
   a quote poll; the same assertion covers all duplicated fixed and scrollable

@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 (() => {
     const create = (context) => {
         const {
@@ -85,7 +85,7 @@
 
         const readChartFontFamily = (canvas) => {
             const computed = getComputedStyle(canvas);
-            return computed.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+            return computed.fontFamily || '"Univers Next for HSBC"';
         };
 
         const readChartTickFontSize = (canvas, fallbackValue = 12) => {

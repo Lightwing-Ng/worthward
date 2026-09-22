@@ -1,6 +1,10 @@
 """Investment import domain: hsbc statements.
 
-Code version: v0.1.0
+Code version: v0.2.0
+- Added: Cash rows retain their immutable statement sequence identity for
+  same-day settlement replay comparisons.
+- Fixed: Statement-pair orders retain the consumed principal and fee rows as
+  complete immutable settlement postings.
 """
 
 from __future__ import annotations
@@ -529,6 +533,7 @@ def _build_hsbc_statement_pdf_cash_capture(
                     "source_format": "statement_pdf",
                     "source_filename": source_filename,
                     "source_file_sha256": source_artifact["sha256"],
+                    "source_sequence_sha256": source_artifact["sha256"],
                     "row_number": row_number,
                     "ledger_sequence": row_number,
                     "account_number": account_number,
@@ -1332,7 +1337,21 @@ def _match_hsbc_statement_cash_record(
     *,
     transaction_date: str,
     signed_amount: Decimal,
+    expected_account: Any = "",
+    expected_account_type: Any = "",
+    expected_source_sequence_sha256: Any = "",
+    expected_after_ledger_sequence: int = 0,
 ) -> dict[str, Any] | None:
+    normalized_expected_account = _normalize_text(expected_account).upper()
+    normalized_expected_account_type = (
+        _ii_merge_identity._normalize_hsbc_cash_account_type(
+            "USD",
+            expected_account_type,
+        )
+    )
+    normalized_expected_sha256 = _normalize_text(
+        expected_source_sequence_sha256
+    ).lower()
     candidates = []
     for record in cash_records:
         if (
@@ -1345,6 +1364,41 @@ def _match_hsbc_statement_cash_record(
             != "USD"
         ):
             continue
+        source = record.get("source") if isinstance(record.get("source"), dict) else {}
+        candidate_account = _normalize_text(
+            source.get("account_number") or record.get("account")
+        ).upper()
+        candidate_account_type = _ii_merge_identity._normalize_hsbc_cash_account_type(
+            record.get("currency"),
+            source.get("account_type"),
+        )
+        candidate_sha256 = _normalize_text(
+            source.get("source_sequence_sha256")
+            or source.get("source_file_sha256")
+        ).lower()
+        try:
+            candidate_sequence = int(
+                source.get("ledger_sequence", source.get("row_number", 0)) or 0
+            )
+        except (TypeError, ValueError):
+            continue
+        if (
+            normalized_expected_account
+            and candidate_account != normalized_expected_account
+        ):
+            continue
+        if (
+            normalized_expected_account_type
+            and candidate_account_type != normalized_expected_account_type
+        ):
+            continue
+        if normalized_expected_sha256 and candidate_sha256 != normalized_expected_sha256:
+            continue
+        if (
+            expected_after_ledger_sequence > 0
+            and candidate_sequence <= expected_after_ledger_sequence
+        ):
+            continue
         amount = _ii_hsbc_cash._parse_decimal_text_or_none(record.get("net_amount_raw"))
         if amount is None:
             continue
@@ -1353,7 +1407,35 @@ def _match_hsbc_statement_cash_record(
             candidates.append((difference, record))
     if not candidates:
         return None
-    matched = min(candidates, key=lambda item: item[0])[1]
+    best_difference = min(difference for difference, _record in candidates)
+    best_records = [
+        record for difference, record in candidates if difference == best_difference
+    ]
+
+    def cash_record_scope_signature(record: dict[str, Any]) -> tuple[str, ...]:
+        source = record.get("source") if isinstance(record.get("source"), dict) else {}
+        return (
+            _normalize_text(
+                source.get("account_number") or record.get("account")
+            ).upper(),
+            _ii_merge_identity._normalize_hsbc_cash_account_type(
+                record.get("currency"),
+                source.get("account_type"),
+            ),
+            _normalize_text(source.get("balance_after_raw")),
+            _normalize_text(
+                source.get("source_sequence_sha256")
+                or source.get("source_file_sha256")
+            ).lower(),
+            str(int(source.get("row_number", 0) or 0)),
+        )
+
+    if len({cash_record_scope_signature(record) for record in best_records}) != 1:
+        return None
+    matched = min(
+        best_records,
+        key=lambda record: cash_record_scope_signature(record),
+    )
     used_record_ids.add(id(matched))
     return matched
 
@@ -1457,6 +1539,15 @@ def _build_hsbc_statement_pair_payload(
         source["cash_settlement_balance_after_raw"] = matched_source.get(
             "balance_after_raw"
         )
+        settlement_postings: list[dict[str, Any]] = []
+        principal_posting = _ii_hsbc_cash._build_hsbc_cash_settlement_posting(
+            matched_cash,
+            role="principal",
+            fallback_currency=record.get("currency"),
+            fallback_account=record.get("account"),
+        )
+        if principal_posting is not None:
+            settlement_postings.append(principal_posting)
         commission = abs(
             _ii_hsbc_cash._parse_decimal_text_or_none(record.get("commission_raw"))
             or ZERO
@@ -1467,9 +1558,39 @@ def _build_hsbc_statement_pair_payload(
                 used_cash_record_ids,
                 transaction_date=source["cash_settlement_date"],
                 signed_amount=-commission,
+                expected_account=(
+                    matched_source.get("account_number")
+                    or matched_cash.get("account")
+                ),
+                expected_account_type=matched_source.get("account_type"),
+                expected_source_sequence_sha256=(
+                    matched_source.get("source_sequence_sha256")
+                    or matched_source.get("source_file_sha256")
+                ),
+                expected_after_ledger_sequence=int(
+                    matched_source.get(
+                        "ledger_sequence",
+                        matched_source.get("row_number", 0),
+                    )
+                    or 0
+                ),
             )
             if fee_cash is None:
                 unmatched_settlements.append(f"{source['statement_order_id']} fee")
+            else:
+                fee_posting = _ii_hsbc_cash._build_hsbc_cash_settlement_posting(
+                    fee_cash,
+                    role="fee",
+                    fallback_currency=record.get("currency"),
+                    fallback_account=record.get("account"),
+                )
+                if fee_posting is not None:
+                    settlement_postings.append(fee_posting)
+        if settlement_postings:
+            settlement_postings.sort(
+                key=_ii_hsbc_cash._hsbc_settlement_posting_sort_key
+            )
+            source["cash_settlement_postings"] = settlement_postings
 
     for record in dividend_records:
         signed_amount = (

@@ -1,7 +1,10 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Changed: The unresolved HSBC order reference is the sole visible `*`
+ *   marker; Cash and Equity retain their explanatory titles without repeating
+ *   the same provisional state on every affected history metric.
  * - Changed: A Schwab security receipt binds only an imported matching source
  *   transfer-out leg; unrelated accounts are no longer offered as sources.
  */
@@ -372,21 +375,23 @@ function renderInvestmentHistoryMetricValue(value, title = '', valueClass = '') 
 
 function formatInvestmentHistoryCashProjection(value, isProvisional = false) {
         const formatted = runtime.formatAmount(value);
-        if (!isProvisional || formatted === '--') return formatted;
-        return formatted.startsWith('-')
-            ? `-*${formatted.slice(1)}`
-            : `*${formatted}`;
-    }
+        // HSBC exposes unresolved settlement once on the compact order
+        // reference. Cash and Equity keep their evidence note in `title`, but
+        // repeating an asterisk on every later metric misstates the number of
+        // unresolved orders. Retain the argument for runtime API compatibility.
+        void isProvisional;
+        return formatted;
+}
 
 function formatInvestmentCurrentCash(value, isApproximate = false) {
         const numericValue = runtime.getOptionalInvestmentNumber(value);
         if (numericValue === null) return '-';
-        const formatted = runtime.formatHoldingsMoney(numericValue);
-        if (!isApproximate) return formatted;
-        return formatted.startsWith('-')
-            ? `-*${formatted.slice(1)}`
-            : `*${formatted}`;
-    }
+        // The pending order reference owns the single visible asterisk. The
+        // current-cash projection remains numerically identical and continues
+        // to expose its evidence status through the surrounding UI copy.
+        void isApproximate;
+        return runtime.formatHoldingsMoney(numericValue);
+}
 
 function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true} = {}) {
         const description = runtime.formatTransactionDescription(txn);
@@ -1289,4 +1294,3 @@ function syncInvestmentEquityChartAxisMask() {
         syncInvestmentEquityChartAxisMask,
     };
 }
-

@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.17.2."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.18.1."""
 
 from __future__ import annotations
 
@@ -152,6 +152,31 @@ def test_style_tokens_render_examples_inside_the_collapse_specimen() -> None:
     assert ">8</span><span class=\"style-token-collapse-example-unit\">bars</span>" in collapse_html
     assert ">0.050</span>" in collapse_html
     assert ">60.0</span><span class=\"style-token-collapse-example-unit\">%</span>" in collapse_html
+    assert "--collapse-icon-closed-rotation" in collapse_html
+    assert "--collapse-icon-open-rotation" in collapse_html
+    assert "-90deg" in collapse_html
+    assert "0deg" in collapse_html
+
+
+def test_collapse_style_tokens_publish_canonical_directions() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    tokens_css = (
+        project_root / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    style_token_rows = (
+        project_root / "app/web/style_token_rows.py"
+    ).read_text(encoding="utf-8")
+
+    for declaration in (
+        "--collapse-icon-closed-rotation: -90deg;",
+        "--collapse-icon-open-rotation: 0deg;",
+    ):
+        assert declaration in tokens_css
+    for token_name in (
+        "--collapse-icon-closed-rotation",
+        "--collapse-icon-open-rotation",
+    ):
+        assert style_token_rows.count(token_name) == 1
 
 
 def test_style_token_shared_filter_demo_uses_the_shared_select_contract() -> None:
@@ -324,8 +349,8 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
         ".segmented-control,\n.range-mode-shell {", 1
     )[1].split(".segmented-control::-webkit-scrollbar", 1)[0]
     shared_select_rule = forms_css.rsplit(
-        ".backtest-shared-select-trigger {", 1
-    )[1].split(".backtest-shared-select-trigger:hover", 1)[0]
+        ".backtest-shared-select-trigger.form-select {", 1
+    )[1].split(".backtest-shared-select-trigger.form-select:hover", 1)[0]
     action_package_rule = settings_css.split(
         ".settings-action-package {", 1
     )[1].split(".settings-action-package-icon-shell", 1)[0]
@@ -333,11 +358,24 @@ def test_requested_shared_surfaces_use_the_canonical_frosted_glass_properties() 
         ".scrollable-data-table-filter-trigger {", 1
     )[1].split("}", 1)[0]
 
-    for rule in (shared_select_rule, table_filter_rule):
-        assert "var(--frosted-glass-background" in rule
-        assert "var(--frosted-glass-border)" in rule
-        assert "var(--frosted-glass-shadow" in rule
-        assert "var(--frosted-glass-blur)" in rule
+    for declaration in (
+        "background: var(--shared-select-trigger-material);",
+        "border: var(--shared-select-border) !important;",
+        "box-shadow: var(--shared-select-shadow);",
+        "backdrop-filter: var(--shared-select-blur);",
+    ):
+        assert declaration in shared_select_rule
+    for declaration in (
+        "--shared-select-trigger-material: var(--frosted-glass-background);",
+        "--shared-select-border: var(--frosted-glass-border);",
+        "--shared-select-shadow: var(--frosted-glass-shadow);",
+        "--shared-select-blur: var(--frosted-glass-blur);",
+    ):
+        assert declaration in tokens_css
+    assert "var(--frosted-glass-background" in table_filter_rule
+    assert "var(--frosted-glass-border)" in table_filter_rule
+    assert "var(--frosted-glass-shadow" in table_filter_rule
+    assert "var(--frosted-glass-blur)" in table_filter_rule
     assert "var(--frosted-glass-background" in segmented_rule
     assert "border: 0;" in segmented_rule
     assert "var(--frosted-glass-shadow" in segmented_rule
@@ -631,6 +669,122 @@ def test_style_tokens_expose_the_investment_holdings_allocation_badge_contract()
     assert "8.88%" in html
 
 
+def test_allocation_badge_specimen_keeps_complete_numeric_values_until_shared_rendering() -> None:
+    rows_source = (PROJECT_ROOT / "app/web/style_token_rows.py").read_text(
+        encoding="utf-8"
+    )
+    template_source = (
+        PROJECT_ROOT / "app/web/templates/settings/_style_tokens.html"
+    ).read_text(encoding="utf-8")
+    controller_source = (
+        JAVASCRIPT_ROOT / "settings/style-token-controller.js"
+    ).read_text(encoding="utf-8")
+    html = create_app().test_client().get("/settings/style-tokens").get_data(
+        as_text=True
+    )
+
+    for obsolete_key in (
+        "amount_integer",
+        "amount_fraction",
+        "percent_integer",
+        "percent_fraction",
+    ):
+        assert obsolete_key not in rows_source
+        assert obsolete_key not in template_source
+    assert rows_source.count('"label_value":') == 2
+    assert "data-style-token-allocation-badge-value" in template_source
+    assert "getNumericDisplayParts(value).forEach((part) => {" in controller_source
+    assert "Array.from(part.text).forEach((glyph) => {" in controller_source
+    assert 'element.setAttribute("aria-label", value);' in controller_source
+    assert 'partElement.setAttribute("aria-hidden", "true");' in controller_source
+    for value in (
+        "22,032.02",
+        "30.51%",
+        "32,098.02",
+        "44.44%",
+        "72,224.12",
+        "99.00%",
+        "1.11",
+        "1.11%",
+        "8.88",
+        "8.88%",
+    ):
+        assert f'data-numeric-display-value="{value}"' in html
+
+
+def test_shared_pagination_interaction_color_is_tokenized_for_hover_and_focus() -> None:
+    tokens = (
+        PROJECT_ROOT / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    settings_css = read_css_bundle(
+        PROJECT_ROOT / "app/web/static/assets/css/views/settings.css"
+    )
+    rows_source = (PROJECT_ROOT / "app/web/style_token_rows.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--local-store-pagination-button-color: var(--theme-text);" in tokens
+    assert (
+        "--local-store-pagination-button-color-hover: var(--accent-text);" in tokens
+    )
+    interaction_selector = (
+        ".local-store-page-button:not(.is-active):not(.local-store-page-placeholder)"
+        ":is(:hover, :focus-visible) {"
+    )
+    interaction_rule = settings_css.split(interaction_selector, maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "color: var(--local-store-pagination-button-color-hover);" in interaction_rule
+    assert 'raw_token("--local-store-pagination-button-color"' in rows_source
+    assert 'raw_token("--local-store-pagination-button-color-hover"' in rows_source
+
+
+def test_style_token_shared_primitives_reuse_canonical_dom_and_macro_contracts() -> None:
+    template_source = (
+        PROJECT_ROOT / "app/web/templates/settings/_style_tokens.html"
+    ).read_text(encoding="utf-8")
+    rendered = create_app().test_client().get("/settings/style-tokens").get_data(
+        as_text=True
+    )
+
+    assert "render_segmented_control(" in template_source
+    assert 'class="segmented-control range-mode-shell"' in rendered
+    assert 'data-option-count="3"' in rendered
+
+    shell_index = rendered.index(
+        "scrollable-data-table-shell local-store-pagination-host style-token-table-demo"
+    )
+    header_index = rendered.index("data-table-header", shell_index)
+    scroll_index = rendered.index("data-table-scroll", header_index)
+    body_index = rendered.index("data-table-body", scroll_index)
+    pagination_index = rendered.index("data-style-token-table-pagination", body_index)
+    assert shell_index < header_index < scroll_index < body_index < pagination_index
+    assert "--scrollable-data-table-header-padding" in rendered
+    assert "--scrollable-data-table-cell-padding" in rendered
+    assert "--scrollable-data-table-scrollbar-gutter" in rendered
+
+    tokens = (
+        PROJECT_ROOT / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    table_css = (
+        PROJECT_ROOT / "app/web/static/assets/css/views/investment-tables.css"
+    ).read_text(encoding="utf-8")
+    rows_source = (PROJECT_ROOT / "app/web/style_token_rows.py").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "--scrollable-data-table-header-material: "
+        "var(--frosted-glass-background);"
+    ) in tokens
+    assert '"--scrollable-data-table-header-material"' in rows_source
+    assert (
+        table_css.count(
+            "background: var(--scrollable-data-table-header-material);"
+        )
+        == 2
+    )
+
+
 def test_color_tokens_settings_expose_paired_light_dark_rows_and_local_override_script() -> None:
     client = create_app().test_client()
 
@@ -862,7 +1016,7 @@ def test_interactive_table_header_retains_standard_frosted_material() -> None:
         ".scrollable-data-table-shell > .scrollable-data-table[data-table-header],",
         1,
     )[1].split("}", 1)[0]
-    assert "background: var(--frosted-glass-background);" in header_rule
+    assert "background: var(--scrollable-data-table-header-material);" in header_rule
     assert "backdrop-filter: var(--frosted-glass-blur);" in header_rule
     assert "border: var(--frosted-glass-border);" in header_rule
     assert "[data-table-header], table[aria-hidden=\"true\"]" in investment_js

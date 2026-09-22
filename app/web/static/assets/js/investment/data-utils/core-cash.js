@@ -1,10 +1,19 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.2
+ * - Changed: Loads exact-date and safe-decimal HSBC evidence validation.
+ * - Fixed: HSBC balance boundaries reuse the complete importer evidence
+ *   contract instead of trusting filename patterns and coercible balances.
+ * - Fixed: Blank HSBC cash balances remain unavailable instead of becoming
+ *   an authoritative zero balance.
  * - Changed: Current broker cash snapshots roll forward by ledger cash
  *   movements recorded after the snapshot boundary.
  */
+
+import {
+    createHsbcHistoryEvidenceUtils,
+} from '../runtime/history-evidence.js?v=investment-history-evidence-v1.0.3';
 
 export function createInvestmentCoreCashUtils(runtime) {
     const formatTransactionCurrency = (...args) => runtime.formatTransactionCurrency(...args);
@@ -14,6 +23,14 @@ export function createInvestmentCoreCashUtils(runtime) {
     const normalizeInvestmentTicker = (...args) => runtime.normalizeInvestmentTicker(...args);
     const normalizeLedgerDate = (...args) => runtime.normalizeLedgerDate(...args);
     const normalizeTransactionDescriptionWhitespace = (...args) => runtime.normalizeTransactionDescriptionWhitespace(...args);
+
+    const {
+        getHsbcCashEvidenceState,
+        getHsbcStructuredPostingPhysicalEvidenceIdentity,
+        hasConsistentHsbcStructuredSettlementAliases,
+        normalizeHsbcDecimalText,
+        normalizeHsbcEvidenceDate,
+    } = createHsbcHistoryEvidenceUtils(runtime, {baseCurrency: 'USD'});
 
     const INVESTMENT_BASE_CURRENCY = 'USD';
     const USMART_HK_FRACTIONAL_SYNTHETIC_TICKER = 'USMART_HK_FRACTIONAL_SHARES';
@@ -812,6 +829,29 @@ export function createInvestmentCoreCashUtils(runtime) {
         return String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
     }
 
+    function normalizeHsbcCashAccountType(value, currency) {
+        const normalizedCurrency = normalizeCurrencyCode(currency)
+            .replace(/^(?:CNY|RMB)$/, 'CNH');
+        let normalizedType = normalizeInvestmentCashScopeToken(value);
+        const leadingCurrency = normalizedType.match(/^(USD|HKD|CNH|CNY|RMB)\s+/);
+        if (leadingCurrency) {
+            const explicitCurrency = leadingCurrency[1].replace(/^(?:CNY|RMB)$/, 'CNH');
+            if (explicitCurrency !== normalizedCurrency) return '';
+            normalizedType = normalizedType.slice(leadingCurrency[0].length);
+        }
+        const foreignSavings = normalizedType.match(
+            /^FOREIGN CURRENCY SAVINGS(?:\s+(USD|HKD|CNH|CNY|RMB))?$/,
+        );
+        if (foreignSavings) {
+            const explicitCurrency = String(foreignSavings[1] || '')
+                .replace(/^(?:CNY|RMB)$/, 'CNH');
+            if (explicitCurrency && explicitCurrency !== normalizedCurrency) return '';
+            normalizedType = 'SAVINGS';
+        }
+        normalizedType = normalizedType.replace(/\b(?:CNY|RMB)\b/g, 'CNH');
+        return normalizedCurrency && normalizedType ? normalizedType : '';
+    }
+
     function getInvestmentCashBalanceScope(txn) {
         if (String(txn?.broker || '').trim().toLowerCase() !== 'hsbc') return '';
         const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
@@ -820,33 +860,25 @@ export function createInvestmentCoreCashUtils(runtime) {
             ?? source.account
             ?? source.account_number,
         );
-        const accountType = normalizeInvestmentCashScopeToken(
-            txn?.account_type
-            ?? source.account_type,
-        );
         const currency = normalizeCurrencyCode(
             formatTransactionCurrency(txn) || source.statement_currency_raw,
+        );
+        const accountType = normalizeHsbcCashAccountType(
+            txn?.account_type ?? source.account_type,
+            currency,
         );
         if (!account || !accountType || !currency) return '';
         return ['HSBC', account, accountType, currency].join('|');
     }
 
     function getInvestmentCashBalanceBoundary(txn) {
-        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
-        const fileKind = String(source.file_kind || '').trim().toLowerCase();
-        if (
-            !fileKind.startsWith('hsbc_')
-            || !/(cash|savings|account)/.test(fileKind)
-        ) {
-            return null;
-        }
-        const scopeKey = getInvestmentCashBalanceScope(txn);
-        const currency = normalizeCurrencyCode(
-            formatTransactionCurrency(txn) || source.statement_currency_raw,
-        );
-        const balance = Number(source.balance_after_raw);
-        if (!scopeKey || !currency || !Number.isFinite(balance)) return null;
-        return { scopeKey, currency, balance };
+        const evidence = getHsbcCashEvidenceState(txn);
+        if (!evidence.isConsistent || evidence.balance === null) return null;
+        return {
+            scopeKey: evidence.descriptor.cashScopeKey,
+            currency: evidence.descriptor.currency,
+            balance: evidence.balance,
+        };
     }
 
     function createInvestmentCashScopeLedger(startingBalances = {}) {
@@ -1222,6 +1254,11 @@ export function createInvestmentCoreCashUtils(runtime) {
         createCashLedgerFromBalances,
         cloneCashLedgerBalances,
         normalizeInvestmentCashScopeToken,
+        getHsbcCashEvidenceState,
+        getHsbcStructuredPostingPhysicalEvidenceIdentity,
+        hasConsistentHsbcStructuredSettlementAliases,
+        normalizeHsbcDecimalText,
+        normalizeHsbcEvidenceDate,
         getInvestmentCashBalanceScope,
         getInvestmentCashBalanceBoundary,
         createInvestmentCashScopeLedger,

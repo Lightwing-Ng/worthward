@@ -59,10 +59,9 @@ function getVisibleInvestmentHistoryTransactions(processedTransactions = [], cha
     }
 
 function getInvestmentHistoryDisplayTransactions(processedTransactions = [], chartPoints = []) {
-        return getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints)
-            .map((txn, index) => ({txn, index}))
-            .sort((left, right) => runtime.compareInvestmentTransactions(left.txn, right.txn, left.index, right.index))
-            .map(({txn}) => txn);
+        return runtime.sortInvestmentTransactionsForReplay(
+            getVisibleInvestmentHistoryTransactions(processedTransactions, chartPoints),
+        );
     }
 
 function getInvestmentPaginationSurface() {
@@ -252,4 +251,3 @@ function renderInvestmentHistoryTableRows(processedTransactions = [], chartPoint
         renderInvestmentHistoryTableRows,
     };
 }
-

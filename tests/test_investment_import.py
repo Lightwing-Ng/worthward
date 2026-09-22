@@ -1,6 +1,6 @@
 """Compatibility entrypoint for investment-import regression tests.
 
-Code version: v0.44.5
+Code version: v0.45.0
 - Changed: Split broker, evidence, reconciliation, and merge coverage into
   domain-focused mixins while preserving the two historical test class IDs.
 """
@@ -12,6 +12,9 @@ import unittest
 from tests.investment_import_test_support import InvestmentImportFixtureMixin
 from tests.investment_import_hsbc_statements_mixin import HsbcStatementImportTestsMixin
 from tests.investment_import_hsbc_paste_mixin import HsbcPasteImportTestsMixin
+from tests.investment_import_hsbc_evidence_boundary_mixin import (
+    HsbcEvidenceBoundaryImportTestsMixin,
+)
 from tests.investment_import_broker_normalization_mixin import (
     BrokerNormalizationImportTestsMixin,
 )
@@ -32,6 +35,7 @@ from tests.investment_import_transfer_merge_mixin import TransferMergeImportTest
 class InvestmentImportTests(
     InvestmentImportFixtureMixin,
     HsbcStatementImportTestsMixin,
+    HsbcEvidenceBoundaryImportTestsMixin,
     HsbcPasteImportTestsMixin,
     BrokerNormalizationImportTestsMixin,
     unittest.TestCase,

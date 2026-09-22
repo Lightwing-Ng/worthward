@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.14.1 */
+/* Tests for Investment Stock details boundaries. Code version: v1.14.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,6 +53,8 @@ function createBrokerMetricsBuilder(processedTransactions) {
         buildRenderedSplitFactorHints: () => ({}),
         buildTickerPriceIndex: () => ({}),
         compareInvestmentTransactions: (left, right) => String(left.date).localeCompare(String(right.date)),
+        sortInvestmentTransactionsForReplay: stockDetailDataUtils.sortInvestmentTransactionsForReplay,
+        sortInvestmentTaxLotTransactions: stockDetailDataUtils.sortInvestmentTaxLotTransactions,
         convertAmountToBaseCurrency: (value) => Number(value),
         createPositionState: stockDetailDataUtils.createPositionState,
         formatAmount: (value) => String(value),

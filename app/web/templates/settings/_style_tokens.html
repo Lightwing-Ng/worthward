@@ -1,5 +1,6 @@
-{# Code version: v1.1.0 #}
+{# Code version: v1.4.0 #}
 {% from "_macros.html" import render_style_token_table with context %}
+{% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
             <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-style-token-copy-status></p>
             <button type="button" class="surface-resizer surface-resizer--inline style-token-resizer" data-style-token-resizer role="separator" aria-orientation="vertical" aria-label="{{ translate_ui('Resize style token demos') }}"></button>
@@ -76,20 +77,17 @@
                         </div>
                         {% endcall %}
                     {% elif row.sample_kind == "range-mode" %}
-                    <div class="range-mode-shell" data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="{{ translate_ui('Style token range mode') }}">
-                        <label class="range-mode-option" for="style_token_range_overview">
-                            <input id="style_token_range_overview" name="style_token_range_mode" type="radio" value="overview" checked>
-                            <span>{{ translate_ui('Overview') }}</span>
-                        </label>
-                        <label class="range-mode-option" for="style_token_range_details">
-                            <input id="style_token_range_details" name="style_token_range_mode" type="radio" value="details">
-                            <span>{{ translate_ui('Details') }}</span>
-                        </label>
-                        <label class="range-mode-option" for="style_token_range_metrics">
-                            <input id="style_token_range_metrics" name="style_token_range_mode" type="radio" value="metrics">
-                            <span>{{ translate_ui('Metrics') }}</span>
-                        </label>
-                    </div>
+                    {{ render_segmented_control(
+                        "range-mode-shell",
+                        "style_token_range_mode",
+                        "overview",
+                        [
+                            {"id": "style_token_range_overview", "value": "overview", "label": translate_ui("Overview"), "class_name": "range-mode-option"},
+                            {"id": "style_token_range_details", "value": "details", "label": translate_ui("Details"), "class_name": "range-mode-option"},
+                            {"id": "style_token_range_metrics", "value": "metrics", "label": translate_ui("Metrics"), "class_name": "range-mode-option"},
+                        ],
+                        'data-active="overview" data-option-count="3" data-segmented-pill="measured" data-segmented-active-index="0" style="--segmented-option-count: 3; --segmented-active-index: 0;" role="radiogroup" aria-label="' ~ translate_ui('Style token range mode') ~ '"'
+                    ) }}
                     {% elif row.sample_kind == "switch" %}
                     <div class="field-checkbox field-switch style-token-switch-demo" data-style-token-switch-demo>
                         {{ render_switch(
@@ -193,9 +191,9 @@
                             title=row.sample_title,
                             icon_class=row.sample_icon_class,
                             banner_class="style-token-modal-demo",
-                            numbered=false
+                            numbered=true
                         ) %}
-                            <ol class="notice-floating-banner-list"><li><strong>{{ row.sample_copy }}</strong></li></ol>
+                            {% for item in row.sample_items %}<li{% if loop.first %} class="style-token-banner-primary-item"{% endif %}>{% if loop.first %}<strong>{{ item }}</strong>{% else %}{{ item }}{% endif %}</li>{% endfor %}
                         {% endcall %}
                     </div>
                     {% elif row.sample_kind == "chart-tooltip" %}
@@ -283,7 +281,7 @@
                                 </tr>
                                 <tr data-table-summary-row data-summary-scope="both">
                                     <td colspan="3"><span class="investment-holdings-summary-copy" data-style-token-table-filter-summary>{{ row.sample_table_rows|length }} filtered of {{ row.sample_table_rows|length }} total</span></td>
-                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68">$7,089.68</span></span></td>
+                                    <td colspan="2"><span class="investment-holdings-summary-copy">{{ translate_ui('Net') }} <span data-numeric-display-value="$7,089.68" data-currency-code="USD">$7,089.68</span></span></td>
                                 </tr>
                                 </thead>
                             </table>
@@ -293,7 +291,7 @@
                                     {% for sample_row in row.sample_table_rows %}
                                     <tr data-style-token-table-demo-row data-style-token-table-filter-value="{{ sample_row[row.sample_table_filter_column_index]|lower }}">
                                         {% for cell in sample_row %}
-                                        <td data-numeric-display-cell>{{ cell }}</td>
+                                        <td data-numeric-display-cell{% if loop.index0 == 4 %} data-currency-code="USD"{% endif %}>{{ cell }}</td>
                                         {% endfor %}
                                     </tr>
                                     {% endfor %}
@@ -312,13 +310,9 @@
                     {% elif row.sample_kind == "investment-holdings-allocation-badge" %}
                     <div class="style-token-holdings-allocation-badge-demo" aria-hidden="true">
                         {% for allocation in row.sample_allocations %}
-                        <span class="investment-holdings-summary-metric-label">{{ allocation.label }}</span>
-                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount" data-numeric-display-value="{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}">{{ allocation.amount_integer }}.{{ allocation.amount_fraction }}</span>
-                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value">
-                            <span class="workspace-metric-value-major">{% for glyph in allocation.percent_integer %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
-                            <span class="workspace-metric-value-minor"><span class="investment-holdings-allocation-badge-glyph">.</span>{% for glyph in allocation.percent_fraction %}<span class="investment-holdings-allocation-badge-glyph">{{ glyph }}</span>{% endfor %}</span>
-                            <span class="workspace-metric-value-suffix"><span class="investment-holdings-allocation-badge-glyph">%</span></span>
-                        </span></span>
+                        <span class="investment-holdings-summary-metric-label"{% if allocation.label_value %} data-numeric-display-value="{{ allocation.label_value }}"{% endif %}>{{ allocation.label_value or allocation.label }}</span>
+                        <span class="trade-metric-value investment-stock-details-metric-value style-token-holdings-allocation-amount" data-numeric-display-value="{{ allocation.amount_value }}">{{ allocation.amount_value }}</span>
+                        <span class="investment-holdings-allocation-badge"><span class="trade-metric-value investment-stock-details-metric-value investment-holdings-allocation-badge-value" data-numeric-display-value="{{ allocation.percent_value }}" data-style-token-allocation-badge-value>{{ allocation.percent_value }}</span></span>
                         {% endfor %}
                     </div>
                     {% elif row.sample_kind == "shared-select-filter" %}
@@ -482,7 +476,7 @@
                         <p class="style-token-title">{{ row.name }}</p>
                         <button
                             type="button"
-                            class="settings-round-icon-button style-token-copy-button"
+                            class="circular-icon-button settings-round-icon-button style-token-copy-button"
                             data-style-token-copy="{{ row.name }}"
                             aria-label="{{ translate_ui('Copy style name') }}"
                             title="{{ translate_ui('Copy style name') }}"

@@ -1,6 +1,8 @@
 """Investment import domain: merge identity.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Fixed: HSBC dividend fallback identity requires exact account, currency,
+  amount, and reliable attribution or cash-row evidence.
 """
 
 from __future__ import annotations
@@ -388,6 +390,37 @@ def _is_hsbc_cash_account_record(record: dict[str, Any]) -> bool:
     ) == "hsbc" and _is_hsbc_cash_account_source(source)
 
 
+def _normalize_hsbc_cash_account_type(currency: Any, account_type: Any) -> str:
+    """Return one canonical HSBC cash subaccount label across source formats."""
+    normalized_currency = _normalize_hsbc_currency_code(currency)
+    normalized_type = _normalize_whitespace(account_type).upper()
+    leading_currency = re.match(r"^(USD|HKD|CNH|CNY|RMB)\s+", normalized_type)
+    if leading_currency:
+        if (
+            _normalize_hsbc_currency_code(leading_currency.group(1))
+            != normalized_currency
+        ):
+            return ""
+        normalized_type = normalized_type[leading_currency.end() :]
+    foreign_savings = re.fullmatch(
+        r"FOREIGN CURRENCY SAVINGS(?:\s+(USD|HKD|CNH|CNY|RMB))?",
+        normalized_type,
+    )
+    if foreign_savings:
+        explicit_currency = foreign_savings.group(1)
+        if (
+            explicit_currency
+            and _normalize_hsbc_currency_code(explicit_currency)
+            != normalized_currency
+        ):
+            return ""
+        normalized_type = "SAVINGS"
+    normalized_type = re.sub(r"\b(?:CNY|RMB)\b", "CNH", normalized_type)
+    if not normalized_currency or not normalized_type:
+        return ""
+    return normalized_type
+
+
 def _hsbc_cash_account_identity_key(
     record: dict[str, Any],
     *,
@@ -409,11 +442,17 @@ def _hsbc_cash_account_identity_key(
         source.get("balance_after_raw")
     )
     date_token = _normalize_text(record.get("date"))
-    cash_scope = (
-        _normalize_text(source.get("account_type"))
-        if _normalize_text(source.get("file_kind")) != "hsbc_usd_account_text"
-        else ""
+    cash_scope = _normalize_hsbc_cash_account_type(
+        merge_currency,
+        source.get("account_type"),
     )
+    if not cash_scope:
+        source_file_kind = _normalize_text(source.get("file_kind")).lower()
+        source_sha256 = _normalize_text(
+            source.get("source_sequence_sha256")
+            or source.get("source_file_sha256")
+        ).lower()
+        cash_scope = f"__UNSCOPED__:{source_file_kind}:{source_sha256}"
     cash_scope_token = (cash_scope,) if cash_scope else ()
     identity_type = (
         "hsbc_corporate_event_payment"
@@ -474,19 +513,26 @@ def _hsbc_cash_cross_source_identity_key(record: dict[str, Any]) -> tuple[str, .
     amount_token = _ii_basics._normalize_decimal_identity_token(
         record.get("net_amount_raw")
     )
+    balance_after = _ii_basics._normalize_decimal_identity_token(
+        source.get("balance_after_raw")
+    )
+    description = _normalize_whitespace(record.get("description")).upper()
     if (
         not account
         or not date_token
         or not normalized_type
         or not currency
         or not amount_token
+        or not balance_after
+        or not description
     ):
         return ()
-    account_type = _normalize_text(source.get("account_type")).upper()
-    if currency == "USD":
-        account_scope = ""
-    else:
-        account_scope = re.sub(r"\b(?:CNY|RMB)\b", "CNH", account_type)
+    account_scope = _normalize_hsbc_cash_account_type(
+        currency,
+        source.get("account_type"),
+    )
+    if not account_scope:
+        return ()
     return (
         "hsbc",
         _ii_basics._account_identity_token("hsbc", account),
@@ -496,6 +542,8 @@ def _hsbc_cash_cross_source_identity_key(record: dict[str, Any]) -> tuple[str, .
         currency,
         account_scope,
         amount_token,
+        balance_after,
+        description,
     )
 
 
@@ -512,6 +560,12 @@ def _hsbc_statement_cash_enrichment_key(
     transaction_date = _normalize_text(record.get("date"))
     currency = _normalize_hsbc_currency_code(record.get("currency"))
     amount = _ii_basics._normalize_decimal_identity_token(record.get("net_amount_raw"))
+    account_scope = _normalize_hsbc_cash_account_type(
+        currency,
+        source.get("account_type"),
+    )
+    if not account_scope:
+        return ()
     if not account or not transaction_date or not currency or not amount:
         return ()
     return (
@@ -519,6 +573,7 @@ def _hsbc_statement_cash_enrichment_key(
         _ii_basics._account_identity_token("hsbc", account),
         transaction_date,
         currency,
+        account_scope,
         amount,
     )
 
@@ -2082,12 +2137,13 @@ def _has_same_hsbc_dividend_event(
     incoming_reference = _normalize_text(
         incoming_source.get("corporate_action_reference")
     )
-    if (
+    if current_reference and incoming_reference and current_reference != incoming_reference:
+        return False
+    has_matching_reference = bool(
         current_reference
         and incoming_reference
-        and current_reference != incoming_reference
-    ):
-        return False
+        and current_reference == incoming_reference
+    )
     current_status = _normalize_text(
         current_source.get("dividend_attribution_status")
     ).lower()
@@ -2095,7 +2151,7 @@ def _has_same_hsbc_dividend_event(
         incoming_source.get("dividend_attribution_status")
     ).lower()
     has_attribution_evidence = bool(
-        (current_reference and current_reference == incoming_reference)
+        has_matching_reference
         or current_status in _HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES
         or incoming_status in _HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES
     )
@@ -2137,10 +2193,15 @@ def _has_same_hsbc_dividend_event(
         incoming_source.get("balance_after_raw")
         or incoming_source.get("cash_settlement_balance_after_raw")
     )
-    return not (
+    if has_matching_reference:
+        return not (
+            current_balance
+            and incoming_balance
+            and current_balance != incoming_balance
+        )
+    return bool(
         current_balance
-        and incoming_balance
-        and current_balance != incoming_balance
+        and current_balance == incoming_balance
     )
 
 

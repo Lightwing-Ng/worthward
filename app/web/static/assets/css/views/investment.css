@@ -1,4 +1,4 @@
-/* Code version: v1.80.5 */
+/* Code version: v1.80.7 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -30,6 +30,8 @@
     --investment-default-overview-share: 0.5;
     --investment-equity-stage-min-height: clamp(var(--investment-section-min-height), 24dvh, 240px);
     --investment-history-row-min-height: 40px;
+    /* Keep gel transforms out of root scroll geometry without clipping paint. */
+    contain: layout;
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
@@ -1175,7 +1177,7 @@
     --trade-detail-track-height: 36px;
     --trade-detail-panel-height: 160px;
     --investment-share-action-gap: 10px;
-    --investment-share-action-step: calc(var(--settings-round-icon-button-size) + var(--investment-share-action-gap));
+    --investment-share-action-step: calc(var(--circular-icon-button-size) + var(--investment-share-action-gap));
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1205,8 +1207,8 @@
     right: var(--global-quick-actions-right);
     transform: translateY(-50%);
     z-index: var(--layer-fixed-dock);
-    width: var(--settings-round-icon-button-size);
-    height: var(--settings-round-icon-button-size);
+    width: var(--circular-icon-button-size);
+    height: var(--circular-icon-button-size);
     isolation: isolate;
     pointer-events: none;
 }
@@ -1218,18 +1220,18 @@
 .investment-view-segmented-wrap > .investment-share-actions:hover,
 .investment-view-segmented-wrap > .investment-share-actions:focus-within,
 .investment-view-segmented-wrap > .investment-share-actions.is-mask-active {
-    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    width: calc((var(--circular-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
 }
 
 .investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action]:hover,
 .investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action]:focus-within,
 .investment-view-segmented-wrap > .investment-share-actions[data-standard-xlsx-action].is-mask-active {
-    width: calc((var(--settings-round-icon-button-size) * 4) + (var(--investment-share-action-gap) * 3));
+    width: calc((var(--circular-icon-button-size) * 4) + (var(--investment-share-action-gap) * 3));
 }
 
 .investment-share-actions {
     --investment-share-action-gap: 10px;
-    --investment-share-action-step: calc(var(--settings-round-icon-button-size) + var(--investment-share-action-gap));
+    --investment-share-action-step: calc(var(--circular-icon-button-size) + var(--investment-share-action-gap));
 }
 
 .investment-share-actions[data-share-drawer] {
@@ -1238,8 +1240,8 @@
     right: var(--global-quick-actions-right);
     transform: translateY(-50%);
     z-index: calc(var(--layer-fixed-dock) + 2);
-    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
-    height: var(--settings-round-icon-button-size);
+    width: calc((var(--circular-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+    height: var(--circular-icon-button-size);
     isolation: isolate;
     pointer-events: none;
 }
@@ -1249,7 +1251,7 @@
 	width: calc(100% + var(--workspace-article-pad-inline) + var(--workspace-article-pad-inline));
 	margin-inline: calc(-1 * var(--workspace-article-pad-inline));
 	box-sizing: border-box;
-	padding-block-start: calc(var(--settings-round-icon-button-size) + var(--layout-global-action-gap));
+	padding-block-start: calc(var(--circular-icon-button-size) + var(--layout-global-action-gap));
 }
 
 .compare-summary-content-card {
@@ -1262,8 +1264,8 @@
 	right: var(--layout-edge-gap);
     transform: none;
     z-index: calc(var(--layer-surface-content) + 2);
-    width: calc((var(--settings-round-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
-	height: var(--settings-round-icon-button-size);
+    width: calc((var(--circular-icon-button-size) * 3) + (var(--investment-share-action-gap) * 2));
+	height: var(--circular-icon-button-size);
 }
 
 #compare_summary_panel > .compare-summary-date-range {
@@ -1338,9 +1340,9 @@
 }
 
 .investment-share-actions > .investment-share-action-button[aria-pressed="true"] {
-    background: var(--settings-round-icon-button-background-hover);
-    color: var(--settings-round-icon-button-color-hover);
-    box-shadow: var(--settings-round-icon-button-shadow-hover);
+    background: var(--circular-icon-button-background-hover);
+    color: var(--circular-icon-button-color-hover);
+    box-shadow: var(--circular-icon-button-shadow-hover);
 }
 
 .investment-share-actions > .investment-share-action-button[aria-busy="true"] {
@@ -1432,7 +1434,7 @@
 }
 
 .investment-report-header-card > .report-heading-row {
-    padding-right: calc(12px + var(--settings-round-icon-button-size) + 10px);
+    padding-right: calc(12px + var(--circular-icon-button-size) + 10px);
 }
 
 .investment-view-surface {

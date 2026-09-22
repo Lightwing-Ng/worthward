@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.6."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.7."""
 
 from __future__ import annotations
 
@@ -123,8 +123,8 @@ def test_sidebar_overlay_keeps_touch_toggle_above_its_backdrop() -> None:
         "display: block;",
         "visibility: visible;",
         "pointer-events: auto;",
-            "width: var(--settings-round-icon-button-size);",
-            "height: var(--settings-round-icon-button-size);",
+            "width: var(--circular-icon-button-size);",
+            "height: var(--circular-icon-button-size);",
         "z-index: var(--layer-sidebar-toggle);",
         "touch-action: manipulation;",
     ):

@@ -1,4 +1,4 @@
-/* Code version: v0.34.0 */
+/* Code version: v0.35.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -238,12 +238,13 @@
 }
 
 /*
- * Style token demos own their visual effects. Keep the workspace shell open so
- * shadows, blur, and translated controls can escape the card edge; the token
- * list below remains the only vertical scrollport.
+ * Style token demos own their visual effects. Layout containment keeps the
+ * intentional bleed out of the document scroll area without paint-clipping
+ * shadows, blur, or translated controls; the list remains the scrollport.
  */
 .settings-workspace-header.settings-shell-style-tokens {
     --settings-shell-content-max-width: 100%;
+    contain: layout;
     overflow: visible;
 }
 
@@ -875,13 +876,13 @@
     overflow: visible;
 }
 
-.style-token-demo > .settings-round-icon-button {
-    width: var(--settings-round-icon-button-size);
-    height: var(--settings-round-icon-button-size);
-    min-width: var(--settings-round-icon-button-size);
-    min-height: var(--settings-round-icon-button-size);
-    max-width: var(--settings-round-icon-button-size);
-    max-height: var(--settings-round-icon-button-size);
+.style-token-demo > :is(.circular-icon-button, .settings-round-icon-button) {
+    width: var(--circular-icon-button-size);
+    height: var(--circular-icon-button-size);
+    min-width: var(--circular-icon-button-size);
+    min-height: var(--circular-icon-button-size);
+    max-width: var(--circular-icon-button-size);
+    max-height: var(--circular-icon-button-size);
     aspect-ratio: 1 / 1;
     align-self: start;
     justify-self: start;
@@ -933,9 +934,9 @@
 }
 
 .style-token-copy-button.is-copied {
-    background: color-mix(in srgb, var(--theme-accent-positive) 14%, var(--settings-round-icon-button-background));
+    background: color-mix(in srgb, var(--theme-accent-positive) 14%, var(--circular-icon-button-background));
     color: var(--theme-accent-positive);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent-positive) 16%, transparent), var(--settings-round-icon-button-shadow-hover);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent-positive) 16%, transparent), var(--circular-icon-button-shadow-hover);
     transform: scale(1.06);
 }
 
@@ -1040,13 +1041,13 @@
     text-align: right;
 }
 
-.style-token-demo .settings-round-icon-button {
+.style-token-demo :is(.circular-icon-button, .settings-round-icon-button) {
     transform: none;
 }
 
-.style-token-demo .settings-round-icon-button:hover,
-.style-token-demo .settings-round-icon-button:focus-visible,
-.style-token-demo .settings-round-icon-button:active {
+.style-token-demo :is(.circular-icon-button, .settings-round-icon-button):hover,
+.style-token-demo :is(.circular-icon-button, .settings-round-icon-button):focus-visible,
+.style-token-demo :is(.circular-icon-button, .settings-round-icon-button):active {
     transform: none;
 }
 

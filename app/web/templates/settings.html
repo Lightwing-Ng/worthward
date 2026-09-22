@@ -1,4 +1,4 @@
-{# Code version: v0.19.3 #}
+{# Code version: v0.19.7 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
@@ -97,7 +97,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.25.3') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.27.0') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}

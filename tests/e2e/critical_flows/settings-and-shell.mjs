@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -312,6 +312,31 @@ test('keeps style-token showcase pills interactive and donut satellites centered
 test('keeps Investment Holdings allocation badge glyph slots stable', async ({page}) => {
     await page.goto('/settings/style-tokens');
 
+    const numericValues = await page.locator(
+        '.style-token-holdings-allocation-badge-demo [data-numeric-display-value]',
+    ).evaluateAll((elements) => elements.map((element) => ({
+        value: element.dataset.numericDisplayValue,
+        accessibleValue: element.getAttribute('aria-label'),
+        fragmentsAreVisualOnly: Array.from(element.children)
+            .every((child) => child.getAttribute('aria-hidden') === 'true'),
+        text: element.textContent.replace(/\s+/g, ''),
+        major: element.querySelector(':scope > .workspace-metric-value-major')?.textContent ?? null,
+        minor: element.querySelector(':scope > .workspace-metric-value-minor')?.textContent ?? null,
+        suffix: element.querySelector(':scope > .workspace-metric-value-suffix')?.textContent ?? null,
+        rightOverflow: element.getBoundingClientRect().right
+            - element.closest('.style-token-holdings-allocation-badge-demo').getBoundingClientRect().right,
+    })));
+    expect(numericValues).toHaveLength(12);
+    numericValues.forEach((item) => {
+        expect(item.text).toBe(item.value);
+        expect(item.accessibleValue).toBe(item.value);
+        expect(item.fragmentsAreVisualOnly).toBe(true);
+        expect(item.major).not.toBeNull();
+        expect(item.minor).toMatch(/^\.\d+$/);
+        expect(item.suffix).toBe(item.value.endsWith('%') ? '%' : null);
+        expect(item.rightOverflow).toBeLessThanOrEqual(1);
+    });
+
     const geometry = await page.evaluate(() => Array.from(
         document.querySelectorAll('.style-token-holdings-allocation-badge-demo .investment-holdings-allocation-badge'),
     )
@@ -367,6 +392,120 @@ test('keeps Investment Holdings allocation badge glyph slots stable', async ({pa
         });
         expect(item.overflow).toBe(false);
     });
+});
+
+test('keeps the canonical shared primitives aligned across themes and narrow layout', async ({page}) => {
+    for (const width of [1024, 390]) {
+        await page.setViewportSize({width, height: 844});
+        await page.goto('/settings/style-tokens');
+        for (const theme of ['light', 'dark']) {
+            await page.evaluate((nextTheme) => {
+                document.documentElement.setAttribute('data-theme-override', nextTheme);
+            }, theme);
+
+            const circular = page.locator('[data-style-token-card="circular-icon-button"] .circular-icon-button').first();
+            await expect(circular).toBeVisible();
+            const circularGeometry = await circular.evaluate((button) => {
+                const icon = button.querySelector('.icon');
+                const buttonRect = button.getBoundingClientRect();
+                const iconRect = icon?.getBoundingClientRect();
+                return {
+                    width: buttonRect.width,
+                    height: buttonRect.height,
+                    iconWidth: iconRect?.width ?? 0,
+                    iconHeight: iconRect?.height ?? 0,
+                    radius: getComputedStyle(button).borderRadius,
+                };
+            });
+            expect(circularGeometry).toEqual({
+                width: width <= 900 ? 44 : 36,
+                height: width <= 900 ? 44 : 36,
+                iconWidth: 18,
+                iconHeight: 18,
+                radius: '999px',
+            });
+
+            const pagination = page.locator('[data-style-token-card="pagination"] .local-store-pagination');
+            const previous = pagination.locator('.local-store-page-nav').first();
+            await previous.scrollIntoViewIfNeeded();
+            await page.mouse.move(0, 0);
+            await page.evaluate(() => {
+                if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+            });
+            const expectedColors = await page.evaluate(() => Object.fromEntries([
+                ['default', 'var(--local-store-pagination-button-color)'],
+                ['accent', 'var(--local-store-pagination-button-color-hover)'],
+            ].map(([name, value]) => {
+                const probe = document.createElement('span');
+                probe.style.color = value;
+                document.body.append(probe);
+                const color = getComputedStyle(probe).color;
+                probe.remove();
+                return [name, color];
+            })));
+            await expect.poll(() => previous.evaluate((button) => getComputedStyle(button).color)).toBe(expectedColors.default);
+            await previous.hover();
+            await expect.poll(() => previous.evaluate((button) => getComputedStyle(button).color)).toBe(expectedColors.accent);
+            expect(expectedColors.accent).not.toBe(expectedColors.default);
+            await page.mouse.move(0, 0);
+            await previous.focus();
+            await expect.poll(() => previous.evaluate((button) => getComputedStyle(button).color)).toBe(expectedColors.accent);
+
+            const segmented = page.locator('[data-style-token-card="segmented-control"] .segmented-control');
+            const segmentedGeometry = await segmented.evaluate((shell) => {
+                const shellRect = shell.getBoundingClientRect();
+                const ownerRect = shell.parentElement?.getBoundingClientRect();
+                const options = Array.from(shell.querySelectorAll('.segmented-control-option'));
+                const optionRects = options.map((option) => option.getBoundingClientRect());
+                return {
+                    shellWidth: shellRect.width,
+                    ownerWidth: ownerRect?.width ?? shellRect.width,
+                    centerDelta: ownerRect
+                        ? Math.abs((shellRect.left + (shellRect.width / 2)) - (ownerRect.left + (ownerRect.width / 2)))
+                        : Number.POSITIVE_INFINITY,
+                    optionWidths: optionRects.map((rect) => rect.width),
+                    optionCenterDeltas: options.map((option, index) => {
+                        const rect = optionRects[index];
+                        const labelRect = option.querySelector('span')?.getBoundingClientRect();
+                        return labelRect
+                            ? Math.abs((rect.left + (rect.width / 2)) - (labelRect.left + (labelRect.width / 2)))
+                            : Number.POSITIVE_INFINITY;
+                    }),
+                };
+            });
+            expect(segmentedGeometry.shellWidth).toBeLessThanOrEqual(segmentedGeometry.ownerWidth);
+            expect(segmentedGeometry.centerDelta).toBeLessThanOrEqual(1);
+            expect(Math.max(...segmentedGeometry.optionWidths) - Math.min(...segmentedGeometry.optionWidths)).toBeLessThanOrEqual(1);
+            expect(Math.max(...segmentedGeometry.optionCenterDeltas)).toBeLessThanOrEqual(1);
+
+            const tableState = await page.locator('[data-style-token-card="scrollable-table"] .scrollable-data-table-shell').evaluate((shell) => ({
+                directChildren: Array.from(shell.children, (child) => ({
+                    overlay: child.matches('[data-table-visual-overlay]'),
+                    header: child.matches('table.scrollable-data-table[data-table-header]'),
+                    scroll: child.matches('.scrollable-data-table-scroll[data-table-scroll]'),
+                    pagination: child.matches('.local-store-pagination.local-store-pagination--floating'),
+                })),
+                hasBody: Boolean(shell.querySelector(':scope > [data-table-scroll] > table.scrollable-data-table[data-table-body]')),
+            }));
+            const overlayIndex = tableState.directChildren.findIndex((child) => child.overlay);
+            const headerIndex = tableState.directChildren.findIndex((child) => child.header);
+            const scrollIndex = tableState.directChildren.findIndex((child) => child.scroll);
+            const paginationIndex = tableState.directChildren.findIndex((child) => child.pagination);
+            expect(overlayIndex).toBe(0);
+            expect(headerIndex).toBeGreaterThan(overlayIndex);
+            expect(scrollIndex).toBeGreaterThan(headerIndex);
+            expect(paginationIndex).toBeGreaterThan(scrollIndex);
+            expect(tableState.hasBody).toBe(true);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+        }
+    }
+
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await page.reload();
+    const reducedMotionDurations = await page.locator('[data-style-token-card="pagination"] .local-store-page-nav').first().evaluate((button) => (
+        getComputedStyle(button).transitionDuration.split(',').map((duration) => Number.parseFloat(duration))
+    ));
+    expect(Math.max(...reducedMotionDurations)).toBeLessThanOrEqual(0.001);
 });
 
 test('keeps the Style token segmented control at 32px without an outer border', async ({page}) => {
@@ -537,7 +676,7 @@ test('demonstrates the shared filter header contract in the standard table token
         fieldOpacity: '1',
         alignment: 'center',
     }));
-    expect(hoverState?.fontFamily).toMatch(/BlinkMacSystemFont|system-ui/);
+    expect(hoverState?.fontFamily).toContain('Univers Next for HSBC');
 
     await trigger.click();
     const dropdown = page.locator('[data-style-token-table-filter-dropdown]');
@@ -787,4 +926,3 @@ test('keeps the backtest sidebar toggle touch-safe on a larger iPad viewport', a
         await context.close();
     }
 });
-

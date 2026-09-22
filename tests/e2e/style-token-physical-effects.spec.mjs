@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {expect, test} from '@playwright/test';
 
 const targetSelectors = [
@@ -40,6 +40,7 @@ test('keeps Style tokens physical effects outside the workspace clip', async ({p
         const modalShellStyle = getComputedStyle(modalShell);
         return {
             workspace: {
+                contain: workspaceStyle.contain,
                 overflowX: workspaceStyle.overflowX,
                 overflowY: workspaceStyle.overflowY,
                 rect: rectOf(workspace),
@@ -67,7 +68,7 @@ test('keeps Style tokens physical effects outside the workspace clip', async ({p
 
     expect(layout).not.toBeNull();
     expect(layout).toMatchObject({
-        workspace: {overflowX: 'visible', overflowY: 'visible'},
+        workspace: {contain: 'layout', overflowX: 'visible', overflowY: 'visible'},
         tokenShell: {overflowX: 'visible', overflowY: 'visible'},
         list: {overflowY: 'auto'},
         modalShell: {overflowX: 'visible', overflowY: 'visible'},

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.119.0`
+Documentation version: `v1.123.0`
 
 ## Reuse and dependency boundaries
 
@@ -417,7 +417,7 @@ forecast bins, fitting scale, or model inputs. Backtest's overview heading is
 
 The contained detail surface reuses the overview price chart's axis typography.
 Its Y-axis column has a fixed token-based width; Y ticks and date ticks use the
-same `GDS Transport` 12px, regular-weight font and 10px line height as Canvas
+same Univers Next for HSBC 12px, regular-weight font and 10px line height as Canvas
 labels. The centered frame fits the detail container's current dimensions,
 including sidebar and resize changes, independently of the overview hover state.
 
@@ -1054,6 +1054,25 @@ second broker balance ledger. Its accounting boundaries are explicit:
 - A cash settlement or available-cash boundary is valid only on its own ledger
   date. A source row may retain a future settlement date as evidence, but its
   balance must not replace cash on the execution or booking day.
+- Transaction History applies an HSBC settlement correction only to the
+  posting's exact customer-account, cash-account-type, and native-currency
+  scope. A cash row may retire that correction only when its ledger date is
+  later, or when both rows have the same immutable source-sequence digest and
+  the cash row is not ledger-older than the settlement boundary. Same-day
+  evidence from incomparable sequence domains fails closed. A bound-transfer
+  predecessor may move ahead of its receipt, but that constraint cannot move
+  the receipt behind unrelated same-day transactions.
+- The immutable physical posting identity is `(SHA-256, source row)`, independent
+  of presentation kind, sequence marker, or cash direction. One physical row
+  cannot belong to two owners or two legs. Direct-cash and structured-posting
+  SHA, row, date, amount, balance, account, currency, and account-type aliases
+  form a closed evidence domain; a conflict removes the synthetic boundary and
+  marks both the owner and direct cash history provisional.
+- Same-day pasted HSBC cash rows follow ascending ledger sequence. Downloaded
+  newest-first USD Savings CSV rows are normalized into chronological replay
+  from their reverse physical row order. The replay retains the internal
+  per-cash-account ledger alongside aggregate currency balances so a settlement
+  boundary for one USD subaccount cannot absorb another USD subaccount.
 - Historical equity is settled bank cash plus signed pending-settlement cash.
   When an HSBC buy or sell has matched future SEC postings, each exact posting
   accrues as a payable or receivable on the trade's booking date while the
@@ -1259,10 +1278,12 @@ sets of values.
 - HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
 - HSBC cash-only USD corporate-event attribution belongs to the atomic ledger
   merge, not the standalone paste parser. The merge inspects only a new,
-  unlabelled USD dividend row, exact same-account HSBC Order Status records,
-  and that account's broker-scoped snapshot for candidate tickers. Eligible
-  quantity is replayed strictly before the dividend ex-date; the snapshot never
-  substitutes for historical quantity. Local dividend histories are loaded as
+  unlabelled USD dividend row. Candidate ticker names may come only from exact
+  same-account USD HSBC Order Status records or USD positions in that account's
+  broker-scoped snapshot. Missing-currency and non-USD candidates fail closed.
+  Eligible quantity is replayed only from those Order Status records strictly
+  before the dividend ex-date; the snapshot never substitutes for historical
+  quantity. Local dividend histories are loaded as
   one fail-closed candidate set. A unique amount match may add derived
   attribution metadata, while missing, unreadable, or ambiguous evidence keeps
   the ticker empty. A matching ledger row that already has a ticker bypasses
@@ -1274,6 +1295,9 @@ sets of values.
   normalized order commission fields agree. The same evidence covers both a
   principal-only normalized amount and an amount that is already net of the
   fee, without double counting.
+  Provenance repair is atomic: missing fields are staged, the entire owner and
+  posting group is revalidated, and no partial SHA or cash-subaccount repair is
+  retained when any leg crosses an evidence domain.
   Cash replay remains owned by the ordered settlement postings.
 - Every accepted HSBC pasted page is retained as exact UTF-8 parser-input bytes
   in one fingerprint-addressed immutable evidence bundle. The Portfolio
@@ -1283,6 +1307,9 @@ sets of values.
   that total is present. A holdings mismatch against visible Order Status rows
   is labelled as a partial-history comparison; it does not invalidate the
   authoritative current Portfolio snapshot.
+- A cash-only pasted artifact's period metadata is the earliest through latest
+  posting date visible in that capture. It describes the retained evidence
+  range and does not claim that the capture is a complete monthly statement.
 - HSBC monthly PDF imports accept one unordered bundle of full monthly cash statements, including a summary-only statement with no transaction history, while retaining the legacy composite-plus-Investment-services pair path. Full monthly cash rows carry per-currency balances and quoted conversion-rate provenance; paired investment rows still own security identity, and paired composite rows own reconciled USD cash. Historical statement snapshots cannot supersede a newer live paste snapshot.
 - BOCHK imports accept one or more full Consolidated Statement PDFs per batch.
   The customer number is the parent account, while full deposit-account numbers
@@ -1463,7 +1490,7 @@ to the owning domain file and keep both aggregators small.
 
 ## Shared component catalog, 8 Sep 2026
 
-Style token rows and component CSS follow Shared UI Layout Contract v1.10.0.
+Style token rows and component CSS follow Shared UI Layout Contract v1.12.0.
 Secondary button replaces the inverted-primary specimen with the intrinsic-width
 agenticContext glass-chip action and has a 32px minimum height. The foundation owns
 the 30px shared-select trigger, 36px shared-select option, and 30px strategy-stepper
@@ -1474,9 +1501,13 @@ uses the sparkles symbol, and the optional Beta Dock destination uses the same l
 `sparkles.2.svg` asset in both projects. Style-token copy actions align to the global
 theme action's right anchor.
 Modal and notice dismiss controls reveal on owner hover or keyboard focus, and
-remain visible for touch input. Their upper-left row is independent from the
-content row, so status icons reuse the surface's left padding and text begins after
-the standard icon gap instead of inheriting a full-height dismiss column. The
+remain visible for touch input. Their two-column, two-row grid keeps the upper-left
+dismiss control absolutely positioned. The title is centered on that control in
+row one; row two top-aligns the unchanged status icon with the paragraph or semantic
+list. One shared row gap owns the vertical separation, and outside list markers keep
+wrapped lines hanging; shared list-inset and marker-gap tokens own that indentation.
+Dynamic banner content exposes one direct heading and one
+direct body element; a heading-less fallback remains explicitly in row two. The
 obsolete Workspace article catalog row and demo branch are removed, without
 deleting role-governed live page containers.
 Responsive acceptance lives in tests/e2e/style-token-alignment.spec.mjs.

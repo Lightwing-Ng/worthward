@@ -1,7 +1,19 @@
 /**
  * Position lots, split adjustment, ranges, and valuation utilities.
  *
- * Code version: v1.0.0
+ * Code version: v1.3.3
+ * - Fixed: Settlement owner and posting dates use the shared exact ISO-day
+ *   evidence contract instead of accepting date strings with trailing data.
+ * - Fixed: Settlement plans ignore legacy scalar summaries and require exact
+ *   importer raw fields, decimal identity, and source ordering.
+ * - Fixed: HSBC settlement scopes accept only supported native currencies,
+ *   canonical cash-account types, and compatible source-file domains.
+ * - Fixed: HSBC settlement plans accept structured postings only as one
+ *   complete owner-matched cash-account and immutable source-domain group.
+ * - Fixed: Blank HSBC settlement posting amounts and balances remain
+ *   unavailable instead of being coerced to zero.
+ * - Fixed: HSBC settlement boundaries retain their exact cash subaccount and
+ *   source-sequence identity for historical replay.
  * - Added: Extracted from the Investment data-utilities composition root.
  */
 
@@ -22,6 +34,19 @@ export function createInvestmentPositionValuationUtils(runtime) {
     const normalizeInvestmentStockDetailsRange = (...args) => runtime.normalizeInvestmentStockDetailsRange(...args);
     const normalizeInvestmentTicker = (...args) => runtime.normalizeInvestmentTicker(...args);
     const shouldTrackHoldingTicker = (...args) => runtime.shouldTrackHoldingTicker(...args);
+    const parseHsbcPositiveSequenceNumber = (value) => {
+        if (typeof value === 'number') {
+            return Number.isSafeInteger(value) && value > 0 ? value : null;
+        }
+        if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value.trim())) {
+            return null;
+        }
+        const parsed = Number(value.trim());
+        return Number.isSafeInteger(parsed) ? parsed : null;
+    };
+    const normalizeHsbcEvidenceDate = (...args) => (
+        runtime.normalizeHsbcEvidenceDate(...args)
+    );
 
     const INVESTMENT_LINEAGE_PROXY_TICKERS = new Set(['SPY', 'SPY.US']);
 
@@ -546,22 +571,192 @@ export function createInvestmentPositionValuationUtils(runtime) {
     }
 
     function compareHsbcCashSettlementBoundaries(left, right) {
+        const dateComparison = left.date.localeCompare(right.date);
+        if (dateComparison) return dateComparison;
         return (
-            left.date.localeCompare(right.date)
-            || left.sourceRowSequence - right.sourceRowSequence
-            || left.sourceRowNumber - right.sourceRowNumber
-            || left.sourceIndex - right.sourceIndex
+            left.sourceIndex - right.sourceIndex
             || left.postingIndex - right.postingIndex
         );
     }
 
+    function getHsbcCashSettlementBoundaryDomainKey(boundary) {
+        const sourceSequenceSha256 = String(
+            boundary.sourceSequenceSha256 || '',
+        ).trim().toLowerCase();
+        const sourceFileKind = String(
+            boundary.sourceFileKind || '',
+        ).trim().toLowerCase();
+        return sourceSequenceSha256 && sourceFileKind
+            ? [
+                getHsbcCashSettlementBoundaryScopeKey(boundary),
+                sourceFileKind,
+                sourceSequenceSha256,
+                Number(boundary.sourceSequenceDirection) || 1,
+            ].join('|')
+            : '';
+    }
+
+    function orderHsbcCashSettlementBoundaryDomainSlots(boundaries) {
+        const fallbackOrder = [...boundaries].sort(compareHsbcCashSettlementBoundaries);
+        const reordered = [...fallbackOrder];
+        const domains = new Map();
+        fallbackOrder.forEach((boundary, index) => {
+            const domainKey = getHsbcCashSettlementBoundaryDomainKey(boundary);
+            if (!domainKey) return;
+            if (!domains.has(domainKey)) domains.set(domainKey, []);
+            domains.get(domainKey).push({boundary, index});
+        });
+        domains.forEach((members) => {
+            const orderedMembers = members.map(({boundary}) => boundary).sort((left, right) => {
+                const direction = Number(left.sourceSequenceDirection) || 1;
+                const leftSequence = direction < 0
+                    ? left.sourceRowNumber
+                    : left.sourceRowSequence;
+                const rightSequence = direction < 0
+                    ? right.sourceRowNumber
+                    : right.sourceRowSequence;
+                return direction * (leftSequence - rightSequence)
+                    || left.sourceRowSequence - right.sourceRowSequence
+                    || left.sourceRowNumber - right.sourceRowNumber
+                    || left.sourceIndex - right.sourceIndex
+                    || left.postingIndex - right.postingIndex;
+            });
+            const occupiedSlots = members
+                .map(({index}) => index)
+                .sort((left, right) => left - right);
+            occupiedSlots.forEach((slot, index) => {
+                reordered[slot] = orderedMembers[index];
+            });
+        });
+        return reordered;
+    }
+
     function getHsbcCashSettlementBoundaryScopeKey(boundary) {
+        const canonicalCashScopeKey = String(boundary.cashScopeKey || '').trim();
+        if (canonicalCashScopeKey) {
+            return [
+                boundary.date,
+                String(boundary.broker || '').trim().toLowerCase(),
+                canonicalCashScopeKey,
+            ].join('|');
+        }
         return [
             boundary.date,
             String(boundary.broker || '').trim().toLowerCase(),
             String(boundary.account || '').trim(),
+            String(boundary.accountType || '').trim().toUpperCase(),
             String(boundary.currency || '').trim().toUpperCase(),
         ].join('|');
+    }
+
+    function normalizeHsbcCashScopeToken(value) {
+        return String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    }
+
+    function normalizeHsbcCashCurrency(value) {
+        return normalizeHsbcCashScopeToken(value)
+            .replace(/^(?:CNY|RMB)$/, 'CNH');
+    }
+
+    function isSupportedHsbcCashCurrency(value) {
+        return ['USD', 'HKD', 'CNH'].includes(normalizeHsbcCashCurrency(value));
+    }
+
+    function isHsbcCashFileKindCurrencyCompatible(sourceFileKind, currency) {
+        const normalizedCurrency = normalizeHsbcCashCurrency(currency);
+        if (!isSupportedHsbcCashCurrency(normalizedCurrency)) return false;
+        return ![
+            'hsbc_usd_account_text',
+            'hsbc_usd_savings_csv',
+        ].includes(String(sourceFileKind || '').trim().toLowerCase())
+            || normalizedCurrency === 'USD';
+    }
+
+    function normalizeHsbcCashAccountType(accountType, currency) {
+        const normalizedCurrency = normalizeHsbcCashCurrency(currency);
+        let normalizedType = normalizeHsbcCashScopeToken(accountType);
+        const leadingCurrency = normalizedType.match(/^(USD|HKD|CNH|CNY|RMB)\s+/);
+        if (leadingCurrency) {
+            const explicitCurrency = leadingCurrency[1].replace(/^(?:CNY|RMB)$/, 'CNH');
+            if (explicitCurrency !== normalizedCurrency) return '';
+            normalizedType = normalizedType.slice(leadingCurrency[0].length);
+        }
+        const foreignSavings = normalizedType.match(
+            /^FOREIGN CURRENCY SAVINGS(?:\s+(USD|HKD|CNH|CNY|RMB))?$/,
+        );
+        if (foreignSavings) {
+            const explicitCurrency = String(foreignSavings[1] || '')
+                .replace(/^(?:CNY|RMB)$/, 'CNH');
+            if (explicitCurrency && explicitCurrency !== normalizedCurrency) return '';
+            normalizedType = 'SAVINGS';
+        }
+        normalizedType = normalizedType.replace(/\b(?:CNY|RMB)\b/g, 'CNH');
+        return isSupportedHsbcCashCurrency(normalizedCurrency)
+            && ['CURRENT', 'SAVINGS'].includes(normalizedType)
+            ? normalizedType
+            : '';
+    }
+
+    function parseFiniteNonBlankHsbcNumber(value) {
+        if (value === undefined || value === null || String(value).trim() === '') {
+            return null;
+        }
+        if (
+            typeof value !== 'number'
+            && (
+                typeof value !== 'string'
+                || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())
+            )
+        ) return null;
+        const numericValue = typeof value === 'number' ? value : Number(value.trim());
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function hasConsistentHsbcStructuredSettlementAliases(txn, postings) {
+        return runtime.hasConsistentHsbcStructuredSettlementAliases(
+            txn,
+            postings,
+        );
+    }
+
+    function inferHsbcCashAccountType(accountType, sourceFileKind, currency) {
+        const normalizedAccountType = normalizeHsbcCashAccountType(
+            accountType,
+            currency,
+        );
+        if (normalizedAccountType) return normalizedAccountType;
+        const normalizedFileKind = String(sourceFileKind || '').trim().toLowerCase();
+        const normalizedCurrency = normalizeHsbcCashCurrency(currency);
+        if (
+            normalizedCurrency === 'USD'
+            && ['hsbc_usd_account_text', 'hsbc_usd_savings_csv'].includes(normalizedFileKind)
+        ) {
+            return 'SAVINGS';
+        }
+        return '';
+    }
+
+    function buildHsbcCashScopeKey(
+        account,
+        accountType,
+        currency,
+        sourceFileKind = '',
+    ) {
+        const normalizedAccount = normalizeHsbcCashScopeToken(account);
+        const normalizedCurrency = normalizeHsbcCashCurrency(currency);
+        const normalizedAccountType = normalizeHsbcCashAccountType(
+            accountType,
+            normalizedCurrency,
+        );
+        if (
+            !normalizedAccount
+            || !normalizedAccountType
+            || !isHsbcCashFileKindCurrencyCompatible(
+                sourceFileKind,
+                normalizedCurrency,
+            )
+        ) return '';
+        return ['HSBC', normalizedAccount, normalizedAccountType, normalizedCurrency].join('|');
     }
 
     function areHsbcCashSettlementBalancesContinuous(leftBalance, rightBalance) {
@@ -573,7 +768,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
     }
 
     function orderHsbcCashSettlementBoundaryScope(boundaries) {
-        const fallbackOrder = [...boundaries].sort(compareHsbcCashSettlementBoundaries);
+        const fallbackOrder = orderHsbcCashSettlementBoundaryDomainSlots(boundaries);
         if (fallbackOrder.length < 2) return fallbackOrder;
 
         const outgoingByBoundary = new Map(fallbackOrder.map((boundary) => [boundary, []]));
@@ -652,56 +847,367 @@ export function createInvestmentPositionValuationUtils(runtime) {
             if (!groupedByScope.has(scopeKey)) groupedByScope.set(scopeKey, []);
             groupedByScope.get(scopeKey).push(boundary);
         });
-        const rankByBoundary = new Map();
+        const reordered = [...fallbackOrder];
         groupedByScope.forEach((scopeBoundaries) => {
-            orderHsbcCashSettlementBoundaryScope(scopeBoundaries).forEach((boundary, index) => {
-                rankByBoundary.set(boundary, index);
+            const orderedScope = orderHsbcCashSettlementBoundaryScope(scopeBoundaries);
+            const occupiedSlots = scopeBoundaries
+                .map((boundary) => fallbackOrder.indexOf(boundary))
+                .sort((left, right) => left - right);
+            occupiedSlots.forEach((slot, index) => {
+                reordered[slot] = orderedScope[index];
             });
         });
-        return fallbackOrder.sort((left, right) => {
-            const fallbackComparison = compareHsbcCashSettlementBoundaries(left, right);
-            if (getHsbcCashSettlementBoundaryScopeKey(left) !== getHsbcCashSettlementBoundaryScopeKey(right)) {
-                return fallbackComparison;
-            }
-            return (rankByBoundary.get(left) - rankByBoundary.get(right)) || fallbackComparison;
-        });
+        return reordered;
     }
 
     function buildHsbcCashSettlementBoundaryPlan(transactions = []) {
         const boundaries = [];
+        const rawOwnersByPostingIdentity = new Map();
+        (Array.isArray(transactions) ? transactions : []).forEach(
+            (txn, ownerTransactionIndex) => {
+                const source = txn?.source && typeof txn.source === 'object'
+                    ? txn.source
+                    : {};
+                const broker = String(
+                    txn?.broker || source.broker || '',
+                ).trim().toLowerCase();
+                if (broker !== 'hsbc') return;
+                const postings = Array.isArray(source.cash_settlement_postings)
+                    ? source.cash_settlement_postings
+                    : [];
+                postings.forEach((posting) => {
+                    const postingIdentity = (
+                        runtime.getHsbcStructuredPostingPhysicalEvidenceIdentity(
+                            posting,
+                        )
+                    );
+                    if (!postingIdentity) return;
+                    if (!rawOwnersByPostingIdentity.has(postingIdentity)) {
+                        rawOwnersByPostingIdentity.set(postingIdentity, new Set());
+                    }
+                    rawOwnersByPostingIdentity.get(postingIdentity).add(
+                        ownerTransactionIndex,
+                    );
+                });
+            },
+        );
+        const rawConflictingOwnerIndexes = new Set();
+        rawOwnersByPostingIdentity.forEach((ownerIndexes) => {
+            if (ownerIndexes.size <= 1) return;
+            ownerIndexes.forEach((ownerIndex) => {
+                rawConflictingOwnerIndexes.add(ownerIndex);
+            });
+        });
         (Array.isArray(transactions) ? transactions : []).forEach((txn, ownerTransactionIndex) => {
             const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
             const broker = String(txn?.broker || source.broker || '').trim().toLowerCase();
             const normalizedType = String(txn?.type || '').trim().toLowerCase();
-            const transactionDate = normalizeLedgerDate(txn?.date);
+            const transactionDate = normalizeHsbcEvidenceDate(txn?.date);
             if (
                 broker !== 'hsbc'
                 || !['buy', 'sell'].includes(normalizedType)
                 || !transactionDate
+                || rawConflictingOwnerIndexes.has(ownerTransactionIndex)
             ) return;
 
             const rawPostings = Array.isArray(source.cash_settlement_postings)
                 ? source.cash_settlement_postings
                 : [];
-            const candidatePostings = rawPostings.length
-                ? rawPostings
-                : [{
-                    date: source.cash_settlement_date,
-                    amount_raw: source.cash_settlement_amount_raw,
-                    balance_after_raw: source.cash_settlement_balance_after_raw,
-                    reference: source.cash_settlement_reference,
-                    row_number: source.cash_settlement_source_row_number,
-                    ledger_sequence: source.cash_settlement_source_row_number,
-                    currency: txn?.currency,
-                    role: 'legacy_order_summary',
-                }];
+            let candidatePostings;
+            if (rawPostings.length) {
+                if (!hasConsistentHsbcStructuredSettlementAliases(txn, rawPostings)) {
+                    return;
+                }
+                const principalPostings = rawPostings.filter((posting) => (
+                    String(posting?.role || '').trim().toLowerCase() === 'principal'
+                ));
+                if (
+                    principalPostings.length !== 1
+                    || rawPostings.some((posting) => (
+                        !posting
+                        || typeof posting !== 'object'
+                        || !['principal', 'fee'].includes(
+                            String(posting.role || '').trim().toLowerCase(),
+                        )
+                    ))
+                ) return;
+                const normalizeOrderReference = (value) => {
+                    const match = String(value || '')
+                        .trim().toUpperCase().match(/^([PS])[- ]?(\d+)$/);
+                    return match ? `${match[1]}-${match[2]}` : '';
+                };
+                const transactionOrderReference = normalizeOrderReference(
+                    source.statement_order_id || source.order_id,
+                );
+                const extractPostingOrderReference = (posting) => {
+                    const normalized = String(posting?.reference || '')
+                        .trim().replace(/\s+/g, ' ');
+                    const match = normalized.match(
+                        /^REF\s+([PS])(\d+)001\s+SEC(?:\s+\(\d{2}[A-Z]{3}\d{2}\))?$/i,
+                    );
+                    return match ? `${match[1].toUpperCase()}-${match[2]}` : '';
+                };
+                const getPostingIdentity = (posting) => {
+                    const account = normalizeHsbcCashScopeToken(posting?.account_number);
+                    const currency = normalizeHsbcCashCurrency(posting?.currency);
+                    const accountType = normalizeHsbcCashAccountType(
+                        posting?.account_type,
+                        currency,
+                    );
+                    const settlementDate = normalizeHsbcEvidenceDate(posting?.date);
+                    const sourceFileKind = String(
+                        posting?.source_file_kind || '',
+                    ).trim().toLowerCase();
+                    const sourceSequenceSha256 = String(
+                        posting?.source_sequence_sha256
+                        || posting?.source_file_sha256
+                        || posting?.statement_pdf_source_sha256
+                        || '',
+                    ).trim().toLowerCase();
+                    const sequenceOrder = String(
+                        posting?.ledger_sequence_order || '',
+                    ).trim().toLowerCase();
+                    const hasChronologicalSequence = sequenceOrder === 'chronological';
+                    const sequenceDirection = (
+                        sourceFileKind === 'hsbc_usd_savings_csv'
+                        && !hasChronologicalSequence
+                    ) ? -1 : 1;
+                    const sequenceValue = parseHsbcPositiveSequenceNumber(
+                        hasChronologicalSequence
+                            ? posting?.ledger_sequence
+                            : sequenceDirection < 0
+                            ? posting?.row_number
+                            : posting?.ledger_sequence,
+                    );
+                    const rowNumber = parseHsbcPositiveSequenceNumber(
+                        posting?.row_number,
+                    );
+                    const statementRowRaw = posting?.statement_pdf_source_row_number;
+                    const hasStatementRowAlias = statementRowRaw !== undefined
+                        && statementRowRaw !== null
+                        && String(statementRowRaw).trim() !== '';
+                    const statementRowNumber = hasStatementRowAlias
+                        ? parseHsbcPositiveSequenceNumber(statementRowRaw)
+                        : null;
+                    if (
+                        !account
+                        || !accountType
+                        || !currency
+                        || !settlementDate
+                        || ![
+                            'hsbc_usd_account_text',
+                            'hsbc_usd_savings_csv',
+                            'hsbc_multi_currency_cash_account_text',
+                        'hsbc_statement_cash',
+                    ].includes(sourceFileKind)
+                        || !isHsbcCashFileKindCurrencyCompatible(
+                            sourceFileKind,
+                            currency,
+                        )
+                        || !['', 'chronological'].includes(sequenceOrder)
+                        || !/^[0-9a-f]{64}$/.test(sourceSequenceSha256)
+                        || rowNumber === null
+                        || (hasStatementRowAlias && statementRowNumber !== rowNumber)
+                        || sequenceValue === null
+                        || !transactionOrderReference
+                        || (
+                            sourceFileKind !== 'hsbc_statement_cash'
+                            && extractPostingOrderReference(posting)
+                                !== transactionOrderReference
+                        )
+                        || parseFiniteNonBlankHsbcNumber(
+                            posting?.amount_raw,
+                        ) === null
+                    ) return null;
+                    return {
+                        account,
+                        accountType,
+                        currency,
+                        settlementDate,
+                        sourceFileKind,
+                        sourceSequenceSha256,
+                        rowNumber,
+                        sequenceOrder,
+                        sequenceDirection,
+                        sequenceValue,
+                    };
+                };
+                const principalIdentity = getPostingIdentity(principalPostings[0]);
+                const transactionAccount = normalizeHsbcCashScopeToken(
+                    txn?.account || source.account || source.account_number,
+                );
+                const transactionCurrency = normalizeHsbcCashCurrency(txn?.currency);
+                const sourceSettlementDate = normalizeHsbcEvidenceDate(
+                    source.cash_settlement_date,
+                );
+                const sourceSettlementAmount = parseFiniteNonBlankHsbcNumber(
+                    source.cash_settlement_amount_raw,
+                );
+                const sourceSettlementAmountExact = runtime.normalizeHsbcDecimalText(
+                    source.cash_settlement_amount_raw,
+                );
+                if (
+                    !principalIdentity
+                    || !transactionAccount
+                    || principalIdentity.account !== transactionAccount
+                    || !transactionCurrency
+                    || principalIdentity.currency !== transactionCurrency
+                    || !sourceSettlementDate
+                    || principalIdentity.settlementDate !== sourceSettlementDate
+                    || sourceSettlementAmount === null
+                ) return;
+                const hasValidIdentityAndOrder = (posting) => {
+                    const identity = getPostingIdentity(posting);
+                    if (
+                        !identity
+                        || identity.account !== principalIdentity.account
+                        || identity.accountType !== principalIdentity.accountType
+                        || identity.currency !== principalIdentity.currency
+                        || identity.settlementDate !== principalIdentity.settlementDate
+                        || identity.sourceFileKind !== principalIdentity.sourceFileKind
+                        || identity.sourceSequenceSha256
+                            !== principalIdentity.sourceSequenceSha256
+                        || identity.sequenceOrder !== principalIdentity.sequenceOrder
+                        || identity.sequenceDirection !== principalIdentity.sequenceDirection
+                    ) return false;
+                    const sequenceDelta = identity.sequenceDirection
+                        * (identity.sequenceValue - principalIdentity.sequenceValue);
+                    return String(posting?.role || '').trim().toLowerCase() === 'principal'
+                        ? sequenceDelta === 0
+                        : sequenceDelta > 0;
+                };
+                if (rawPostings.some((posting) => !hasValidIdentityAndOrder(posting))) {
+                    return;
+                }
+                const postingSequenceKeys = rawPostings.map((posting) => {
+                    const identity = getPostingIdentity(posting);
+                    return `${identity.sequenceDirection}:${identity.sequenceValue}`;
+                });
+                if (new Set(postingSequenceKeys).size !== postingSequenceKeys.length) return;
+                const physicalPostingKeys = rawPostings.map((posting) => {
+                    const identity = getPostingIdentity(posting);
+                    return `${identity.sourceSequenceSha256}:${identity.rowNumber}`;
+                });
+                if (new Set(physicalPostingKeys).size !== physicalPostingKeys.length) return;
+                if (rawPostings.some((posting) => {
+                    const rawBalance = posting?.balance_after_raw;
+                    return rawBalance !== undefined
+                        && rawBalance !== null
+                        && String(rawBalance).trim() !== ''
+                        && parseFiniteNonBlankHsbcNumber(rawBalance) === null;
+                })) return;
+                const principalAmount = parseFiniteNonBlankHsbcNumber(
+                    principalPostings[0]?.amount_raw,
+                );
+                const principalBalance = parseFiniteNonBlankHsbcNumber(
+                    principalPostings[0]?.balance_after_raw,
+                );
+                if (
+                    principalAmount === null
+                    || principalBalance === null
+                    || runtime.normalizeHsbcDecimalText(
+                        principalPostings[0]?.amount_raw,
+                    ) !== sourceSettlementAmountExact
+                    || (normalizedType === 'buy' && principalAmount >= 0)
+                    || (normalizedType === 'sell' && principalAmount <= 0)
+                    || rawPostings.some((posting) => (
+                        String(posting.role || '').trim().toLowerCase() === 'fee'
+                        && parseFiniteNonBlankHsbcNumber(
+                            posting?.amount_raw,
+                        ) >= 0
+                    ))
+                ) return;
+                const feeAmounts = rawPostings.filter((posting) => (
+                    String(posting.role || '').trim().toLowerCase() === 'fee'
+                )).map((posting) => parseFiniteNonBlankHsbcNumber(
+                    posting?.amount_raw,
+                ));
+                const commissionInputs = [
+                    txn?.normalized?.commission,
+                    txn?.commission_raw,
+                ].filter((value) => (
+                    value !== undefined
+                    && value !== null
+                    && String(value).trim() !== ''
+                ));
+                const commissions = commissionInputs.map(Number);
+                const commission = commissions[0] ?? 0;
+                const feeTotal = feeAmounts.reduce((total, amount) => total + amount, 0);
+                const transactionAmount = parseFiniteNonBlankHsbcNumber(
+                    txn?.normalized?.net_amount
+                    ?? txn?.net_amount_raw
+                    ?? txn?.amount
+                    ?? txn?.cash,
+                );
+                const evidencedNetAmount = principalAmount + feeTotal;
+                if (
+                    commissions.some((value) => !Number.isFinite(value))
+                    || commissionInputs.length !== 2
+                    || commissions.some((value) => Math.abs(value - commission) > 1e-6)
+                    || commission > 1e-9
+                    || (commission < -1e-9 && (
+                        !feeAmounts.length
+                        || Math.abs(commission - feeTotal) > 1e-6
+                    ))
+                    || (Math.abs(commission) <= 1e-9 && feeAmounts.length)
+                    || transactionAmount === null
+                    || (
+                        Math.abs(transactionAmount - principalAmount) > 1e-6
+                        && Math.abs(transactionAmount - evidencedNetAmount) > 1e-6
+                    )
+                ) return;
+                candidatePostings = rawPostings;
+            } else {
+                // Scalar-only settlement summaries do not carry immutable
+                // per-posting ownership, so they cannot create cash boundaries.
+                return;
+            }
 
             candidatePostings.forEach((posting, postingIndex) => {
-                const settlementDate = normalizeLedgerDate(posting?.date || source.cash_settlement_date);
-                if (!settlementDate || settlementDate <= transactionDate) return;
-                const settlementAmount = Number(posting?.amount_raw ?? posting?.amount);
-                const settlementBalance = Number(posting?.balance_after_raw);
-                if (!Number.isFinite(settlementAmount) && !Number.isFinite(settlementBalance)) return;
+                const settlementDate = normalizeHsbcEvidenceDate(
+                    posting?.date || source.cash_settlement_date,
+                );
+                if (!settlementDate || settlementDate < transactionDate) return;
+                const settlementAmount = parseFiniteNonBlankHsbcNumber(
+                    posting?.amount_raw,
+                );
+                const settlementBalance = parseFiniteNonBlankHsbcNumber(
+                    posting?.balance_after_raw,
+                );
+                if (settlementAmount === null && settlementBalance === null) return;
+                const currency = normalizeHsbcCashCurrency(
+                    rawPostings.length ? posting?.currency : (posting?.currency || txn?.currency || 'USD'),
+                ) || 'USD';
+                const sourceFileKind = String(
+                    rawPostings.length
+                        ? posting?.source_file_kind
+                        : (posting?.source_file_kind || source.file_kind || ''),
+                ).trim().toLowerCase();
+                const account = String(
+                    rawPostings.length
+                        ? posting?.account_number
+                        : (
+                            posting?.account_number
+                            || txn?.account
+                            || source.account
+                            || source.account_number
+                            || ''
+                        ),
+                ).trim();
+                const accountType = rawPostings.length
+                    ? normalizeHsbcCashAccountType(posting?.account_type, currency)
+                    : inferHsbcCashAccountType(
+                        posting?.account_type || txn?.account_type || source.account_type,
+                        sourceFileKind,
+                        currency,
+                    );
+                const cashScopeKey = buildHsbcCashScopeKey(
+                    account,
+                    accountType,
+                    currency,
+                    sourceFileKind,
+                );
+                if (!cashScopeKey) return;
                 const sourceRowSequence = Number(
                     posting?.ledger_sequence
                     ?? posting?.row_number
@@ -716,16 +1222,38 @@ export function createInvestmentPositionValuationUtils(runtime) {
                 boundaries.push({
                     ownerTransactionIndex,
                     broker: txn?.broker || source.broker || 'hsbc',
-                    account: txn?.account || source.account || source.account_number || '',
+                    account,
+                    accountType,
+                    cashScopeKey,
                     transactionDate,
                     date: settlementDate,
-                    currency: String(posting?.currency || txn?.currency || 'USD').trim().toUpperCase() || 'USD',
-                    settlementAmount: Number.isFinite(settlementAmount) ? settlementAmount : null,
-                    settlementBalanceAfter: Number.isFinite(settlementBalance) ? settlementBalance : null,
+                    currency,
+                    settlementAmount,
+                    settlementBalanceAfter: settlementBalance,
                     sourceRowSequence: Number.isFinite(sourceRowSequence) ? sourceRowSequence : 0,
                     sourceRowNumber: Number.isFinite(sourceRowNumber) ? sourceRowNumber : 0,
-                    sourceFileKind: String(
-                        posting?.source_file_kind || source.file_kind || '',
+                    sourceFileKind,
+                    sourceSequenceDirection: (
+                        rawPostings.length
+                        && sourceFileKind === 'hsbc_usd_savings_csv'
+                        && String(posting?.ledger_sequence_order || '')
+                            .trim().toLowerCase() !== 'chronological'
+                    ) ? -1 : 1,
+                    sourceSequenceSha256: String(
+                        rawPostings.length
+                            ? (
+                                posting?.source_sequence_sha256
+                                || posting?.source_file_sha256
+                                || posting?.statement_pdf_source_sha256
+                                || ''
+                            )
+                            : (
+                                posting?.source_sequence_sha256
+                                || posting?.source_file_sha256
+                                || posting?.statement_pdf_source_sha256
+                                || source.cash_settlement_source_sequence_sha256
+                                || ''
+                            ),
                     ).trim().toLowerCase(),
                     sourceIndex: ownerTransactionIndex,
                     postingIndex,
@@ -739,7 +1267,37 @@ export function createInvestmentPositionValuationUtils(runtime) {
                 });
             });
         });
-        return orderHsbcCashSettlementBoundaries(boundaries);
+        const ownersByPostingIdentity = new Map();
+        boundaries.forEach((boundary) => {
+            const rowNumber = parseHsbcPositiveSequenceNumber(
+                boundary.sourceRowNumber,
+            );
+            if (
+                !boundary.sourceFileKind
+                || !/^[0-9a-f]{64}$/.test(boundary.sourceSequenceSha256)
+                || rowNumber === null
+            ) return;
+            const postingIdentity = JSON.stringify([
+                boundary.sourceSequenceSha256,
+                rowNumber,
+            ]);
+            if (!ownersByPostingIdentity.has(postingIdentity)) {
+                ownersByPostingIdentity.set(postingIdentity, new Set());
+            }
+            ownersByPostingIdentity.get(postingIdentity).add(
+                boundary.ownerTransactionIndex,
+            );
+        });
+        const conflictingOwnerIndexes = new Set();
+        ownersByPostingIdentity.forEach((ownerIndexes) => {
+            if (ownerIndexes.size <= 1) return;
+            ownerIndexes.forEach((ownerIndex) => conflictingOwnerIndexes.add(ownerIndex));
+        });
+        return orderHsbcCashSettlementBoundaries(
+            boundaries.filter((boundary) => (
+                !conflictingOwnerIndexes.has(boundary.ownerTransactionIndex)
+            )),
+        );
     }
 
     function parseInvestmentChartDate(value) {

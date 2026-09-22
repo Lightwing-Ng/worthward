@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.0
+Code version: v0.27.2
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
@@ -1221,8 +1221,9 @@ Fees: 0.12
                 "net_amount_raw": "12.34",
                 "description": "Authoritative statement dividend",
                 "source": {
+                    "cash_settlement_balance_after_raw": "512.34",
                     "corporate_action_reference": "CA-123",
-                    "file_kind": "hsbc_investment_statement_pdf",
+                    "file_kind": "hsbc_investment_statement_income",
                 },
             }],
         }
@@ -1239,7 +1240,8 @@ Fees: 0.12
                 "net_amount_raw": "12.34",
                 "description": "CORP EVT PAYMENT",
                 "source": {
-                    "dividend_attribution_status": "matched",
+                    "balance_after_raw": "512.34",
+                    "dividend_attribution_status": "matched_local_market_action",
                     "file_kind": "hsbc_usd_account_text",
                 },
             }],
@@ -1275,7 +1277,10 @@ Fees: 0.12
         response = client.get("/trade/investment")
         body = response.get_data(as_text=True)
 
-        self.assertIn('class="export-transactions-button"', body)
+        self.assertIn(
+            'class="circular-icon-button export-transactions-button"',
+            body,
+        )
         self.assertIn('id="export_transactions_button"', body)
         self.assertIn('title="Export Transactions"', body)
         self.assertIn('/static/images/arrow.down.document.fill.svg', body)

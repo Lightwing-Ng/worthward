@@ -1,4 +1,4 @@
-{# Code version: v1.74.12 #}
+{# Code version: v1.74.21 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -110,7 +110,7 @@
                         <p class="investment-share-preview-view" id="investment_share_preview_view_label">Overview</p>
                     </div>
                     <button type="button"
-                            class="investment-share-action-button investment-share-preview-mask-button"
+                            class="circular-icon-button investment-share-action-button investment-share-preview-mask-button"
                             id="investment_share_preview_mask_button"
                             aria-label="Mask Sensitive Values"
                             title="Mask Sensitive Values"
@@ -138,7 +138,7 @@
             </div>
         <div class="investment-import-control-rail" aria-label="Investment import controls">
             <button type="button"
-                    class="settings-round-icon-button"
+                    class="circular-icon-button settings-round-icon-button"
                     id="investment_import_close_button"
                     aria-label="Close broker import or sync form"
                     title="Close import"
@@ -147,7 +147,7 @@
                 <span class="icon investment-import-close-icon" aria-hidden="true"></span>
             </button>
             <button type="button"
-                    class="settings-round-icon-button"
+                    class="circular-icon-button settings-round-icon-button"
                     id="toggle_form_button"
                     aria-label="Import or sync broker activity"
                     title="Import or sync broker activity">
@@ -323,7 +323,7 @@
                                                readonly>
                                     </div>
                                     <button type="button"
-                                            class="settings-round-icon-button investment-import-paste-button"
+                                            class="circular-icon-button settings-round-icon-button investment-import-paste-button"
                                             id="ibkr_trade_notifications_paste_button"
                                             aria-label="Paste IBKR Trade Notifications page text from clipboard"
                                             title="Paste from clipboard">
@@ -362,7 +362,7 @@
                                                readonly>
                                     </div>
                                     <button type="button"
-                                            class="settings-round-icon-button investment-import-paste-button"
+                                            class="circular-icon-button settings-round-icon-button investment-import-paste-button"
                                             id="ibkr_holdings_paste_button"
                                             aria-label="Paste IBKR Your Holdings page text from clipboard"
                                             title="Paste from clipboard">
@@ -718,7 +718,7 @@
                                             </button>
                                         </div>
                                             <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button"
+                                                    class="circular-icon-button settings-round-icon-button investment-import-paste-button"
                                                     id="hsbc_cash_account_paste_button"
                                                     aria-label="Paste HSBC cash-account page text from clipboard"
                                                     title="Paste from clipboard">
@@ -763,7 +763,7 @@
                                             </button>
                                         </div>
                                             <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button"
+                                                    class="circular-icon-button settings-round-icon-button investment-import-paste-button"
                                                     id="hsbc_portfolio_text_paste_button"
                                                     aria-label="Paste HSBC Portfolio page text from clipboard"
                                                     title="Paste from clipboard">
@@ -808,7 +808,7 @@
                                             </button>
                                         </div>
                                             <button type="button"
-                                                    class="settings-round-icon-button investment-import-paste-button"
+                                                    class="circular-icon-button settings-round-icon-button investment-import-paste-button"
                                                     id="hsbc_order_status_paste_button"
                                                     aria-label="Paste HSBC Order Status page text from clipboard"
                                                     title="Paste from clipboard">
@@ -933,5 +933,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.13.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.148.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.151.8') }}"></script>
 {% endblock %}

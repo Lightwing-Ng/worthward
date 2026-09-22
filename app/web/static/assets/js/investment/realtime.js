@@ -1,7 +1,7 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.3
+ * Code version: v1.3.5
  * - Fixed: Stock-details live metrics retain their card-owned responsive
  *   geometry instead of reserving a stale full-panel width after quote updates.
  * - Fixed: Holdings live values retain their CSS-owned geometry instead of
@@ -13,9 +13,9 @@
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
-import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.1.0';
+import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.3';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.5';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,

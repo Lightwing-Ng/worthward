@@ -1,6 +1,8 @@
 """Investment import domain: artifacts.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Fixed: Re-importing identical HSBC cash-page evidence may expand legacy
+  one-day artifact metadata to the page's complete visible posting range.
 - Added: Broker snapshot evidence retains dated IBKR interest-accrual
   snapshots and exposes one fail-closed accrual boundary per as-of date.
 """
@@ -164,6 +166,10 @@ def _normalize_source_artifact(raw_artifact: Any) -> dict[str, Any]:
     if has_content_bytes:
         artifact["content_encoding"] = "base64"
         artifact["content_base64"] = content_base64
+    for field_name in ("cash_earliest_post_date", "cash_latest_post_date"):
+        field_value = _normalize_text(raw_artifact.get(field_name))
+        if field_value:
+            artifact[field_name] = field_value
     return artifact
 
 
@@ -171,23 +177,40 @@ def _merge_source_artifact_records(
     current: dict[str, Any],
     incoming: dict[str, Any],
 ) -> dict[str, Any]:
+    normalized_current = _normalize_source_artifact(current)
+    normalized_incoming = _normalize_source_artifact(incoming)
+    hsbc_cash_capture_pair = (
+        normalized_current.get("sha256") == normalized_incoming.get("sha256")
+        and normalized_current.get("source_kind")
+        == normalized_incoming.get("source_kind")
+        == "hsbc_cash_account_pasted_text"
+    )
+    hsbc_cash_period_fields = {
+        "cash_earliest_post_date",
+        "cash_latest_post_date",
+        "statement_period",
+        "statement_period_start",
+        "statement_period_end",
+    }
     merged = dict(current)
     merged["filenames"] = sorted(
         {
-            *_normalize_source_artifact(current).get("filenames", []),
-            *_normalize_source_artifact(incoming).get("filenames", []),
+            *normalized_current.get("filenames", []),
+            *normalized_incoming.get("filenames", []),
         }
     )
     merged["filename"] = min(merged["filenames"]) if merged["filenames"] else ""
     merged["bundle_ids"] = sorted(
         {
-            *_normalize_source_artifact(current).get("bundle_ids", []),
-            *_normalize_source_artifact(incoming).get("bundle_ids", []),
+            *normalized_current.get("bundle_ids", []),
+            *normalized_incoming.get("bundle_ids", []),
         }
     )
     merged["bundle_id"] = min(merged["bundle_ids"]) if merged["bundle_ids"] else ""
     for key, value in incoming.items():
         if key in {"filename", "filenames", "bundle_id", "bundle_ids"}:
+            continue
+        if hsbc_cash_capture_pair and key in hsbc_cash_period_fields:
             continue
         if _ii_merge_identity._is_missing_merge_value(
             merged.get(key)
@@ -196,6 +219,65 @@ def _merge_source_artifact_records(
         if key == "content_base64" and isinstance(value, str) and value:
             merged[key] = value
             merged["content_encoding"] = "base64"
+    if (
+        hsbc_cash_capture_pair
+        and normalized_current.get("byte_count")
+        == normalized_incoming.get("byte_count")
+        and normalized_current.get("broker") == "hsbc"
+        and normalized_incoming.get("broker") == "hsbc"
+        and normalized_current.get("bundle_role")
+        == normalized_incoming.get("bundle_role")
+        == "cash_account"
+        and bool(normalized_current.get("account"))
+        and normalized_current.get("account") == normalized_incoming.get("account")
+    ):
+        current_start = normalized_current.get("statement_period_start", "")
+        current_end = normalized_current.get("statement_period_end", "")
+        incoming_start = normalized_incoming.get("statement_period_start", "")
+        incoming_end = normalized_incoming.get("statement_period_end", "")
+        incoming_earliest = normalized_incoming.get("cash_earliest_post_date", "")
+        incoming_latest = normalized_incoming.get("cash_latest_post_date", "")
+        try:
+            incoming_window = (
+                date.fromisoformat(incoming_earliest),
+                date.fromisoformat(incoming_latest),
+            )
+        except (TypeError, ValueError):
+            incoming_window = None
+        current_window = None
+        if not current_start and not current_end:
+            current_window = incoming_window
+        elif current_start and current_end:
+            try:
+                current_window = (
+                    date.fromisoformat(current_start),
+                    date.fromisoformat(current_end),
+                )
+            except (TypeError, ValueError):
+                current_window = None
+        current_period = normalized_current.get("statement_period", "")
+        current_period_matches = (
+            not current_period
+            if not current_start and not current_end
+            else current_period == f"{current_start}/{current_end}"
+        )
+        if (
+            current_window is not None
+            and incoming_window is not None
+            and incoming_window[0] <= incoming_window[1]
+            and incoming_start == incoming_earliest
+            and incoming_end == incoming_latest
+            and incoming_window[0] <= current_window[0] <= current_window[1]
+            and current_window[1] <= incoming_window[1]
+            and current_period_matches
+            and normalized_incoming.get("statement_period")
+            == f"{incoming_earliest}/{incoming_latest}"
+        ):
+            merged["cash_earliest_post_date"] = incoming_earliest
+            merged["cash_latest_post_date"] = incoming_latest
+            merged["statement_period_start"] = incoming_earliest
+            merged["statement_period_end"] = incoming_latest
+            merged["statement_period"] = f"{incoming_earliest}/{incoming_latest}"
     return merged
 
 
@@ -245,7 +327,11 @@ def _broker_snapshot_evidence_from_payload(
         if broker == "ibkr"
         else None
     )
-    if not position_snapshot and not performance_snapshot and not interest_accrual_snapshot:
+    if (
+        not position_snapshot
+        and not performance_snapshot
+        and not interest_accrual_snapshot
+    ):
         return []
     source_artifacts = _normalize_source_artifacts(payload.get("source_artifacts"))
     period_ends = [
@@ -422,7 +508,11 @@ def _normalize_broker_snapshot_evidence(raw_evidence: Any) -> dict[str, Any] | N
         if broker == "ibkr"
         else None
     )
-    if not position_snapshot and not performance_snapshot and not interest_accrual_snapshot:
+    if (
+        not position_snapshot
+        and not performance_snapshot
+        and not interest_accrual_snapshot
+    ):
         return None
     source_artifact_sha256 = (
         sorted(

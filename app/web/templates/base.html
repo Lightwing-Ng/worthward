@@ -1,4 +1,4 @@
-{# Code version: v0.55.2 #}
+{# Code version: v0.57.0 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.96.0') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.100.0') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -172,16 +172,16 @@
         {{ notice }}
     {% endcall %}
     {% endif %}
-    <button type="button" class="sidebar-toggle" id="sidebar_toggle" data-layout-role="sidebar-toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
+    <button type="button" class="circular-icon-button sidebar-toggle" id="sidebar_toggle" data-layout-role="sidebar-toggle" aria-label="{{ translate_ui('Toggle sidebar') }}" aria-expanded="true">
         <span class="icon icon-sidebar-left" aria-hidden="true"></span>
     </button>
     {% block page_overlay_controls %}{% endblock %}
     <div class="app-shell is-sidebar-open">
         <div class="global-quick-actions" id="global_quick_actions" data-layout-role="global-action-column" aria-label="{{ translate_ui('Global quick actions') }}">
-            <button type="button" class="global-quick-action-button global-language-toggle" id="global_language_toggle"{% if current_view == "beta" %} disabled{% endif %} aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
+            <button type="button" class="circular-icon-button global-quick-action-button global-language-toggle" id="global_language_toggle"{% if current_view == "beta" %} disabled{% endif %} aria-label="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}" title="{{ translate_ui('Language') if translate_ui is defined else 'Language' }}">
                 <span class="icon" style="-webkit-mask-image: url(/static/images/translate.svg); mask-image: url(/static/images/translate.svg);" aria-hidden="true"></span>
             </button>
-            <button type="button" class="global-quick-action-button global-theme-toggle" id="global_theme_toggle" data-layout-role="global-theme-anchor" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
+            <button type="button" class="circular-icon-button global-quick-action-button global-theme-toggle" id="global_theme_toggle" data-layout-role="global-theme-anchor" aria-label="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" title="{{ translate_ui('Switch theme') if translate_ui is defined else 'Switch theme' }}" aria-pressed="false">
                 <span class="icon" id="global_theme_toggle_icon" aria-hidden="true"></span>
             </button>
         </div>
@@ -438,12 +438,12 @@
         }, true);
     })();
 </script>
-<script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.1.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.3.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.5') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.2.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.4') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.7.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/chart-axis-utils.js', v=version ~ '-chart-axis-utils-v1.8.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/investment-filter-utils.js', v=version ~ '-investment-filter-utils-v1.3.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/export-image-config.js', v=version ~ '-export-image-config-v0.1.1') }}"></script>
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
@@ -462,16 +462,16 @@
     <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.14.1') }}"></script>
 {% endif %}
     <script src="{{ url_for('static', filename='assets/js/select-controller.js', v='select-controller-v1.0.1') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/chart-export.js', v=version ~ '-app-chart-export-v1.1.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/chart-export.js', v=version ~ '-app-chart-export-v1.1.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/navigation.js', v=version ~ '-app-navigation-v1.3.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-enhancements.js', v=version ~ '-app-workspace-enhancements-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.4.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/ticker-controls.js', v=version ~ '-app-ticker-controls-v1.0.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.2') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/date-controls.js', v=version ~ '-app-date-controls-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/range-controls.js', v=version ~ '-app-range-controls-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.0.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.3') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.6') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.13.0') }}"></script>
 {% endif %}

@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.34.0`
+Documentation version: `v3.36.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -410,14 +410,32 @@ remain explicitly provisional.
   cash is converted with the dated project FX history. This estimated current
   amount is marked as provisional in the browser.
 - Historical HSBC settlement corrections use the broker ledger before any
-  current-cash presentation projection, so a later mixed-broker refresh cannot
-  cancel sale proceeds that were already settled on an earlier date.
+  current-cash presentation projection. A bank cash row clears a correction
+  only when its ledger date is later, or when same-day evidence belongs to the
+  same immutable source sequence and is not ledger-older than the settlement.
+  Each correction remains scoped to its exact customer account, cash account
+  type, and native currency. A zero balance in one scope therefore cannot
+  erase another same-currency cash account, retained foreign cash, or earlier
+  settled proceeds.
+- A settlement group is accepted only when one principal and every later fee
+  share one account, cash-account type, currency, booking date, source kind,
+  order reference, SHA-256 digest, and unique physical source row. Digest,
+  row, amount, balance, and owner aliases must agree. A repair is staged and
+  committed only after the complete group validates; malformed or conflicting
+  evidence stays provisional and cannot synthesize a cash boundary.
+- Same-day rows from the official USD Savings CSV are normalized only when
+  balance continuity identifies one unique chronological direction. Ambiguous
+  or non-finite rows fail closed instead of receiving an inferred order.
 - Cash-only non-USD captures remain separate by source account kind and
-  currency; they cannot replace an unrelated portfolio snapshot.
+  currency; they cannot replace an unrelated portfolio snapshot. A cash-only
+  source artifact records the earliest and latest posting dates visible in the
+  pasted capture, not an inferred complete statement period.
 - A USD cash-only corporate-event payment remains the bank-authoritative net
   cash row. During the atomic incremental merge, an otherwise unlabelled
-  dividend may inherit a ticker only from the same HSBC account's existing
-  Order Status history and a unique local dividend-action match. An existing
+  dividend may draw candidate names only from the same HSBC account's existing
+  USD Order Status history or USD position snapshot. Eligible quantity is
+  derived strictly from the USD Order Status history, and attribution still
+  requires a unique local dividend-action match. An existing
   manual or statement-backed attribution is preserved verbatim; missing local
   history, a second plausible ticker, or incomplete eligible-share history
   leaves the ticker unresolved instead of guessing.

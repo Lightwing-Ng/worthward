@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.3.0 */
 import {
     expect,
     test,
@@ -991,4 +991,296 @@ test('replays a later-imported IBKR closing withdrawal before its authoritative 
     expect(withdrawalRow.marketValue).toBe('0.00');
     expect(withdrawalRow.cash).toBe('0.00');
     expect(withdrawalRow.equity).toBe('0.00');
+});
+
+test('keeps HSBC cash chronology and foreign cash across a bound transfer', async ({page}) => {
+    const sourceKey = `v2:${JSON.stringify(['hsbc', 'HSBC-TEST', '2026-09-17', 'deposit', 'USD', '100'])}`;
+    const targetKey = `v2:${JSON.stringify(['ibkr', 'ibkr:u-suffix:00001', '2026-09-17', 'withdrawal', 'USD_OR_MISSING', '-100'])}`;
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'ibkr'],
+        startingCash: 0,
+        transactions: [
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-16',
+                datetime: '2026-09-16 20:00:00',
+                type: 'deposit',
+                currency: 'HKD',
+                amount: 100,
+                description: 'HKD opening balance',
+                source: {
+                    file_kind: 'hsbc_multi_currency_cash_account_text',
+                    account_type: 'HKD Savings',
+                    balance_after_raw: '100',
+                    row_number: 1,
+                    ledger_sequence: 1,
+                    source_sequence_sha256: 'hkd-sequence',
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'deposit',
+                currency: 'USD',
+                amount: 100,
+                description: 'HSBC matching receipt',
+                source: {
+                    file_kind: 'hsbc_usd_account_text',
+                    cash_balance_authoritative: true,
+                    account_type: 'USD Savings',
+                    balance_after_raw: '1000',
+                    row_number: 43,
+                    ledger_sequence: 43,
+                    source_sequence_sha256: 'usd-sequence',
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:01',
+                type: 'sell',
+                ticker: 'SELLA',
+                currency: 'USD',
+                quantity: 0,
+                price: 200,
+                amount: 200,
+                commission_raw: '-0.01',
+                normalized: {net_amount: 200, commission: -0.01},
+                description: 'First settled sale',
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    cash_settlement_date: '2026-09-18',
+                    cash_settlement_postings: [{
+                        date: '2026-09-18',
+                        currency: 'USD',
+                        amount_raw: '200',
+                        balance_after_raw: '1200',
+                        row_number: 44,
+                        ledger_sequence: 44,
+                        source_file_kind: 'hsbc_usd_account_text',
+                        source_sequence_sha256: 'usd-sequence',
+                        account_number: 'HSBC-TEST',
+                        account_type: 'USD Savings',
+                        role: 'principal',
+                    }, {
+                        date: '2026-09-18',
+                        currency: 'USD',
+                        amount_raw: '-0.01',
+                        balance_after_raw: '',
+                        row_number: 45,
+                        ledger_sequence: 45,
+                        source_file_kind: 'hsbc_usd_account_text',
+                        source_sequence_sha256: 'usd-sequence',
+                        account_number: 'HSBC-TEST',
+                        account_type: 'USD Savings',
+                        role: 'fee',
+                    }],
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:02',
+                type: 'sell',
+                ticker: 'SELLB',
+                currency: 'USD',
+                quantity: 0,
+                price: 300,
+                amount: 300,
+                description: 'Second settled sale',
+                source: {
+                    file_kind: 'hsbc_order_status_text',
+                    cash_settlement_date: '2026-09-18',
+                    cash_settlement_postings: [{
+                        date: '2026-09-18',
+                        currency: 'USD',
+                        amount_raw: '300',
+                        balance_after_raw: '1499.99',
+                        row_number: 46,
+                        ledger_sequence: 46,
+                        source_file_kind: 'hsbc_usd_account_text',
+                        source_sequence_sha256: 'usd-sequence',
+                        account_number: 'HSBC-TEST',
+                        account_type: 'USD Savings',
+                    }],
+                },
+            },
+            {
+                broker: 'ibkr',
+                account: 'U00000001',
+                date: '2026-09-17',
+                datetime: '2026-09-17 20:00:00',
+                type: 'withdrawal',
+                currency: null,
+                amount: -100,
+                description: 'IBKR closing withdrawal',
+                source: {
+                    file_kind: 'transactions',
+                    row_number: 11,
+                    transaction_type_raw: 'Withdrawal',
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-19',
+                datetime: '2026-09-19 20:00:00',
+                type: 'withdrawal',
+                currency: 'HKD',
+                amount: -10,
+                description: 'HKD withdrawal',
+                source: {
+                    file_kind: 'hsbc_multi_currency_cash_account_text',
+                    account_type: 'HKD Savings',
+                    balance_after_raw: '90',
+                    row_number: 49,
+                    ledger_sequence: 49,
+                    source_sequence_sha256: 'hkd-sequence',
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-19',
+                datetime: '2026-09-19 20:00:00',
+                type: 'deposit',
+                currency: 'HKD',
+                amount: 20,
+                description: 'HKD deposit',
+                source: {
+                    file_kind: 'hsbc_multi_currency_cash_account_text',
+                    account_type: 'HKD Savings',
+                    balance_after_raw: '110',
+                    row_number: 50,
+                    ledger_sequence: 50,
+                    source_sequence_sha256: 'hkd-sequence',
+                },
+            },
+            {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                date: '2026-09-21',
+                datetime: '2026-09-21 20:00:00',
+                type: 'dividend',
+                ticker: 'QQQI',
+                currency: 'USD',
+                amount: 10,
+                description: 'CORP EVT PAYMENT SEC',
+                source: {
+                    file_kind: 'hsbc_usd_account_text',
+                    cash_balance_authoritative: true,
+                    account_type: 'USD Savings',
+                    balance_after_raw: '1509.99',
+                    row_number: 50,
+                    ledger_sequence: 50,
+                    source_sequence_sha256: 'usd-sequence',
+                },
+            },
+        ],
+        manualInternalTransferBindings: {[sourceKey]: targetKey},
+        brokerSummaries: {
+            hsbc: {
+                broker: 'hsbc',
+                account: 'HSBC-TEST',
+                cash_snapshot_authoritative: true,
+                ending_cash: '1509.99',
+                ending_cash_as_of: '2026-09-21',
+                ending_cash_replay_as_of_datetime: '2026-09-21 20:00:00',
+                ending_cash_by_currency: {USD: '1509.99', HKD: '110'},
+                position_snapshot: {},
+            },
+            ibkr: {
+                broker: 'ibkr',
+                account: 'U00000001',
+                starting_cash: '100',
+                ending_cash: '0',
+                ending_cash_as_of: '2026-09-17',
+                cash_snapshot_authoritative: true,
+                position_snapshot: {},
+            },
+        },
+        fxRateHistoryByCurrency: {
+            HKD: {
+                dates: ['2026-09-16', '2026-09-17', '2026-09-19', '2026-09-21'],
+                values: {
+                    '2026-09-16': 10,
+                    '2026-09-17': 10,
+                    '2026-09-19': 10,
+                    '2026-09-21': 10,
+                },
+            },
+        },
+    });
+    await page.goto('/trade/investment?view=holdings&range=max');
+
+    const rows = page.locator('#investment_history tr[data-investment-history-row]');
+    await expect(rows).toHaveCount(8);
+    const history = await rows.evaluateAll((renderedRows) => renderedRows.map((row) => {
+        const cells = [...row.querySelectorAll('td')].map((cell) => cell.textContent.trim());
+        return {
+            broker: cells[0],
+            ledgerNo: Number(cells[1]),
+            description: cells[4],
+            cash: cells[9],
+        };
+    }));
+    const byDescription = (description) => history.find((row) => (
+        row.description.includes(description)
+    ));
+
+    const withdrawal = history.find((row) => (
+        row.broker === 'IBKR' && row.description.includes('IBKR closing withdrawal')
+    ));
+    const receipt = history.find((row) => (
+        row.broker === 'HSBC' && row.description.startsWith('HSBC matching receipt')
+    ));
+    expect(withdrawal.ledgerNo).toBeLessThan(
+        receipt.ledgerNo,
+    );
+    expect(receipt.ledgerNo).toBeLessThan(
+        byDescription('First settled sale').ledgerNo,
+    );
+    expect(byDescription('First settled sale').ledgerNo).toBeLessThan(
+        byDescription('Second settled sale').ledgerNo,
+    );
+    expect(byDescription('HKD withdrawal').ledgerNo).toBeLessThan(
+        byDescription('HKD deposit').ledgerNo,
+    );
+    expect(receipt.cash).toBe('1,010.00');
+    expect(byDescription('First settled sale').cash).toBe('1,209.99');
+    expect(byDescription('Second settled sale').cash).toBe('1,509.99');
+    expect(byDescription('HKD withdrawal').cash).toBe('1,508.99');
+    expect(byDescription('HKD deposit').cash).toBe('1,510.99');
+    expect(byDescription('CORP EVT PAYMENT SEC').cash).toBe('1,520.99');
+
+    await expect.poll(() => page.evaluate(() => (
+        window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
+    ))).toBeGreaterThan(0);
+    const chartEndpoints = await page.evaluate(() => {
+        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+        return Object.fromEntries((chart?.data?.rawLabels || []).map((date, index) => [
+            date,
+            Number(chart.data.datasets?.[0]?.data?.[index]),
+        ]));
+    });
+    expect(Object.fromEntries([
+        '2026-09-16',
+        '2026-09-17',
+        '2026-09-18',
+        '2026-09-19',
+        '2026-09-20',
+        '2026-09-21',
+    ].map((date) => [date, chartEndpoints[date]]))).toEqual({
+        '2026-09-16': 10,
+        '2026-09-17': 1_509.99,
+        '2026-09-18': 1_509.99,
+        '2026-09-19': 1_510.99,
+        '2026-09-20': 1_510.99,
+        '2026-09-21': 1_520.99,
+    });
 });

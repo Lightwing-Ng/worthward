@@ -1,4 +1,4 @@
-/* Code version: v3.37.0 */
+/* Code version: v3.37.1 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -25,13 +25,13 @@
 }
 @media (max-width: 900px) {
 	.page {
-		--settings-round-icon-button-size: 44px;
-		--workspace-title-rail-control-height: var(--settings-round-icon-button-size);
+		--circular-icon-button-size: 44px;
+		--workspace-title-rail-control-height: var(--circular-icon-button-size);
 		--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
-		--workspace-title-rail-collapsed-pad-inline-start: calc(var(--settings-round-icon-button-size) + 22px);
+		--workspace-title-rail-collapsed-pad-inline-start: calc(var(--circular-icon-button-size) + 22px);
 		--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));
 		--layout-global-action-inline-size: calc(
-			(var(--settings-round-icon-button-size) * 2)
+			(var(--circular-icon-button-size) * 2)
 			+ var(--layout-global-action-gap)
 		);
 		--layout-sidebar-overlay-inline-size: min(
@@ -50,7 +50,7 @@
 		--sidebar-toggle-x: calc(
 			var(--layout-sidebar-overlay-inline-size)
 			- var(--sidebar-overlay-toggle-inset)
-			- var(--settings-round-icon-button-size)
+			- var(--circular-icon-button-size)
 			- var(--layout-edge-gap)
 		);
 		overflow: hidden;
@@ -118,10 +118,10 @@
 	}
 
 	.page > .sidebar-toggle {
-		width: var(--settings-round-icon-button-size);
-		min-width: var(--settings-round-icon-button-size);
-		height: var(--settings-round-icon-button-size);
-		min-height: var(--settings-round-icon-button-size);
+		width: var(--circular-icon-button-size);
+		min-width: var(--circular-icon-button-size);
+		height: var(--circular-icon-button-size);
+		min-height: var(--circular-icon-button-size);
 		position: fixed;
 		top: var(--global-quick-actions-top);
 		left: var(--layout-global-anchor-left);
@@ -186,7 +186,7 @@
 	}
 	/* Preserve the workspace panel's top rounded edge on narrow screens. */
 	.page {
-		--settings-round-icon-button-size: 44px;
+		--circular-icon-button-size: 44px;
 		--sidebar-form-control-min-height: 44px;
 		width: 100%;
 		min-height: 100dvh;
@@ -210,7 +210,7 @@
 		--sidebar-toggle-x: calc(
 			var(--layout-sidebar-overlay-inline-size)
 			- var(--sidebar-overlay-toggle-inset)
-			- var(--settings-round-icon-button-size)
+			- var(--circular-icon-button-size)
 		) !important;
 	}
 	.app-shell.is-sidebar-collapsed,
@@ -396,7 +396,7 @@
 		--sidebar-toggle-x: calc(
 			var(--layout-sidebar-overlay-inline-size)
 			- var(--sidebar-overlay-toggle-inset)
-			- var(--settings-round-icon-button-size)
+			- var(--circular-icon-button-size)
 		) !important;
 	}
 	.sidebar { width: var(--layout-sidebar-overlay-inline-size); }

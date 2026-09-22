@@ -1,13 +1,44 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.1.0
+ * Code version: v1.4.5
+ * - Changed: Loads exact-date and safe-decimal HSBC evidence validation.
+ * - Fixed: Verified negative cash boundaries remain signed, and duplicate
+ *   physical direct-cash rows cannot overwrite broker or aggregate cash.
+ * - Fixed: Available-cash overrides now require the shared immutable HSBC
+ *   direct-cash evidence contract and exact calibration provenance.
+ * - Fixed: Main cash replay can adopt HSBC balances only through the shared
+ *   fail-closed direct-cash or structured-settlement evidence boundary.
+ * - Changed: Loads the fail-closed direct-cash evidence revision.
+ * - Changed: Loads the bounded HSBC history-evidence projection revision.
+ * - Fixed: The history projector accepts trailing settlement fees only from
+ *   the principal boundary's exact immutable cash-evidence domain.
+ * - Fixed: HSBC settled sell cash deferral uses the same evidenced net cash
+ *   amount as its principal and fee settlement postings.
+ * - Fixed: Replay rows retain a non-enumerable HSBC cash-scope ledger so
+ *   settlement corrections never consume another same-currency subaccount.
+ * - Fixed: Transaction History retains chronologically valid HSBC settlement
+ *   cash across same-day transfer presentation reordering.
  * - Added: Dated broker interest-accrual NAV boundaries are applied after
  *   every cash and position projection, only on their statement as-of date.
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.0.0';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.5';
+
+export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+export function resolveInvestmentEvidenceSafeCashDelta(
+    cashDelta,
+    {hasPhysicalEvidenceConflict = false} = {},
+) {
+    if (hasPhysicalEvidenceConflict) return 0;
+    const numericValue = Number(cashDelta);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+}
 
 export function createInvestmentTransactionTableRuntime(runtime) {
 async function renderTransactionTable(transactions, { preserveHistoryPage = false, scrollToTop = true } = {}) {
@@ -68,6 +99,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
         aggregateLedgerState.cashScopeLedger = runtime.createInvestmentCashScopeLedger(
             aggregateLedgerState.cashBalances,
         );
+        let hasConflictingHsbcDirectCashEvidence = () => false;
         const moneyMarketTickers = runtime.getMoneyMarketTickerSet();
         const priceHistoryRows = window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {};
         const priceHistoryFailures = window.WORTHWARD_INVESTMENT_DATA?.price_history_failures || [];
@@ -75,7 +107,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
         const tickerPriceIndex = runtime.buildTickerPriceIndex(tickerClosePrices);
         const lastKnownTickerPrices = {};
 
-        let orderedTransactions = [...transactions].sort((left, right) => runtime.compareInvestmentTransactionsForReplay(left, right));
+        let orderedTransactions = runtime.sortInvestmentTransactionsForReplay(transactions);
         // Transfer keys come from immutable imported record fields.  Establish
         // them before replay so the server's reconciliation is the only source
         // of truth for aggregate-only exclusions.
@@ -254,7 +286,9 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
         }
 
         function applyCashStateUpdate(state, transactionCurrency, cashDelta, ledgerDate, txn = null) {
-            const boundary = runtime.getInvestmentCashBalanceBoundary(txn);
+            const boundary = hasConflictingHsbcDirectCashEvidence(txn)
+                ? null
+                : runtime.getInvestmentCashBalanceBoundary(txn);
             if (boundary) {
                 runtime.setInvestmentCashScopeBoundary(state.cashScopeLedger, boundary);
             } else {
@@ -270,14 +304,18 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             ledgerDate = '',
             txn = null,
         ) {
-            const normalizedCash = Number(authoritativeCash);
-            if (!Number.isFinite(normalizedCash)) return;
+            const normalizedCash = normalizeInvestmentAuthoritativeCashBoundaryAmount(
+                authoritativeCash,
+            );
+            if (normalizedCash === null) return;
             const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
-            const boundary = runtime.getInvestmentCashBalanceBoundary(txn);
+            const boundary = hasConflictingHsbcDirectCashEvidence(txn)
+                ? null
+                : runtime.getInvestmentCashBalanceBoundary(txn);
             if (boundary) {
                 runtime.setInvestmentCashScopeBoundary(state.cashScopeLedger, {
                     ...boundary,
-                    balance: Math.max(0, normalizedCash),
+                    balance: normalizedCash,
                 });
             } else {
                 runtime.setInvestmentCashScopeAggregateBalance(
@@ -377,6 +415,14 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                 const futureSettlementCash = Number(
                     hsbcFutureSettlementCashByTransactionIndex.get(transactionIndex),
                 );
+                if (normalizedType === 'sell') {
+                    const evidencedTradeCash = Number(
+                        runtime.getTransactionEvidencedTradeCashAmount(txn),
+                    );
+                    if (Number.isFinite(evidencedTradeCash)) {
+                        cashDelta = evidencedTradeCash;
+                    }
+                }
                 if (
                     Number.isFinite(futureSettlementCash)
                     && Math.abs(futureSettlementCash) > 1e-9
@@ -501,6 +547,55 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
         }
 
         const cashFundingAdjustments = buildInvestmentCashFundingAdjustments(orderedTransactions);
+        const {
+            getHsbcSettlementScopeKey,
+            isAuthoritativeHsbcCashTransaction,
+            getValidatedHsbcAvailableCashAfter,
+            getHsbcDirectCashPhysicalEvidenceIdentity,
+            addCashBalanceCorrection,
+            applyCashBalanceCorrection,
+            getCashCorrectionInBaseCurrency,
+            getAdjustedReplayCash,
+            buildHsbcSettlementReplaySnapshots,
+            getHsbcHistorySettlementCashBoundary,
+            setHsbcHistoryCashBoundary,
+            getHsbcHistorySettlementCashDeltas,
+            applyHsbcHistoryPresentationProjection,
+            roundInvestmentHistoryCash,
+            getInvestmentHistoryCashScopeKey,
+            applyIbkrHistoryPresentationProjection,
+            applyAuthoritativeCurrentBrokerHistoryBoundary,
+        } = createInvestmentHistoryProjectionRuntime(runtime, {
+            baseCurrency,
+            calculateInvestmentCashDelta,
+            cashFundingAdjustments,
+            fxTimeline,
+        });
+        const hsbcDirectCashIdentityCounts = new Map();
+        orderedTransactions.forEach((txn) => {
+            const physicalIdentity = getHsbcDirectCashPhysicalEvidenceIdentity(
+                txn,
+            );
+            if (!physicalIdentity) return;
+            hsbcDirectCashIdentityCounts.set(
+                physicalIdentity,
+                (hsbcDirectCashIdentityCounts.get(physicalIdentity) || 0) + 1,
+            );
+        });
+        const conflictingHsbcDirectCashPhysicalIdentities = new Set(
+            [...hsbcDirectCashIdentityCounts.entries()]
+                .filter(([, count]) => count > 1)
+                .map(([physicalIdentity]) => physicalIdentity),
+        );
+        hasConflictingHsbcDirectCashEvidence = (txn) => {
+            const physicalIdentity = getHsbcDirectCashPhysicalEvidenceIdentity(
+                txn,
+            );
+            return Boolean(
+                physicalIdentity
+                && conflictingHsbcDirectCashPhysicalIdentities.has(physicalIdentity)
+            );
+        };
         const hsbcSettlementDatesWithSameDayPosting = new Set();
         orderedTransactions.forEach((txn) => {
             if (runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) !== 'hsbc') return;
@@ -625,13 +720,26 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
 
             const ledgerDate = runtime.normalizeLedgerDate(txn?.date);
             const transactionCurrency = runtime.formatTransactionCurrency(txn) || runtime.getTickerQuoteCurrency(txn?.ticker) || baseCurrency;
-            const cashDelta = calculateInvestmentCashDelta(txn, processedIndex)
-                + (Number(cashFundingAdjustments.get(processedIndex)) || 0);
-            const pendingSettlementDelta = calculatePendingSettlementCashDelta(txn);
-            const sourceBoundedPendingSettlementCashForRow = Number(
-                pendingSettlementCashByIndex[processedIndex],
-            ) || 0;
-            const cashBoundary = runtime.getInvestmentCashBalanceBoundary(txn);
+            const hasDirectCashEvidenceConflict = (
+                hasConflictingHsbcDirectCashEvidence(txn)
+            );
+            const cashDelta = resolveInvestmentEvidenceSafeCashDelta(
+                calculateInvestmentCashDelta(txn, processedIndex)
+                    + (Number(cashFundingAdjustments.get(processedIndex)) || 0),
+                {hasPhysicalEvidenceConflict: hasDirectCashEvidenceConflict},
+            );
+            const pendingSettlementDelta = resolveInvestmentEvidenceSafeCashDelta(
+                calculatePendingSettlementCashDelta(txn),
+                {hasPhysicalEvidenceConflict: hasDirectCashEvidenceConflict},
+            );
+            const sourceBoundedPendingSettlementCashForRow = (
+                hasDirectCashEvidenceConflict
+                    ? 0
+                    : Number(pendingSettlementCashByIndex[processedIndex]) || 0
+            );
+            const cashBoundary = hasDirectCashEvidenceConflict
+                ? null
+                : runtime.getInvestmentCashBalanceBoundary(txn);
             applyCashStateUpdate(brokerLedgerState, transactionCurrency, cashDelta, ledgerDate, txn);
             if (cashBoundary) {
                 rebuildAggregateCashState(ledgerDate);
@@ -664,9 +772,19 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                 || !transactionDate
                 || transactionDate >= cashSettlementDate
             );
-            const settlementBalanceAfter = hasReachedCashSettlementDate
-                ? txn?.source?.cash_settlement_balance_after_raw
-                : undefined;
+            const validatedSettlementBoundary = getHsbcHistorySettlementCashBoundary(txn);
+            const validatedAvailableCashAfter = (
+                hasWindowedAvailableCash
+                && !hasDirectCashEvidenceConflict
+            )
+                ? getValidatedHsbcAvailableCashAfter(txn)
+                : null;
+            const settlementBalanceAfter = (
+                hasReachedCashSettlementDate
+                && validatedSettlementBoundary
+                && runtime.normalizeLedgerDate(validatedSettlementBoundary.settlementDate)
+                    === cashSettlementDate
+            ) ? validatedSettlementBoundary.balanceAfter : undefined;
             const shouldSkipSavingsBalanceAfter = (
                 runtime.normalizeInvestmentBroker(brokerCode) === 'hsbc'
                 && String(txn?.source?.file_kind || '').trim().toLowerCase() === 'hsbc_usd_savings_csv'
@@ -675,23 +793,21 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             const bankBalanceAfter = shouldSkipSavingsBalanceAfter
                 ? undefined
                 : (
-                    txn?.source?.cash_balance_authoritative === true
-                    || txn?.source?.file_kind === 'hsbc_usd_account_text'
+                    !hasDirectCashEvidenceConflict
+                    && isAuthoritativeHsbcCashTransaction(txn)
                 )
                     ? txn?.source?.balance_after_raw
                     : undefined;
-            const authoritativeHsbcCashAfter = Number(
+            const authoritativeHsbcCashAfter = runtime.getOptionalInvestmentNumber(
                 (
-                    hasWindowedAvailableCash
-                        ? txn?.source?.available_cash_after_raw
-                        : undefined
+                    validatedAvailableCashAfter
                 )
                 ?? settlementBalanceAfter
                 ?? bankBalanceAfter
             );
             if (
                 runtime.normalizeInvestmentBroker(brokerCode) === 'hsbc'
-                && Number.isFinite(authoritativeHsbcCashAfter)
+                && authoritativeHsbcCashAfter !== null
             ) {
                 applyAuthoritativeCashBalance(
                     brokerLedgerState,
@@ -729,8 +845,9 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             const aggregateDisplayCash = aggregateLedgerState.runningCash + sourceBoundedPendingSettlementCashForRow;
             const aggregateCashByCurrency = runtime.cloneCashLedgerBalances(aggregateLedgerState.cashBalances);
             const brokerCashByCurrency = runtime.cloneCashLedgerBalances(brokerLedgerState.cashBalances);
-            return {
+            const processedTxn = {
                 ...txn,
+                cash_balance_evidence_conflict: hasDirectCashEvidenceConflict,
                 broker: brokerCode,
                 ledger_no: processedIndex + 1,
                 running_cash: aggregateLedgerState.runningCash,
@@ -751,6 +868,23 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                 broker_holdings: { ...brokerLedgerState.holdings },
                 broker_money_market_anchors: { ...brokerLedgerState.moneyMarketAnchors },
             };
+            Object.defineProperty(processedTxn, 'calculated_broker_cash_scope_ledger', {
+                configurable: true,
+                enumerable: false,
+                value: {
+                    unscopedBalances: {
+                        ...(brokerLedgerState.cashScopeLedger?.unscopedBalances || {}),
+                    },
+                    scopedBalances: {
+                        ...(brokerLedgerState.cashScopeLedger?.scopedBalances || {}),
+                    },
+                    scopedCurrencies: {
+                        ...(brokerLedgerState.cashScopeLedger?.scopedCurrencies || {}),
+                    },
+                },
+                writable: true,
+            });
+            return processedTxn;
         });
         processed.forEach((txn, processedIndex) => {
             Object.defineProperty(txn, runtime.INVESTMENT_REPLAY_ORDER_SYMBOL, {
@@ -1019,29 +1153,6 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                 latestProcessed.broker_holdings = {...aggregateHoldings};
             }
         }
-
-        const {
-            getHsbcSettlementScopeKey,
-            isAuthoritativeHsbcCashTransaction,
-            addCashBalanceCorrection,
-            applyCashBalanceCorrection,
-            getCashCorrectionInBaseCurrency,
-            getAdjustedReplayCash,
-            buildHsbcSettlementReplaySnapshots,
-            getHsbcHistorySettlementCashBoundary,
-            setHsbcHistoryCashBoundary,
-            getHsbcHistorySettlementCashDeltas,
-            applyHsbcHistoryPresentationProjection,
-            roundInvestmentHistoryCash,
-            getInvestmentHistoryCashScopeKey,
-            applyIbkrHistoryPresentationProjection,
-            applyAuthoritativeCurrentBrokerHistoryBoundary,
-        } = createInvestmentHistoryProjectionRuntime(runtime, {
-            baseCurrency,
-            calculateInvestmentCashDelta,
-            cashFundingAdjustments,
-            fxTimeline,
-        });
 
         runtime.applyAuthoritativeBrokerEndingCashBalances(processed);
         applyAuthoritativeBrokerPositionSnapshots(processed);

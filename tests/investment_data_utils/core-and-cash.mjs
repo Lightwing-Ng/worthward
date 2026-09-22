@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.3.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -31,6 +31,8 @@ import {
     compareInvestmentTaxLotTransactions,
     compareInvestmentTransactions,
     compareInvestmentTransactionsForReplay,
+    sortInvestmentTransactionsForReplay,
+    sortInvestmentTaxLotTransactions,
     buildValuationStatus,
     normalizePriceHistoryPayload,
     sumKolRewardRealizedIncomeInBaseCurrency,
@@ -64,6 +66,7 @@ import {
     getInvestmentInternalTransferAggregateBridgeAmount,
     getInvestmentInternalTransferAggregateBridgeDelta,
     getTransactionEconomicAmount,
+    getTransactionEvidencedTradeCashAmount,
     getTransactionRenderedSplitFactor,
     getTransactionValuationQuantity,
     getLongbridgeHkCashEquivalentSyntheticTicker,
@@ -77,6 +80,11 @@ import {
     makeScopedDramTrade,
     setDramTestWindow,
 } from './context.mjs';
+
+const HSBC_SEQUENCE_SHA_A = 'a'.repeat(64);
+const HSBC_SEQUENCE_SHA_B = 'b'.repeat(64);
+const HSBC_SEQUENCE_SHA_C = 'c'.repeat(64);
+const HSBC_SEQUENCE_SHA_D = 'd'.repeat(64);
 
 test('optional Investment numbers preserve unavailable values instead of coercing zero', () => {
     for (const value of [null, undefined, '', '   ', Number.NaN, Number.POSITIVE_INFINITY]) {
@@ -332,23 +340,331 @@ test('replay comparator uses ledger booking date before execution timestamp', ()
     assert.ok(compareInvestmentTransactionsForReplay(laterSameDayRow, bookingDateRow) < 0);
 });
 
-test('HSBC USD Savings CSV rows keep newest-first source rows in chronological replay order', () => {
+test('HSBC USD Savings CSV rows use the importer chronological ledger sequence', () => {
     const olderSourceRow = {
         broker: 'hsbc',
+        account: 'HSBC-TEST',
+        account_type: 'USD Savings',
         date: '2026-06-24',
         datetime: '2026-06-24 20:00:00',
         type: 'deposit',
         currency: 'USD',
         net_amount_raw: '2200.88',
-        source: {file_kind: 'hsbc_usd_savings_csv', row_number: 90, ledger_sequence: 90},
+        normalized: {net_amount: '2200.88'},
+        source: {
+            account_type: 'USD Savings',
+            balance_after_raw: '2200.88',
+            cash_balance_authoritative: true,
+            cash_balance_scope: 'account',
+            file_kind: 'hsbc_usd_savings_csv',
+            row_number: 90,
+            ledger_sequence: 1,
+            ledger_sequence_order: 'chronological',
+            source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+        },
     };
     const newerSourceRow = {
         ...olderSourceRow,
         net_amount_raw: '2948.41',
-        source: {file_kind: 'hsbc_usd_savings_csv', row_number: 89, ledger_sequence: 89},
+        normalized: {net_amount: '2948.41'},
+        source: {
+            ...olderSourceRow.source,
+            balance_after_raw: '5149.29',
+            file_kind: 'hsbc_usd_savings_csv',
+            row_number: 89,
+            ledger_sequence: 2,
+            source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+        },
     };
-    assert.ok(compareInvestmentTransactionsForReplay(olderSourceRow, newerSourceRow) < 0);
-    assert.ok(compareInvestmentTransactionsForReplay(newerSourceRow, olderSourceRow) > 0);
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([newerSourceRow, olderSourceRow]),
+        [olderSourceRow, newerSourceRow],
+    );
+});
+
+test('pasted HSBC cash rows follow their chronological ledger sequence', () => {
+    for (const fileKind of [
+        'hsbc_usd_account_text',
+        'hsbc_multi_currency_cash_account_text',
+    ]) {
+        const earlierPosting = {
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            account_type: fileKind === 'hsbc_usd_account_text'
+                ? 'USD Savings'
+                : 'HKD Savings',
+            date: '2026-09-19',
+            datetime: '2026-09-19 20:00:00',
+            type: 'withdrawal',
+            currency: fileKind === 'hsbc_usd_account_text' ? 'USD' : 'HKD',
+            net_amount_raw: '-10',
+            normalized: {net_amount: '-10'},
+            source: {
+                account_type: fileKind === 'hsbc_usd_account_text'
+                    ? 'USD Savings'
+                    : 'HKD Savings',
+                balance_after_raw: '90',
+                cash_balance_authoritative: fileKind === 'hsbc_usd_account_text',
+                cash_balance_scope: 'account',
+                file_kind: fileKind,
+                row_number: 49,
+                ledger_sequence: 49,
+                source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+            },
+        };
+        const laterPosting = {
+            ...earlierPosting,
+            type: 'deposit',
+            net_amount_raw: '20',
+            normalized: {net_amount: '20'},
+            source: {
+                ...earlierPosting.source,
+                balance_after_raw: '110',
+                file_kind: fileKind,
+                row_number: 50,
+                ledger_sequence: 50,
+                source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+            },
+        };
+        assert.deepEqual(
+            sortInvestmentTransactionsForReplay([laterPosting, earlierPosting]),
+            [earlierPosting, laterPosting],
+        );
+    }
+});
+
+test('HSBC cash sequence ordering never crosses cash-scope or source domains', () => {
+    const makeCashRow = ({
+        account = 'HSBC-TEST',
+        accountType = 'USD Savings',
+        currency = 'USD',
+        fileKind = 'hsbc_usd_account_text',
+        sequenceSha256 = HSBC_SEQUENCE_SHA_A,
+        type,
+        sequence,
+        amount,
+    }) => ({
+        broker: 'hsbc',
+        account,
+        account_type: accountType,
+        date: '2026-09-19',
+        datetime: '2026-09-19 20:00:00',
+        type,
+        currency,
+        net_amount_raw: String(amount),
+        normalized: {net_amount: String(amount)},
+        source: {
+            account_type: accountType,
+            balance_after_raw: '100',
+            cash_balance_authoritative: [
+                'hsbc_usd_account_text',
+                'hsbc_usd_savings_csv',
+            ].includes(fileKind),
+            cash_balance_scope: 'account',
+            file_kind: fileKind,
+            ledger_sequence: sequence,
+            row_number: sequence,
+            source_sequence_sha256: sequenceSha256,
+            ...(fileKind === 'hsbc_usd_savings_csv'
+                ? {ledger_sequence_order: 'chronological'}
+                : {}),
+        },
+    });
+    const deposit = makeCashRow({type: 'deposit', sequence: 99, amount: 20});
+    const withdrawal = makeCashRow({type: 'withdrawal', sequence: 1, amount: -10});
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([deposit, withdrawal]),
+        [withdrawal, deposit],
+    );
+
+    for (const isolatedWithdrawal of [
+        {...withdrawal, account_type: 'Foreign Currency Savings USD'},
+        {...withdrawal, currency: 'HKD'},
+        {
+            ...withdrawal,
+            source: {...withdrawal.source, source_sequence_sha256: HSBC_SEQUENCE_SHA_B},
+        },
+        {...withdrawal, account: ''},
+    ]) {
+        const forward = compareInvestmentTransactionsForReplay(
+            deposit,
+            isolatedWithdrawal,
+            7,
+            2,
+        );
+        const reverse = compareInvestmentTransactionsForReplay(
+            isolatedWithdrawal,
+            deposit,
+            2,
+            7,
+        );
+        assert.equal(forward, 5);
+        assert.equal(forward, -reverse);
+    }
+
+    const sameTypeSameAmount = {
+        ...deposit,
+        source: {...deposit.source, row_number: 1, ledger_sequence: 1},
+    };
+    for (const [left, incomparableDeposit] of [
+        [
+            deposit,
+            {
+                ...sameTypeSameAmount,
+                source: {
+                    ...sameTypeSameAmount.source,
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_B,
+                },
+            },
+        ],
+        [deposit, {...sameTypeSameAmount, account_type: 'Foreign Currency Savings USD'}],
+        [deposit, {...sameTypeSameAmount, currency: 'HKD'}],
+        [deposit, {...sameTypeSameAmount, account: ''}],
+        [deposit, {...sameTypeSameAmount, account_type: ''}],
+        [deposit, {...sameTypeSameAmount, currency: ''}],
+        [
+            {...deposit, source: {...deposit.source, source_sequence_sha256: ''}},
+            {
+                ...sameTypeSameAmount,
+                source: {...sameTypeSameAmount.source, source_sequence_sha256: ''},
+            },
+        ],
+    ]) {
+        const forward = compareInvestmentTransactionsForReplay(
+            left,
+            incomparableDeposit,
+            7,
+            2,
+        );
+        const reverse = compareInvestmentTransactionsForReplay(
+            incomparableDeposit,
+            left,
+            2,
+            7,
+        );
+        assert.notEqual(forward, 0);
+        assert.equal(forward, -reverse);
+    }
+
+    const sequenceTwo = makeCashRow({
+        type: 'deposit', sequence: 2, amount: 20,
+    });
+    const sequenceOne = makeCashRow({
+        type: 'deposit', sequence: 1, amount: 20,
+    });
+    const foreignDomain = makeCashRow({
+        accountType: 'USD Current',
+        type: 'deposit',
+        sequence: 1,
+        amount: 20,
+    });
+    const sorted = sortInvestmentTransactionsForReplay([
+        sequenceTwo,
+        foreignDomain,
+        sequenceOne,
+    ]);
+    assert.deepEqual(sorted, [sequenceOne, foreignDomain, sequenceTwo]);
+
+    const aliasConflicts = [
+        {
+            ...sequenceTwo,
+            source: {...sequenceTwo.source, source_file_sha256: HSBC_SEQUENCE_SHA_B},
+        },
+        {
+            ...sequenceTwo,
+            source: {...sequenceTwo.source, account_number: 'HSBC-OTHER'},
+        },
+        {
+            ...sequenceTwo,
+            source: {...sequenceTwo.source, statement_currency_raw: 'HKD'},
+        },
+        {...sequenceTwo, amount: '99', cash: '99'},
+        {
+            ...sequenceTwo,
+            source: {...sequenceTwo.source, broker: 'ibkr'},
+        },
+        {
+            ...sequenceTwo,
+            source: {
+                ...sequenceTwo.source,
+                statement_pdf_source_row_number: 99,
+            },
+        },
+        {...sequenceTwo, date: '2026-02-31'},
+    ];
+    aliasConflicts.forEach((conflictingRow) => {
+        assert.deepEqual(
+            sortInvestmentTransactionsForReplay([conflictingRow, sequenceOne]),
+            [conflictingRow, sequenceOne],
+        );
+    });
+
+    const firstCapture = makeCashRow({
+        type: 'deposit', sequence: 1, amount: 20, sequenceSha256: HSBC_SEQUENCE_SHA_C,
+    });
+    const secondCapture = makeCashRow({
+        type: 'deposit', sequence: 1, amount: 20, sequenceSha256: HSBC_SEQUENCE_SHA_D,
+    });
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([firstCapture, secondCapture]),
+        [firstCapture, secondCapture],
+    );
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([secondCapture, firstCapture]),
+        [secondCapture, firstCapture],
+    );
+
+    const sameTimeOrder = {
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date: '2026-09-19',
+        datetime: '2026-09-19 20:00:00',
+        type: 'buy',
+        ticker: 'QQQI',
+        source: {file_kind: 'hsbc_order_status_text', row_number: 3},
+    };
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([sequenceTwo, sameTimeOrder, sequenceOne]),
+        [sequenceOne, sameTimeOrder, sequenceTwo],
+    );
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([sameTimeOrder, sequenceTwo, sequenceOne]),
+        [sameTimeOrder, sequenceOne, sequenceTwo],
+    );
+
+    const schwabSell = {
+        broker: 'schwab', account: 'SCHWAB-TEST', date: '2026-09-19',
+        datetime: '2026-09-19 20:00:00', type: 'sell', ticker: 'QQQI',
+        source: {same_day_execution_sequence: 2},
+    };
+    const schwabBuy = {
+        ...schwabSell,
+        type: 'buy',
+        source: {same_day_execution_sequence: 1},
+    };
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([sequenceOne, schwabSell, schwabBuy]),
+        [sequenceOne, schwabBuy, schwabSell],
+    );
+
+    const ibkrBuy = {
+        broker: 'ibkr', account: 'IBKR-TEST', date: '2026-09-19',
+        datetime: '2026-09-19 20:00:00', type: 'buy', ticker: 'BOXX', source: {},
+    };
+    const permutations = [
+        [schwabBuy, schwabSell, ibkrBuy],
+        [schwabBuy, ibkrBuy, schwabSell],
+        [schwabSell, schwabBuy, ibkrBuy],
+        [schwabSell, ibkrBuy, schwabBuy],
+        [ibkrBuy, schwabBuy, schwabSell],
+        [ibkrBuy, schwabSell, schwabBuy],
+    ];
+    const canonicalNonCashOrder = sortInvestmentTransactionsForReplay(permutations[0]);
+    permutations.forEach((permutation) => {
+        const ordered = sortInvestmentTransactionsForReplay(permutation);
+        assert.deepEqual(ordered, canonicalNonCashOrder);
+        assert.ok(ordered.indexOf(schwabBuy) < ordered.indexOf(schwabSell));
+    });
 });
 
 test('HSBC date-only orders retain source-page execution order after SEC settlement enrichment', () => {
@@ -380,12 +696,14 @@ test('HSBC date-only orders retain source-page execution order after SEC settlem
         },
     };
 
-    assert.ok(compareInvestmentTransactions(purchase, sale) < 0);
-    assert.ok(compareInvestmentTransactionsForReplay(purchase, sale) < 0);
-    assert.ok(compareInvestmentTaxLotTransactions(purchase, sale) < 0);
-    assert.ok(compareInvestmentTransactions(sale, purchase) > 0);
-    assert.ok(compareInvestmentTransactionsForReplay(sale, purchase) > 0);
-    assert.ok(compareInvestmentTaxLotTransactions(sale, purchase) > 0);
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([sale, purchase]),
+        [purchase, sale],
+    );
+    assert.deepEqual(
+        sortInvestmentTaxLotTransactions([sale, purchase]),
+        [purchase, sale],
+    );
 });
 
 test('Schwab date-only trades retain explicit same-day execution sequence', () => {
@@ -417,9 +735,14 @@ test('Schwab date-only trades retain explicit same-day execution sequence', () =
         },
     };
 
-    assert.ok(compareInvestmentTransactions(buy, sell) < 0);
-    assert.ok(compareInvestmentTransactionsForReplay(buy, sell) < 0);
-    assert.ok(compareInvestmentTaxLotTransactions(buy, sell) < 0);
+    assert.deepEqual(
+        sortInvestmentTransactionsForReplay([sell, buy]),
+        [buy, sell],
+    );
+    assert.deepEqual(
+        sortInvestmentTaxLotTransactions([sell, buy]),
+        [buy, sell],
+    );
 });
 
 test('tax-lot order keeps a Schwab same-day pair ordered among other brokers at the same time', () => {
@@ -462,8 +785,52 @@ test('tax-lot order keeps a Schwab same-day pair ordered among other brokers at 
         [schwabSell, ...hsbcRows, schwabBuy],
         [schwabSell, schwabBuy, ...hsbcRows].reverse(),
     ].forEach((rows) => {
-        const ordered = [...rows].sort((left, right) => compareInvestmentTaxLotTransactions(left, right));
+        const ordered = sortInvestmentTaxLotTransactions(rows);
         assert.ok(ordered.indexOf(schwabBuy) < ordered.indexOf(schwabSell));
+    });
+});
+
+test('tax-lot ordering keeps partial HSBC execution sequences transitive across every permutation', () => {
+    const makeOrder = ({id, rowNumber, sequence = null, type = 'buy'}) => ({
+        id,
+        broker: 'hsbc',
+        account: '000-999999-999',
+        currency: 'USD',
+        date: '2026-08-24',
+        datetime: '2026-08-24 20:00:00',
+        type,
+        ticker: 'DRAM',
+        source: {
+            file_kind: sequence === null ? 'manual_transfer' : 'hsbc_order_status_text',
+            row_number: rowNumber,
+            ...(sequence === null ? {} : {
+                order_status_source_row_number: sequence,
+                order_status_page_order: 'oldest_first',
+            }),
+        },
+    });
+    const first = makeOrder({id: 'first', rowNumber: 3, sequence: 1});
+    const unsequenced = makeOrder({id: 'unsequenced', rowNumber: 2, type: 'transfer_in'});
+    const second = makeOrder({id: 'second', rowNumber: 1, sequence: 2, type: 'sell'});
+    const permutations = [
+        [first, unsequenced, second],
+        [first, second, unsequenced],
+        [unsequenced, first, second],
+        [unsequenced, second, first],
+        [second, first, unsequenced],
+        [second, unsequenced, first],
+    ];
+    permutations.forEach((rows) => {
+        assert.deepEqual(
+            sortInvestmentTaxLotTransactions(rows).map((row) => row.id),
+            ['first', 'unsequenced', 'second'],
+        );
+        assert.deepEqual(
+            [...rows]
+                .sort((left, right) => compareInvestmentTaxLotTransactions(left, right))
+                .map((row) => row.id),
+            ['first', 'second', 'unsequenced'],
+        );
     });
 });
 
@@ -524,6 +891,9 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
             type: 'buy',
             ticker: 'BOXX',
             currency: 'USD',
+            net_amount_raw: '-900.00',
+            commission_raw: '0',
+            normalized: {commission: '0', net_amount: '-900.00'},
             source: {
                 file_kind: 'hsbc_order_status_text',
                 statement_order_id: 'P-1',
@@ -537,6 +907,11 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
                     row_number: 42,
                     ledger_sequence: 42,
                     currency: 'USD',
+                    account_number: 'HSBC-TEST',
+                    account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_account_text',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF P1001 SEC',
                     role: 'principal',
                 }],
             },
@@ -548,6 +923,9 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
             type: 'buy',
             ticker: 'EUV',
             currency: 'USD',
+            net_amount_raw: '-100.00',
+            commission_raw: '0',
+            normalized: {commission: '0', net_amount: '-100.00'},
             source: {
                 file_kind: 'hsbc_order_status_text',
                 statement_order_id: 'P-2',
@@ -561,6 +939,11 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
                     row_number: 43,
                     ledger_sequence: 43,
                     currency: 'USD',
+                    account_number: 'HSBC-TEST',
+                    account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_account_text',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF P2001 SEC',
                     role: 'principal',
                 }],
             },
@@ -584,6 +967,322 @@ test('future HSBC settlement cash becomes ordered non-transaction boundaries', (
     assert.ok(boundaries.every((boundary) => !('ticker' in boundary)));
     assert.ok(boundaries.every((boundary) => !('description' in boundary)));
     assert.ok(boundaries.every((boundary) => !('ledger_no' in boundary)));
+    assert.ok(boundaries.every((boundary) => (
+        boundary.cashScopeKey === 'HSBC|HSBC-TEST|SAVINGS|USD'
+    )));
+    assert.ok(boundaries.every((boundary) => (
+        boundary.sourceSequenceSha256 === HSBC_SEQUENCE_SHA_A
+    )));
+});
+
+test('blank HSBC fee balances remain unavailable while the fee cash leg is retained', () => {
+    const boundaries = buildHsbcCashSettlementBoundaryPlan([{
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        account_type: 'USD Savings',
+        date: '2026-09-17',
+        type: 'sell',
+        ticker: 'QQQI',
+        currency: 'USD',
+        net_amount_raw: '200',
+        commission_raw: '-0.01',
+        normalized: {commission: '-0.01'},
+        source: {
+            file_kind: 'hsbc_order_status_text',
+            statement_order_id: 'S-100001',
+            cash_settlement_date: '2026-09-18',
+            cash_settlement_amount_raw: '200',
+            cash_settlement_postings: [
+                {
+                    date: '2026-09-18', amount_raw: '200', balance_after_raw: '1200',
+                    row_number: 44, ledger_sequence: 44, currency: 'USD',
+                    account_number: 'HSBC-TEST', account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_account_text',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF S100001001 SEC', role: 'principal',
+                },
+                {
+                    date: '2026-09-18', amount_raw: '-0.01', balance_after_raw: '',
+                    row_number: 45, ledger_sequence: 45, currency: 'USD',
+                    account_number: 'HSBC-TEST', account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_account_text',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF S100001001 SEC', role: 'fee',
+                },
+            ],
+        },
+    }]);
+
+    assert.deepEqual(
+        boundaries.map((boundary) => [
+            boundary.role,
+            boundary.settlementAmount,
+            boundary.settlementBalanceAfter,
+        ]),
+        [
+            ['principal', 200, 1200],
+            ['fee', -0.01, null],
+        ],
+    );
+});
+
+test('HSBC settlement evidence closes physical-row aliases and same-day ownership', () => {
+    const makeSell = ({
+        account = 'HSBC-TEST',
+        netAmount = '200',
+        principalAmount = '200',
+        sourceFileKind = 'hsbc_usd_account_text',
+        tradeDate = '2026-09-17',
+        settlementDate = '2026-09-18',
+    } = {}) => ({
+        broker: 'hsbc',
+        account,
+        date: tradeDate,
+        type: 'sell',
+        ticker: 'QQQI',
+        currency: 'USD',
+        net_amount_raw: netAmount,
+        commission_raw: '-0.01',
+        normalized: {commission: '-0.01', net_amount: netAmount},
+        source: {
+            file_kind: 'hsbc_order_status_text',
+            statement_order_id: 'S-100001',
+            cash_settlement_date: settlementDate,
+            cash_settlement_amount_raw: principalAmount,
+            cash_settlement_postings: [
+                {
+                    date: settlementDate, amount_raw: principalAmount,
+                    balance_after_raw: '1200', row_number: 44,
+                    ledger_sequence: 44, currency: 'USD', account_number: account,
+                    account_type: 'USD Savings', source_file_kind: sourceFileKind,
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF S100001001 SEC', role: 'principal',
+                },
+                {
+                    date: settlementDate, amount_raw: '-0.01',
+                    balance_after_raw: '1199.99', row_number: 45,
+                    ledger_sequence: 45, currency: 'USD', account_number: account,
+                    account_type: 'USD Savings', source_file_kind: sourceFileKind,
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    reference: 'REF S100001001 SEC', role: 'fee',
+                },
+            ],
+        },
+    });
+
+    const sameDay = makeSell({
+        tradeDate: '2026-09-18',
+        settlementDate: '2026-09-18',
+    });
+    assert.deepEqual(
+        buildHsbcCashSettlementBoundaryPlan([sameDay]).map((boundary) => boundary.role),
+        ['principal', 'fee'],
+    );
+    assert.equal(getTransactionEvidencedTradeCashAmount(sameDay), 199.99);
+
+    const legacyScalarOnly = makeSell();
+    delete legacyScalarOnly.source.cash_settlement_postings;
+    assert.deepEqual(buildHsbcCashSettlementBoundaryPlan([legacyScalarOnly]), []);
+
+    const missingStatementOwner = makeSell({sourceFileKind: 'hsbc_statement_cash'});
+    delete missingStatementOwner.source.statement_order_id;
+    assert.deepEqual(buildHsbcCashSettlementBoundaryPlan([missingStatementOwner]), []);
+    assert.equal(getTransactionEvidencedTradeCashAmount(missingStatementOwner), 200);
+
+    const mismatchedStatementRowAlias = makeSell({
+        sourceFileKind: 'hsbc_statement_cash',
+    });
+    mismatchedStatementRowAlias.source.cash_settlement_postings[1]
+        .statement_pdf_source_row_number = 99;
+    assert.deepEqual(
+        buildHsbcCashSettlementBoundaryPlan([mismatchedStatementRowAlias]),
+        [],
+    );
+    assert.equal(
+        getTransactionEvidencedTradeCashAmount(mismatchedStatementRowAlias),
+        200,
+    );
+
+    const invalidCalendarDate = makeSell({settlementDate: '2026-99-99'});
+    assert.deepEqual(buildHsbcCashSettlementBoundaryPlan([invalidCalendarDate]), []);
+    assert.equal(getTransactionEvidencedTradeCashAmount(invalidCalendarDate), 200);
+
+    for (const [label, mutate] of [
+        ['unsupported account type', (transaction) => {
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                posting.account_type = 'Mystery';
+            });
+        }],
+        ['unsupported currency', (transaction) => {
+            transaction.currency = 'DOGE';
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                posting.currency = 'DOGE';
+                posting.account_type = 'Savings';
+            });
+        }],
+        ['USD file kind with HKD currency', (transaction) => {
+            transaction.currency = 'HKD';
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                posting.currency = 'HKD';
+                posting.account_type = 'Savings';
+            });
+        }],
+        ['missing source settlement amount', (transaction) => {
+            delete transaction.source.cash_settlement_amount_raw;
+        }],
+        ['mismatched source settlement amount', (transaction) => {
+            transaction.source.cash_settlement_amount_raw = '201';
+        }],
+        ['principal differs below binary tolerance', (transaction) => {
+            transaction.source.cash_settlement_postings[0].amount_raw = '200.0000005';
+        }],
+        ['missing canonical posting amount', (transaction) => {
+            const posting = transaction.source.cash_settlement_postings[0];
+            posting.amount = posting.amount_raw;
+            delete posting.amount_raw;
+        }],
+        ['missing canonical posting balance', (transaction) => {
+            const posting = transaction.source.cash_settlement_postings[0];
+            posting.balance_after = posting.balance_after_raw;
+            delete posting.balance_after_raw;
+        }],
+        ['missing every cash balance', (transaction) => {
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                delete posting.balance_after_raw;
+            });
+        }],
+        ['invalid sequence-order marker', (transaction) => {
+            transaction.source.cash_settlement_postings[1]
+                .ledger_sequence_order = 'reverse';
+        }],
+        ['mixed sequence-order domain', (transaction) => {
+            transaction.source.cash_settlement_postings[1]
+                .ledger_sequence_order = 'chronological';
+        }],
+        ['missing posting ledger sequence', (transaction) => {
+            delete transaction.source.cash_settlement_postings[0].ledger_sequence;
+        }],
+        ['non-CSV divergent ledger sequence', (transaction) => {
+            transaction.source.cash_settlement_postings[0].ledger_sequence = 99;
+        }],
+        ['USD file kind with Current account', (transaction) => {
+            transaction.account_type = 'USD Current';
+            transaction.source.account_type = 'USD Current';
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                posting.account_type = 'USD Current';
+            });
+        }],
+        ['CSV without chronological marker', (transaction) => {
+            transaction.source.cash_settlement_postings.forEach((posting) => {
+                posting.source_file_kind = 'hsbc_usd_savings_csv';
+            });
+        }],
+        ['non-decimal principal amount', (transaction) => {
+            transaction.source.cash_settlement_amount_raw = '0xC8';
+            transaction.source.cash_settlement_postings[0].amount_raw = '0xC8';
+        }],
+        ['missing owner net amount', (transaction) => {
+            delete transaction.net_amount_raw;
+            delete transaction.normalized.net_amount;
+            transaction.amount = 200;
+        }],
+    ]) {
+        const invalidDomain = makeSell();
+        mutate(invalidDomain);
+        assert.deepEqual(
+            buildHsbcCashSettlementBoundaryPlan([invalidDomain]),
+            [],
+            label,
+        );
+        assert.equal(
+            getTransactionEvidencedTradeCashAmount(invalidDomain),
+            200,
+            label,
+        );
+    }
+
+    const reusedPhysicalRow = makeSell();
+    reusedPhysicalRow.source.cash_settlement_postings[1].row_number = 44;
+    assert.deepEqual(buildHsbcCashSettlementBoundaryPlan([reusedPhysicalRow]), []);
+    assert.equal(getTransactionEvidencedTradeCashAmount(reusedPhysicalRow), 200);
+
+    const firstOwner = makeSell();
+    firstOwner.source.cash_settlement_postings.forEach((posting, index) => {
+        posting.row_number = index === 0 ? 111 : 110;
+        posting.ledger_sequence = index === 0 ? 57 : 58;
+        posting.ledger_sequence_order = 'chronological';
+    });
+    const secondOwner = makeSell({
+        account: 'HSBC-OTHER',
+        netAmount: '300',
+        principalAmount: '300',
+        sourceFileKind: 'hsbc_statement_cash',
+    });
+    secondOwner.source.statement_order_id = 'S-200002';
+    secondOwner.source.cash_settlement_postings.forEach((posting, index) => {
+        posting.row_number = index === 0 ? 111 : 110;
+        posting.ledger_sequence = index === 0 ? 57 : 58;
+        posting.reference = 'STATEMENT CASH';
+    });
+    sortInvestmentTransactionsForReplay([firstOwner, secondOwner]);
+    assert.deepEqual(
+        buildHsbcCashSettlementBoundaryPlan([firstOwner, secondOwner]),
+        [],
+    );
+    assert.equal(getTransactionEvidencedTradeCashAmount(firstOwner), 200);
+    assert.equal(getTransactionEvidencedTradeCashAmount(secondOwner), 300);
+});
+
+test('HSBC settlement plan rejects a missing fee leg for nonzero commission', () => {
+    const boundaries = buildHsbcCashSettlementBoundaryPlan([{
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date: '2026-09-17',
+        type: 'sell',
+        currency: 'USD',
+        net_amount_raw: '59.99',
+        commission_raw: '-0.01',
+        normalized: {commission: '-0.01'},
+        source: {
+            file_kind: 'hsbc_order_status_text',
+            statement_order_id: 'S-100002',
+            cash_settlement_date: '2026-09-18',
+            cash_settlement_postings: [{
+                date: '2026-09-18', amount_raw: '59.99', balance_after_raw: '2000',
+                row_number: 44, ledger_sequence: 44, currency: 'USD',
+                account_number: 'HSBC-TEST', account_type: 'USD Savings',
+                source_file_kind: 'hsbc_usd_account_text',
+                source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                reference: 'REF S100002001 SEC', role: 'principal',
+            }],
+        },
+    }]);
+
+    assert.deepEqual(boundaries, []);
+});
+
+test('HSBC settlement boundaries fail closed without a cash subaccount identity', () => {
+    const boundaries = buildHsbcCashSettlementBoundaryPlan([{
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date: '2026-06-22',
+        type: 'sell',
+        ticker: 'BOXX',
+        currency: 'USD',
+        source: {
+            file_kind: 'hsbc_order_status_text',
+            cash_settlement_date: '2026-06-23',
+            cash_settlement_postings: [{
+                date: '2026-06-23',
+                amount_raw: '100',
+                balance_after_raw: '1100',
+                currency: 'USD',
+                source_file_kind: 'hsbc_statement_cash',
+            }],
+        },
+    }]);
+
+    assert.deepEqual(boundaries, []);
 });
 
 test('HSBC settlement balance continuity overrides drifted incremental row sequences', () => {
@@ -595,7 +1294,13 @@ test('HSBC settlement balance continuity overrides drifted incremental row seque
             type: 'buy',
             ticker: 'EUV',
             currency: 'USD',
+            net_amount_raw: '-230.00',
+            commission_raw: '0',
+            normalized: {commission: '0', net_amount: '-230.00'},
             source: {
+                statement_order_id: 'P-100003',
+                cash_settlement_date: '2026-09-02',
+                cash_settlement_amount_raw: '-230.00',
                 cash_settlement_postings: [{
                     date: '2026-09-02',
                     amount_raw: '-230.00',
@@ -603,6 +1308,12 @@ test('HSBC settlement balance continuity overrides drifted incremental row seque
                     row_number: 47,
                     ledger_sequence: 47,
                     currency: 'USD',
+                    account_number: 'HSBC-TEST',
+                    account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_savings_csv',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
+                    ledger_sequence_order: 'chronological',
+                    reference: 'REF P100003001 SEC',
                     role: 'principal',
                 }],
             },
@@ -614,7 +1325,13 @@ test('HSBC settlement balance continuity overrides drifted incremental row seque
             type: 'buy',
             ticker: 'BOXX',
             currency: 'USD',
+            net_amount_raw: '-11807.00',
+            commission_raw: '0',
+            normalized: {commission: '0', net_amount: '-11807.00'},
             source: {
+                statement_order_id: 'P-100004',
+                cash_settlement_date: '2026-09-02',
+                cash_settlement_amount_raw: '-11807.00',
                 cash_settlement_postings: [{
                     date: '2026-09-02',
                     amount_raw: '-11807.00',
@@ -622,6 +1339,12 @@ test('HSBC settlement balance continuity overrides drifted incremental row seque
                     row_number: 43,
                     ledger_sequence: 43,
                     currency: 'USD',
+                    account_number: 'HSBC-TEST',
+                    account_type: 'USD Savings',
+                    source_file_kind: 'hsbc_usd_savings_csv',
+                    source_sequence_sha256: HSBC_SEQUENCE_SHA_B,
+                    ledger_sequence_order: 'chronological',
+                    reference: 'REF P100004001 SEC',
                     role: 'principal',
                 }],
             },
@@ -635,8 +1358,8 @@ test('HSBC settlement balance continuity overrides drifted incremental row seque
             boundary.sourceRowSequence,
         ]),
         [
-            ['', 32992.32, 47],
-            ['', 21185.32, 43],
+            ['REF P100003001 SEC', 32992.32, 47],
+            ['REF P100004001 SEC', 21185.32, 43],
         ],
     );
 });
@@ -1778,38 +2501,62 @@ test('HSBC cash boundaries clear stale unscoped replay without merging subaccoun
     const savingsRow = {
         broker: 'hsbc',
         account: '000-999999-999',
+        account_type: 'HKD Savings',
+        date: '2026-09-21',
+        type: 'deposit',
         currency: 'HKD',
+        net_amount_raw: '89.24',
+        normalized: {net_amount: '89.24'},
         source: {
             account_type: 'HKD Savings',
             balance_after_raw: '89.24',
+            cash_balance_authoritative: false,
+            cash_balance_scope: 'account',
             file_kind: 'hsbc_multi_currency_cash_account_text',
+            ledger_sequence: 1,
+            row_number: 1,
+            source_sequence_sha256: HSBC_SEQUENCE_SHA_A,
         },
     };
     const currentRow = {
         ...savingsRow,
+        account_type: 'HKD Current',
+        net_amount_raw: '1',
+        normalized: {net_amount: '1'},
         source: {
             ...savingsRow.source,
             account_type: 'HKD Current',
             balance_after_raw: '0.00',
+            ledger_sequence: 2,
+            row_number: 2,
         },
     };
     const legacyUsdRow = {
         ...savingsRow,
+        account_type: 'Foreign Currency Savings USD',
         currency: 'USD',
+        net_amount_raw: '1',
+        normalized: {net_amount: '1'},
         source: {
             ...savingsRow.source,
             account_type: 'Foreign Currency Savings USD',
             balance_after_raw: '0.00',
             file_kind: 'hsbc_statement_cash',
+            ledger_sequence: 3,
+            row_number: 3,
         },
     };
     const usdSavingsRow = {
         ...legacyUsdRow,
+        account_type: 'USD Savings',
         source: {
             ...legacyUsdRow.source,
             account_type: 'USD Savings',
             balance_after_raw: '21108.38',
+            cash_balance_authoritative: true,
             file_kind: 'hsbc_usd_account_text',
+            ledger_sequence: 4,
+            row_number: 4,
         },
     };
     assert.notEqual(
@@ -1817,10 +2564,54 @@ test('HSBC cash boundaries clear stale unscoped replay without merging subaccoun
         getInvestmentCashBalanceScope(currentRow),
     );
     assert.deepEqual(getInvestmentCashBalanceBoundary(savingsRow), {
-        scopeKey: 'HSBC|000-999999-999|HKD SAVINGS|HKD',
+        scopeKey: 'HSBC|000-999999-999|SAVINGS|HKD',
         currency: 'HKD',
         balance: 89.24,
     });
+    assert.equal(
+        getInvestmentCashBalanceBoundary({
+            ...usdSavingsRow,
+            source: {...usdSavingsRow.source, balance_after_raw: ''},
+        }),
+        null,
+    );
+    for (const [label, mutate] of [
+        ['unknown kind', (row) => {
+            row.source.file_kind = 'fabricated_cash';
+        }],
+        ['USD Current', (row) => {
+            row.account_type = 'USD Current';
+            row.source.account_type = 'USD Current';
+        }],
+        ['missing account type', (row) => {
+            delete row.account_type;
+            delete row.source.account_type;
+        }],
+        ['wrong authority flag', (row) => {
+            row.source.cash_balance_authoritative = false;
+        }],
+        ['wrong balance scope', (row) => {
+            row.source.cash_balance_scope = 'portfolio';
+        }],
+        ['missing ledger sequence', (row) => {
+            delete row.source.ledger_sequence;
+        }],
+        ['unknown type', (row) => {
+            row.type = 'mystery';
+        }],
+        ['negative deposit', (row) => {
+            row.net_amount_raw = '-1';
+            row.normalized.net_amount = '-1';
+        }],
+        ['zero amount', (row) => {
+            row.net_amount_raw = '0';
+            row.normalized.net_amount = '0';
+        }],
+    ]) {
+        const invalidRow = structuredClone(usdSavingsRow);
+        mutate(invalidRow);
+        assert.equal(getInvestmentCashBalanceBoundary(invalidRow), null, label);
+    }
 
     const ledger = createInvestmentCashScopeLedger({HKD: 27_462.16});
     setInvestmentCashScopeBoundary(ledger, getInvestmentCashBalanceBoundary(savingsRow));
@@ -1872,4 +2663,3 @@ test('ledger price fallback stays silent when valuation remains complete', () =>
     assert.equal(status.message, '');
     assert.deepEqual(status.fallbackTickers, ['DRAM']);
 });
-

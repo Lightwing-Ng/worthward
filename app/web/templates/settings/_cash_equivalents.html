@@ -1,4 +1,4 @@
-{# Code version: v1.0.0 #}
+{# Code version: v1.0.1 #}
     <section class="report-card workspace-content-card settings-reading-guard cash-equivalents-card">
         <div class="cash-equivalent-category" data-cash-equivalent-category="stocks">
             <div class="cash-equivalent-category-heading">
@@ -6,7 +6,7 @@
                 <p class="settings-service-note">{{ translate_ui('Configurable exchange-traded securities') }}</p>
             </div>
             <div class="cash-equivalents-add-action-shell" id="cash_equivalents_add_action_shell">
-                <button type="button" id="add_ticker" class="sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
+                <button type="button" id="add_ticker" class="circular-icon-button sidebar-action-button sidebar-secondary-button sidebar-icon-button" aria-label="{{ translate_ui('Add a ticker') }}" title="{{ translate_ui('Add a ticker') }}"><span class="icon icon-plus" aria-hidden="true"></span></button>
             </div>
             <div class="cash-equivalents-list" id="cash_equivalents_list" aria-labelledby="cash_equivalent_stocks_heading" data-initial-tickers='{{ (cash_equivalent_rows|map(attribute="ticker")|list|tojson) }}'>
                 {% for row in cash_equivalent_rows %}
