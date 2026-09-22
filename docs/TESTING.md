@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.85.0`
+Documentation version: `v1.87.0`
 
 ## Shared modal and floating-banner rows
 
@@ -81,8 +81,11 @@ distinct from exclusive session windows, the browser projection preserves
 backend suffix precedence, and neither the chart nor the exporter keeps a
 private suffix, timezone, or session table.
 `tests/test_shared_chart_utility_contract.py` rejects a second copy of the
-tick-selection algorithm and asserts that `base.html` loads
-`chart-axis-utils.js` before every classic chart consumer.
+tick-selection algorithm or of `layoutDateAxisTicks` and asserts that
+`base.html` loads `chart-axis-utils.js` before every classic chart consumer.
+`tests/test_chart_date_axis_layout.mjs` verifies flush edge labels, centered
+interior labels, collision-free even spacing across widths, same-date
+deduplication, and opt-in special dates.
 `tests/test_price_field_evaluation.py` reproduces the previously duplicated
 inline Price Field orchestration as a reference implementation and asserts that
 the shared owner matches it frame for frame and diagnostic for diagnostic
@@ -344,6 +347,11 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   cash projection from cancelling earlier settled sale proceeds, and the
   cash-equivalent endpoint regression verifies that Overview and Holdings use
   the same valid live quote.
+- `tests/test_investment_equity_chart_realized_timeline.mjs` verifies that
+  historical hover Realized P&L dates a broker performance baseline to its
+  scope's last disposal rather than the artifact as-of date, keeps per-sale
+  reconstruction dates, equals Holdings at the latest point, and stays
+  unavailable when a ticker's Holdings realized value is unavailable.
 - `tests/test_investment_history_projection.mjs` verifies that a settlement
   boundary folds unscoped same-currency replay deltas into the only matching
   cash scope exactly once, and fails closed beside several same-currency

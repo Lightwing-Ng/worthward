@@ -228,6 +228,17 @@ test('keeps the settings action package aligned and demonstrates maintenance act
     await page.goto('/settings/style-tokens');
 
     const segmented = page.locator('#segmented-control .segmented-control');
+    await segmented.getByText('Metrics', {exact: true}).click();
+    await expect(segmented.locator('input[value="metrics"]')).toBeChecked();
+    await expect.poll(() => segmented.evaluate((shell) => {
+        const selected = shell.querySelector('input:checked + span');
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--mode-switch-label-color-active)';
+        shell.append(probe);
+        const matchesActiveToken = getComputedStyle(selected).color === getComputedStyle(probe).color;
+        probe.remove();
+        return matchesActiveToken;
+    })).toBe(true);
     const segmentedColors = await segmented.evaluate((shell) => {
         const resolveColor = (value) => {
             const probe = document.createElement('span');

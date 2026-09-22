@@ -1,7 +1,10 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.8.0
+ * Code version: v1.9.0
+ * - Added: One pixel-space date-axis layout owner keeps edge labels flush,
+ *   centers interior labels, maximizes even spacing without collisions, and
+ *   can retain optional special dates.
  * - Added: One global Chart.js font owner resolves the computed base family
  *   before any chart is created and refreshes Canvas metrics after fonts load.
  * - Added: One market-session resolver and one New York / market-local
@@ -122,6 +125,131 @@
     const sortedTickIndexes = (count, plotWidth) => (
         Array.from(buildTickIndexSet(count, plotWidth)).sort((left, right) => left - right)
     );
+
+    const DATE_AXIS_MIN_GAP_PX = 48;
+    const DATE_AXIS_MAX_TICK_COUNT = 12;
+
+    /**
+     * Lay out date-axis labels in pixel space.
+     *
+     * The first label is left-aligned at its point and the last is
+     * right-aligned; every interior label is centered. The interior is the
+     * largest evenly spaced set (by pixel position) whose measured boxes keep
+     * `minGapPx` between neighbors and stay inside `[boundsLeft, boundsRight]`.
+     * With `includeSpecialIndexes`, `specialIndexes` are kept first (when they
+     * fit) and evenly spaced labels fill the remaining room without colliding.
+     * `getKey` deduplicates points that share one label, such as intraday
+     * points of the same date; the earliest point of a key is used.
+     *
+     * Returns `[{index, align, left, right, x}]` sorted by pixel position.
+     */
+    const layoutDateAxisTicks = ({
+        count = 0,
+        getPixel,
+        measureWidth,
+        boundsLeft = -Infinity,
+        boundsRight = Infinity,
+        minGapPx = DATE_AXIS_MIN_GAP_PX,
+        maxTickCount = DATE_AXIS_MAX_TICK_COUNT,
+        getKey = (index) => index,
+        specialIndexes = [],
+        includeSpecialIndexes = false,
+    } = {}) => {
+        if (!(count > 0) || typeof getPixel !== "function" || typeof measureWidth !== "function") {
+            return [];
+        }
+        const candidates = [];
+        const seenKeys = new Set();
+        for (let index = 0; index < count; index += 1) {
+            const key = getKey(index);
+            if (key === null || key === undefined || key === "" || seenKeys.has(key)) continue;
+            const x = Number(getPixel(index));
+            if (!Number.isFinite(x)) continue;
+            seenKeys.add(key);
+            candidates.push({index, x});
+        }
+        if (!candidates.length) return [];
+        const widthCache = new Map();
+        const widthOf = (index) => {
+            if (!widthCache.has(index)) {
+                const width = Number(measureWidth(index));
+                widthCache.set(index, Number.isFinite(width) && width > 0 ? width : 0);
+            }
+            return widthCache.get(index);
+        };
+        const buildBox = (candidate, align) => {
+            const width = widthOf(candidate.index);
+            const left = align === "left"
+                ? candidate.x
+                : (align === "right" ? candidate.x - width : candidate.x - (width / 2));
+            return {index: candidate.index, x: candidate.x, align, left, right: left + width};
+        };
+        const first = buildBox(candidates[0], "left");
+        if (candidates.length === 1) return [first];
+        const last = buildBox(candidates[candidates.length - 1], "right");
+        if (first.right + minGapPx > last.left) return [first];
+        const fits = (box, placed) => (
+            box.left >= boundsLeft
+            && box.right <= boundsRight
+            && placed.every((other) => (
+                box.right + minGapPx <= other.left || other.right + minGapPx <= box.left
+            ))
+        );
+        const interiorCandidates = candidates.slice(1, -1);
+        const nearestInterior = (targetX, used) => {
+            let best = null;
+            interiorCandidates.forEach((candidate) => {
+                if (used.has(candidate.index)) return;
+                if (!best || Math.abs(candidate.x - targetX) < Math.abs(best.x - targetX)) {
+                    best = candidate;
+                }
+            });
+            return best;
+        };
+        const pinned = [first, last];
+        if (includeSpecialIndexes) {
+            const specialSet = new Set(
+                (Array.isArray(specialIndexes) ? specialIndexes : []).map(Number),
+            );
+            interiorCandidates
+                .filter((candidate) => specialSet.has(candidate.index))
+                .forEach((candidate) => {
+                    const box = buildBox(candidate, "center");
+                    if (fits(box, pinned)) pinned.push(box);
+                });
+        }
+        const span = last.x - first.x;
+        const upperSegmentCount = Math.max(1, Math.min(
+            Math.max(1, Math.floor(maxTickCount) - 1),
+            interiorCandidates.length + 1,
+        ));
+        let bestLayout = pinned;
+        for (let segmentCount = upperSegmentCount; segmentCount >= 1; segmentCount -= 1) {
+            const placed = [...pinned];
+            const used = new Set(placed.map((box) => box.index));
+            let complete = true;
+            for (let step = 1; step < segmentCount; step += 1) {
+                const candidate = nearestInterior(first.x + ((span * step) / segmentCount), used);
+                if (!candidate) {
+                    complete = false;
+                    break;
+                }
+                const box = buildBox(candidate, "center");
+                used.add(candidate.index);
+                if (fits(box, placed)) {
+                    placed.push(box);
+                } else if (!includeSpecialIndexes || pinned.length === 2) {
+                    complete = false;
+                    break;
+                }
+            }
+            if (complete) {
+                bestLayout = placed;
+                break;
+            }
+        }
+        return bestLayout.sort((left, right) => left.x - right.x);
+    };
 
     /**
      * Format stock-price y-axis labels independently from currency minor units.
@@ -513,6 +641,7 @@
         updateHoverDateLabel,
         buildTickIndexSet,
         sortedTickIndexes,
+        layoutDateAxisTicks,
         formatStockPriceAxisValue,
         buildAllInEquitySeries,
         drawYAxisValueBadge,

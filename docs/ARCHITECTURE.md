@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.124.0`
+Documentation version: `v1.126.0`
 
 ## Reuse and dependency boundaries
 
@@ -738,6 +738,30 @@ card shadows, blur, translated controls, or focus rings must escape. Effect host
 uses the 48px effect bleed where needed. Chart canvases, tables, dropdowns, and long
 text may retain local clipping only when that element is the documented viewport.
 
+## Shared date-axis layout
+
+`WORTHWARD_CHART_AXIS.layoutDateAxisTicks` is the reference x-axis layout for
+date charts. New date charts use it, and legacy `buildTickIndexSet` consumers
+migrate to it when their axis is touched. Investment Overview and Stock details
+already use it.
+
+- Placement: the first label is left-aligned at its point and the last is
+  right-aligned; every interior label is centered on its point.
+- Collision and density: label boxes are measured in canvas pixels. The layout
+  keeps the largest evenly spaced interior set (by pixel position, snapped to
+  the nearest point) whose boxes stay inside the canvas and keep at least
+  `48px` between neighbors; an empty or overcrowded axis is a defect. The
+  count adapts to the plot width and label widths rather than a viewport
+  breakpoint, capped at 12 labels.
+- Special dates: with `includeSpecialIndexes: true`, `specialIndexes` are kept
+  first when they fit, and evenly spaced labels fill the remaining room without
+  colliding. They are ignored unless the flag is set, and an edge label always
+  wins a collision.
+- Deduplication: `getKey` collapses points that share a label, such as the
+  minute points of one trading day, to the earliest point.
+- Format: date-axis and hover-axis labels are date and year only on every
+  range. A time of day belongs to the tooltip, never to the axis.
+
 ## Shared stock-price axis labels
 
 Every chart whose Y-axis represents a stock price delegates label formatting to
@@ -1154,15 +1178,28 @@ assert both historical continuity and current-endpoint equality.
 
 ## Overview Tooltip P&L contract
 
-Overview Tooltip P&L is a point-in-time tax-lot replay, not Equity less
-funding flows. Each historical hover uses only ledger entries effective at that
-point and its observed historical close. Current broker position and
-performance snapshots have no historical as-of guarantee and must not alter a
-historical point. The one live endpoint may reuse the current Holdings summary
-so the two current surfaces reconcile. In every case, the Tooltip's Cumulative
-P&L is recalculated from the realized P&L plus unrealized P&L displayed at that
-point; incomplete basis or valuation evidence is shown as unavailable rather
-than fabricated.
+Overview Tooltip P&L is not Equity less funding flows.
+
+- Realized P&L follows the Holdings attribution. The Holdings ticker summaries
+  behind the current Realized P&L are split into a dated timeline, and a
+  historical point sums the events dated on or before it plus cash rewards,
+  interest, and standalone fees effective at that point. The latest point
+  therefore equals Holdings exactly, and a point is unavailable only when
+  Holdings Realized P&L is unavailable.
+- Per-sale reconstruction dates are used as-is. A broker performance baseline
+  (`baselineRealizedPnlLocal`) is dated to the scope's last `sell` or
+  `transfer_out` on or before the baseline's performance as-of date, the
+  latest date by which that realized amount must have occurred. It is never
+  dated to the performance artifact's own as-of date. A ticker-level remainder
+  uses the ticker's last disposal; with no disposal it enters only the latest
+  chart date.
+- Unrealized P&L remains a point-in-time tax-lot replay using ledger entries
+  effective at that point and its observed historical close; incomplete basis
+  or valuation evidence is unavailable rather than fabricated. Its replay basis
+  is not yet rolled back from the Holdings lot state, so it can differ from
+  Holdings methodology on dates where it is available.
+- The one live endpoint reuses the current Holdings summary for all three
+  values. Cumulative P&L is always realized plus unrealized as displayed.
 
 ## High-precision Overview intraday equity valuation contract
 
@@ -1401,7 +1438,7 @@ sets of values.
   source-format parser dispatch plus the normalize, idempotent merge, atomic
   persistence, cache invalidation, and readback-verification boundary. The
   cohesive Zircon (HK) template and parser remain in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `buildTickIndexSet` is the one tick-selection algorithm: Price comparison, Backtest, DCA, Live trading, Investment Stock details, and the Investment equity chart all call it rather than keeping a fallback copy. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `layoutDateAxisTicks` is the reference pixel-space date-axis layout used by Investment Overview and Stock details (see Shared date-axis layout); `buildTickIndexSet` remains the legacy index-based algorithm for Price comparison, Backtest, DCA, and Live trading. Neither may be copied into a consumer. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.

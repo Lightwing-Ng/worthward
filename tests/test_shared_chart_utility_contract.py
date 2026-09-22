@@ -1,6 +1,6 @@
 """One tick-selection owner and an explicit shared-chart load contract.
 
-Code version: v1.1.0
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -36,6 +36,8 @@ TICK_CONSUMER_SOURCES = tuple(
 TICK_ALGORITHM_SIGNATURE = re.compile(
     r"maxTickCount\s*=\s*plotWidth\s*>=",
 )
+# The pixel-space date-axis layout is defined once, in the shared owner.
+DATE_AXIS_LAYOUT_DEFINITION = re.compile(r"\bconst\s+layoutDateAxisTicks\s*=")
 
 
 def _read(path: Path) -> str:
@@ -46,10 +48,24 @@ def test_shared_axis_module_is_the_only_tick_algorithm_owner() -> None:
     shared_source = _read(JAVASCRIPT_ROOT / "chart-axis-utils.js")
     assert len(TICK_ALGORITHM_SIGNATURE.findall(shared_source)) == 1
 
+    assert len(DATE_AXIS_LAYOUT_DEFINITION.findall(shared_source)) == 1
+
     for relative_path in TICK_CONSUMER_SOURCES:
         source = _read(JAVASCRIPT_ROOT / relative_path)
         assert not TICK_ALGORITHM_SIGNATURE.search(source), relative_path
-        assert "buildTickIndexSet" in source or "TickIndexSet" in source
+        assert not DATE_AXIS_LAYOUT_DEFINITION.search(source), relative_path
+        assert (
+            "buildTickIndexSet" in source
+            or "TickIndexSet" in source
+            or "layoutDateAxisTicks" in source
+        ), relative_path
+
+    # The Overview equity chart receives the shared owner through the
+    # Investment runtime composition root rather than the global name.
+    equity_chart = _read(JAVASCRIPT_ROOT / "investment/runtime/equity-chart.js")
+    assert "runtime.chartAxis.layoutDateAxisTicks(" in equity_chart
+    assert not DATE_AXIS_LAYOUT_DEFINITION.search(equity_chart)
+    assert "window.WORTHWARD_CHART_AXIS" in _read(JAVASCRIPT_ROOT / "investment.js")
 
 
 def test_every_classic_tick_consumer_loads_after_the_shared_axis_owner() -> None:

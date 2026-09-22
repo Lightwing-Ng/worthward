@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.56.0`
+Documentation version: `v1.59.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -8,6 +8,16 @@ It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
 
+- Changed: Overview and Stock details x-axes use the shared pixel-space date
+  layout: flush edge labels, centered interior labels, collision-free even
+  spacing sized to the plot, opt-in special dates, and date-only labels on
+  every range.
+- Fixed: The Overview equity y-axis now sizes itself to its widest drawn
+  label, excluding hidden bound ticks, and no longer adds left canvas padding.
+- Changed: Overview hover Realized P&L follows the Holdings attribution
+  timeline, so it is available whenever Holdings is and equals Holdings at the
+  latest point; undated broker baselines are dated to their scope's last
+  disposal.
 - Fixed: Historical HSBC Cash and Equity no longer double count unscoped
   same-currency replay deltas when a settlement boundary corrects an existing
   cash scope; ambiguous multi-scope cases fail closed.

@@ -1,7 +1,12 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.152.0
+ * Code version: v2.154.0
+ * - Changed: Loads the equity chart and stock details revisions that share the
+ *   pixel-space date-axis layout.
+ * - Changed: Loads the equity chart with a label-width Overview y-axis.
+ * - Changed: Loads the equity chart whose historical Realized P&L follows the
+ *   Holdings attribution timeline.
  * - Changed: Loads the shared live-marker consumers for Investment live endpoints.
  * - Changed: Loads the transaction-table revision whose historical HSBC Cash
  *   no longer double counts unscoped same-currency replay deltas.
@@ -44,9 +49,9 @@
 
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.0.0';
-import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.1.0';
+import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.3.0';
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.2.0';
-import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.2.0';
+import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.2.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.1';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
@@ -111,7 +116,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.39.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.40.0';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -160,7 +165,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.152.0',
+    entry: 'v2.154.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

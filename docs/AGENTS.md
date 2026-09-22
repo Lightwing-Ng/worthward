@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.6.0-agent-contract.0`
+Policy version: `v1.7.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -77,7 +77,9 @@ discovery. This file remains the canonical guide.
 - A user-confirmed broker P&L calibration is constrained to its explicit
   broker, account, ticker, and currency scope. It is neither a dated position
   or equity snapshot nor evidence of a reconstructed tax-lot history. Do not
-  assign it an as-of date from an adjacent ledger artifact, and do not blend it
+  assign it an as-of date from an adjacent ledger artifact (Overview hover dates
+  a performance baseline only to its own scope's last disposal on or before the
+  baseline as-of date, per the Architecture Tooltip contract), and do not blend it
   into a later broker-native performance report.
 
 ## Manual launch ownership

@@ -1,5 +1,19 @@
 # Known issues and operating constraints
 
+Overview hover Realized P&L, 22 Sep 2026: historical hover previously rebuilt
+realized P&L by point-in-time replay with broker performance calibrations
+disabled, so any calibrated or partially covered ticker made the whole row
+Unavailable while Holdings showed a value. Realized P&L now follows the
+Holdings attribution timeline described in the Architecture Tooltip contract,
+is available at every point whenever Holdings is, and equals Holdings at the
+latest point. This supersedes the realized half of the 8 Sep 2026 statement
+that hover P&L uses only the hovered point's replay. Broker performance
+baselines are dated to the scope's last disposal on or before their as-of
+date because their per-sale timing is not evidenced; before that disposal the
+baseline is not yet counted. Unrealized and Cumulative P&L still use the
+point-in-time replay and remain Unavailable on dates with partial basis; a
+Holdings-consistent unrealized rollback is not yet implemented.
+
 HSBC historical cash double count, 22 Sep 2026: the Overview equity curve showed
 roughly 1.5 times the real portfolio from late June to late August 2026, then
 fell back when a fully evidenced HSBC balance row appeared. Market value was
@@ -454,7 +468,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.263.0`
+Documentation version: `v1.264.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

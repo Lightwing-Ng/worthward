@@ -1,7 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.39.0
+ * Code version: v0.40.0
+ * - Changed: Stock details x-axis labels use the shared pixel-space date layout
+ *   and never show a time of day.
  * - Changed: Reuses the shared live-marker primitive for the live price endpoint.
  * - Changed: Loads Investment data utilities v1.120.3 and the shared stable
  *   replay-order helpers.
@@ -937,9 +939,6 @@ export function createInvestmentStockDetailsUtils({
         const formatTooltipDate = (dateParts) => {
             return formatInvestmentFullDateParts(dateParts, { includeTime: true });
         };
-        const formatAxisDateLines = (dateParts) => {
-            return formatInvestmentFullDateLines(dateParts, { allowWrap: true });
-        };
         const formatAxisDateOnlyLines = (dateParts) => {
             if (!dateParts) return ['', ''];
             return formatInvestmentFullDateLines({
@@ -970,9 +969,8 @@ export function createInvestmentStockDetailsUtils({
                 .filter(Boolean);
         };
         const chartAxis = (typeof window !== "undefined" && window.WORTHWARD_CHART_AXIS) || {};
-        // `chart-axis-utils.js` owns the one tick-selection algorithm.
-        // base.html loads it before every chart consumer.
-        const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
+        // `chart-axis-utils.js` owns date-axis layout; base.html loads it
+        // before every chart consumer.
         const STOCK_DETAILS_MARKER_X_PADDING_PX = INVESTMENT_TRADE_MARKER_GLOW_SAFE_PADDING_PX;
         const STOCK_DETAILS_MARKER_Y_PADDING_PX = INVESTMENT_TRADE_MARKER_GLOW_SAFE_PADDING_PX;
         const getStockDetailsChartYScaleValues = () => ([
@@ -1044,7 +1042,6 @@ export function createInvestmentStockDetailsUtils({
                 const { ctx, chartArea, scales } = chart;
                 const xScale = scales?.x;
                 if (!chartArea || !xScale || !labels.length) return;
-                const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
                 const intradayCenteredTicks = buildIntradayCenteredAxisTicks();
                 if (intradayCenteredTicks.length) {
                     const baselineY = chartArea.bottom;
@@ -1069,26 +1066,39 @@ export function createInvestmentStockDetailsUtils({
                     ctx.restore();
                     return;
                 }
-                const tickIndexes = typeof buildInvestmentAxisTickIndexes === 'function'
-                    ? buildInvestmentAxisTickIndexes(labels, labels, viewportWidth, parseRawDate)
-                    : Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
                 const baselineY = chartArea.bottom;
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
                 ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
                 ctx.textBaseline = 'top';
-                tickIndexes.forEach((index, tickIndex) => {
-                    const parsedDate = parseRawDate(labels[index]);
-                    if (!parsedDate) return;
-                    const [firstLine, secondLine] = formatAxisDateLines(parsedDate);
-                    const x = xScale.getPixelForValue(index);
-                    if (!Number.isFinite(x)) return;
-                    if (tickIndex === 0) ctx.textAlign = 'left';
-                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = 'right';
-                    else ctx.textAlign = 'center';
-                    ctx.fillText(firstLine, x, baselineY);
-                    ctx.fillText(secondLine, x, baselineY + lineHeight);
+                const lineCache = new Map();
+                const getDateLines = (index) => {
+                    if (!lineCache.has(index)) {
+                        const parsedDate = parseRawDate(labels[index]);
+                        lineCache.set(index, parsedDate ? formatAxisDateOnlyLines(parsedDate) : null);
+                    }
+                    return lineCache.get(index);
+                };
+                const ticks = chartAxis.layoutDateAxisTicks({
+                    count: labels.length,
+                    getPixel: (index) => xScale.getPixelForValue(index),
+                    measureWidth: (index) => Math.max(
+                        0,
+                        ...(getDateLines(index) || []).map((line) => ctx.measureText(String(line || '')).width),
+                    ),
+                    boundsLeft: 0,
+                    boundsRight: chart.width,
+                    getKey: (index) => {
+                        const lines = getDateLines(index);
+                        return lines ? lines.join('|') : '';
+                    },
+                });
+                ticks.forEach((tick) => {
+                    const [firstLine, secondLine] = getDateLines(tick.index) || [];
+                    ctx.textAlign = tick.align;
+                    ctx.fillText(firstLine, tick.x, baselineY);
+                    ctx.fillText(secondLine, tick.x, baselineY + lineHeight);
                 });
                 ctx.restore();
             },

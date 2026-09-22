@@ -1,7 +1,9 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Changed: Holdings metrics expose the ticker summaries behind their realized
+ *   total so historical chart hover can reuse the same attribution.
  * - Fixed: HSBC sell-settlement principal adjustments and separately posted
  *   fees reconcile to all-in realized proceeds without hiding the fee category.
  * - Fixed: Holdings metrics reuse the canonical current Total equity instead
@@ -476,6 +478,7 @@ function getHoldingsSummaryMetrics(
             cumulativePnl,
             pnlUnavailable,
             pnlCoverage,
+            tickerSummaries,
             realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
             realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
             unrealizedPnlRows: pnlUnavailable ? [] : unrealizedPnlRows,

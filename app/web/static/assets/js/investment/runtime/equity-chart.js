@@ -1,7 +1,14 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.1.0
+ * Code version: v1.3.0
+ * - Changed: Overview x-axis labels use the shared pixel-space date layout and
+ *   never show a time of day, including the hover date label.
+ * - Fixed: The Overview y-axis hugs its widest drawn label and drops the
+ *   redundant left canvas padding, returning horizontal room to the plot.
+ * - Changed: Historical hover Realized P&L follows the Holdings attribution
+ *   timeline, so it is available whenever Holdings is and equals Holdings at
+ *   the latest point.
  * - Changed: Reuses the shared live-marker primitive for the live equity endpoint.
  * - Fixed: Initial Holdings uses the shared current-equity calculation so a
  *   dated broker interest accrual is not dropped before realtime quotes arrive.
@@ -201,6 +208,111 @@ function refreshInvestmentChartPnlState(holdingsSummaryMetrics = null) {
             pnlUnavailable ? null : realizedPnl,
             pnlUnavailable ? null : unrealizedPnl,
         );
+        const timelineRealizedPnl = pnlUnavailable ? null : realizedPnl;
+        const timelineKey = runtime.state.investmentChartRealizedPnlTimelineKey;
+        const rawTransactions = runtime.state.investmentRawTransactionsCache;
+        if (
+            timelineKey
+            && timelineKey.total === timelineRealizedPnl
+            && timelineKey.rawTransactions === rawTransactions
+        ) return;
+        runtime.state.investmentChartRealizedPnlTimelineKey = {
+            total: timelineRealizedPnl,
+            rawTransactions,
+        };
+        runtime.state.investmentChartRealizedPnlTimeline = timelineRealizedPnl === null
+            ? null
+            : buildInvestmentChartRealizedPnlTimeline(holdingsSummaryMetrics?.tickerSummaries);
+        runtime.state.investmentChartPnlMetricsByPoint = new WeakMap();
+    }
+
+function buildInvestmentChartRealizedPnlTimeline(tickerSummaries = []) {
+        // Historical hover must agree with Holdings: every ticker contributes
+        // exactly its Holdings realized P&L, split across the dates on which it
+        // was realized. Per-sale reconstruction dates are used as-is. An undated
+        // broker performance baseline, and any ticker-level remainder, is dated
+        // to the scope's last disposal on or before the baseline as-of date,
+        // the latest date by which that realized amount must have occurred. It
+        // is never dated to the performance artifact's own as-of date.
+        if (!Array.isArray(tickerSummaries) || !tickerSummaries.length) return null;
+        const disposalDates = new Map();
+        const addDisposalDate = (key, date) => {
+            if (!disposalDates.has(key)) disposalDates.set(key, []);
+            disposalDates.get(key).push(date);
+        };
+        runtime.getInvestmentAggregateOnlyTransactions(runtime.state.investmentRawTransactionsCache)
+            .forEach((txn) => {
+                if (!['sell', 'transfer_out'].includes(runtime.getNormalizedTransactionType(txn))) return;
+                const ticker = runtime.getInvestmentCanonicalTicker(txn?.ticker);
+                const date = runtime.normalizeLedgerDate(txn?.date);
+                if (!ticker || !date) return;
+                const broker = runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn));
+                addDisposalDate(ticker, date);
+                addDisposalDate(`${broker}|${ticker}`, date);
+            });
+        const getLastDisposalDate = (key, onOrBefore = '') => (
+            (disposalDates.get(key) || [])
+                .filter((date) => !onOrBefore || date <= onOrBefore)
+                .sort()
+                .at(-1) || ''
+        );
+        const events = [];
+        for (const summary of tickerSummaries) {
+            const ticker = runtime.getInvestmentCanonicalTicker(summary?.ticker);
+            const tickerRealizedPnl = runtime.getOptionalInvestmentNumber(
+                runtime.getInvestmentCanonicalSummaryRealizedPnl(summary),
+            );
+            if (!ticker || tickerRealizedPnl === null) return null;
+            let attributedPnl = 0;
+            for (const account of Array.isArray(summary?.realizedPnlAccounts) ? summary.realizedPnlAccounts : []) {
+                const localPnl = Number(account?.realizedPnlLocal);
+                const basePnl = Number(account?.realizedPnl);
+                if (!Number.isFinite(localPnl) || !Number.isFinite(basePnl)) return null;
+                const localToBase = Math.abs(localPnl) > 1e-9 ? basePnl / localPnl : 1;
+                const byDateLocal = {...(account?.realizedPnlByDateLocal || {})};
+                const reconciliation = account?.reconciliation || {};
+                const baselineLocal = Number(reconciliation.baselineRealizedPnlLocal) || 0;
+                if (account?.source === 'broker_performance_snapshot' && Math.abs(baselineLocal) > 1e-9) {
+                    const performanceAsOf = runtime.normalizeLedgerDate(reconciliation.asOf?.performanceSnapshot);
+                    if (performanceAsOf && Number.isFinite(Number(byDateLocal[performanceAsOf]))) {
+                        byDateLocal[performanceAsOf] = Number(byDateLocal[performanceAsOf]) - baselineLocal;
+                    }
+                    const broker = runtime.normalizeInvestmentBroker(account?.broker);
+                    events.push({
+                        date: getLastDisposalDate(`${broker}|${ticker}`, performanceAsOf)
+                            || performanceAsOf,
+                        amount: baselineLocal * localToBase,
+                    });
+                }
+                Object.entries(byDateLocal).forEach(([date, value]) => {
+                    const normalizedDate = runtime.normalizeLedgerDate(date);
+                    const amount = Number(value) * localToBase;
+                    if (!normalizedDate || !Number.isFinite(amount) || Math.abs(amount) <= 1e-9) return;
+                    events.push({date: normalizedDate, amount});
+                });
+                attributedPnl += basePnl;
+            }
+            const remainder = tickerRealizedPnl - attributedPnl;
+            if (Math.abs(remainder) > 0.005) {
+                events.push({date: getLastDisposalDate(ticker), amount: remainder});
+            }
+        }
+        return events.sort((left, right) => left.date.localeCompare(right.date));
+    }
+
+function getInvestmentChartTimelineRealizedPnl(pointDate) {
+        const timeline = runtime.state.investmentChartRealizedPnlTimeline;
+        if (!Array.isArray(timeline) || !pointDate) return null;
+        // A remainder with no disposal date is only known at the Holdings
+        // valuation, so it enters the latest chart date and no earlier point.
+        const latestPointDate = runtime.normalizeLedgerDate(
+            runtime.state.investmentChartPointsCache?.at?.(-1)?.date,
+        );
+        return timeline.reduce((total, event) => (
+            (event.date ? event.date <= pointDate : Boolean(latestPointDate) && pointDate >= latestPointDate)
+                ? total + event.amount
+                : total
+        ), 0);
     }
 
 function getInvestmentChartPnlPointTransactions(pointRecord) {
@@ -292,10 +404,12 @@ function buildInvestmentHistoricalChartPnlMetrics(pointRecord) {
                 },
             ),
         );
-        // Realized coverage and open-position valuation are independent.
-        const realizedPnl = runtime.isInvestmentAggregatePnlUnavailable(tickerSummaries)
+        // Realized P&L follows the Holdings attribution timeline; open-position
+        // valuation remains an independent point-in-time replay.
+        const timelineRealizedPnl = getInvestmentChartTimelineRealizedPnl(pointDate);
+        const realizedPnl = timelineRealizedPnl === null
             ? null
-            : runtime.getInvestmentHistoricalRealizedPnl(pointTransactions, tickerSummaries, pointDate);
+            : timelineRealizedPnl + runtime.getInvestmentHistoricalRealizedPnl(pointTransactions, []);
         const openPositions = tickerSummaries.filter((summary) => summary?.hasOpenPosition);
         const unrealizedComplete = openPositions.every((summary) => (
             summary?.pnlUnavailable !== true
@@ -754,22 +868,40 @@ function renderEquityChartWithEquity(chartPoints) {
         const chartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
         syncInvestmentEquityChartCaches(chartState);
 
+        const overviewYAxisTickPadding = 8;
+        const overviewYAxisBadgePadding = 5;
+        // The first and last ticks are hidden padding bounds, so the badge and
+        // the axis width both follow only the labels actually drawn.
+        const formatOverviewYAxisBadgeTickLabel = (tickValue, ticks = []) => String(
+            (Array.isArray(ticks) ? ticks : []).find((tick) => tick?.value === tickValue)?.label ?? '',
+        );
         const getOverviewYAxisWidth = (scale) => {
+            // Hug the widest drawn label. The hover badge right-aligns its
+            // integer digits to those labels and lets the fraction run into the
+            // plot, so it only adds its own horizontal padding; the integer part
+            // of the largest value covers a badge above the top drawn label.
             const axisMeasurementContext = scale?.ctx || canvas.getContext('2d');
-            if (!axisMeasurementContext) return 52;
+            const ticks = Array.isArray(scale?.ticks) ? scale.ticks : [];
+            if (!axisMeasurementContext || !ticks.length) return scale?.width;
             axisMeasurementContext.save();
             axisMeasurementContext.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
             const chartValues = scale?.chart?.data?.datasets?.[0]?.data || chartState.equity;
-            const widestEquityLabelWidth = chartValues.reduce((widestWidth, value) => {
-                const numericValue = Number(value);
-                if (!Number.isFinite(numericValue)) return widestWidth;
-                return Math.max(
-                    widestWidth,
-                    axisMeasurementContext.measureText(runtime.formatHoldingsMoney(numericValue)).width,
-                );
+            const largestValue = chartValues.reduce((largest, value) => {
+                const numericValue = Math.abs(Number(value));
+                return Number.isFinite(numericValue) ? Math.max(largest, numericValue) : largest;
             }, 0);
+            const largestIntegerCopy = runtime.formatHoldingsMoney(largestValue).replace(/\.\d*$/, '');
+            const widestLabelWidth = ticks.reduce(
+                (widestWidth, tick) => Math.max(
+                    widestWidth,
+                    axisMeasurementContext.measureText(String(tick?.label ?? '')).width,
+                ),
+                axisMeasurementContext.measureText(largestIntegerCopy).width,
+            );
             axisMeasurementContext.restore();
-            return Math.max(52, Math.ceil(widestEquityLabelWidth + 16));
+            return Math.ceil(
+                overviewYAxisTickPadding + widestLabelWidth + overviewYAxisBadgePadding,
+            );
         };
 
         // Read theme tokens
@@ -818,12 +950,12 @@ function renderEquityChartWithEquity(chartPoints) {
             };
         };
 
-        const formatChartDateLines = (dateParts) => {
-            const axisDateParts = runtime.isInvestmentOverviewHighPrecisionEquityRange()
-                ? {...dateParts, hours: null, minutes: null}
-                : dateParts;
-            return runtime.formatInvestmentFullDateLines(axisDateParts, { allowWrap: true });
-        };
+        // Axis and hover-axis labels are dates only on every range; the exact
+        // minute belongs to the tooltip.
+        const formatChartDateLines = (dateParts) => runtime.formatInvestmentFullDateLines(
+            dateParts ? {...dateParts, hours: null, minutes: null} : dateParts,
+            { allowWrap: true },
+        );
 
         const hoverGuidePlugin = {
             id: "investmentHoverGuidePlugin",
@@ -873,10 +1005,7 @@ function renderEquityChartWithEquity(chartPoints) {
                     y,
                     value: pointEquity,
                     formattedValue: formattedEquity,
-                    formatTickLabel: (tickValue) => new Intl.NumberFormat('en-US', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 2,
-                    }).format(Number(tickValue)),
+                    formatTickLabel: formatOverviewYAxisBadgeTickLabel,
                     fillColor: resolvedTheme.accentPrimary,
                     boundsProperty: '_activeInvestmentEquityGuideBounds',
                     boundsAliases: {formattedEquity, equity: pointEquity},
@@ -1001,8 +1130,6 @@ function renderEquityChartWithEquity(chartPoints) {
                 const labels = Array.isArray(runtimeState.labels) ? runtimeState.labels : [];
                 const rawDates = Array.isArray(runtimeState.rawDates) ? runtimeState.rawDates : [];
                 if (!chartArea || !xScale || !labels.length) return;
-                const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-                const tickIndexes = runtime.buildInvestmentAxisTickIndexes(labels, rawDates, viewportWidth, parseRawDate);
                 const baselineY = chartArea.bottom;
                 const labelOptions = chart.options?.plugins?.investmentXAxisLabels || {};
                 const fontSize = Number.parseFloat(labelOptions.fontSize) || 12;
@@ -1013,17 +1140,32 @@ function renderEquityChartWithEquity(chartPoints) {
                 ctx.fillStyle = resolvedTheme.muted;
                 ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
                 ctx.textBaseline = "top";
-                tickIndexes.forEach((index, tickIndex) => {
-                    const parsedDate = parseRawDate(rawDates[index]);
-                    if (!parsedDate) return;
-                    const [firstLine, secondLine] = formatChartDateLines(parsedDate);
-                    const x = xScale.getPixelForValue(index);
-                    if (!Number.isFinite(x)) return;
-                    if (tickIndex === 0) ctx.textAlign = "left";
-                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
-                    else ctx.textAlign = "center";
-                    ctx.fillText(firstLine, x, baselineY);
-                    ctx.fillText(secondLine, x, baselineY + lineHeight);
+                const lineCache = new Map();
+                const getDateLines = (index) => {
+                    if (!lineCache.has(index)) {
+                        const parsedDate = parseRawDate(rawDates[index]);
+                        lineCache.set(index, parsedDate ? formatChartDateLines(parsedDate) : null);
+                    }
+                    return lineCache.get(index);
+                };
+                const ticks = runtime.chartAxis.layoutDateAxisTicks({
+                    count: labels.length,
+                    getPixel: (index) => xScale.getPixelForValue(index),
+                    measureWidth: (index) => Math.max(
+                        0,
+                        ...(getDateLines(index) || []).map((line) => ctx.measureText(String(line || '')).width),
+                    ),
+                    boundsLeft: 0,
+                    boundsRight: chart.width,
+                    getKey: (index) => (getDateLines(index) ? runtime.normalizeLedgerDate(rawDates[index]) : ''),
+                    specialIndexes: labelOptions.specialIndexes,
+                    includeSpecialIndexes: labelOptions.includeSpecialIndexes === true,
+                });
+                ticks.forEach((tick) => {
+                    const [firstLine, secondLine] = getDateLines(tick.index) || [];
+                    ctx.textAlign = tick.align;
+                    ctx.fillText(firstLine, tick.x, baselineY);
+                    ctx.fillText(secondLine, tick.x, baselineY + lineHeight);
                 });
                 ctx.restore();
             },
@@ -1533,7 +1675,8 @@ function renderEquityChartWithEquity(chartPoints) {
             maintainAspectRatio: false,
             layout: {
                 padding: {
-                    left: holdingsMarkerSafePadding,
+                    // The y-axis already separates the plot from the canvas edge.
+                    left: 0,
                     right: Math.max(holdingsMarkerSafePadding, realtimeMarkerSafePadding),
                     top: Math.max(44, realtimeMarkerSafePadding),
                     bottom: 24,
@@ -1567,7 +1710,7 @@ function renderEquityChartWithEquity(chartPoints) {
                     ticks: {
                         color: resolvedTheme.muted,
                         display: true,
-                        padding: 8,
+                        padding: overviewYAxisTickPadding,
                         callback(value, index, ticks) {
                             if (index === 0 || index === ticks.length - 1) return '';
                             if (runtime.state.investmentShareMaskEnabled) return '***';
@@ -1661,6 +1804,8 @@ function formatEventType(type) {
         buildInvestmentChartPnlMetrics,
         setInvestmentCurrentChartPnlMetrics,
         refreshInvestmentChartPnlState,
+        buildInvestmentChartRealizedPnlTimeline,
+        getInvestmentChartTimelineRealizedPnl,
         getInvestmentChartPnlPointTransactions,
         getInvestmentChartPnlPointPrices,
         buildInvestmentHistoricalChartPnlMetrics,
