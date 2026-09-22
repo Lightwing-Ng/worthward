@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 (() => {
     const create = (context) => {
         const {
@@ -60,6 +60,34 @@
         let compareOverlayTimer = null;
         const portfolioWeightState = {clock: 0, touchedAtByIndex: {}};
         const tickerValidationCache = new Map();
+        const tickerLookupPendingRequests = new Map();
+
+        const fetchTickerSearchResults = async (rawQuery, {limit = 5} = {}) => {
+            const query = sanitizeTicker(String(rawQuery || "").trim());
+            const normalizedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 5, 1), 5);
+            const requestKey = `${query}|${normalizedLimit}`;
+            const pendingRequest = tickerLookupPendingRequests.get(requestKey);
+            if (pendingRequest) return pendingRequest;
+
+            const params = new URLSearchParams({q: query, limit: String(normalizedLimit)});
+            const request = (async () => {
+                const response = await fetch(`${endpoints.symbolSearch}?${params.toString()}`);
+                if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
+                const payload = await response.json();
+                return {
+                    payload: Array.isArray(payload) ? payload : [],
+                    status: response.status,
+                };
+            })();
+            tickerLookupPendingRequests.set(requestKey, request);
+            try {
+                return await request;
+            } finally {
+                if (tickerLookupPendingRequests.get(requestKey) === request) {
+                    tickerLookupPendingRequests.delete(requestKey);
+                }
+            }
+        };
 
         const isTickerValidationPending = () => getTickerInputs().some((input) => input.dataset.validationPending === "1");
 
@@ -161,9 +189,7 @@
             setTickerValidationPending(input, true);
             input.dataset.validationTicker = value;
             try {
-                const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(value)}&limit=5`);
-                if (!response.ok) throw new Error(`Ticker lookup failed: ${response.status}`);
-                const payload = await response.json();
+                const {payload} = await fetchTickerSearchResults(value, {limit: 5});
                 const isKnown = Boolean(payload.find((item) => tickersExplicitlyEquivalent(item?.symbol || "", value)));
                 if (input.dataset.validationTicker === value) {
                     input.dataset.unknown = isKnown ? "" : "1";
@@ -1073,9 +1099,7 @@
                 const requestId = ++autocompleteRequestSequence;
                 showLoadingPanel(queryValue);
                 try {
-                    const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(queryValue)}&limit=${limit}`);
-                    if (!response.ok) return closePanel();
-                    const payload = await response.json();
+                    const {payload} = await fetchTickerSearchResults(queryValue, {limit});
                     if (
                         requestId !== autocompleteRequestSequence
                         || input.dataset.composing === "1"
@@ -1252,17 +1276,15 @@
                             inputId: input.id || "",
                             requestId,
                         });
-                        const response = await fetch(`${endpoints.symbolSearch}?q=${encodeURIComponent(rawQuery)}`);
+                        const {payload, status} = await fetchTickerSearchResults(rawQuery, {limit: 5});
                         reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search response received", {
                             rawQuery,
                             query,
                             inputId: input.id || "",
-                            status: response.status,
+                            status,
                             requestId,
                         });
                         if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
-                        if (!response.ok) return closePanel();
-                        const payload = await response.json();
                         if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
                         if (!payload.length) {
                             setUnknown(true);

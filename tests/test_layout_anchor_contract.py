@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.0
+Code version: v0.25.1
 """
 
 from pathlib import Path
@@ -1740,6 +1740,9 @@ def test_workspace_controls_use_the_registered_sidebar_overlay_breakpoint() -> N
 def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None:
     app_css = _read(ASSET_ROOT / "css/app.css")
     settings_css = _read(ASSET_ROOT / "css/views/settings.css")
+    settings_sections_css = _read(
+        ASSET_ROOT / "css/views/settings-sections.css"
+    )
     workspace_css = _read(ASSET_ROOT / "css/views/workspace.css")
     trade_css = _read(ASSET_ROOT / "css/views/trade.css")
     investment_tables_css = _read(
@@ -1778,6 +1781,31 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
         "padding-inline-start: var(--layout-physical-effect-bleed);"
         in strategy_scrollport
     )
+
+    local_store_scrollport_start = settings_css.index(
+        ".settings-shell-local-market-store > .settings-content-scrollport {"
+    )
+    local_store_scrollport = settings_css[
+        local_store_scrollport_start : settings_css.index(
+            "\n}", local_store_scrollport_start
+        )
+    ]
+    for fragment in (
+        "margin-block-start: calc(-1 * var(--layout-physical-effect-bleed));",
+        "margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));",
+        "padding-block-start: var(--layout-physical-effect-bleed);",
+        "padding-inline-start: var(--layout-physical-effect-bleed);",
+    ):
+        assert fragment in local_store_scrollport
+
+    for fragment in (
+        ".scrollable-data-table-shell.local-store-table-shell {\n    overflow: visible;",
+        ".scrollable-data-table-shell.local-store-table-shell\n"
+        "    > .local-store-table-wrap.scrollable-data-table-scroll {\n"
+        "    border-radius: var(--radius-panel);\n"
+        "}",
+    ):
+        assert fragment in settings_sections_css
 
     for fragment in (
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;",

@@ -1,4 +1,4 @@
-/* Code version: v0.36.0 */
+/* Code version: v0.36.1 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -317,6 +317,19 @@
  */
 .settings-shell-strategies > .settings-content-scrollport {
     margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));
+    padding-inline-start: var(--layout-physical-effect-bleed);
+}
+
+/*
+ * Local Market Store begins with an elevated action package. Extend the
+ * scrollport at its clipped block/start edges, then restore the same padding,
+ * so the card keeps its content coordinates while its physical effect paints.
+ * The inline end remains fixed so the vertical scrollbar stays reachable.
+ */
+.settings-shell-local-market-store > .settings-content-scrollport {
+    margin-block-start: calc(-1 * var(--layout-physical-effect-bleed));
+    margin-inline-start: calc(-1 * var(--layout-physical-effect-bleed));
+    padding-block-start: var(--layout-physical-effect-bleed);
     padding-inline-start: var(--layout-physical-effect-bleed);
 }
 

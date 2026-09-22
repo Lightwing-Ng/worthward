@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 
 .settings-shell-strategies,
 .settings-strategy-list {
@@ -850,6 +850,15 @@
     max-width: 100%;
     overflow-x: auto;
     overflow-y: auto;
+}
+
+/*
+ * Floating pagination requires the Local Store shell to stay paint-visible,
+ * so this named data scroll owner, rather than the shell, owns the 10px mask.
+ */
+.scrollable-data-table-shell.local-store-table-shell
+    > .local-store-table-wrap.scrollable-data-table-scroll {
+    border-radius: var(--radius-panel);
 }
 
 .local-store-pagination {

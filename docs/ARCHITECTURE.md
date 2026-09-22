@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.126.0`
+Documentation version: `v1.126.1`
 
 ## Reuse and dependency boundaries
 
@@ -682,11 +682,18 @@ its scrollable demo layout requires it.
 
 The Settings workspace shell itself stays `overflow: visible`. All non-Style-token
 routes place their content in one `.settings-content-scrollport`, which is the only
-page-level vertical overflow owner. That scrollport remains inside the workspace's
-inline border box and uses the shared `--layout-physical-effect-bleed: 48px` only as
-block-end clearance; it does not use a negative inline margin to manufacture effect
-space. Animated service rows and similar local effects clip at their smallest owning
-surface. Tables and parameter lists retain their smaller internal scroll regions.
+page-level vertical overflow owner. The default scrollport remains inside the
+workspace's inline border box and uses the shared
+`--layout-physical-effect-bleed: 48px` as block-end clearance. A route whose first
+child owns a broad physical effect may extend only the clipped start edge with a
+token-derived negative margin and matching padding. This keeps content coordinates
+unchanged and leaves the inline-end scrollbar reachable. Local Market Store uses
+block-start and inline-start gutters for its leading action package; Strategies uses
+the inline-start gutter for elevated cards. Animated service rows and similar local
+effects clip at their smallest owning surface. Tables and parameter lists retain
+their smaller internal scroll regions. When floating pagination requires the Local
+Market Store table shell to remain `overflow: visible`, the named table scroll owner
+inherits the shared `10px` radius and clips its own data surface.
 
 ## Shared spatial layout contract
 

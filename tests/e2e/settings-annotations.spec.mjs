@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -117,6 +117,54 @@ for (const width of [1138, 800, 390]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     });
 }
+
+test('Local market store preserves effect clearance and rounded scroll ownership at the annotated viewport', async ({page}) => {
+    await page.setViewportSize({width: 830, height: 1_171});
+    await page.emulateMedia({colorScheme: 'light'});
+    await page.goto('/settings/local-market-store');
+
+    const geometry = await page.evaluate(() => {
+        const shell = document.querySelector('#settings_workspace_shell');
+        const scrollport = shell.querySelector(':scope > .settings-content-scrollport');
+        const card = scrollport.querySelector('.local-store-maintain-card');
+        const tableShell = scrollport.querySelector('.local-store-table-shell');
+        const tableScroll = tableShell.querySelector('#local_store_table_scroll');
+        const shellBounds = shell.getBoundingClientRect();
+        const scrollportBounds = scrollport.getBoundingClientRect();
+        const cardBounds = card.getBoundingClientRect();
+        const rootStyle = getComputedStyle(document.documentElement);
+        const scrollportStyle = getComputedStyle(scrollport);
+        const cardStyle = getComputedStyle(card);
+        const tableShellStyle = getComputedStyle(tableShell);
+        const tableScrollStyle = getComputedStyle(tableScroll);
+        return {
+            bleed: parseFloat(rootStyle.getPropertyValue('--layout-physical-effect-bleed')),
+            leftClearance: cardBounds.left - scrollportBounds.left,
+            topClearance: cardBounds.top - scrollportBounds.top,
+            scrollportKeepsEndEdge: Math.abs(scrollportBounds.right - shellBounds.right),
+            scrollportOverflowX: scrollportStyle.overflowX,
+            scrollportOverflowY: scrollportStyle.overflowY,
+            cardShadow: cardStyle.boxShadow,
+            tableShellOverflow: tableShellStyle.overflow,
+            tableShellRadius: tableShellStyle.borderRadius,
+            tableScrollRadius: tableScrollStyle.borderRadius,
+            documentOverflow: document.documentElement.scrollWidth
+                - document.documentElement.clientWidth,
+        };
+    });
+
+    expect(geometry.bleed).toBe(48);
+    expect(geometry.leftClearance).toBeCloseTo(geometry.bleed, 1);
+    expect(geometry.topClearance).toBeCloseTo(geometry.bleed, 1);
+    expect(geometry.scrollportKeepsEndEdge).toBeLessThanOrEqual(1);
+    expect(geometry.scrollportOverflowX).toBe('hidden');
+    expect(geometry.scrollportOverflowY).toBe('auto');
+    expect(geometry.cardShadow).not.toBe('none');
+    expect(geometry.tableShellOverflow).toBe('visible');
+    expect(geometry.tableShellRadius).toBe('10px');
+    expect(geometry.tableScrollRadius).toBe('10px');
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+});
 
 test('Settings sidebar effects escape the centered page at ultrawide width', async ({page}) => {
     await page.setViewportSize({width: 1_920, height: 960});

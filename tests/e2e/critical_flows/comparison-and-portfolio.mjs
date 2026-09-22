@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.3 */
 import {
     expect,
     test,
@@ -1077,6 +1077,44 @@ test('keeps a valid ticker lookup visible with fetching feedback', async ({page}
 
     releaseLookup();
     await expect(status).toBeHidden();
+});
+
+test('coalesces a cold SPYI exact ticker lookup before loading the comparison', async ({page}) => {
+    let lookupCount = 0;
+    await page.route('**/api/symbol-search?q=SPYI*', async (route) => {
+        const requestNumber = ++lookupCount;
+        await new Promise((resolve) => setTimeout(resolve, requestNumber === 1 ? 120 : 250));
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(requestNumber === 1 ? [{
+                symbol: 'SPYI',
+                name: 'NEOS S&P 500 High Income ETF',
+                logo_url: '/market-store/logos/SPYI.svg',
+                source: 'remote',
+            }] : []),
+        });
+    });
+    await page.route('**/workspaces/compare?**', async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.getAll('ticker').includes('SPYI')) {
+            await route.fulfill({
+                contentType: 'text/html',
+                body: '<!doctype html><title>SPYI comparison loaded</title>',
+            });
+            return;
+        }
+        await route.continue();
+    });
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=1y');
+
+    const input = page.locator('#ticker_2');
+    await input.fill('SPYI');
+    await expect(page.locator('#ticker_2_suggestions .suggestion-loading')).toHaveText('Fetching SPYI…');
+    await input.press('Enter');
+
+    await expect(page).toHaveURL(/ticker=SPYI/, {timeout: 10_000});
+    await expect(page).toHaveTitle('SPYI comparison loaded');
+    expect(lookupCount).toBe(1);
 });
 
 test('keeps prefix and exact ticker suggestions open until selection or Enter', async ({page}) => {

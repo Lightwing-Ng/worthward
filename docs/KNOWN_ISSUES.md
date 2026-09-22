@@ -122,6 +122,15 @@ Frontier CPU probability-model case, whose `skill` value is non-finite. These
 failures do not intersect the Investment-import selectors or the three-viewport
 physical-effect regression and remain outside this repair.
 
+Cold ticker validation, 22 Sep 2026: autocomplete, blur, change, and submit-time
+validation now share one in-flight exact-symbol lookup. A newly entered ticker
+with no local search cache therefore cannot be marked unsupported by a later
+duplicate lookup that returns an empty result after an earlier lookup already
+confirmed the symbol. The isolated regression uses SPYI and makes every
+hypothetical duplicate response empty so the cold-cache race stays reproducible.
+The user-owned 8688 process remains on its currently served asset graph until
+the owner performs the normal manual restart.
+
 Return-comparison ticker memory, 20 Sep 2026: a successfully rendered ticker
 set is now retained in browser-local storage. Returning through an unparameterized
 `/workspaces/compare` entry restores that set, including across browser sessions;
