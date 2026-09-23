@@ -1,4 +1,4 @@
-/* Investment history-projection regressions. Code version: v1.3.5 */
+/* Investment history-projection regressions. Code version: v1.3.6 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -1025,6 +1025,69 @@ test('same-day replay without SHA rejects the sequence-incomparable boundary', (
     assert.equal(snapshots.length, 1);
     assert.notEqual(snapshots[0].replay_snapshot_kind, 'hsbc_cash_settlement_boundary');
     assert.equal(snapshots[0].broker_running_cash, 1_210);
+});
+
+test('same-day cash corroborated as the opening balance retains later SEC settlement', () => {
+    const {buildHsbcSettlementReplaySnapshots} = createHistoryProjection();
+    const owner = {
+        ...makeSettlementSell({
+            balanceAfter: 1_200,
+            brokerRunningCash: 998,
+            calculatedBalances: {USD: 998},
+            cashScopeLedger: makeScopeLedger({[USD_SAVINGS_SCOPE]: 998}),
+            sourceFileKind: 'hsbc_usd_savings_csv',
+            sourceSequenceSha256: HSBC_SEQUENCE_SHA_A,
+            rowNumber: 44,
+            ledgerSequence: 44,
+        }),
+        aggregate_running_cash: 998,
+        aggregate_display_cash: 998,
+        aggregate_cash_by_currency: {USD: 998},
+        aggregate_pending_settlement_cash: 0,
+    };
+    const directCash = {
+        ...makeCashRow({
+            date: '2026-09-18',
+            balanceAfter: 1_000,
+            brokerRunningCash: 1_000,
+            amount: 2,
+            rowNumber: 50,
+            ledgerSequence: 50,
+            sourceSequenceSha256: HSBC_SEQUENCE_SHA_B,
+        }),
+        aggregate_running_cash: 1_000,
+        aggregate_display_cash: 1_000,
+        aggregate_cash_by_currency: {USD: 1_000},
+        aggregate_pending_settlement_cash: 0,
+        calculated_broker_cash_by_currency: {USD: 1_000},
+        calculated_broker_cash_scope_ledger: makeScopeLedger({[USD_SAVINGS_SCOPE]: 1_000}),
+    };
+    directCash.source.ledger_sequence_order = 'chronological';
+    const boundary = {
+        ownerTransactionIndex: 0,
+        broker: 'hsbc', account: 'HSBC-TEST', accountType: 'USD SAVINGS',
+        cashScopeKey: USD_SAVINGS_SCOPE,
+        date: '2026-09-18', currency: 'USD', settlementAmount: 200,
+        settlementBalanceAfter: 1_200,
+        sourceRowSequence: 44, sourceRowNumber: 44,
+        sourceFileKind: 'hsbc_usd_savings_csv', sourceSequenceSha256: HSBC_SEQUENCE_SHA_A,
+        sourceSequenceDirection: 1,
+    };
+    const snapshots = buildHsbcSettlementReplaySnapshots([owner, directCash], [boundary]);
+
+    assert.equal(snapshots.length, 3);
+    assert.equal(snapshots[0].aggregate_pending_settlement_cash, 200);
+    assert.equal(snapshots[1].aggregate_display_cash, 1_200);
+    assert.equal(snapshots[2].aggregate_running_cash, 1_200);
+    assert.equal(snapshots[2].aggregate_pending_settlement_cash, 0);
+
+    const conflictingCash = {
+        ...directCash,
+        source: {...directCash.source, balance_after_raw: '990'},
+    };
+    const rejected = buildHsbcSettlementReplaySnapshots([owner, conflictingCash], [boundary]);
+    assert.equal(rejected.length, 2);
+    assert.equal(rejected[0].aggregate_pending_settlement_cash, 0);
 });
 
 test('replay rejects an invalid-date direct row claiming the boundary physical row', () => {

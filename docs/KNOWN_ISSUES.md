@@ -1,5 +1,16 @@
 # Known issues and operating constraints
 
+HSBC same-day settlement replay, 23 Sep 2026: an Overview trough around the
+August SGOV sale came from discarding its evidenced SEC posting chain when a
+same-day pasted cash row belonged to another source-sequence domain. The
+independent USD Savings CSV supplies a chronological balance chain whose
+opening balance exactly matches that cash row. Historical replay now accepts
+that narrow corroboration, keeps the sale proceeds as a receivable from trade
+date, and transfers them to settled cash on the CSV posting date. A mismatched
+opening balance, broken posting chain, or additional incomparable cash row
+continues to fail closed. The production ledger and the user-owned 8688
+process were not rewritten or restarted for this source change.
+
 Overview hover Realized P&L, 22 Sep 2026: historical hover previously rebuilt
 realized P&L by point-in-time replay with broker performance calibrations
 disabled, so any calibrated or partially covered ticker made the whole row

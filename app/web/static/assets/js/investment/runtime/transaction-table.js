@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.4.6
+ * Code version: v1.4.7
+ * - Changed: Loads the history projection that corroborates same-day cash
+ *   against the opening balance of an immutable SEC posting chain.
  * - Changed: Loads the history projection that folds unscoped same-currency
  *   replay deltas into an existing settlement cash scope.
  * - Changed: Loads exact-date and safe-decimal HSBC evidence validation.
@@ -26,7 +28,7 @@
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.6';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.7';
 
 export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
     const numericValue = Number(value);

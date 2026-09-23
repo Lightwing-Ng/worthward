@@ -1,38 +1,18 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.3.6
- * - Fixed: A settlement boundary in an existing cash scope now includes that
- *   currency's unscoped replay delta, so legacy direct-cash rows without
- *   sequence provenance are not double counted in historical Cash and Equity.
- * - Changed: Loads the exact-date, safe-decimal history-evidence contract.
- * - Fixed: Duplicate physical direct-cash identities remain provisional even
- *   when no structured settlement boundary references the disputed row.
- * - Fixed: Available-cash calibration can override replay cash only when the
- *   owning row satisfies the same immutable direct-cash evidence contract.
- * - Fixed: Scalar-only legacy settlement metadata cannot create history cash
- *   deltas, and structured legs require exact canonical raw evidence.
- * - Fixed: Incomplete direct-cash identities cannot become authoritative
- *   history boundaries or clear an evidenced settlement correction.
- * - Changed: HSBC history evidence normalization and immutable identity checks
- *   are composed from a bounded helper module without changing replay policy.
- * - Fixed: Conflicting direct cash aliases and global SHA-plus-row collisions
- *   invalidate synthetic settlement boundaries and remain provisional.
- * - Fixed: Trailing blank-balance settlement postings can adjust a cash
- *   boundary only inside the exact account, currency, source, date, and
- *   immutable source-sequence domain of that boundary.
- * - Fixed: Blank settlement balances remain unavailable, exact target cash
- *   scopes can be created from authoritative balances, and same-day
- *   sequence-incomparable boundaries no longer overwrite cash evidence.
- * - Fixed: HSBC settlement history corrections are isolated by cash
- *   subaccount and clear only against comparable source-sequence evidence.
- * - Fixed: HSBC settlement boundaries remain scoped to their native currency,
- *   and an older cash row cannot clear a newer settlement correction.
+ * Code version: v1.3.7
+ * - Fixed: A direct cash row from another source can precede same-day SEC
+ *   postings when its balance exactly matches their first opening balance.
+ * - Historical cash corrections remain scoped to immutable broker evidence.
  */
 
 import {
     createHsbcHistoryEvidenceUtils,
 } from './history-evidence.js?v=investment-history-evidence-v1.0.3';
+import {
+    createHsbcOpeningCashCorroborationMatcher,
+} from './history-cash-corroboration.js?v=investment-history-cash-corroboration-v1.0.0';
 
 export function createInvestmentHistoryProjectionRuntime(runtime, context) {
 const {
@@ -431,6 +411,16 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                     Number(boundary?.ownerTransactionIndex),
                 )
             ));
+            const isCorroboratedOpeningCash = createHsbcOpeningCashCorroborationMatcher(
+                transactionsForReplay,
+                boundariesForReplay,
+                {
+                    normalizeLedgerDate: runtime.normalizeLedgerDate,
+                    isHsbcCashEvidenceTransaction,
+                    getHsbcCashEvidenceState,
+                    parseFiniteNonBlankHsbcNumber,
+                },
+            );
             boundariesForReplay = boundariesForReplay.filter((boundary) => {
                 const boundaryDate = runtime.normalizeLedgerDate(boundary?.date);
                 if (!boundaryDate) return false;
@@ -448,6 +438,7 @@ function buildHsbcSettlementReplaySnapshots(canonicalTransactions, settlementBou
                     const cashEvidence = getHsbcCashEvidenceState(txn);
                     const descriptor = cashEvidence.descriptor;
                     if (descriptor.cashScopeKey !== boundary.cashScopeKey) return;
+                    if (isCorroboratedOpeningCash(txn, boundary)) return;
                     sameScopeCashCount += 1;
                     const boundaryFileKind = String(
                         boundary?.sourceFileKind || '',
