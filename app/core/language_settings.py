@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.10.0
+Code version: v0.10.1
 """
 
 from __future__ import annotations
@@ -91,6 +91,7 @@ DEFAULT_TRANSLATION_ROWS: tuple[dict[str, str], ...] = (
     {"en": "No.", "zh_hant_hk": "序號", "zh_hans_cn": "序号"},
     {"en": "No language mapping changes recorded yet.", "zh_hant_hk": "尚未記錄任何語言對照表變更。", "zh_hans_cn": "尚未记录任何语言映射变更。"},
     {"en": "Palette", "zh_hant_hk": "調色板", "zh_hans_cn": "调色板"},
+    {"en": "Process List example", "zh_hant_hk": "流程清單範例", "zh_hans_cn": "流程列表示例"},
     {"en": "Reset", "zh_hant_hk": "重設", "zh_hans_cn": "重置"},
     {"en": "Reset all color overrides", "zh_hant_hk": "重設所有色彩覆寫", "zh_hans_cn": "重置所有色彩覆盖"},
     {"en": "Save translations", "zh_hant_hk": "儲存翻譯", "zh_hans_cn": "保存翻译"},

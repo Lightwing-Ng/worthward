@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.2.1 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1011,8 +1011,28 @@ body.is-investment-import-modal-open .investment-import-control-rail {
     right: var(--global-quick-actions-right);
 }
 
-#toggle_form_button,
-#investment_import_close_button {
+.investment-import-modal-close {
+    z-index: 5;
+    color: var(--theme-error);
+}
+
+.investment-import-modal-close[hidden] {
+    display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .investment-import-form > .investment-import-modal-close {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .investment-import-form:is(:hover, :focus-within) > .investment-import-modal-close {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+#toggle_form_button {
     position: static;
 }
 
@@ -1033,10 +1053,6 @@ body.is-investment-import-modal-open #investment_section_resizer {
 
 body.is-investment-import-modal-open #global_quick_actions {
     z-index: 10002;
-}
-
-#investment_import_close_button[hidden] {
-    display: none;
 }
 
 .investment-history-empty-cell {
@@ -1152,6 +1168,10 @@ body.is-investment-import-modal-open {
     overflow: hidden;
 }
 
+body.is-investment-import-modal-open [data-shared-select-overlay] {
+    z-index: 10001;
+}
+
 body:has(#transaction_form_container .investment-import-broker-field.is-open) canvas {
     pointer-events: none;
 }
@@ -1172,6 +1192,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
         + 10px
     );
     display: flex;
+    position: relative;
     flex-direction: column;
     flex: 0 1 auto;
     gap: 0;
@@ -1270,9 +1291,71 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     grid-template-columns: minmax(0, 1fr);
 }
 
-#investment_import_boc_hk_fields > [data-import-field="boc_hk-statements"] {
+#investment_import_boc_hk_fields [data-import-field="boc_hk-statements"] {
     width: 100%;
     max-width: none;
+}
+
+.investment-import-process-list {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+}
+
+.investment-import-process-list .investment-import-field {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+.investment-import-process-list .investment-import-label-trigger {
+    grid-template-columns: minmax(0, 1fr) var(--circular-icon-button-size);
+    min-height: var(--process-list-marker-size);
+    max-height: none;
+    font-size: var(--process-list-heading-font-size);
+    font-weight: var(--process-list-heading-font-weight);
+}
+
+.investment-import-process-list .investment-import-label-text {
+    grid-column: 1;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.investment-import-process-list .investment-import-status-icon {
+    grid-column: 2;
+}
+
+.investment-import-process-list .investment-import-plain-control-row,
+.investment-import-process-list .investment-import-file-hint {
+    padding-left: 0;
+}
+
+.investment-import-process-list .investment-import-date-row {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.investment-import-process-list .investment-import-paste-row {
+    grid-template-columns: minmax(0, 1fr) var(--circular-icon-button-size);
+}
+
+.investment-import-process-list .investment-import-paste-row::before {
+    content: none;
+}
+
+.investment-import-process-list .investment-import-paste-shell {
+    grid-column: 1;
+}
+
+.investment-import-process-list .investment-import-paste-button {
+    grid-column: 2;
 }
 
 .investment-import-broker-field {
@@ -1403,6 +1486,10 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-plain-field .investment-import-label-trigger {
     grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--circular-icon-button-size);
+}
+
+.investment-import-process-list .investment-import-plain-field .investment-import-label-trigger {
+    grid-template-columns: minmax(0, 1fr) var(--circular-icon-button-size);
 }
 
 .investment-import-plain-control-row {

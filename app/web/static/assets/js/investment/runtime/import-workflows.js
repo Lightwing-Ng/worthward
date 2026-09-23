@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Changed: HSBC is the import chooser fallback when a selection is absent.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -589,7 +590,7 @@ function refreshInvestmentStockDetailsTableRows({ refreshHeaders = true, scrollT
     }
 
 function getSelectedInvestmentImportBroker() {
-        return runtime.normalizeInvestmentBroker(runtime.investmentImportBrokerSelect?.value || 'ibkr');
+        return runtime.normalizeInvestmentBroker(runtime.investmentImportBrokerSelect?.value || 'hsbc');
     }
 
 function getSelectedIbkrImportMode() {
@@ -1522,4 +1523,3 @@ function isUnsettledHsbcBuyTransaction(txn) {
         isUnsettledHsbcBuyTransaction,
     };
 }
-

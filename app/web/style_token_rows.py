@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.33.0
+Code version: v1.34.0
 """
 
 from __future__ import annotations
@@ -230,6 +230,35 @@ def build_style_token_rows(
                 raw_token("--collapse-body-padding", "0 10px 10px"),
                 raw_token("--collapse-font-size", "var(--font-size-5)"),
                 raw_token("--collapse-font-weight", "var(--font-weight-medium)"),
+            ],
+            "related_styles": [],
+        },
+        {
+            "id": style_token_id("Process List"),
+            "name": "Process List",
+            "sample_kind": "process-list",
+            "sample_steps": [
+                {"title": "Prepare the source", "copy": "Identify the source and the exact data to use."},
+                {"title": "Review the details", "copy": "Check the relevant settings before proceeding."},
+                {"title": "Apply the change", "copy": "Complete the intended action in its owning workspace."},
+                {"title": "Verify the result", "copy": "Confirm that the result matches the source."},
+            ],
+            "tokens": [
+                px_token("--process-list-step-gap", 24),
+                px_token("--process-list-marker-size", 32),
+                px_token("--process-list-marker-border-width", 2),
+                px_token("--process-list-marker-halo-width", 4),
+                px_token("--process-list-column-gap", 16),
+                px_token("--process-list-connector-width", 2),
+                raw_token("--process-list-connector-color", "var(--accent-text)"),
+                raw_token("--process-list-marker-background", "var(--theme-background)"),
+                raw_token("--process-list-marker-color", "var(--accent-text)"),
+                raw_token("--process-list-heading-font-size", "var(--font-ui-lg)"),
+                raw_token("--process-list-heading-font-weight", "var(--font-weight-medium)"),
+                px_token("--process-list-copy-gap", 5),
+                raw_token("--process-list-copy-font-size", "var(--font-ui-md)"),
+                raw_token("--process-list-copy-line-height", "1.55"),
+                raw_token("--process-list-copy-color", "var(--theme-muted)"),
             ],
             "related_styles": [],
         },

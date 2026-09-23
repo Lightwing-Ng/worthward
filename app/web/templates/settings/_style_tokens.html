@@ -1,4 +1,4 @@
-{# Code version: v1.5.0 #}
+{# Code version: v1.6.1 #}
 {% from "_macros.html" import render_style_token_table with context %}
 {% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
@@ -76,6 +76,18 @@
                             </div>
                         </div>
                         {% endcall %}
+                    {% elif row.sample_kind == "process-list" %}
+                    <ol class="process-list" role="list" aria-label="{{ translate_ui('Process List example') }}">
+                        {% for step in row.sample_steps %}
+                        <li class="process-list-step"{% if not loop.last %} data-process-continues{% endif %}>
+                            <span class="process-list-marker" aria-hidden="true">{{ loop.index }}</span>
+                            <div class="process-list-content">
+                                <h3 class="process-list-heading">{{ translate_ui(step.title) }}</h3>
+                                <p class="style-token-process-list-copy">{{ translate_ui(step.copy) }}</p>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ol>
                     {% elif row.sample_kind == "range-mode" %}
                     {{ render_segmented_control(
                         "range-mode-shell",

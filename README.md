@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.36.0`
+Documentation version: `v3.36.1`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -607,6 +607,11 @@ scoped by currency during reconciliation so both legs remain distinct and a
 later corrected pair replaces both original legs safely.
 Each adapter preserves its source-specific reconciliation rules; imports are
 local and incremental.
+The import chooser defaults to HSBC when no previous choice is available and
+remembers the last selected broker in this browser. It stores only the broker
+code, not imported text, files, account identifiers, or credentials. Numbered
+import inputs use the shared Process List while keeping each broker's existing
+validation and import semantics.
 
 ### Yahoo Mail SMTP
 

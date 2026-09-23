@@ -1,7 +1,9 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.1.0
+ * Code version: v1.1.1
+ * - Changed: Import modal height follows its intended top edge after the
+ *   dismiss control moved inside the modal.
  * - Fixed: Single-broker current cash includes movements recorded after the
  *   broker's authoritative cash snapshot.
  */
@@ -625,14 +627,11 @@ function syncInvestmentImportContainerHeight() {
         if (quickActionsRect && quickActionsRect.width > 0 && quickActionsRect.height > 0) {
             document.body.style.setProperty('--investment-import-control-rail-top', `${quickActionsTop}px`);
         }
-        const closeButtonRect = runtime.investmentImportCloseButton?.getBoundingClientRect();
         const buttonSize = Number.parseFloat(
             getComputedStyle(document.body).getPropertyValue('--settings-round-icon-button-size'),
         ) || 36;
-        const controlRailTop = closeButtonRect && closeButtonRect.height > 0
-            ? closeButtonRect.top
-            : quickActionsTop + buttonSize + 10;
-        const alignedHeight = viewportHeight - controlRailTop - controlRailTop;
+        const modalTop = quickActionsTop + buttonSize + 10;
+        const alignedHeight = viewportHeight - modalTop - modalTop;
         runtime.formContainer.style.setProperty(
             '--investment-import-modal-height',
             `${Math.max(240, Math.min(availableHeight, alignedHeight))}px`,
@@ -850,4 +849,3 @@ async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
         fetchInvestmentData,
     };
 }
-

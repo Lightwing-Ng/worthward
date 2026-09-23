@@ -1,9 +1,12 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.154.1
+ * Code version: v2.155.2
  * - Changed: Loads the HSBC settlement replay correction for corroborated
  *   same-day cash and SEC postings.
+ * - Changed: Investment import uses the shared Process List, remembers the
+ *   selected broker, and aligns its dismiss control with the modal contract.
+ * - Fixed: The fixed import overlay escapes the history card's containing block.
  * - Changed: Loads the equity chart and stock details revisions that share the
  *   pixel-space date-axis layout.
  * - Changed: Loads the equity chart with a label-width Overview y-axis.
@@ -50,6 +53,11 @@
  */
 
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
+import {
+    adaptInvestmentImportProcessLists,
+    rememberInvestmentImportBroker,
+    restoreInvestmentImportBroker,
+} from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.0.0';
 import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.3.0';
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.2.0';
@@ -57,8 +65,8 @@ import {createInvestmentFundingMetricsRuntime} from './investment/runtime/fundin
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.1';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.0';
-import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.1.0';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.1';
+import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.1.1';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.0';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
@@ -167,7 +175,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.154.1',
+    entry: 'v2.155.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -329,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.investmentReportCard = runtime.investmentWorkspaceHeader?.querySelector(':scope > .investment-report-card');
     runtime.investmentSectionResizer = document.getElementById('investment_section_resizer');
     runtime.investmentForm = document.getElementById('investment_form');
+    adaptInvestmentImportProcessLists(runtime.investmentForm);
     runtime.importFeedback = document.getElementById('investment_import_feedback');
     runtime.importFeedbackMessage = document.getElementById('investment_import_feedback_message');
     runtime.importFeedbackIcon = document.getElementById('investment_import_feedback_icon');
@@ -356,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.ibkrHoldingsPasteButton = document.getElementById('ibkr_holdings_paste_button');
     runtime.ibkrHoldingsTextStatus = document.getElementById('ibkr_holdings_text_status');
     runtime.investmentImportBrokerSelect = document.getElementById('investment_import_broker');
+    restoreInvestmentImportBroker(runtime.investmentImportBrokerSelect);
     runtime.transactionsCsvStatus = document.getElementById('transactions_csv_status');
     runtime.positionsCsvStatus = document.getElementById('positions_csv_status');
     runtime.importSubmitButton = document.getElementById('investment_import_submit_button');
@@ -852,6 +862,7 @@ Object.assign(runtime, createInvestmentDataUtils({
             input.addEventListener('change', () => {
                 runtime.clearImportFeedback();
                 if (input === runtime.investmentImportBrokerSelect) {
+                    rememberInvestmentImportBroker(input);
                     runtime.syncInvestmentImportMode();
                 }
                 runtime.syncImportValidationState();
@@ -955,6 +966,11 @@ Object.assign(runtime, createInvestmentDataUtils({
 
     // Toggle form visibility
     runtime.parentSection = runtime.formContainer.closest('.chart-surface');
+    // The history card establishes a containing block for fixed descendants.
+    // Keep its layout reference, then portal the overlay to the viewport root.
+    if (runtime.formContainer.parentElement !== document.body) {
+        document.body.append(runtime.formContainer);
+    }
     if (runtime.toggleBtn && runtime.formContainer) {
         runtime.toggleBtn.addEventListener('click', () => {
             runtime.openInvestmentImportForm();

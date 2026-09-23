@@ -1,0 +1,77 @@
+/* Code version: v1.0.0 */
+
+.process-list {
+    display: grid;
+    gap: var(--process-list-step-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.process-list > .process-list-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--process-list-marker-size) minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--process-list-column-gap);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+}
+
+.process-list-step[data-process-continues]::before {
+    position: absolute;
+    z-index: 0;
+    inset-block-start: calc(var(--process-list-marker-size) + var(--process-list-marker-halo-width));
+    inset-block-end: calc(var(--process-list-marker-halo-width) - var(--process-list-step-gap));
+    inset-inline-start: calc((var(--process-list-marker-size) - var(--process-list-connector-width)) / 2);
+    width: var(--process-list-connector-width);
+    border-radius: var(--radius-pill);
+    background: var(--process-list-connector-color);
+    content: "";
+    pointer-events: none;
+}
+
+.process-list-marker {
+    position: relative;
+    z-index: 1;
+    grid-column: 1;
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    width: var(--process-list-marker-size);
+    height: var(--process-list-marker-size);
+    border: var(--process-list-marker-border-width) solid var(--process-list-connector-color);
+    border-radius: 50%;
+    background: var(--process-list-marker-background);
+    box-shadow: 0 0 0 var(--process-list-marker-halo-width) var(--theme-background);
+    color: var(--process-list-marker-color);
+    font-size: var(--process-list-heading-font-size);
+    font-weight: var(--process-list-heading-font-weight);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.process-list-content {
+    position: relative;
+    z-index: 1;
+    grid-column: 2;
+    min-width: 0;
+}
+
+.process-list-heading {
+    display: flex;
+    align-items: center;
+    min-height: var(--process-list-marker-size);
+    margin: 0;
+    font-size: var(--process-list-heading-font-size);
+    font-weight: var(--process-list-heading-font-weight);
+    line-height: 1.35;
+}
+
+.process-list-content > p {
+    margin: var(--process-list-copy-gap) 0 0;
+    color: var(--process-list-copy-color);
+    font-size: var(--process-list-copy-font-size);
+    line-height: var(--process-list-copy-line-height);
+}

@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.3.0 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -165,6 +165,33 @@ test('Local market store preserves effect clearance and rounded scroll ownership
     expect(geometry.tableScrollRadius).toBe('10px');
     expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
 });
+
+for (const width of [830, 390]) {
+    test(`Process List catalog keeps its four-step track at ${width}px`, async ({page}) => {
+        await page.setViewportSize({width, height: 1_171});
+        await page.goto('/settings/style-tokens');
+        const list = page.locator('#process-list .process-list');
+        await expect(list.locator(':scope > li')).toHaveCount(4);
+        const state = await list.evaluate((element) => {
+            const steps = [...element.children];
+            const markers = steps.map((step) => step.querySelector('.process-list-marker').getBoundingClientRect());
+            const headings = steps.map((step) => step.querySelector('.process-list-heading').getBoundingClientRect());
+            return {
+                markerSizes: markers.map((rect) => [rect.width, rect.height]),
+                headingCenterDeltas: headings.map((rect, index) => Math.abs(rect.top + rect.height / 2 - markers[index].top - markers[index].height / 2)),
+                connectorCount: steps.filter((step) => getComputedStyle(step, '::before').content !== 'none').length,
+                markerColor: getComputedStyle(steps[0].querySelector('.process-list-marker')).color,
+                connectorColor: getComputedStyle(steps[0], '::before').backgroundColor,
+                documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            };
+        });
+        expect(state.markerSizes).toEqual(Array(4).fill([32, 32]));
+        expect(state.headingCenterDeltas.every((delta) => delta <= 1)).toBe(true);
+        expect(state.connectorCount).toBe(3);
+        expect(state.markerColor).toBe(state.connectorColor);
+        expect(state.documentOverflow).toBeLessThanOrEqual(1);
+    });
+}
 
 test('Settings sidebar effects escape the centered page at ultrawide width', async ({page}) => {
     await page.setViewportSize({width: 1_920, height: 960});

@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.20.0`
+Documentation version: `v1.21.1`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -67,6 +67,23 @@ The Collapse specimen has no placeholder explanatory paragraph.
   tokens. Keyboard activation and focus-visible treatment remain native, and
   reduced-motion preference removes the chevron transition. Product surfaces may
   adapt body spacing, but must not redefine the marker, direction, or state motion.
+- Process List uses a semantic `.process-list > .process-list-step` ordered list.
+  Set `role="list"` on the `ol` to retain list semantics when CSS removes the
+  native marker.
+  Each step has an `aria-hidden` numbered `.process-list-marker` and a
+  `.process-list-content` containing a `.process-list-heading` and optional
+  paragraph. Only nonterminal steps set `data-process-continues` to draw the
+  connector. The common `--process-list-*` tokens preserve a 32px circular
+  marker, 2px accent border and connector, 4px background halo, 24px vertical
+  gap, and 16px column gap. A heading centers on the marker; copy starts 5px
+  below it. The content track may wrap at narrow widths without changing the
+  marker or overflowing the page. AgenticContext's Tunnel onboarding supplies
+  the production content, while the Worthward catalog and neoMe component
+  stylesheet expose the same primitive without inventing product flows.
+  Investment import adapts each broker's numbered upload, paste, or date steps
+  into this same ordered-list structure. Broker-specific controls remain inside
+  the content track, while the shared marker and connector remain the only
+  step affordances; switching an import mode must not leave a dangling track.
 - Shared workspace-modal and floating-notice dismiss buttons use standard error red
   (`--theme-error`). Fine hover-capable pointers reveal them by hovering or
   focusing within the owning modal/notice, not the entire page. Keyboard focus
@@ -88,6 +105,9 @@ The Collapse specimen has no placeholder explanatory paragraph.
   `--workspace-modal-list-marker-gap`, not local list literals. A dynamic message wrapper
   exposes one direct title and one direct paragraph or list; without a title, that
   wrapper remains explicitly assigned to the body row.
+  The Investment import overlay uses the same upper-left dismiss inset and size.
+  Its close button is absolutely positioned inside the modal, not in the
+  history-card control rail, so it cannot displace broker or method controls.
 - Circular icon actions use the `.circular-icon-button` primitive. Its canonical
   `--circular-icon-button-*` token family owns the `36px` desktop target, `18px`
   current-color glyph, pill radius, Frosted Glass material, and idle, hover, active,

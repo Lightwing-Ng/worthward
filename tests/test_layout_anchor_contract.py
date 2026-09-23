@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.1
+Code version: v0.25.2
 """
 
 from pathlib import Path
@@ -1846,7 +1846,7 @@ def test_effect_hosts_and_scrollports_have_explicit_overflow_ownership() -> None
         ".investment-import-field-group {",
         ".investment-import-field {",
     ):
-        rule_start = investment_tables_css.index(selector)
+        rule_start = investment_tables_css.index("\n" + selector) + 1
         rule = investment_tables_css[
             rule_start : investment_tables_css.index("\n}", rule_start)
         ]

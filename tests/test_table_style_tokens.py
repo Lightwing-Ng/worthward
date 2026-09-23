@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.20.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.21.0."""
 
 from __future__ import annotations
 
@@ -84,6 +84,19 @@ def test_style_tokens_expose_the_shared_switch_contract() -> None:
         assert token_name in tokens_css
         assert token_name in workspace_css
         assert token_name in style_token_rows
+
+
+def test_style_tokens_render_the_shared_process_list_component() -> None:
+    html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
+    process_html = html.split('data-style-token-card="process-list"', 1)[1].split(
+        '</section>', 1
+    )[0]
+    assert '<ol class="process-list"' in process_html
+    assert process_html.count('class="process-list-step"') == 4
+    assert process_html.count('data-process-continues') == 3
+    assert process_html.count('class="process-list-marker"') == 4
+    assert process_html.count('class="process-list-heading"') == 4
+    assert '--process-list-marker-size' in process_html
 
 
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:

@@ -1,4 +1,4 @@
-{# Code version: v1.74.22 #}
+{# Code version: v1.75.2 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -139,15 +139,6 @@
         <div class="investment-import-control-rail" aria-label="Investment import controls">
             <button type="button"
                     class="circular-icon-button settings-round-icon-button"
-                    id="investment_import_close_button"
-                    aria-label="Close broker import or sync form"
-                    title="Close import"
-                    disabled
-                    hidden>
-                <span class="icon investment-import-close-icon" aria-hidden="true"></span>
-            </button>
-            <button type="button"
-                    class="circular-icon-button settings-round-icon-button"
                     id="toggle_form_button"
                     aria-label="Import or sync broker activity"
                     title="Import or sync broker activity">
@@ -158,6 +149,15 @@
                 <form class="controls trade-controls investment-form investment-import-form" id="investment_form"
                       data-card-shadow="false"
                       enctype="multipart/form-data">
+                    <button type="button"
+                            class="dismiss-button workspace-modal-close investment-import-modal-close"
+                            id="investment_import_close_button"
+                            aria-label="Close broker import or sync form"
+                            title="Close import"
+                            disabled
+                            hidden>
+                        <span class="icon investment-import-close-icon" aria-hidden="true"></span>
+                    </button>
                     <div class="investment-import-stack" data-layout-role="content-scrollport">
                         <div class="investment-import-field-group">
                             <div class="field live-trading-broker-strip backtest-shared-select-field investment-import-broker-field"
@@ -171,7 +171,7 @@
                                             hidden
                                             aria-hidden="true"
                                             tabindex="-1">
-                                        {{ render_broker_select_options(investment_import_broker_codes, 'ibkr') }}
+                                        {{ render_broker_select_options(investment_import_broker_codes, 'hsbc') }}
                                     </select>
                                     <div class="trade-strategy-combobox backtest-shared-select-combobox">
                                         <button type="button"
@@ -933,5 +933,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.13.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.154.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.155.2') }}"></script>
 {% endblock %}

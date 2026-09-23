@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.2.0 */
 import {
     expect,
     test,
@@ -36,6 +36,10 @@ test('keeps Investment import physical effects inside the shared scrollport clea
         await page.setViewportSize(viewport);
         await page.goto('/trade/investment?view=holdings');
         await page.locator('#toggle_form_button').click();
+        await page.locator('#investment_import_broker').evaluate((select) => {
+            select.value = 'ibkr';
+            select.dispatchEvent(new Event('change', {bubbles: true}));
+        });
         await expect(page.locator('#investment_import_ibkr_fields')).toBeVisible();
 
         const trigger = page.locator(
@@ -118,6 +122,82 @@ test('keeps Investment import physical effects inside the shared scrollport clea
     expect(consoleErrors).toEqual([]);
 });
 
+test('uses Process List across brokers and remembers the Investment import choice', async ({page}) => {
+    await mockInvestmentReadApis(page, {transactions: [], brokerSummaries: {}});
+    await page.setViewportSize({width: 830, height: 1291});
+    await page.goto('/trade/investment');
+    await page.evaluate(() => localStorage.removeItem('worthward:investment-import-broker'));
+    await page.reload();
+    await page.locator('#toggle_form_button').click();
+    await expect(page.locator('#investment_import_broker')).toHaveValue('hsbc');
+
+    const hsbcSteps = page.locator(
+        '#investment_import_hsbc_fields [data-hsbc-import-mode-panel="paste"] > ol.process-list > li.process-list-step',
+    );
+    await expect(hsbcSteps).toHaveCount(3);
+    await expect(hsbcSteps.locator(':scope > .process-list-marker')).toHaveText(['1', '2', '3']);
+    await expect(hsbcSteps.nth(0)).toHaveAttribute('data-process-continues', '');
+    await expect(hsbcSteps.nth(1)).toHaveAttribute('data-process-continues', '');
+    await expect(hsbcSteps.nth(2)).not.toHaveAttribute('data-process-continues');
+    await expect(page.locator('#investment_import_hsbc_fields [data-hsbc-import-mode-panel="paste"] > ol')).toHaveAttribute('role', 'list');
+    await expect(page.locator('#investment_import_hsbc_fields .investment-import-paste-button')).toHaveCount(3);
+    for (const [selector, count] of [
+        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"]', 2],
+        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="gainskeeper"]', 1],
+        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"]', 3],
+        ['#investment_import_longbridge_hk_fields', 2],
+        ['#investment_import_longbridge_sg_fields', 2],
+        ['#investment_import_futuhk_fields', 1],
+        ['#investment_import_boc_hk_fields', 1],
+        ['#investment_import_tigertrade_fields', 1],
+        ['#investment_import_usmart_hk_fields', 1],
+        ['#investment_import_zircon_hk_fields', 2],
+    ]) {
+        await expect(page.locator(`${selector} > ol.process-list > li.process-list-step`)).toHaveCount(count);
+    }
+    const modalGeometry = await page.locator('#investment_form').evaluate((modal) => {
+        const close = modal.querySelector('#investment_import_close_button');
+        const broker = modal.querySelector('[data-shared-select-kind="investment-import-broker"]');
+        const modalRect = modal.getBoundingClientRect();
+        const closeRect = close.getBoundingClientRect();
+        const brokerRect = broker.getBoundingClientRect();
+        return {
+            directChild: close.parentElement === modal,
+            insetTop: closeRect.top - modalRect.top,
+            insetLeft: closeRect.left - modalRect.left,
+            cssTop: getComputedStyle(close).top,
+            cssLeft: getComputedStyle(close).left,
+            buttonSize: closeRect.width,
+            noBrokerOverlap: closeRect.bottom <= brokerRect.top || closeRect.right <= brokerRect.left,
+        };
+    });
+    expect(modalGeometry.directChild).toBe(true);
+    expect(modalGeometry.cssTop).toBe('12px');
+    expect(modalGeometry.cssLeft).toBe('12px');
+    expect(Math.abs(modalGeometry.insetTop - modalGeometry.insetLeft)).toBeLessThanOrEqual(1);
+    expect(modalGeometry.buttonSize).toBe(24);
+    expect(modalGeometry.noBrokerOverlap).toBe(true);
+
+    await page.locator('#investment_import_broker').evaluate((select) => {
+        select.value = 'schwab';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await expect(page.locator('#investment_import_schwab_fields > ol.process-list > li')).toHaveCount(2);
+    expect(await page.evaluate(() => localStorage.getItem('worthward:investment-import-broker'))).toBe('schwab');
+    await page.locator('#investment_import_close_button').click({force: true});
+    await expect(page.locator('#investment_import_close_button')).toBeHidden();
+    await page.locator('#toggle_form_button').click();
+    await expect(page.locator('#investment_import_broker')).toHaveValue('schwab');
+    await page.reload();
+    await page.locator('#toggle_form_button').click();
+    await expect(page.locator('#investment_import_broker')).toHaveValue('schwab');
+
+    await page.setViewportSize({width: 390, height: 844});
+    await expect.poll(() => page.evaluate(() => (
+        document.documentElement.scrollWidth - document.documentElement.clientWidth
+    ))).toBeLessThanOrEqual(1);
+});
+
 test('validates the investment import flow without mutating the local store', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
@@ -150,8 +230,10 @@ test('validates the investment import flow without mutating the local store', as
     await page.locator('#toggle_form_button').click();
     const importControlState = await page.locator('.investment-import-control-rail').evaluate((rail) => {
         const openButton = rail.querySelector('#toggle_form_button');
-        const closeButton = rail.querySelector('#investment_import_close_button');
+        const modal = document.querySelector('#investment_form');
+        const closeButton = modal.querySelector('#investment_import_close_button');
         const closeRect = closeButton.getBoundingClientRect();
+        const modalRect = modal.getBoundingClientRect();
         const quickActions = document.querySelector('#global_quick_actions');
         const themeButton = document.querySelector('#global_theme_toggle');
         const quickActionsRect = quickActions?.getBoundingClientRect();
@@ -165,7 +247,10 @@ test('validates the investment import flow without mutating the local store', as
             closeBottom: closeRect.bottom,
             closeCenterY: closeRect.top + (closeRect.height / 2),
             closeCenterX: closeRect.left + (closeRect.width / 2),
-            railTop: closeRect.top,
+            modalTop: modalRect.top,
+            modalLeft: modalRect.left,
+            closeParentIsModal: closeButton.parentElement === modal,
+            closeSize: closeRect.width,
             openPointerEvents: getComputedStyle(openButton).pointerEvents,
             globalQuickActionsTop: quickActionsRect?.top,
             globalThemeTop: themeRect?.top,
@@ -178,10 +263,10 @@ test('validates the investment import flow without mutating the local store', as
     expect(importControlState.closeHidden).toBe(false);
     expect(importControlState.closeDisabled).toBe(false);
     expect(importControlState.closeTop).toBeGreaterThanOrEqual(importControlState.globalThemeBottom + 9);
-    expect(Math.abs(importControlState.closeCenterX - importControlState.globalThemeCenterX)).toBeLessThanOrEqual(1);
-    expect(Math.abs(importControlState.closeTop - await page.locator('#investment_form').evaluate(
-        (form) => form.getBoundingClientRect().top,
-    ))).toBeLessThanOrEqual(1);
+    expect(importControlState.closeParentIsModal).toBe(true);
+    expect(importControlState.closeSize).toBe(24);
+    expect(Math.abs(importControlState.closeTop - importControlState.modalTop - 12)).toBeLessThanOrEqual(1);
+    expect(Math.abs(importControlState.closeCenterX - importControlState.modalLeft - 24)).toBeLessThanOrEqual(1);
     expect(importControlState.openPointerEvents).toBe('none');
     const globalThemeToggleState = await page.locator('#global_theme_toggle').evaluate((button) => {
         const rect = button.getBoundingClientRect();
@@ -342,6 +427,12 @@ test('validates the investment import flow without mutating the local store', as
         const stack = container.querySelector('.investment-import-stack');
         const actionPackage = container.querySelector('.investment-import-action-package');
         const controlRail = document.querySelector('.investment-import-control-rail');
+        const closeButton = modal.querySelector('#investment_import_close_button');
+        const quickActions = document.querySelector('#global_quick_actions');
+        const buttonSize = Number.parseFloat(
+            getComputedStyle(document.body).getPropertyValue('--settings-round-icon-button-size'),
+        ) || 36;
+        const expectedModalTop = quickActions.getBoundingClientRect().top + buttonSize + 10;
         container.scrollTop = container.scrollHeight;
         stack.scrollTop = stack.scrollHeight;
         const containerRect = container.getBoundingClientRect();
@@ -376,10 +467,11 @@ test('validates the investment import flow without mutating the local store', as
             actionBottomGap: Math.abs(modalRect.bottom - actionRect.bottom - 16),
             stackActionGap: actionRect.top - stackRect.bottom,
             controlRailTop: controlRail?.getBoundingClientRect().top,
-            closeTop: controlRail?.querySelector('#investment_import_close_button')?.getBoundingClientRect().top,
-            closeBottom: controlRail?.querySelector('#investment_import_close_button')?.getBoundingClientRect().bottom,
+            closeTop: closeButton?.getBoundingClientRect().top,
+            closeBottom: closeButton?.getBoundingClientRect().bottom,
             modalTop: modalRect.top,
-            alignedModalHeight: window.innerHeight - ((controlRail?.getBoundingClientRect().top || 0) * 2),
+            alignedModalHeight: window.innerHeight - (expectedModalTop * 2),
+            expectedModalTop,
             controlRailOutsideScrollStack: !stack.contains(controlRail),
             pageScrollLocked: document.body.classList.contains('is-investment-import-modal-open'),
         };
@@ -407,8 +499,8 @@ test('validates the investment import flow without mutating the local store', as
     expect(importScrollGeometry.actionBottomGap).toBeLessThanOrEqual(1);
     expect(importScrollGeometry.controlRailOutsideScrollStack).toBe(true);
     expect(importScrollGeometry.pageScrollLocked).toBe(true);
-    expect(Math.abs(importScrollGeometry.closeTop - importScrollGeometry.modalTop)).toBeLessThanOrEqual(2);
-    expect(Math.abs(importScrollGeometry.controlRailTop - importControlState.railTop)).toBeLessThanOrEqual(6);
+    expect(Math.abs(importScrollGeometry.closeTop - importScrollGeometry.modalTop - 12)).toBeLessThanOrEqual(2);
+    expect(Math.abs(importScrollGeometry.modalTop - importScrollGeometry.expectedModalTop)).toBeLessThanOrEqual(2);
 
     await page.locator('#ibkr_import_mode_gainskeeper').evaluate((input) => {
         input.checked = true;
@@ -439,7 +531,7 @@ test('validates the investment import flow without mutating the local store', as
     await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
     await expect(page.locator('#ibkr_trade_notifications_date')).toHaveAttribute('type', 'hidden');
     await expect(page.getByRole('textbox', {name: 'Type page date'})).toBeVisible();
-    await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"] .investment-import-label-step')).toHaveText(['➊', '➋', '➌']);
+    await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"] .process-list-marker')).toHaveText(['1', '2', '3']);
     await expect(page.locator('[data-ibkr-calibration-table], [data-ibkr-calibration-row], [data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]')).toHaveCount(0);
     const stickyImportMode = await page.locator('#investment_import_ibkr_mode').evaluate((mode) => {
         const stack = mode.closest('.investment-import-stack');
@@ -523,7 +615,7 @@ test('validates the investment import flow without mutating the local store', as
       'href',
       '/api/investment/imports/zircon-hk/template.xlsx',
     );
-    await expect(page.locator('#investment_import_zircon_hk_fields .investment-import-label-step')).toHaveText(['➊', '➋']);
+    await expect(page.locator('#investment_import_zircon_hk_fields .process-list-marker')).toHaveText(['1', '2']);
     await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
     await page.setInputFiles(
       '#zircon_hk_transactions_xlsx',
@@ -777,6 +869,10 @@ test('omits pre-existing Unbound rows from a later IBKR import banner', async ({
     await page.goto('/trade/investment');
     await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
     await page.locator('#toggle_form_button').click();
+    await page.locator('#investment_import_broker').evaluate((select) => {
+        select.value = 'ibkr';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
     await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
     await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
         input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n8/20/2026, 8:00 PM\n10.00\n10\nFees: 0.10';
