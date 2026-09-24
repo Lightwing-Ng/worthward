@@ -1,6 +1,7 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.4.4
+Code version: v1.5.0
+- Added: Investment session-token handler for import dialog readiness.
 - Changed: Investment transaction cache schema v16 invalidates payloads built
   before broker snapshots exposed dated IBKR interest-accrual boundaries.
 - Changed: Compose bounded runtime domains through explicit context factories while
@@ -81,6 +82,7 @@ from app.core.live_trading_security import (
     validate_live_trading_pin,
 )
 from app.web.request_security import (
+    investment_session_security_token,
     validate_investment_browser_write_request,
     validate_local_browser_write_request,
 )
@@ -622,6 +624,7 @@ class WebRuntime:
     market_store_presence_api: Any
     investment_page: Any
     investment_get_transactions: Any
+    investment_session_security_token: Any
     investment_add_transaction: Any
     investment_download_zircon_hk_template: Any
     investment_export_standard_xlsx: Any
@@ -918,6 +921,7 @@ def build_web_runtime() -> WebRuntime:
         market_store_presence_api=market_store_presence_api,
         investment_page=investment_page,
         investment_get_transactions=investment_get_transactions,
+        investment_session_security_token=investment_session_security_token,
         investment_add_transaction=investment_add_transactions,
         investment_download_zircon_hk_template=investment_download_zircon_hk_template,
         investment_export_standard_xlsx=investment_export_standard_xlsx,

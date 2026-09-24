@@ -1,4 +1,4 @@
-/* Code version: v1.8.0 */
+/* Code version: v1.8.1 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -7,6 +7,24 @@ async function expectFieldTitle(locator) {
     await expect(locator).toHaveCSS('line-height', 'normal');
     await expect(locator).toHaveCSS('letter-spacing', 'normal');
     await expect(locator).toHaveCSS('color', 'rgb(11, 12, 12)');
+}
+
+for (const width of [1024, 390]) {
+    test(`strategy tuning active surface follows the dark sidebar at ${width}px`, async ({page}) => {
+        await page.setViewportSize({width, height: 863});
+        await page.emulateMedia({colorScheme: 'dark'});
+        await page.goto('/settings/style-tokens');
+        const button = page.locator('[data-style-token-strategy-tune-button]');
+        await expect(button).toHaveAttribute('aria-pressed', 'true');
+        await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        await expect(button).toHaveCSS('background-image', 'none');
+        const colors = await button.evaluate((node) => ({
+            border: getComputedStyle(node).borderColor,
+            icon: getComputedStyle(node.querySelector('.icon')).backgroundColor,
+        }));
+        expect(colors.border).toBe('rgb(0, 85, 204)');
+        expect(colors.icon).toBe('rgb(0, 85, 204)');
+    });
 }
 
 for (const width of [1024, 800, 390]) {

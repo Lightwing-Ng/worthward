@@ -1,7 +1,8 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Fixed: Workbook validation refreshes the browser write session first.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -1291,6 +1292,9 @@ async function validateZirconHkWorkbook() {
         formData.append('zircon_hk_transactions_xlsx', file);
         setImportFeedback('Validating the manual investment workbook…', 'loading');
         try {
+            if (!(await runtime.ensureInvestmentImportSession())) {
+                throw new Error(runtime.describeInvestmentImportSessionFailure());
+            }
             const response = await fetch(
                 '/api/investment/imports/zircon-hk/validate',
                 runtime.buildInvestmentRequestOptions({

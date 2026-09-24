@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.1 */
 import {
     expect,
     test,
@@ -525,8 +525,9 @@ test('protects Price field detail resolution at the desktop resizer endpoint', a
     });
     expect(protectedGeometry.cellCount).toBe(480);
     expect(protectedGeometry.minimumCellSize).toBeGreaterThanOrEqual(4);
-    expect(Math.abs(protectedGeometry.minimumCellSize - beforeEndpointCellSize))
-        .toBeLessThanOrEqual(0.1);
+    // End may reduce an initially taller split; the endpoint must keep usable cells.
+    expect(protectedGeometry.minimumCellSize)
+        .toBeLessThanOrEqual(beforeEndpointCellSize + 0.1);
     expect(protectedGeometry.historyMinimum).toBeGreaterThan(0);
     expect(protectedGeometry.historyHeight + 1).toBeGreaterThanOrEqual(
         protectedGeometry.historyMinimum,
@@ -616,6 +617,10 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
         .toHaveText(sideSummary.upText);
     await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
         .toHaveText(sideSummary.downText);
+    await expect(detailPanel.locator('.backtest-probability-detail-scope'))
+        .toHaveText('Higher/lower values average probability mass within the displayed price range across forecast horizons.');
+    await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
+        .toBeHidden();
     expect(sideSummary.upText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
     expect(sideSummary.downText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
     expect(sideSummary.forecastHorizonCount).toBeGreaterThan(0);
@@ -743,6 +748,202 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
     expect(narrowOverflow.documentOverflow).toBeLessThanOrEqual(1);
     expect(narrowOverflow.panelOverflow).toBeLessThanOrEqual(1);
     expect(narrowOverflow.statusRight).toBeLessThanOrEqual(narrowOverflow.panelRight + 1);
+});
+
+test('separates Cycle one-step rise probability from the displayed-range field share', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 867, height: 1297});
+    await page.emulateMedia({colorScheme: 'dark'});
+    await page.goto('/workspaces/backtest?ticker=DRAM&range=1y&strategy=cycle-of-price-action');
+    await openBacktestParameterOverlay(page);
+    const tuneButton = page.locator('[data-trade-strategy-tune-button]');
+    await expect(tuneButton).toBeVisible();
+    await expect(tuneButton).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(tuneButton).toHaveCSS('background-image', 'none');
+    await page.locator('[data-backtest-parameter-toggle]').click();
+    await expect(page.locator('[data-backtest-parameter-panel]')).toBeHidden();
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    await page.locator('label[for="backtest_history_probability"]').click();
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    await expect(detailPanel).toBeVisible();
+    await expect.poll(() => detailPanel.locator('.backtest-probability-detail-cell').count())
+        .toBeGreaterThan(0);
+    const expectedOneStep = await page.evaluate(() => {
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        const index = Number(panel?.dataset.activeIndex);
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const probability = presentation?.probability_up?.[index];
+        if (presentation?.schema !== 'cycle-of-price-action/v1'
+            || !Number.isInteger(index) || !Number.isFinite(probability)) return null;
+        return `${new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(probability * 100)}%`;
+    });
+    expect(expectedOneStep).not.toBeNull();
+    await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
+        .toHaveText(`Bayesian next-open to following-open rise: ${expectedOneStep}`);
+    await expect(detailPanel.locator('.backtest-probability-detail-scope')).toBeVisible();
+    const overflow = await detailPanel.evaluate((element) => ({
+        horizontal: element.scrollWidth - element.clientWidth,
+        vertical: element.scrollHeight - element.clientHeight,
+    }));
+    expect(overflow.horizontal).toBeLessThanOrEqual(1);
+    expect(overflow.vertical).toBeLessThanOrEqual(1);
+});
+
+test('keeps the Cycle Price field stable when an early date has no model', async ({page}) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({width: 592, height: 1297});
+
+    // The isolated DRAM store predates the real listing. Remove early model
+    // outputs only from this response so the price curve keeps its full span.
+    let unavailableEnd = -1;
+    await page.route('**/workspaces/backtest*', async (route) => {
+        if (new URL(route.request().url()).pathname !== '/workspaces/backtest'
+            || route.request().resourceType() !== 'document') {
+            await route.continue();
+            return;
+        }
+        const response = await route.fetch();
+        const html = await response.text();
+        const statePattern = /(<script id="worthward_state" type="application\/json">)([\s\S]*?)(<\/script>)/;
+        const match = statePattern.exec(html);
+        if (!match) throw new Error('Backtest state script is unavailable.');
+        const state = JSON.parse(match[2]);
+        const presentation = state.backtestResult?.strategy_presentation;
+        if (presentation?.schema !== 'cycle-of-price-action/v1'
+            || !Array.isArray(presentation.predictive_mean)
+            || presentation.predictive_mean.length < 40) {
+            throw new Error('The isolated DRAM Cycle presentation is unavailable.');
+        }
+        unavailableEnd = Math.max(12, Math.floor(presentation.predictive_mean.length * 0.18));
+        for (const key of [
+            'predictive_mean', 'predictive_scale', 'probability_up',
+            'return_autoregression', 'return_long_run_mean', 'return_innovation_scale',
+        ]) {
+            if (!Array.isArray(presentation[key])) {
+                throw new Error(`The Cycle presentation is missing ${key}.`);
+            }
+            presentation[key].fill(null, 0, unavailableEnd);
+        }
+        const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+        const body = html.replace(statePattern, (_match, start, _previousState, end) => (
+            `${start}${safeJson(state)}${end}`
+        ));
+        await route.fulfill({response, body});
+    });
+
+    await page.goto('/workspaces/backtest?ticker=DRAM&range=1y&strategy=cycle-of-price-action');
+    expect(unavailableEnd).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
+    ))).toBe(true);
+    await page.locator('label[for="backtest_history_probability"]').click();
+
+    const detailPanel = page.locator('#backtest_probability_detail_panel');
+    const detailGrid = detailPanel.locator('[data-backtest-probability-detail-grid]');
+    const detailStatus = detailPanel.locator('[data-backtest-probability-detail-status]');
+    const unavailableState = detailPanel.locator(
+        '.backtest-probability-empty-state[data-reason="no-model"]',
+    );
+    const indices = await page.evaluate((earlyEnd) => {
+        const chart = window.Chart?.getChart?.(document.querySelector('#tradePriceChart'));
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const availableIndex = points.findIndex((point, index) => (
+            index >= Math.max(earlyEnd + 5, Math.floor(points.length * 0.65))
+            && Number.isFinite(point?.x)
+            && Number.isFinite(point?.y)
+            && presentation?.predictive_mean?.[index] !== null
+            && Number(presentation?.predictive_scale?.[index]) > 0
+        ));
+        const unavailableIndex = Math.floor(earlyEnd / 2);
+        return {availableIndex, unavailableIndex};
+    }, unavailableEnd);
+    expect(indices.availableIndex).toBeGreaterThan(indices.unavailableIndex);
+
+    const hoverIndex = async (index) => {
+        const anchor = await page.evaluate((targetIndex) => {
+            const canvas = document.querySelector('#tradePriceChart');
+            const chart = window.Chart?.getChart?.(canvas);
+            const point = chart?.getDatasetMeta?.(0)?.data?.[targetIndex];
+            const rect = canvas?.getBoundingClientRect();
+            if (!(canvas instanceof HTMLCanvasElement) || !chart || !point || !rect
+                || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+            return {
+                x: rect.left + (point.x * (rect.width / Number(chart.width))),
+                y: rect.top + (point.y * (rect.height / Number(chart.height))),
+            };
+        }, index);
+        expect(anchor, `Price point ${index} hover anchor`).not.toBeNull();
+        await page.mouse.move(anchor.x, anchor.y, {steps: 10});
+    };
+    const readGeometry = () => page.evaluate(() => {
+        const history = document.querySelector('#backtest_history_surface');
+        const panel = document.querySelector('#backtest_probability_detail_panel');
+        return {
+            historyHeight: history?.getBoundingClientRect().height || 0,
+            panelHeight: panel?.getBoundingClientRect().height || 0,
+            documentOverflow: document.documentElement.scrollWidth
+                - document.documentElement.clientWidth,
+            panelOverflow: panel ? panel.scrollWidth - panel.clientWidth : Number.NaN,
+        };
+    });
+
+    await hoverIndex(indices.availableIndex);
+    await expect.poll(() => detailPanel.evaluate((panel) => Number(panel.dataset.activeIndex)))
+        .toBeGreaterThan(unavailableEnd);
+    await expect(detailPanel).toHaveAttribute('data-detail-state', 'available');
+    await expect.poll(() => detailGrid.locator('.backtest-probability-detail-cell').count())
+        .toBeGreaterThan(0);
+    await expect(detailStatus).toContainText('Selected date:');
+    const baselineGeometry = await readGeometry();
+
+    await hoverIndex(indices.unavailableIndex);
+    await expect(detailPanel).toBeVisible();
+    await expect(detailPanel).toHaveAttribute('data-detail-state', 'unavailable');
+    await expect(detailStatus).toContainText('Selected date:');
+    await expect(detailStatus).toContainText('This period is unavailable for the current model.');
+    await expect(unavailableState).toBeVisible();
+    await expect(unavailableState).toHaveText('This period is unavailable for the current model.');
+    await expect(detailGrid.locator('.backtest-probability-detail-cell')).toHaveCount(0);
+    await expect(detailPanel.locator('[data-backtest-probability-detail-up-summary]'))
+        .toHaveText('');
+    await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
+        .toHaveText('');
+    const observedPaths = detailPanel.locator('[data-backtest-probability-detail-observed] path');
+    await expect(observedPaths).toHaveCount(2);
+    for (const path of await observedPaths.all()) await expect(path).toHaveAttribute('d', '');
+    await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
+        .toHaveText('Bayesian next-open to following-open rise: unavailable for this date');
+    await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
+        .toBeVisible();
+    const unavailableGeometry = await readGeometry();
+    expect(Math.abs(unavailableGeometry.historyHeight - baselineGeometry.historyHeight))
+        .toBeLessThanOrEqual(1);
+    expect(Math.abs(unavailableGeometry.panelHeight - baselineGeometry.panelHeight))
+        .toBeLessThanOrEqual(1);
+    expect(unavailableGeometry.documentOverflow).toBeLessThanOrEqual(1);
+    expect(unavailableGeometry.panelOverflow).toBeLessThanOrEqual(1);
+
+    await hoverIndex(indices.availableIndex);
+    await expect.poll(() => detailPanel.evaluate((panel) => Number(panel.dataset.activeIndex)))
+        .toBeGreaterThan(unavailableEnd);
+    await expect(detailPanel).toHaveAttribute('data-detail-state', 'available');
+    await expect.poll(() => detailGrid.locator('.backtest-probability-detail-cell').count())
+        .toBeGreaterThan(0);
+    await expect(detailStatus).toContainText('Selected date:');
+    await expect(unavailableState).toBeHidden();
+    const restoredGeometry = await readGeometry();
+    expect(Math.abs(restoredGeometry.historyHeight - baselineGeometry.historyHeight))
+        .toBeLessThanOrEqual(1);
+    expect(Math.abs(restoredGeometry.panelHeight - baselineGeometry.panelHeight))
+        .toBeLessThanOrEqual(1);
+    expect(restoredGeometry.documentOverflow).toBeLessThanOrEqual(1);
+    expect(restoredGeometry.panelOverflow).toBeLessThanOrEqual(1);
 });
 
 test('keeps available Bayesian ranges near the three-month price-field cell size', async ({page}) => {

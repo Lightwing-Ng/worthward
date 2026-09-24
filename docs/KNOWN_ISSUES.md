@@ -1,5 +1,21 @@
 # Known issues and operating constraints
 
+Investment import session readiness, 24 Sep 2026: the import dialog could
+accept chosen files and only then reject the import with "Investment changes
+require a valid session security token", because a server restart regenerates
+the Flask secret and invalidates the token rendered into an already-open page.
+Opening the dialog now confirms the browser write session and keeps Import
+disabled until it is ready. An unreachable server is reported inside the dialog
+immediately. The session is refreshed again before each HSBC paste or workbook
+validation and before the import request, so a restart while files are being
+chosen no longer wastes the selection. The write boundary is unchanged: the
+refresh route answers only same-origin local pages and is never cached.
+
+Strategy-tuning Dark mode surface, 24 Sep 2026: the pressed round action now
+uses a transparent fill so the sidebar background shows through. Light mode
+keeps its adaptive-white fill; the primary-blue glyph, border, active shadow,
+and press transform continue to identify the pressed state.
+
 HSBC same-day settlement replay, 23 Sep 2026: an Overview trough around the
 August SGOV sale came from discarding its evidenced SEC posting chain when a
 same-day pasted cash row belonged to another source-sequence domain. The

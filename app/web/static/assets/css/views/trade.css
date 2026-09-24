@@ -1,4 +1,4 @@
-/* Code version: v3.78.0 */
+/* Code version: v3.78.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -662,6 +662,18 @@
     min-width: 0;
     margin-top: 3px;
     pointer-events: none;
+}
+
+.backtest-probability-detail-scope,
+.backtest-probability-detail-one-step {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.backtest-probability-detail-one-step[hidden] {
+    display: none;
 }
 
 .backtest-probability-detail-plot {
@@ -1510,6 +1522,34 @@
     top: 8px;
     left: 8px;
     right: 8px;
+}
+
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-y-axis-viewport,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-history,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-observed,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-origin,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-grid,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-anchor,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-side-summary,
+.backtest-probability-detail-panel[data-detail-state="unavailable"]
+    .backtest-probability-detail-x-axis {
+    visibility: hidden;
+}
+
+.backtest-probability-empty-state[data-reason="no-model"] {
+    inset: 50% 16px auto;
+    background: transparent;
+    font-size: var(--font-form-label);
+    line-height: 1.35;
+    text-align: center;
+    transform: translateY(-50%);
 }
 
 .trade-chart-stack.is-probability-dragging {

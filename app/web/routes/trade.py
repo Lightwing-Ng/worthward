@@ -1,7 +1,8 @@
 """
 Trade route registration.
 
-Code version: v0.9.0
+Code version: v0.10.0
+- Added: Investment session-token route for import dialog readiness.
 - Added: Schwab security-transfer source-account confirmation route.
 """
 
@@ -18,6 +19,7 @@ def register_trade_routes(app: Flask, runtime: WebRuntime) -> None:
     app.get("/more/<section_name>")(runtime.legacy_trade_page)
     app.get("/invest")(runtime.investment_page)
     app.get("/investment")(runtime.investment_page)
+    app.get("/api/investment/session-token")(runtime.investment_session_security_token)
     app.get("/api/investment/transactions")(runtime.investment_get_transactions)
     app.post("/api/investment/transactions")(runtime.investment_add_transaction)
     app.get("/api/investment/imports/zircon-hk/template.xlsx")(

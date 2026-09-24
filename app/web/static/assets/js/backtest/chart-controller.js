@@ -1,4 +1,4 @@
-/* Code version: v1.12.2 */
+/* Code version: v1.12.3 */
 /**
  * Preserves the public Backtest chart-controller contract while delegating
  * mount preparation to the preceding classic-script helper.
@@ -686,7 +686,7 @@
 			const baseModel = buildProbabilityGridModel(index, pricePoint);
 			if (!baseModel) {
 				hideProbabilityTooltip();
-				mount.hideProbabilityDetail();
+				mount.showUnavailableProbabilityDetail(index);
 				return false;
 			}
 			const model = buildProbabilityHoverModel(index, baseModel, pricePoint);
@@ -853,11 +853,14 @@
 			const detailIndex = Number.isInteger(mount.latestProbabilityDetailIndex)
 				? mount.latestProbabilityDetailIndex
 				: Number(mount.probabilityDetailPanel.dataset.activeIndex);
-			if (!Number.isInteger(detailIndex) || detailIndex < 0) return;
+			if (!Number.isInteger(detailIndex) || detailIndex < 0) {
+				mount.showUnavailableProbabilityDetail(null);
+				return;
+			}
 			const detailPoint = getDatasetPoint(mount.priceChart, detailIndex, 0);
 			const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
 			if (detailModel) mount.renderProbabilityDetail(detailIndex, detailModel);
-			else mount.hideProbabilityDetail();
+			else mount.showUnavailableProbabilityDetail(detailIndex);
 		};
 		const scheduleProbabilityDetailRefresh = (passes = 1) => {
 			mount.probabilityDetailRefreshPasses = Math.max(
@@ -1999,7 +2002,7 @@
                 if (!mount.renderProbabilityDetail(defaultIndex, defaultModel)) {
                     scheduleProbabilityDetailRefresh(3);
                 }
-            } else mount.hideProbabilityDetail();
+            } else mount.showUnavailableProbabilityDetail(null);
 		}
 		mount.publishProbabilityStageMinimum();
 		const refreshChartLayout = ({chartsAlreadyResized = false} = {}) => {
@@ -2073,6 +2076,7 @@
 				const detailPoint = getDatasetPoint(mount.priceChart, detailIndex, 0);
 				const detailModel = buildProbabilityGridModel(detailIndex, detailPoint);
 				if (detailModel) mount.renderProbabilityDetail(detailIndex, detailModel);
+				else mount.showUnavailableProbabilityDetail(detailIndex);
 				scheduleProbabilityDetailRefresh(2);
 			}
 		};

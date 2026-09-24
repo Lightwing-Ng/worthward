@@ -1,7 +1,9 @@
 """
 Browser write-request security helpers.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Added: Same-origin session-token endpoint so browser dialogs can confirm
+  their write session before the user starts work.
 """
 
 from __future__ import annotations
@@ -39,6 +41,35 @@ def get_or_create_investment_csrf_token() -> str:
     token = secrets.token_urlsafe(32)
     session[INVESTMENT_CSRF_SESSION_KEY] = token
     return token
+
+
+def investment_session_security_token():
+    """Return this browser session's write token to a same-origin local page.
+
+    The Flask secret is regenerated per process, so a page rendered before a
+    server restart carries a token that the new process rejects. Dialogs call
+    this before they accept work and again before they submit, which restores
+    a valid session instead of failing after the user has chosen files.
+    """
+    fetch_site = str(request.headers.get("Sec-Fetch-Site") or "").strip().lower()
+    host = _canonical_origin(request.host_url)
+    if (
+        (fetch_site and fetch_site != "same-origin")
+        or host is None
+        or not _is_local_application_hostname(host[1])
+    ):
+        response = jsonify(
+            success=False,
+            error="Session tokens are available only to same-origin local pages.",
+        )
+        response.status_code = 403
+    else:
+        response = jsonify(
+            success=True,
+            investment_csrf_token=get_or_create_investment_csrf_token(),
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _canonical_origin(value: str) -> tuple[str, str, int] | None:

@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.1 */
 import {
     expect,
     test,
@@ -885,6 +885,121 @@ test('omits pre-existing Unbound rows from a later IBKR import banner', async ({
     await expect(page.locator('#investment_import_feedback_message')).toContainText('IBKR import complete');
     await expect(page.locator('#investment_import_feedback_message')).not.toContainText('Transfer review');
     await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
+});
+
+const fillIbkrTradeNotificationPaste = async (page) => {
+    await page.locator('#investment_import_broker').evaluate((select) => {
+        select.value = 'ibkr';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
+    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
+        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n8/20/2026, 8:00 PM\n10.00\n10\nFees: 0.10';
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+};
+
+test('refreshes a session token rendered before a server restart before importing', async ({page}) => {
+    await mockInvestmentReadApis(page);
+    const postedTokens = [];
+    await page.route('**/api/investment/transactions*', async (route) => {
+        if (route.request().method() === 'GET') {
+            await route.fallback();
+            return;
+        }
+        postedTokens.push(route.request().headers()['x-csrf-token'] || '');
+        await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+                success: true,
+                message: 'Imported 1 IBKR web transaction.',
+                freshness_refresh_failures: [],
+                summary: {incremental_import: {imported_record_count: 1, added_record_count: 1}},
+            }),
+        });
+    });
+
+    await page.goto('/trade/investment');
+    const staleToken = 'stale_token_rendered_before_server_restart_0000';
+    await page.evaluate((token) => {
+        window.WORTHWARD_APP.security.investmentCsrfToken = token;
+    }, staleToken);
+    await page.locator('#toggle_form_button').click();
+    await fillIbkrTradeNotificationPaste(page);
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+    await page.locator('#investment_import_submit_button').click();
+    await expect(page.locator('#investment_import_feedback_message')).toContainText('IBKR import complete');
+
+    const sessionToken = await page.evaluate(async () => {
+        const response = await fetch('/api/investment/session-token', {credentials: 'same-origin', cache: 'no-store'});
+        return (await response.json()).investment_csrf_token;
+    });
+    expect(postedTokens).toEqual([sessionToken]);
+    expect(sessionToken).not.toBe(staleToken);
+});
+
+test('keeps Import disabled and explains when the dialog cannot confirm its session', async ({page}) => {
+    await mockInvestmentReadApis(page);
+    let importRequests = 0;
+    await page.route('**/api/investment/session-token', (route) => route.abort());
+    await page.route('**/api/investment/transactions*', async (route) => {
+        if (route.request().method() === 'GET') {
+            await route.fallback();
+            return;
+        }
+        importRequests += 1;
+        await route.abort();
+    });
+
+    await page.goto('/trade/investment');
+    await page.locator('#toggle_form_button').click();
+    const sessionStatus = page.locator('#investment_import_session_status');
+    await expect(sessionStatus).toBeVisible();
+    await expect(sessionStatus).toContainText('could not confirm this browser session');
+    await fillIbkrTradeNotificationPaste(page);
+    await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
+    const [noteBox, statusBox, submitBox] = await Promise.all([
+        page.locator('#investment_import_note').boundingBox(),
+        sessionStatus.boundingBox(),
+        page.locator('#investment_import_submit_button').boundingBox(),
+    ]);
+    expect(statusBox.y).toBeGreaterThanOrEqual(noteBox.y + noteBox.height);
+    expect(submitBox.y).toBeGreaterThanOrEqual(statusBox.y + statusBox.height);
+    // Page bootstrap and broker changes clear the shared banner; the dialog
+    // notice must remain while the session is unavailable.
+    await page.waitForLoadState('networkidle');
+    await expect(sessionStatus).toBeVisible();
+    expect(importRequests).toBe(0);
+});
+
+test('paints an earlier import step tooltip above the following step', async ({page}) => {
+    await mockInvestmentReadApis(page);
+    await page.goto('/trade/investment');
+    await page.locator('#toggle_form_button').click();
+    await page.locator('#investment_import_broker').evaluate((select) => {
+        select.value = 'schwab';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    const trigger = page.locator('#investment_import_schwab_fields [data-import-field="transactions"] .investment-import-label-trigger');
+    await trigger.hover();
+    const tooltip = trigger.locator('.investment-import-help');
+    await expect(tooltip).toBeVisible();
+    const topmostInsideTooltip = await page.evaluate(() => {
+        const tip = document.querySelector('#investment_import_schwab_fields [data-import-field="transactions"] .investment-import-help');
+        const nextStep = document.querySelector('#schwab_positions_csv');
+        const tipRect = tip.getBoundingClientRect();
+        const stepRect = nextStep.getBoundingClientRect();
+        const top = Math.max(tipRect.top, stepRect.top);
+        const bottom = Math.min(tipRect.bottom, stepRect.bottom);
+        if (bottom <= top) return 'no-overlap';
+        const x = Math.max(tipRect.left, stepRect.left) + 24;
+        // The tooltip ignores pointer input; enable hit testing only to read paint order.
+        tip.style.pointerEvents = 'auto';
+        const hit = document.elementFromPoint(x, (top + bottom) / 2);
+        tip.style.pointerEvents = '';
+        return tip.contains(hit) ? 'tooltip' : `${hit?.id || hit?.className || 'none'}`;
+    });
+    expect(topmostInsideTooltip).toBe('tooltip');
 });
 
 test('validates HSBC cash-only paste and keeps validation errors above the import modal', async ({page}) => {

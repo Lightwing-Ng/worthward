@@ -1,7 +1,10 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.1.1
+ * Code version: v1.2.0
+ * - Fixed: The import dialog confirms its browser write session when it opens
+ *   and keeps Import disabled until the session is ready, so a server restart
+ *   no longer rejects the import only after files were chosen.
  * - Changed: Import modal height follows its intended top edge after the
  *   dismiss control moved inside the modal.
  * - Fixed: Single-broker current cash includes movements recorded after the
@@ -9,6 +12,8 @@
  */
 
 export function createInvestmentMetricsImportRuntime(runtime) {
+const INVESTMENT_SESSION_TOKEN_ENDPOINT = '/api/investment/session-token';
+
 function setInvestmentHoverContainerPayload(container, payload = null) {
         if (!(container instanceof HTMLElement)) return;
         if (!payload || typeof payload !== 'object') {
@@ -534,7 +539,7 @@ function syncImportValidationState() {
             && runtime.state.zirconHkWorkbookValidation.valid
             && runtime.state.zirconHkWorkbookValidation.signature === runtime.getImportFileSignature(zirconHkWorkbookFile);
         const brokerReady = runtime.SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
-        const importReady = brokerReady && (
+        const importReady = brokerReady && isInvestmentImportSessionReady() && (
             (isIbkrCsv && transactionReady && positionsReady)
             || gainskeeperReady
             || (ibkrTradeNotificationsReady && ibkrHoldingsReady)
@@ -600,6 +605,7 @@ function syncImportValidationState() {
                 : '',
         );
 
+        syncInvestmentImportSessionStatus();
         const submitButton = runtime.investmentForm?.querySelector('button[type="submit"]');
         runtime.syncActionButtonState(submitButton, {
             disabled: !importReady,
@@ -663,6 +669,71 @@ function setInvestmentImportControlState({ isOpen, isClosing = false }) {
         }
     }
 
+function isInvestmentImportSessionReady() {
+        return runtime.state.investmentImportSession?.state === 'ready';
+    }
+
+function describeInvestmentImportSessionFailure() {
+        const detail = String(runtime.state.investmentImportSession?.error || '').trim();
+        return 'Import is unavailable because the Worthward server could not confirm this browser session'
+            + `${detail ? ` (${detail})` : ''}. Check that the app is running, then reopen Import.`;
+    }
+
+// State-driven rather than a feedback banner, which other page flows clear.
+function syncInvestmentImportSessionStatus() {
+        const status = document.getElementById('investment_import_session_status');
+        if (!(status instanceof HTMLElement)) return;
+        const failed = runtime.state.investmentImportSession?.state === 'failed';
+        const message = failed ? describeInvestmentImportSessionFailure() : '';
+        if (status.textContent !== message) {
+            status.textContent = message;
+        }
+        status.hidden = !failed;
+    }
+
+// The Flask secret is regenerated per server process, so the token rendered
+// into this page goes stale after a restart. Every import entry point refreshes
+// it here; concurrent callers share one in-flight request.
+function ensureInvestmentImportSession() {
+        const current = runtime.state.investmentImportSession;
+        if (current?.state === 'pending' && current.promise) {
+            return current.promise;
+        }
+        const session = {state: 'pending', error: '', promise: null};
+        runtime.state.investmentImportSession = session;
+        syncImportValidationState();
+        session.promise = fetch(INVESTMENT_SESSION_TOKEN_ENDPOINT, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {'Cache-Control': 'no-cache'},
+        })
+            .then(async (response) => {
+                const result = await response.json().catch(() => ({}));
+                const token = String(result.investment_csrf_token || '').trim();
+                if (!response.ok || !result.success || !token) {
+                    throw new Error(result.error || `server responded ${response.status}`);
+                }
+                const appState = window.WORTHWARD_APP || (window.WORTHWARD_APP = {});
+                // Mutate in place: other page modules hold this object by reference.
+                appState.security = appState.security || {};
+                appState.security.investmentCsrfToken = token;
+                return true;
+            })
+            .catch((error) => {
+                session.error = String(error?.message || 'network request failed');
+                return false;
+            })
+            .then((ready) => {
+                if (runtime.state.investmentImportSession === session) {
+                    session.state = ready ? 'ready' : 'failed';
+                    session.promise = null;
+                    syncImportValidationState();
+                }
+                return ready;
+            });
+        return session.promise;
+    }
+
 function openInvestmentImportForm() {
         if (!runtime.toggleBtn || !runtime.formContainer) return;
         if (runtime.state.investmentFormHideTimer) {
@@ -670,6 +741,7 @@ function openInvestmentImportForm() {
             runtime.state.investmentFormHideTimer = null;
         }
         runtime.clearImportFeedback();
+        ensureInvestmentImportSession();
         runtime.formContainer.style.removeProperty('--investment-import-modal-height');
         runtime.formContainer.style.display = 'flex';
         runtime.formContainer.scrollTop = 0;
@@ -841,6 +913,9 @@ async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
         renderInvestmentMetricsPanel,
         resetInvestmentDashboard,
         syncImportValidationState,
+        isInvestmentImportSessionReady,
+        describeInvestmentImportSessionFailure,
+        ensureInvestmentImportSession,
         syncInvestmentImportContainerHeight,
         setInvestmentImportControlState,
         openInvestmentImportForm,

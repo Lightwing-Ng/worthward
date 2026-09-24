@@ -1,7 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.155.2
+ * Code version: v2.156.0
+ * - Fixed: Import refreshes the browser write session immediately before it
+ *   submits, and reports an unavailable session without a network-error label.
  * - Changed: Loads the HSBC settlement replay correction for corroborated
  *   same-day cash and SEC postings.
  * - Changed: Investment import uses the shared Process List, remembers the
@@ -65,12 +67,12 @@ import {createInvestmentFundingMetricsRuntime} from './investment/runtime/fundin
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.1';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.1';
-import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.1.1';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.2';
+import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.2.0';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.0';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.0';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.1';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.4.7';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
 
@@ -175,7 +177,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.155.2',
+    entry: 'v2.156.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -512,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.state.investmentSurfaceCleanupTimer = null;
     runtime.state.investmentFormHideTimer = null;
     runtime.state.investmentImportInFlight = false;
+    runtime.state.investmentImportSession = {state: 'idle', error: '', promise: null};
     runtime.state.zirconHkWorkbookValidationAbortController = null;
     runtime.state.zirconHkWorkbookValidation = {
         signature: '',
@@ -1224,15 +1227,25 @@ Object.assign(runtime, createInvestmentDataUtils({
             runtime.showInvestmentImportProgressModal(
                 'We are parsing and merging the imported broker activity. Please keep this tab open until the import finishes.',
             );
-            runtime.reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'starting transactions import', {
-                broker: selectedBroker,
-                hasTransactionsFile: Boolean(transactionsFile),
-                hasPositionsFile: Boolean(positionsFile),
-            });
-            fetch('/api/investment/transactions', runtime.buildInvestmentRequestOptions({
-                method: 'POST',
-                body: formData,
-            }))
+            // A server restart while files were being chosen invalidates the
+            // rendered session token; refresh it before sending the import.
+            runtime.ensureInvestmentImportSession()
+            .then((sessionReady) => {
+                if (!sessionReady) {
+                    const sessionError = new Error(runtime.describeInvestmentImportSessionFailure());
+                    sessionError.isInvestmentImportSessionError = true;
+                    throw sessionError;
+                }
+                runtime.reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'starting transactions import', {
+                    broker: selectedBroker,
+                    hasTransactionsFile: Boolean(transactionsFile),
+                    hasPositionsFile: Boolean(positionsFile),
+                });
+                return fetch('/api/investment/transactions', runtime.buildInvestmentRequestOptions({
+                    method: 'POST',
+                    body: formData,
+                }));
+            })
             .then(response => {
                 runtime.reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'transactions import response received', {
                     broker: selectedBroker,
@@ -1325,7 +1338,10 @@ Object.assign(runtime, createInvestmentDataUtils({
                     errorName: err?.name || '',
                     errorMessage: err?.message || '',
                 });
-                runtime.setImportFeedback(`Network error: ${err.message}`, 'error');
+                runtime.setImportFeedback(
+                    err?.isInvestmentImportSessionError ? err.message : `Network error: ${err.message}`,
+                    'error',
+                );
             })
             .finally(() => {
                 runtime.state.investmentImportInFlight = false;

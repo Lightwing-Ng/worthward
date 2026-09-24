@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.0.1
+ * Code version: v1.0.2
+ * - Fixed: HSBC paste validation refreshes the browser write session first.
  * - Changed: HSBC is the import chooser fallback when a selection is absent.
  * - Added: Extracted from the Investment workspace composition root.
  */
@@ -1055,6 +1056,9 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
             const abortController = new AbortController();
             runtime.state.hsbcPasteValidationAbortController = abortController;
             try {
+                if (!(await runtime.ensureInvestmentImportSession())) {
+                    throw new Error(runtime.describeInvestmentImportSessionFailure());
+                }
                 const response = await fetch(
                     runtime.HSBC_PASTE_VALIDATION_ENDPOINT,
                     runtime.buildInvestmentRequestOptions({

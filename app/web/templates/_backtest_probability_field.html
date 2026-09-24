@@ -1,4 +1,4 @@
-{# Code version: v1.3.0 #}
+{# Code version: v1.4.0 #}
 {# Shared Price Field detail surface for Bayesian and LSTM. #}
 <section class="backtest-probability-detail-panel"
          id="backtest_probability_detail_panel"
@@ -15,6 +15,8 @@
                 Hover a price point to inspect its forecast field.
             </p>
         </div>
+        <p class="backtest-probability-detail-scope">Higher/lower values average probability mass within the displayed price range across forecast horizons.</p>
+        <p class="backtest-probability-detail-one-step" data-backtest-cycle-one-step-probability hidden></p>
     </div>
     <div class="backtest-probability-detail-plot"
          data-backtest-probability-detail-plot

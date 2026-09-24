@@ -1,14 +1,14 @@
 """
-Oliver Kell's Cycle of Price Action, confirmed by the Bayesian Price Field.
+Rules-based interpretation of Oliver Kell's Cycle of Price Action, confirmed
+by the independently calculated Bayesian Price Field.
 
-Kell won the 2020 U.S. Investing Championship with a 941% return using a
-10/20-day EMA stage model. This strategy detects that model's causal daily
-stages (Reversal Extension, Wedge Pop, EMA Crossback, Base n Break,
-Exhaustion Extension, and Wedge Drop) and uses the unchanged Bayesian Price
-Field posterior and probability grid as an entry confirmation and an optional
-probabilistic exit.
+Kell won the 2020 U.S. Investing Championship with a 941% return. This
+strategy approximates six stages using causal daily OHLC, 10/20-day EMAs,
+and ATR thresholds. The separate Bayesian Price Field posterior confirms
+entry intent and can trigger an optional probabilistic exit; cycle stages do
+not enter that probability model.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations
@@ -197,9 +197,9 @@ class CycleOfPriceActionStrategy(BayesianPriceFieldStrategy):
     strategy_id = "cycle-of-price-action"
     strategy_name = "Cycle of Price Action"
     strategy_description = (
-        "Oliver Kell's 10/20 EMA Cycle of Price Action (2020 U.S. Investing "
-        "Championship winner) with Wedge Pop, EMA Crossback, and Base n Break "
-        "entries confirmed by the Bayesian Price Field probability grid."
+        "A rules-based interpretation of Oliver Kell's 10/20 EMA cycle. "
+        "Wedge Pop, EMA Crossback, and Base n Break entries use an independently "
+        "calculated Bayesian Price Field rise probability for confirmation."
     )
     strategy_category = "price-field"
     strategy_display_order = 45

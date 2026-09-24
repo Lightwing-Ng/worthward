@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.3.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -382,6 +382,9 @@
 		const probabilityDetailStatus = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-status]",
 		);
+		const cycleOneStepProbability = probabilityDetailPanel?.querySelector(
+			"[data-backtest-cycle-one-step-probability]",
+		);
 		const probabilityDetailAnchor = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-anchor]",
 		);
@@ -486,10 +489,82 @@
 			latestProbabilityDetailModel = null;
 			latestProbabilityDetailBaseStatus = "";
 			latestProbabilityDetailIndex = null;
+			if (cycleOneStepProbability instanceof HTMLElement) {
+				cycleOneStepProbability.textContent = "";
+				cycleOneStepProbability.hidden = true;
+			}
 			probabilityDetailPanel.hidden = true;
 			probabilityDetailPanel.setAttribute("aria-hidden", "true");
 			delete probabilityDetailPanel.dataset.activeIndex;
 			delete probabilityDetailPanel.dataset.renderKey;
+			delete probabilityDetailPanel.dataset.detailState;
+		};
+		const showUnavailableProbabilityDetail = (index) => {
+			if (!(probabilityDetailPanel instanceof HTMLElement)) return;
+			if (!isProbabilityHistoryViewActive()) {
+				hideProbabilityDetail();
+				return;
+			}
+			clearProbabilityDetailRowHover();
+			const selectedIndex = Number.isInteger(index) && index >= 0 && index < labels.length
+				? index : null;
+			latestProbabilityDetailIndex = selectedIndex;
+			latestProbabilityDetailModel = null;
+			const anchorDate = selectedIndex === null ? null : parseRawDate(rawDates[selectedIndex]);
+			const selectedDate = anchorDate
+				? formatSelectedDate(anchorDate)
+				: (selectedIndex === null ? null : labels[selectedIndex]);
+			const unavailableMessage = "This period is unavailable for the current model.";
+			latestProbabilityDetailBaseStatus = selectedDate
+				? `Selected date: ${selectedDate} · ${unavailableMessage}`
+				: unavailableMessage;
+			if (probabilityDetailStatus instanceof HTMLElement) {
+				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
+			}
+			if (cycleOneStepProbability instanceof HTMLElement) {
+				const isCycle = strategyPresentation?.schema === "cycle-of-price-action/v1";
+				cycleOneStepProbability.hidden = !isCycle;
+				cycleOneStepProbability.textContent = isCycle
+					? "Bayesian next-open to following-open rise: unavailable for this date"
+					: "";
+			}
+			probabilityDetailGrid?.replaceChildren();
+			probabilityDetailYAxis?.replaceChildren();
+			probabilityDetailXAxis?.replaceChildren();
+			probabilityDetailXAxisTickNodes.clear();
+			probabilityDetailPanel.querySelector("[data-backtest-probability-detail-history-path]")
+				?.setAttribute("d", "");
+			probabilityDetailPanel.querySelectorAll("[data-backtest-probability-detail-observed] path")
+				.forEach((path) => { path.setAttribute("d", ""); });
+			probabilityDetailAnchor?.removeAttribute("data-price");
+			[probabilityDetailUpSummary, probabilityDetailDownSummary].forEach((element) => {
+				if (!(element instanceof HTMLElement)) return;
+				element.textContent = "";
+				element.removeAttribute("aria-label");
+				element.removeAttribute("title");
+			});
+			const detailGridViewport = probabilityDetailGrid?.parentElement;
+			if (detailGridViewport instanceof HTMLElement) {
+				let emptyState = detailGridViewport.querySelector(".backtest-probability-empty-state");
+				if (!emptyState) {
+					emptyState = document.createElement("div");
+					emptyState.className = "backtest-probability-empty-state";
+					detailGridViewport.appendChild(emptyState);
+				}
+				emptyState.dataset.reason = "no-model";
+				emptyState.textContent = unavailableMessage;
+				emptyState.hidden = false;
+			}
+			probabilityDetailPanel.hidden = false;
+			probabilityDetailPanel.setAttribute("aria-hidden", "false");
+			probabilityDetailPanel.dataset.detailState = "unavailable";
+			if (selectedIndex === null) delete probabilityDetailPanel.dataset.activeIndex;
+			else probabilityDetailPanel.dataset.activeIndex = String(selectedIndex);
+			[
+				"renderKey", "layoutKey", "columnCount", "rowCount", "daysPerColumn",
+				"horizonStep", "cellDisplayThresholdPct", "thresholdHiddenCount",
+				"priceDomain", "priceScale", "priceDomainLower", "priceDomainUpper",
+			].forEach((key) => { delete probabilityDetailPanel.dataset[key]; });
 		};
 		const isProbabilityHistoryViewActive = () => (
 			document.getElementById("backtest_history_surface")?.dataset.activeView === "probability"
@@ -1597,9 +1672,22 @@
 			}
 			const detailModel = continuation.buildProbabilityDetailModel(index, model);
 			if (!detailModel) return false;
+			probabilityDetailPanel.dataset.detailState = "available";
 			const {geometry, cells, anchorPrice} = detailModel;
 			latestProbabilityDetailModel = detailModel;
 			renderProbabilityDetailSideSummary(cells);
+			if (cycleOneStepProbability instanceof HTMLElement) {
+				const oneStepProbability = strategyPresentation?.probability_up?.[index];
+				const isAvailable = strategyPresentation?.schema === "cycle-of-price-action/v1"
+					&& typeof oneStepProbability === "number"
+					&& Number.isFinite(oneStepProbability)
+					&& oneStepProbability >= 0
+					&& oneStepProbability <= 1;
+				cycleOneStepProbability.hidden = !isAvailable;
+				cycleOneStepProbability.textContent = isAvailable
+					? `Bayesian next-open to following-open rise: ${formatProbabilityMass(oneStepProbability)}`
+					: "";
+			}
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
@@ -1636,6 +1724,7 @@
 					emptyState.className = "backtest-probability-empty-state";
 					detailGridViewport.appendChild(emptyState);
 				}
+				delete emptyState.dataset.reason;
 				const empty = cells.every((cell) => cell.isVisible === false);
 				const copy = empty ? `All cells below ${Number(detailModel.cellDisplayThresholdPct).toFixed(2)}% · max ${(Math.max(...cells.map((cell) => cell.probability)) * 100).toFixed(2)}%` : "";
 				if (emptyState.textContent !== copy) emptyState.textContent = copy;
@@ -1978,6 +2067,7 @@
 			hasLeveragedBenchmark,
 			hideHoverDateLabel,
 			hideProbabilityDetail,
+			showUnavailableProbabilityDetail,
 			high,
 			hoverCrosshairLine,
 			hoverDateLabel,

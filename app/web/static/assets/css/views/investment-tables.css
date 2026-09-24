@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.3 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1329,6 +1329,15 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     white-space: normal;
 }
 
+/* Each shared process step paints at z-index 1 and each field isolates its
+   tooltip, so a later step would cover an open tooltip. Lift only the step
+   whose help tooltip is open. */
+.investment-import-process-list .process-list-content:has(
+    .investment-import-label-trigger:is(:hover, :focus, :focus-within) .investment-import-help
+) {
+    z-index: 2;
+}
+
 .investment-import-process-list .investment-import-status-icon {
     grid-column: 2;
 }
@@ -1897,6 +1906,22 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     margin-top: 0;
     align-self: center;
     flex: 0 0 auto;
+}
+
+/* The shared action package assigns every service note to row 2. A session
+   failure gets its own row so it never overlaps the broker note. */
+.investment-import-action-package:has(.investment-import-session-status:not([hidden])) {
+    grid-template-rows: auto auto auto auto;
+}
+
+.investment-import-action-package:has(.settings-service-name) .settings-action-package-copy .investment-import-session-status {
+    grid-column: 2;
+    grid-row: 3;
+    color: var(--theme-error);
+}
+
+.investment-import-action-package:has(.investment-import-session-status:not([hidden])) .settings-action-package-form {
+    grid-row: 4;
 }
 
 .investment-import-action-icon {

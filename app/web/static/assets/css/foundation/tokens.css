@@ -1,4 +1,4 @@
-/* Code version: v0.47.0 */
+/* Code version: v0.47.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -647,6 +647,7 @@
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme-override="light"]) {
+		--strategy-tune-button-active-background: transparent;
 		--sidebar-shell-background:
 			linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
 			rgba(10, 14, 20, 0.06);
@@ -659,6 +660,7 @@
 	}
 }
 :root[data-theme-override="dark"] {
+	--strategy-tune-button-active-background: transparent;
 	--sidebar-shell-background:
 		linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
 		rgba(10, 14, 20, 0.06);

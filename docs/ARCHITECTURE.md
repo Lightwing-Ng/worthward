@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.126.1`
+Documentation version: `v1.126.4`
 
 ## Reuse and dependency boundaries
 
@@ -340,9 +340,15 @@ so the last valid forecast remains inspectable. Hovering any detail-grid row
 shows its exact price interval and the cumulative raw probability mass across
 all forecast cells in that row, including cells hidden by the display threshold;
 the hovered row carries that summary without changing the status-line layout, and
-only the contained detail grid makes those hidden cells hit-testable. The detail
-heading keeps the selected date as the sole status-line text and omits the
-redundant `Forecast date` axis title while retaining the forecast-date ticks.
+only the contained detail grid makes those hidden cells hit-testable. With an
+available forecast, the detail heading keeps the selected date as the sole
+status-line text and omits the redundant `Forecast date` axis title while
+retaining the forecast-date ticks. If the selected origin has no model output,
+the detail panel remains visible at its normal minimum height, clears the prior
+forecast cells, axes, and directional values, and explains that the period is
+unavailable for the current model in both the status line and plot area. A
+later valid hover restores the forecast without changing the history section's
+height.
 It intentionally has no price-probability legend: the two-dimensional cell
 field is explained by its axes and grid, not by a misleading one-dimensional
 color scale. The detail plot, main column, grid viewport, and complete lattice
@@ -352,8 +358,11 @@ and lower-price shares at the right end of the horizontal price guide. For each
 forecast horizon, divide each direction's complete lattice mass by the total
 represented mass, including threshold-hidden cells, then average those shares
 equally across nonempty horizons. These are conditional shares within the
-represented lattice, not full-distribution directional probabilities; accessible
-labels explain the excluded tails and gaps. Empty distributions show unavailable,
+represented lattice, not full-distribution directional probabilities; visible
+copy identifies the price-range and horizon-average scope, while accessible
+labels explain the excluded tails and gaps. Cycle of Price Action also shows
+its separate Bayesian one-step rise probability, which gates cycle entries
+and targets the next-open to following-open return. Empty distributions show unavailable,
 not an invented split. Round the higher share to a hundredth of a percent and
 derive the lower label as its exact complement, totaling 100.00%. Individual cell
 probabilities, thresholding, and model outputs remain unchanged. The right-aligned
@@ -1261,7 +1270,12 @@ sets of values.
 - Browser investment writes require a local same-origin request and a
   session-bound CSRF token. Cross-site forms, non-local rebinding hosts, and
   requests without the rendered session proof fail before request bodies reach
-  an investment parser or persistence boundary.
+  an investment parser or persistence boundary. The Flask secret is regenerated
+  per server process, so a restart invalidates tokens rendered earlier. The
+  Investment import dialog therefore refreshes the token from the same-origin,
+  non-cacheable `GET /api/investment/session-token` route when it opens, keeps
+  Import disabled until that succeeds, and refreshes it again immediately before
+  each validation or import write. A refresh never bypasses the write boundary.
 - IBKR is an offline import-only integration. Official CSV and GainsKeeper files,
   plus user-pasted Trade Notifications text, may enter the ledger. Pasted trades
   are provisional current-moment evidence and matching CSV or GainsKeeper rows
