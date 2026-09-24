@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -1100,3 +1100,38 @@ test('aligns Holdings Market value and clips fixed table layers at every support
     }
 });
 
+
+test('aligns Investment share actions to the global anchor without collisions', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            {broker: 'ibkr', date: '2026-07-10', type: 'deposit', currency: 'USD', amount: 1_000},
+            {broker: 'ibkr', date: '2026-07-11', type: 'buy', ticker: 'AAPL', currency: 'USD', quantity: 1, price: 100, amount: -100},
+        ],
+        priceHistoryByTicker: {AAPL: [{date: '2026-07-11', close: 100}, {date: '2026-07-12', close: 110}]},
+    });
+    for (const [width, height] of [[1280, 800], [855, 1227], [600, 900], [390, 844]]) {
+        await page.setViewportSize({width, height});
+        await page.goto('/trade/investment?view=holdings');
+        await expect(page.locator('#investment_share_actions')).toBeVisible();
+        await expect.poll(async () => page.evaluate(() => {
+            const rect = (selector) => document.querySelector(selector).getBoundingClientRect();
+            const share = rect('#export_transactions_button');
+            const theme = rect('[data-layout-role="global-theme-anchor"]');
+            const control = rect('#investment_view_segmented');
+            const body = rect('#investment_view_surface_body');
+            const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+            const center = (r) => [r.left + (r.width / 2), r.top + (r.height / 2)];
+            return {
+                horizontalCenterline: Math.abs(center(share)[0] - center(theme)[0]) <= 1,
+                verticalCenterline: Math.abs(center(share)[1] - center(control)[1]) <= 1,
+                clearOfControl: !intersects(share, control),
+                clearOfBody: !intersects(share, body),
+            };
+        }), {message: `share action geometry at ${width}px`}).toEqual({
+            horizontalCenterline: true,
+            verticalCenterline: true,
+            clearOfControl: true,
+            clearOfBody: true,
+        });
+    }
+});

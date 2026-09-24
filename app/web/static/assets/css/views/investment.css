@@ -1,4 +1,4 @@
-/* Code version: v1.81.0 */
+/* Code version: v1.81.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -1453,6 +1453,8 @@
 .investment-view-segmented-wrap {
     flex: 0 0 auto;
     display: flex;
+    /* Set by the share-action sync only when the control would collide. */
+    padding-inline-end: var(--investment-share-actions-clearance, 0px);
     justify-content: center;
     align-items: center;
     margin-bottom: 0px;

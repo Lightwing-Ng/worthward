@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.34.0
+Code version: v1.34.1
 """
 
 from __future__ import annotations
@@ -251,7 +251,7 @@ def build_style_token_rows(
                 px_token("--process-list-column-gap", 16),
                 px_token("--process-list-connector-width", 2),
                 raw_token("--process-list-connector-color", "var(--accent-text)"),
-                raw_token("--process-list-marker-background", "var(--theme-background)"),
+                raw_token("--process-list-marker-background", "transparent"),
                 raw_token("--process-list-marker-color", "var(--accent-text)"),
                 raw_token("--process-list-heading-font-size", "var(--font-ui-lg)"),
                 raw_token("--process-list-heading-font-weight", "var(--font-weight-medium)"),

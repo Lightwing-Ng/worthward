@@ -1,4 +1,4 @@
-/* Code version: v0.47.1 */
+/* Code version: v0.47.2 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -41,7 +41,7 @@
 	--process-list-column-gap: 16px;
 	--process-list-connector-width: 2px;
 	--process-list-connector-color: var(--accent-text);
-	--process-list-marker-background: var(--theme-background);
+	--process-list-marker-background: transparent;
 	--process-list-marker-color: var(--accent-text);
 	--process-list-heading-font-size: var(--font-ui-lg);
 	--process-list-heading-font-weight: var(--font-weight-medium);

@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.156.0
+ * Code version: v2.156.1
+ * - Fixed: Loads share-action placement that aligns to the global anchor.
  * - Fixed: Import refreshes the browser write session immediately before it
  *   submits, and reports an unavailable session without a network-error label.
  * - Changed: Loads the HSBC settlement replay correction for corroborated
@@ -69,10 +70,10 @@ import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.2';
 import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.2.0';
-import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.0';
+import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.1';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.1';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.2';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.4.7';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
 
@@ -177,7 +178,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.156.0',
+    entry: 'v2.156.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

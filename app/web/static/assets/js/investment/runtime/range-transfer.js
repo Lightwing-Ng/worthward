@@ -1,7 +1,10 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Fixed: The share action group aligns to the global theme anchor's
+ *   centerline and the segmented control's centerline in viewport coordinates
+ *   even when an ancestor becomes the containing block of fixed descendants.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -268,9 +271,51 @@ function syncInvestmentShareActionsPosition() {
         }
         const segmentedRect = runtime.segmentedControl.getBoundingClientRect();
         if (!segmentedRect.height) return;
+        const shareActions = runtime.investmentShareActions;
         const centerY = segmentedRect.top + (segmentedRect.height / 2);
-        runtime.investmentShareActions.style.setProperty('--investment-share-actions-top', `${centerY}px`);
-        runtime.investmentShareActions.style.top = `${centerY}px`;
+        shareActions.style.setProperty('--investment-share-actions-top', `${centerY}px`);
+        shareActions.style.top = `${centerY}px`;
+        shareActions.style.removeProperty('right');
+        // `contain: layout` on the workspace header makes it the containing block
+        // of this fixed group, so viewport coordinates land offset by the
+        // header's position. Measure the rendered group and remove that offset.
+        const shareRect = shareActions.getBoundingClientRect();
+        if (shareActions.hidden || !shareRect.height) return;
+        const offsetY = (shareRect.top + (shareRect.height / 2)) - centerY;
+        if (Math.abs(offsetY) >= 0.5) {
+            shareActions.style.top = `${centerY - offsetY}px`;
+        }
+        const anchor = document.querySelector('[data-layout-role="global-theme-anchor"]');
+        const anchorRect = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
+        if (anchorRect?.width) {
+            // Right edges of equal-size round buttons coincide when centerlines do.
+            const offsetX = shareRect.right - anchorRect.right;
+            if (Math.abs(offsetX) >= 0.5) {
+                const currentRight = Number.parseFloat(getComputedStyle(shareActions).right) || 0;
+                shareActions.style.right = `${currentRight + offsetX}px`;
+            }
+        }
+        syncInvestmentShareActionsClearance();
+    }
+
+// Reserve inline-end room in the segmented row only when the centered control
+// would otherwise run under the always-visible share button.
+function syncInvestmentShareActionsClearance() {
+        const wrap = runtime.segmentedControl?.closest('.investment-view-segmented-wrap');
+        const shareButton = runtime.exportTransactionsButton;
+        if (!(wrap instanceof HTMLElement)) return;
+        wrap.style.removeProperty('--investment-share-actions-clearance');
+        if (runtime.investmentShareActions?.hidden || !(shareButton instanceof HTMLElement)) return;
+        const buttonRect = shareButton.getBoundingClientRect();
+        const controlRect = runtime.segmentedControl.getBoundingClientRect();
+        if (!buttonRect.width || !controlRect.width) return;
+        const gap = Number.parseFloat(
+            getComputedStyle(runtime.investmentShareActions).getPropertyValue('--investment-share-action-gap'),
+        ) || 0;
+        const overlapsVertically = buttonRect.top < controlRect.bottom && buttonRect.bottom > controlRect.top;
+        if (!overlapsVertically || controlRect.right <= buttonRect.left - gap) return;
+        const clearance = wrap.getBoundingClientRect().right - (buttonRect.left - gap);
+        wrap.style.setProperty('--investment-share-actions-clearance', `${Math.ceil(clearance)}px`);
     }
 
 function updateInvestmentSegmentedPill() {

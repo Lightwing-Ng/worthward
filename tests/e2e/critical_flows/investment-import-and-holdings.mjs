@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 import {
     expect,
     test,
@@ -136,6 +136,16 @@ test('uses Process List across brokers and remembers the Investment import choic
     );
     await expect(hsbcSteps).toHaveCount(3);
     await expect(hsbcSteps.locator(':scope > .process-list-marker')).toHaveText(['1', '2', '3']);
+    for (const theme of ['light', 'dark']) {
+        await page.locator('html').evaluate((root, mode) => {
+            root.setAttribute('data-theme-override', mode);
+        }, theme);
+        const markers = hsbcSteps.locator(':scope > .process-list-marker');
+        for (const marker of await markers.all()) {
+            await expect(marker).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+            await expect(marker).toHaveCSS('box-shadow', 'none');
+        }
+    }
     await expect(hsbcSteps.nth(0)).toHaveAttribute('data-process-continues', '');
     await expect(hsbcSteps.nth(1)).toHaveAttribute('data-process-continues', '');
     await expect(hsbcSteps.nth(2)).not.toHaveAttribute('data-process-continues');

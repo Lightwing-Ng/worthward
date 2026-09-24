@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -172,6 +172,14 @@ for (const width of [830, 390]) {
         await page.goto('/settings/style-tokens');
         const list = page.locator('#process-list .process-list');
         await expect(list.locator(':scope > li')).toHaveCount(4);
+        const marker = list.locator('.process-list-marker').first();
+        for (const theme of ['light', 'dark']) {
+            await page.locator('html').evaluate((root, mode) => {
+                root.setAttribute('data-theme-override', mode);
+            }, theme);
+            await expect(marker).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+            await expect(marker).toHaveCSS('box-shadow', 'none');
+        }
         const state = await list.evaluate((element) => {
             const steps = [...element.children];
             const markers = steps.map((step) => step.querySelector('.process-list-marker').getBoundingClientRect());

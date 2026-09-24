@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.21.2`
+Documentation version: `v1.21.3`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -75,8 +75,11 @@ The Collapse specimen has no placeholder explanatory paragraph.
   `.process-list-content` containing a `.process-list-heading` and optional
   paragraph. Only nonterminal steps set `data-process-continues` to draw the
   connector. The common `--process-list-*` tokens preserve a 32px circular
-  marker, 2px accent border and connector, 4px background halo, 24px vertical
-  gap, and 16px column gap. A heading centers on the marker; copy starts 5px
+  marker, 2px accent border and connector, transparent marker fill, a 4px
+  connector gap without a painted halo, 24px vertical gap, and 16px column gap.
+  The marker must reveal its actual carrying surface in both themes, including
+  glass and modal surfaces; it must not paint the global page background inside
+  or around the ring. A heading centers on the marker; copy starts 5px
   below it. The content track may wrap at narrow widths without changing the
   marker or overflowing the page. AgenticContext's Tunnel onboarding supplies
   the production content, while the Worthward catalog and neoMe component

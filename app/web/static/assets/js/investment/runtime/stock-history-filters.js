@@ -1,7 +1,8 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.0.1
+ * Code version: v1.0.2
+ * - Fixed: Revealing the share actions re-aligns them to the global anchor.
  * - Fixed: Workbook validation refreshes the browser write session first.
  * - Added: Extracted from the Investment workspace composition root.
  */
@@ -1374,6 +1375,9 @@ function setInvestmentExportButtonVisibility(isVisible) {
         const shouldShowShareActions = runtime.state.investmentHasExportableTransactions && runtime.state.investmentChartReady;
         if (runtime.investmentShareActions) {
             runtime.investmentShareActions.hidden = !shouldShowShareActions;
+            if (shouldShowShareActions) {
+                runtime.syncInvestmentShareActionsPosition();
+            }
         }
         if (!runtime.exportTransactionsButton) return;
         runtime.exportTransactionsButton.hidden = !shouldShowShareActions;

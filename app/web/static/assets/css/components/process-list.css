@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 
 .process-list {
     display: grid;
@@ -44,7 +44,6 @@
     border: var(--process-list-marker-border-width) solid var(--process-list-connector-color);
     border-radius: 50%;
     background: var(--process-list-marker-background);
-    box-shadow: 0 0 0 var(--process-list-marker-halo-width) var(--theme-background);
     color: var(--process-list-marker-color);
     font-size: var(--process-list-heading-font-size);
     font-weight: var(--process-list-heading-font-weight);

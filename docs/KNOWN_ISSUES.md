@@ -1,5 +1,23 @@
 # Known issues and operating constraints
 
+Investment share action placement, 24 Sep 2026: `contain: layout` on the
+Investment workspace header, added to keep gel transforms out of root scroll
+geometry, also makes that header the containing block of the fixed share
+action group. Viewport coordinates therefore landed offset by the header's
+position: 10px left of the global theme anchor's centerline and 10px below the
+view selector, which let the button cross the Holdings card edge. The share
+sync now measures the rendered group and removes that offset, so its centerline
+matches the theme anchor horizontally and the view selector vertically. At
+compact widths it reserves inline-end room in the view selector row only when
+the centered selector would otherwise run under the share button.
+
+Process List surface blending, 24 Sep 2026: numbered markers now leave their
+centers and surrounding connector gaps transparent. A fixed page-background fill
+and matching solid halo had produced visible disks on glass and modal surfaces,
+especially in Dark mode. The shared 32px marker and 4px connector clearance
+remain unchanged. The user-owned 8688 service was not restarted, so its current
+page may continue serving the earlier CSS until the owner relaunches it.
+
 Investment import session readiness, 24 Sep 2026: the import dialog could
 accept chosen files and only then reject the import with "Investment changes
 require a valid session security token", because a server restart regenerates
@@ -504,7 +522,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.0`
+Documentation version: `v1.264.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

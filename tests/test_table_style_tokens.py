@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.21.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.21.1."""
 
 from __future__ import annotations
 
@@ -87,6 +87,12 @@ def test_style_tokens_expose_the_shared_switch_contract() -> None:
 
 
 def test_style_tokens_render_the_shared_process_list_component() -> None:
+    tokens_css = (
+        PROJECT_ROOT / "app/web/static/assets/css/foundation/tokens.css"
+    ).read_text(encoding="utf-8")
+    component_css = (
+        PROJECT_ROOT / "app/web/static/assets/css/components/process-list.css"
+    ).read_text(encoding="utf-8")
     html = create_app().test_client().get("/settings/style-tokens").get_data(as_text=True)
     process_html = html.split('data-style-token-card="process-list"', 1)[1].split(
         '</section>', 1
@@ -97,6 +103,11 @@ def test_style_tokens_render_the_shared_process_list_component() -> None:
     assert process_html.count('class="process-list-marker"') == 4
     assert process_html.count('class="process-list-heading"') == 4
     assert '--process-list-marker-size' in process_html
+    assert '--process-list-marker-background' in process_html
+    assert 'transparent' in process_html
+    assert '--process-list-marker-background: transparent;' in tokens_css
+    marker_rule = component_css.split('.process-list-marker {', 1)[1].split('}', 1)[0]
+    assert 'box-shadow:' not in marker_rule
 
 
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:
