@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.156.1
+ * Code version: v2.156.2
+ * - Fixed: Loads Stock-details live values with stable card-owned line boxes.
  * - Fixed: Loads share-action placement that aligns to the global anchor.
  * - Fixed: Import refreshes the browser write session immediately before it
  *   submits, and reports an unavailable session without a network-error label.
@@ -134,7 +135,7 @@ import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.5';
+} from './investment/realtime.js?v=investment-realtime-v1.3.6';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -178,7 +179,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.156.1',
+    entry: 'v2.156.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

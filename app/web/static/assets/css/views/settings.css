@@ -1,4 +1,4 @@
-/* Code version: v0.36.1 */
+/* Code version: v0.37.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -758,6 +758,18 @@
     max-width: 100%;
 }
 
+.style-token-demo > :is(.style-token-shared-select-shell, .style-token-strategy-tuning-demo) {
+    width: min(100%, var(--layout-control-width));
+    justify-self: start;
+}
+
+/* Container queries cannot resolve custom-property lengths; the threshold matches the 640px content token. */
+@container (min-width: 640px) {
+    .style-token-demo > :is(.style-token-shared-select-shell, .style-token-strategy-tuning-demo) {
+        width: min(100%, var(--layout-content-width));
+    }
+}
+
 .settings-shell-style-tokens .range-mode-shell {
     width: fit-content;
     max-width: 100%;
@@ -1239,10 +1251,9 @@ div.style-token-modal-demo {
     overflow-y: hidden;
 }
 
-.style-token-strategy-tuning-demo {
+.style-token-demo > .style-token-strategy-tuning-demo {
     display: grid;
     align-content: start;
-    width: min(100%, 286px);
     min-width: 0;
     overflow: visible;
 }

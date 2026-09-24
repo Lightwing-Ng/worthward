@@ -1,4 +1,4 @@
-{# Code version: v1.6.1 #}
+{# Code version: v1.7.0 #}
 {% from "_macros.html" import render_style_token_table with context %}
 {% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
@@ -83,7 +83,20 @@
                             <span class="process-list-marker" aria-hidden="true">{{ loop.index }}</span>
                             <div class="process-list-content">
                                 <h3 class="process-list-heading">{{ translate_ui(step.title) }}</h3>
-                                <p class="style-token-process-list-copy">{{ translate_ui(step.copy) }}</p>
+                                {% if step.body_kind in ("ordered-list", "unordered-list") %}
+                                    {% if step.body_kind == "ordered-list" %}<ol class="process-list-detail-list" role="list">{% else %}<ul class="process-list-detail-list" role="list">{% endif %}
+                                        {% for item in step["items"] %}<li>{{ translate_ui(item) }}</li>{% endfor %}
+                                    {% if step.body_kind == "ordered-list" %}</ol>{% else %}</ul>{% endif %}
+                                {% elif step.body_kind == "paragraph" %}
+                                <p class="style-token-process-list-copy">{{ translate_ui(step["copy"]) }}</p>
+                                {% elif step.body_kind == "field" %}
+                                <div class="field style-token-settings-input-shell style-token-process-list-field">
+                                    <label class="style-token-settings-input-label" for="style_token_process_list_field">{{ translate_ui(step.field_label) }}</label>
+                                    <div class="text-input-control-shell">
+                                        <input id="style_token_process_list_field" type="text" class="text-input-control style-token-settings-input" value="{{ translate_ui(step.field_value) }}" readonly>
+                                    </div>
+                                </div>
+                                {% endif %}
                             </div>
                         </li>
                         {% endfor %}

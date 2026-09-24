@@ -1,4 +1,4 @@
-/* Code version: v0.13.0 */
+/* Code version: v0.14.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -283,9 +283,6 @@
 		const rawDates = Array.isArray(series[0].raw_dates) ? series[0].raw_dates : [];
 		const pageParams = new URLSearchParams(window.location.search);
 		const selectedPeriod = pageParams.get("period")?.trim().toLowerCase() || "";
-		const isDateOnlyMarketCapRange = isMarketCapView
-			&& selectedPeriod !== "1d"
-			&& selectedPeriod !== "3d";
 		const selectedTradingDateParam = pageParams.get("trading_date")
 			|| pageParams.get("exact_trading_date")
 			|| pageParams.get("from")
@@ -648,39 +645,20 @@
 					ctx.restore();
 					return;
 				}
-				if (isCompareShortMultiDayRange) {
-					buildShortMultiDayGroups().forEach((group) => {
-						const parsedDate = getShortMultiDayDateParts(group.startIndex);
-						if (!parsedDate) return;
-						const [firstLine, secondLine] = formatChartDateLines({
-							year: parsedDate.year,
-							monthIndex: parsedDate.monthIndex,
-							day: parsedDate.day,
-						});
-						const startX = xScale.getPixelForValue(group.startIndex);
-						const endX = xScale.getPixelForValue(group.endIndex);
-						const x = (startX + endX) / 2;
-						if (!Number.isFinite(x)) return;
-						ctx.textAlign = "center";
-						ctx.fillText(firstLine, x, baselineY + 4);
-						ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
-					});
-					ctx.restore();
-					return;
-				}
-				const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-				const tickIndexes = buildChartTickIndexes(labels, rawDates, viewportWidth, hasIntradayLabels);
-				tickIndexes.forEach((index, tickIndex) => {
-					const parsedDate = parseRawDate(rawDates[index]);
-					if (!parsedDate) return;
-					const [firstLine, secondLine] = formatChartDateLines(parsedDate);
-					const x = xScale.getPixelForValue(index);
-					if (!Number.isFinite(x)) return;
-					if (tickIndex === 0) ctx.textAlign = "left";
-					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
-					else ctx.textAlign = "center";
-					ctx.fillText(firstLine, x, baselineY + 4);
-					ctx.fillText(secondLine, x, baselineY + 4 + lineHeight);
+				const axisTicks = chartAxis.layoutDateAxisTicks({
+					count: labels.length,
+					getPixel: (index) => xScale.getPixelForValue(index),
+					measureWidth: (index) => Math.max(...formatChartDateLines(axisDateParts[index])
+						.map((line) => ctx.measureText(line).width)),
+					boundsLeft: 0,
+					boundsRight: chartInstance.width || chartArea.right,
+					getKey: (index) => formatDatePartsKey(axisDateParts[index]),
+				});
+				axisTicks.forEach((tick) => {
+					ctx.textAlign = tick.align;
+					const [firstLine, secondLine] = formatChartDateLines(axisDateParts[tick.index]);
+					ctx.fillText(firstLine, tick.x, baselineY + 4);
+					if (secondLine) ctx.fillText(secondLine, tick.x, baselineY + 4 + lineHeight);
 				});
 				ctx.restore();
 			},
@@ -1122,35 +1100,29 @@
 		);
 
 		const formatChartDateLines = (dateParts) => {
-			const displayDateParts = isDateOnlyMarketCapRange
-				? {
-					year: dateParts.year,
-					monthIndex: dateParts.monthIndex,
-					day: dateParts.day,
-				}
-				: dateParts;
+			if (!dateParts) return ["", ""];
+			const displayDateParts = {
+				year: dateParts.year,
+				monthIndex: dateParts.monthIndex,
+				day: dateParts.day,
+			};
 			return typeof formatFullDateLines === "function"
 				? formatFullDateLines(displayDateParts, { allowWrap: true })
 				: [`${displayDateParts.day}/${displayDateParts.monthIndex + 1}`, `${displayDateParts.year}`];
 		};
-
-		// `chart-axis-utils.js` owns the one tick-selection algorithm.
-		// base.html loads it before every chart consumer.
-		const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
-
-		const buildChartTickIndexes = (chartLabels, chartRawDates, plotWidth, useIntradayDedup = false) => {
-			const tickIndexes = Array.from(buildTickIndexSet(chartLabels.length, plotWidth)).sort((left, right) => left - right);
-			if (!useIntradayDedup) return tickIndexes;
-			const uniqueDays = new Set(chartRawDates.map((value) => normalizeDateKey(value)).filter(Boolean));
-			if (uniqueDays.size <= 1) return tickIndexes;
-			const seenDays = new Set();
-			return tickIndexes.filter((index) => {
-				const dayKey = normalizeDateKey(chartRawDates[index]);
-				if (!dayKey || seenDays.has(dayKey)) return false;
-				seenDays.add(dayKey);
-				return true;
-			});
-		};
+		const axisDateParts = labels.map((_label, index) => {
+			const dateParts = isCompareOneDayRange && selectedTradingDate
+				? parseRawDate(selectedTradingDate)
+				: (hasIntradayLabels
+					? getShortMultiDayDateParts(index) || parseRawDate(rawDates[index])
+					: parseRawDate(rawDates[index]));
+			if (!dateParts) return null;
+			return {
+				year: dateParts.year,
+				monthIndex: dateParts.monthIndex,
+				day: dateParts.day,
+			};
+		});
 
 		const targetSeriesByIndex = series.map((item) => (
 			isMarketCapView

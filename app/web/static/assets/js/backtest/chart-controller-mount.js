@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.5.0 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -382,9 +382,6 @@
 		const probabilityDetailStatus = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-status]",
 		);
-		const cycleOneStepProbability = probabilityDetailPanel?.querySelector(
-			"[data-backtest-cycle-one-step-probability]",
-		);
 		const probabilityDetailAnchor = probabilityDetailPanel?.querySelector(
 			"[data-backtest-probability-detail-anchor]",
 		);
@@ -489,10 +486,6 @@
 			latestProbabilityDetailModel = null;
 			latestProbabilityDetailBaseStatus = "";
 			latestProbabilityDetailIndex = null;
-			if (cycleOneStepProbability instanceof HTMLElement) {
-				cycleOneStepProbability.textContent = "";
-				cycleOneStepProbability.hidden = true;
-			}
 			probabilityDetailPanel.hidden = true;
 			probabilityDetailPanel.setAttribute("aria-hidden", "true");
 			delete probabilityDetailPanel.dataset.activeIndex;
@@ -520,13 +513,6 @@
 				: unavailableMessage;
 			if (probabilityDetailStatus instanceof HTMLElement) {
 				probabilityDetailStatus.textContent = latestProbabilityDetailBaseStatus;
-			}
-			if (cycleOneStepProbability instanceof HTMLElement) {
-				const isCycle = strategyPresentation?.schema === "cycle-of-price-action/v1";
-				cycleOneStepProbability.hidden = !isCycle;
-				cycleOneStepProbability.textContent = isCycle
-					? "Bayesian next-open to following-open rise: unavailable for this date"
-					: "";
 			}
 			probabilityDetailGrid?.replaceChildren();
 			probabilityDetailYAxis?.replaceChildren();
@@ -1491,23 +1477,20 @@
 		};
 
 		const formatChartDateLines = (dateParts) => {
-			const displayDateParts = interval === "1d"
-				? {
-					year: dateParts.year,
-					monthIndex: dateParts.monthIndex,
-					day: dateParts.day,
-				}
-				: dateParts;
+			const displayDateParts = {
+				year: dateParts.year,
+				monthIndex: dateParts.monthIndex,
+				day: dateParts.day,
+			};
 			return typeof formatFullDateLines === "function"
 				? formatFullDateLines(displayDateParts, { allowWrap: true })
 				: [`${displayDateParts.day}/${displayDateParts.monthIndex + 1}`, `${displayDateParts.year}`];
 		};
 		const hideHoverDateLabel = () => {
-			hoverDateLabel.hidden = true;
-			hoverDateLabel.classList.remove("is-visible");
+			chartAxis.updateHoverDateLabel(hoverDateLabel);
 		};
 		const updateHoverDateLabel = (x, top, index) => {
-			if (!strategyPresentation || !Number.isFinite(x) || !Number.isFinite(top)) {
+			if (!Number.isFinite(x) || !Number.isFinite(top)) {
 				hideHoverDateLabel();
 				return;
 			}
@@ -1516,33 +1499,14 @@
 				hideHoverDateLabel();
 				return;
 			}
-			const [firstLine, secondLine] = formatChartDateLines(dateParts);
-			const primaryLine = hoverDateLabel.querySelector(
-				'[data-backtest-hover-date-line="primary"]',
-			);
-			const secondaryLine = hoverDateLabel.querySelector(
-				'[data-backtest-hover-date-line="secondary"]',
-			);
-			if (primaryLine && primaryLine.textContent !== (firstLine || "")) primaryLine.textContent = firstLine || "";
-			if (secondaryLine) {
-				if (secondaryLine.textContent !== (secondLine || "")) secondaryLine.textContent = secondLine || "";
-				secondaryLine.hidden = !secondLine;
-			}
-			hoverDateLabel.hidden = false;
-			const halfWidth = (hoverDateLabel.offsetWidth || 42) / 2;
-			const visualX = Math.max(halfWidth, Math.min(
-				tradeChartStack.clientWidth - halfWidth, x - probabilityScrollVisualPosition,
-			));
-			hoverDateLabel.style.left = `${visualX + probabilityScrollVisualPosition}px`;
-			hoverDateLabel.style.top = `${top}px`;
-			hoverDateLabel.hidden = false;
-			hoverDateLabel.classList.add("is-visible");
+			chartAxis.updateHoverDateLabel(hoverDateLabel, {
+				lines: formatChartDateLines(dateParts),
+				x: x - probabilityScrollVisualPosition,
+				top,
+				width: tradeChartStack.clientWidth,
+				offsetX: probabilityScrollVisualPosition,
+			});
 		};
-
-		// `chart-axis-utils.js` owns the one tick-selection algorithm.
-		// base.html loads it before every chart consumer.
-		const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
-
 
 		const addTradingDays = (dateParts, tradingDays) => {
 			if (!dateParts) return null;
@@ -1676,18 +1640,6 @@
 			const {geometry, cells, anchorPrice} = detailModel;
 			latestProbabilityDetailModel = detailModel;
 			renderProbabilityDetailSideSummary(cells);
-			if (cycleOneStepProbability instanceof HTMLElement) {
-				const oneStepProbability = strategyPresentation?.probability_up?.[index];
-				const isAvailable = strategyPresentation?.schema === "cycle-of-price-action/v1"
-					&& typeof oneStepProbability === "number"
-					&& Number.isFinite(oneStepProbability)
-					&& oneStepProbability >= 0
-					&& oneStepProbability <= 1;
-				cycleOneStepProbability.hidden = !isAvailable;
-				cycleOneStepProbability.textContent = isAvailable
-					? `Bayesian next-open to following-open rise: ${formatProbabilityMass(oneStepProbability)}`
-					: "";
-			}
 			const anchorDate = parseRawDate(rawDates[index]);
 			const selectedDate = anchorDate ? formatSelectedDate(anchorDate) : (labels[index] || "selected date");
 			latestProbabilityDetailBaseStatus = `Selected date: ${selectedDate}`;
@@ -2029,7 +1981,6 @@
 			bootstrap,
 			buildAlignedSeries,
 			buildPixelPaddedYScale,
-			buildTickIndexSet,
 			cancelControllerAnimationFrame,
 			chartAxis,
 			chartAxisCanvasFont,

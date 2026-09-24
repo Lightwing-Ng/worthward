@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.4.0 */
 (() => {
     const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
     const dcaThemeState = bootstrap.dcaThemeState = bootstrap.dcaThemeState || {};
@@ -235,9 +235,14 @@
             return `${Number(match[3])} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(match[2]) - 1]} ${match[1]}`;
         };
 
-        // `chart-axis-utils.js` owns the one tick-selection algorithm.
-        // base.html loads it before every chart consumer.
-        const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
+        const axisLabelLines = labels.map((label, index) => {
+            const [day = "", month = "", year = ""] = (
+                parseRawDate(rawDates[index]) || String(label || "")
+            ).split(" ");
+            return [`${day} ${month}`.trim(), year];
+        });
+        const axisLayouts = new WeakMap();
+        let activeHoverIndex = -1;
 
         const xAxisLabelPlugin = {
             id: "dcaXAxisLabelPlugin",
@@ -247,26 +252,103 @@
                 const {ctx, chartArea, scales} = chart;
                 const xScale = scales?.x;
                 if (!chartArea || !xScale || !labels.length) return;
-                const viewportWidth = tradeChartStack.clientWidth || chart.canvas.clientWidth || window.innerWidth || 0;
-                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
                 const baselineY = chartArea.bottom;
                 const lineHeight = 10;
                 ctx.save();
                 ctx.fillStyle = resolvedTheme.muted;
                 ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
                 ctx.textBaseline = "top";
-                tickIndexes.forEach((index, tickIndex) => {
-                    const rawLabel = String(rawDates[index] || "");
-                    const [day, month, year] = (parseRawDate(rawLabel) || labels[index]).split(" ");
-                    const x = xScale.getPixelForValue(index);
-                    if (!Number.isFinite(x)) return;
-                    if (tickIndex === 0) ctx.textAlign = "left";
-                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
-                    else ctx.textAlign = "center";
-                    ctx.fillText(`${day} ${month}`, x, baselineY);
-                    ctx.fillText(`${year || ""}`, x, baselineY + lineHeight);
+                const nextLayoutKey = [
+                    chart.width,
+                    chartArea.left,
+                    chartArea.right,
+                    ctx.font,
+                    document.fonts?.status || "",
+                ].join(":");
+                let cachedLayout = axisLayouts.get(chart);
+                if (nextLayoutKey !== cachedLayout?.key) {
+                    const ticks = chartAxis.layoutDateAxisTicks({
+                        count: labels.length,
+                        getPixel: (index) => xScale.getPixelForValue(index),
+                        measureWidth: (index) => Math.max(
+                            0,
+                            ...axisLabelLines[index].map((line) => ctx.measureText(line).width),
+                        ),
+                        boundsLeft: 0,
+                        boundsRight: chart.width,
+                        getKey: (index) => rawDates[index] || labels[index],
+                    });
+                    cachedLayout = {key: nextLayoutKey, ticks};
+                    axisLayouts.set(chart, cachedLayout);
+                }
+                const badgeRect = !hoverDateLabel.hidden
+                    ? hoverDateLabel.getBoundingClientRect()
+                    : null;
+                const canvasRect = badgeRect ? chart.canvas.getBoundingClientRect() : null;
+                const badgeScaleX = canvasRect?.width > 0 ? chart.width / canvasRect.width : 0;
+                const badgeScaleY = canvasRect?.height > 0 ? chart.height / canvasRect.height : 0;
+                const badgeBounds = badgeRect && badgeScaleX > 0 && badgeScaleY > 0
+                    ? {
+                        left: (badgeRect.left - canvasRect.left) * badgeScaleX,
+                        right: (badgeRect.right - canvasRect.left) * badgeScaleX,
+                        top: (badgeRect.top - canvasRect.top) * badgeScaleY,
+                        bottom: (badgeRect.bottom - canvasRect.top) * badgeScaleY,
+                    }
+                    : null;
+                cachedLayout.ticks.forEach((tick) => {
+                    const [firstLine, secondLine] = axisLabelLines[tick.index];
+                    ctx.textAlign = tick.align;
+                    if (badgeBounds && badgeBounds.bottom > baselineY && badgeBounds.top < baselineY + (2 * lineHeight)) {
+                        const textWidth = Math.max(ctx.measureText(firstLine).width, ctx.measureText(secondLine).width);
+                        const textLeft = tick.x - (
+                            tick.align === "right" ? textWidth : tick.align === "center" ? textWidth / 2 : 0
+                        );
+                        if (textLeft < badgeBounds.right && textLeft + textWidth > badgeBounds.left) return;
+                    }
+                    ctx.fillText(firstLine, tick.x, baselineY);
+                    ctx.fillText(secondLine, tick.x, baselineY + lineHeight);
                 });
                 ctx.restore();
+            },
+        };
+
+        const priceHoverGuidePlugin = {
+            id: "dcaPriceHoverGuidePlugin",
+            afterDatasetsDraw(chart) {
+                const {ctx, chartArea, scales} = chart;
+                const price = Number(close[activeHoverIndex]);
+                const y = Number(scales?.y?.getPixelForValue(price));
+                if (
+                    chart.canvas !== priceCanvas
+                    || !chartArea
+                    || !Number.isInteger(activeHoverIndex)
+                    || activeHoverIndex < 0
+                    || !Number.isFinite(price)
+                    || !Number.isFinite(y)
+                    || y < chartArea.top
+                    || y > chartArea.bottom
+                ) {
+                    chart._activeDcaPriceGuideBounds = null;
+                    return;
+                }
+                ctx.save();
+                ctx.strokeStyle = getComputedStyle(document.body)
+                    .getPropertyValue("--theme-muted-soft").trim() || resolvedTheme.muted;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(chartArea.left, y);
+                ctx.lineTo(chartArea.right, y);
+                ctx.stroke();
+                ctx.restore();
+                chartAxis.drawYAxisValueBadge(chart, {
+                    y,
+                    value: price,
+                    formattedValue: formatMoney(price),
+                    formatTickLabel: formatStockPriceAxisValue,
+                    fillColor: resolvedTheme.accentPrimary,
+                    boundsProperty: "_activeDcaPriceGuideBounds",
+                    boundsAliases: {price},
+                });
             },
         };
 
@@ -334,6 +416,14 @@
         tradeChartStack.querySelector(".trade-chart-hover-line")?.remove();
         tradeChartStack.appendChild(hoverLine);
 
+        const hoverDateLabel = document.createElement("div");
+        hoverDateLabel.className = "trade-chart-hover-date-label";
+        hoverDateLabel.setAttribute("aria-hidden", "true");
+        hoverDateLabel.innerHTML = "<span></span><span></span>";
+        hoverDateLabel.hidden = true;
+        tradeChartStack.querySelector(".trade-chart-hover-date-label")?.remove();
+        tradeChartStack.appendChild(hoverDateLabel);
+
         const tooltip = document.createElement("div");
         tooltip.className = "chart-tooltip";
         tooltip.innerHTML = `
@@ -376,7 +466,7 @@
                     },
                 },
             },
-            plugins: [contributionMarkerPlugin, xAxisLabelPlugin],
+            plugins: [contributionMarkerPlugin, priceHoverGuidePlugin, xAxisLabelPlugin],
         });
 
         const equityChart = new Chart(equityCanvas, {
@@ -449,16 +539,26 @@
 
         const syncHoverState = (index, sourceCanvas, sourceChart) => {
             if (!Number.isInteger(index)) {
+                const hadActiveHover = activeHoverIndex >= 0;
+                activeHoverIndex = -1;
                 hoverLine.classList.remove("is-visible");
+                chartAxis.updateHoverDateLabel(hoverDateLabel, {lines: null});
                 tooltip.classList.remove("is-visible");
                 activateRows([]);
+                if (hadActiveHover) {
+                    priceChart.draw();
+                    if (isTradeDetailsEnabled()) equityChart.draw();
+                }
                 return;
             }
             const stackRect = tradeChartStack.getBoundingClientRect();
             const sourcePoint = getDatasetPoint(sourceChart, index, sourceChart === equityChart ? 0 : 0);
             const pricePoint = getDatasetPoint(priceChart, index, 0);
             const canonicalPoint = pricePoint || sourcePoint;
-            if (!sourcePoint || !canonicalPoint) return;
+            if (!sourcePoint || !canonicalPoint) {
+                syncHoverState(null, sourceCanvas, sourceChart);
+                return;
+            }
             const hoverLinePosition = getRelativePointPosition(priceCanvas, stackRect, canonicalPoint);
             const tooltipAnchor = getRelativePointPosition(sourceCanvas, stackRect, sourcePoint);
             const frame = updateHoverLineFrame();
@@ -468,6 +568,17 @@
             }
             hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
             hoverLine.classList.add("is-visible");
+            chartAxis.updateHoverDateLabel(hoverDateLabel, {
+                lines: frame ? axisLabelLines[index] : null,
+                x: hoverLinePosition.x,
+                top: frame?.bottom ?? NaN,
+                width: tradeChartStack.clientWidth,
+            });
+            if (activeHoverIndex !== index) {
+                activeHoverIndex = index;
+                priceChart.draw();
+                if (isTradeDetailsEnabled()) equityChart.draw();
+            }
 
             const equityValue = Number(equity[index] || 0);
             const allInValue = Number(allInEquity[index] || 0);
@@ -623,6 +734,7 @@
         );
         bindColorSchemeRefresh(() => {
             const nextTheme = readThemeTokens();
+            Object.assign(resolvedTheme, nextTheme);
             priceChart.data.datasets[0].borderColor = nextTheme.accentPrimary;
             equityChart.data.datasets[0].borderColor = nextTheme.accentPositive;
             equityChart.data.datasets[1].borderColor = nextTheme.muted;

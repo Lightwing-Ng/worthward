@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 import {
     expect,
     test,
@@ -607,6 +607,7 @@ test('shares authoritative strategy categories between Settings and Backtest', a
         'bayesian-price-field',
         'lstm-price-field',
         'patchtst-price-field',
+        'cycle-of-price-action',
         'tsmixer-price-field',
         'nhits-price-field',
         'timexer-price-field',
@@ -615,7 +616,7 @@ test('shares authoritative strategy categories between Settings and Backtest', a
         'moderntcn-price-field',
         'tft-price-field',
     ]);
-    expect(new Set(settingsGroups.flatMap((group) => group.ids)).size).toBe(18);
+    expect(new Set(settingsGroups.flatMap((group) => group.ids)).size).toBe(19);
 
     await page.goto('/workspaces/backtest?strategy=buy-and-hold&period=6mo');
     const backtestGroups = await page.locator('#trade_strategy optgroup').evaluateAll((groups) => (

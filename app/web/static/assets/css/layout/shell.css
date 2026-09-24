@@ -1,4 +1,4 @@
-/* Code version: v3.33.0 */
+/* Code version: v3.33.1 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -519,4 +519,21 @@ h1 { max-width: none; line-height: 1.18; text-wrap: balance; min-height: 48px; d
 .workspace.panel::before { display: none; }
 .panel.sidebar { border: var(--sidebar-shell-border); background: var(--sidebar-shell-background); box-shadow: var(--sidebar-shell-shadow); backdrop-filter: var(--sidebar-shell-blur); -webkit-backdrop-filter: var(--sidebar-shell-blur); overflow-y: auto; overflow-x: visible; }
 .panel.sidebar::before { display: none; }
+body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar > .hero {
+	flex: 0 0 auto;
+}
+body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar > .settings-nav {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-x: hidden;
+	overflow-y: auto;
+	scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+}
 .controls { display: flex; flex-direction: column; gap: var(--sidebar-form-gap); position: relative; z-index: var(--layer-surface-content); }

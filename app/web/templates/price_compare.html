@@ -1,4 +1,4 @@
-{# Code version: v0.6.1 #}
+{# Code version: v0.7.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_chart_surface with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -79,6 +79,10 @@
                         <section class="price-subplot" data-price-subplot data-ticker="{{ item.ticker }}">
                             <div class="price-subplot-canvas-wrap">
                                 <canvas id="price_subplot_{{ loop.index }}" data-price-subplot-canvas data-series-index="{{ loop.index0 }}"></canvas>
+                                <div class="trade-chart-hover-date-label" data-price-hover-date-label aria-hidden="true" hidden>
+                                    <span data-price-hover-date-line="primary"></span>
+                                    <span data-price-hover-date-line="secondary"></span>
+                                </div>
                                 <span class="price-subplot-chip-loading" data-chip-loading-spinner hidden aria-hidden="true">
                                     <span class="suggestion-loading-spinner"></span>
                                 </span>

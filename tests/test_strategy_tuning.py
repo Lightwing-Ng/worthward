@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.0."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.1."""
 
 from dataclasses import replace
 import json
@@ -334,6 +334,66 @@ def test_cli_catalog_covers_the_same_dropdown_registry(capsys):
     assert main(["--catalog"]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert [row["id"] for row in rows] == [row["id"] for row in CATALOG]
+
+
+def test_cycle_of_price_action_runs_through_cli_with_scored_stage_evidence(
+    tmp_path, monkeypatch
+):
+    from scripts.strategy_tune import main
+    from strategies.algorithms.strategy_cycle_of_price_action import (
+        CycleOfPriceActionStrategy,
+    )
+
+    frame = ohlc_frame_for_dates(
+        "DRAM", pd.bdate_range("2025-01-02", periods=160).strftime("%Y-%m-%d").tolist()
+    )
+    frame["Volume"] = 1_000_000.0
+    frame.attrs["market_data_source"] = "longbridge-cli"
+    monkeypatch.setattr(
+        CycleOfPriceActionStrategy,
+        "load_market_datasets",
+        lambda *_args, **_kwargs: [frame],
+    )
+    output = tmp_path / "cycle-research"
+    assert main(
+        [
+            "--strategy", "cycle-of-price-action",
+            "--ticker", "DRAM",
+            "--from", "2025-01-02",
+            "--to", "2026-01-02",
+            "--params", '{"training_window":30,"chip_window":20}',
+            "--bounds", '{"fast_ema":[9,11]}',
+            "--trials", "2",
+            "--output", str(output),
+        ]
+    ) == 0
+
+    result = json.loads((output / "result.json").read_text(encoding="utf-8"))
+    evaluations = [
+        json.loads(line)
+        for line in (output / "evaluations.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert result["status"] == "completed"
+    assert result["request"]["strategy_id"] == "cycle-of-price-action"
+    assert len(evaluations) == 2
+    assert all(item["status"] == "ok" for item in evaluations)
+    assert result["best"]["params"]["training_window"] == 30
+    assert result["holdout_used_for_selection"] is False
+    assert result["holdout"]["model_evidence"]["price_action_cycle"]
+    for fold in result["best"]["validation"]:
+        cycle = fold["model_evidence"]["price_action_cycle"]
+        assert set(cycle["stage_counts"]) == {
+            "reversal_extension", "wedge_pop", "ema_crossback",
+            "base_n_break", "exhaustion_extension", "wedge_drop",
+        }
+        assert sum(cycle["stage_counts"].values()) <= len(
+            pd.bdate_range(fold["from"], fold["to"])
+        )
+        assert cycle["latest_state"] in {"neutral", "bull", "bear"}
+        assert cycle["buy_intents"] >= 0
+        assert cycle["sell_intents"] >= 0
 
 
 def test_cli_keeps_validation_evidence_when_holdout_fails(tmp_path, monkeypatch):

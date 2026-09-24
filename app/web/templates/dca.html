@@ -1,4 +1,4 @@
-{# Code version: v0.1.6 #}
+{# Code version: v0.1.7 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -176,6 +176,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.13.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.3.1') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/dca.js', v=version ~ '-dca-v0.4.0') }}"></script>
 {% endblock %}

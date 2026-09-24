@@ -1,4 +1,4 @@
-{# Code version: v1.11.5 #}
+{# Code version: v1.12.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -208,6 +208,10 @@
                                 <canvas class="live-trading-chart-canvas investment-stock-details-price-chart-canvas"
                                         id="live_trading_bars_canvas"
                                         aria-label="Recent intraday candlestick chart"></canvas>
+                                <div class="trade-chart-hover-date-label live-trading-hover-date-label"
+                                     data-live-trading-hover-date-label
+                                     aria-hidden="true"
+                                     hidden><span></span><span></span></div>
                                 <div class="live-trading-chart-empty" id="live_trading_bars_empty">
                                     Select a valid ticker to load the latest 1-minute candlesticks.
                                 </div>
@@ -245,5 +249,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script type="module" src="{{ url_for('static', filename='assets/js/live-trading.js', v=version ~ '-live-trading-v1.16.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/live-trading.js', v=version ~ '-live-trading-v1.17.0') }}"></script>
 {% endblock %}

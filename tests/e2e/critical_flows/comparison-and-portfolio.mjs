@@ -1,4 +1,4 @@
-/* Code version: v1.4.3 */
+/* Code version: v1.4.4 */
 import {
     expect,
     test,
@@ -1239,7 +1239,7 @@ test('formats market-cap y-axis values without fixed trailing zeroes', async ({p
     expect(formattedTicks).toEqual(['1,234', '4.5T', '4T']);
 });
 
-test('omits midnight from long market-cap x-axis labels', async ({page}) => {
+test('omits time of day from market-cap x-axis labels on every range', async ({page}) => {
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=6mo');
 
     const axisLabels = await page.evaluate(() => {
@@ -1267,6 +1267,7 @@ test('omits midnight from long market-cap x-axis labels', async ({page}) => {
                 ctx: {
                     save: () => {},
                     restore: () => {},
+                    measureText: (text) => ({width: String(text).length * 7}),
                     fillText: (text) => calls.push(String(text)),
                 },
                 chartArea: {bottom: 200, left: 0, width: 400},
@@ -1281,10 +1282,10 @@ test('omits midnight from long market-cap x-axis labels', async ({page}) => {
         };
     });
 
-    expect(axisLabels.oneWeekRange).not.toContain('2026 00:00');
-    expect(axisLabels.longRange).not.toContain('2026 00:00');
-    expect(axisLabels.longRange).toContain('2026');
-    expect(axisLabels.shortRange).toContain('2026 00:00');
+    for (const labels of Object.values(axisLabels)) {
+        expect(labels.join(' ')).not.toMatch(/\d{2}:\d{2}/);
+        expect(labels).toContain('2026');
+    }
 });
 
 test('keeps an inferred numeric market symbol as a user-confirmed suggestion', async ({page}) => {
@@ -1639,7 +1640,7 @@ test('formats every price-comparison y axis with the shared stock-price contract
             labels: chart.scales.y.ticks.map((tick) => String(tick.label ?? '')).filter(Boolean),
         };
     });
-    expect(highPriceContract.helperVersion).toBe('v1.7.0');
+    expect(highPriceContract.helperVersion).toBe('v1.10.0');
     expect(highPriceContract.samples).toEqual(['1,234', '567', '12.50', '5.50']);
     expect(highPriceContract.labels.every((label) => /^-?\d{1,3}(?:,\d{3})*$/.test(label))).toBe(true);
 
@@ -1744,9 +1745,9 @@ test('keeps the bottom price axis on the shared range when its ticker starts lat
 
     expect(sharedRangeAxis.visibility).toEqual([false, false, false, false, true]);
     expect(sharedRangeAxis.firstValidIndex).toBeGreaterThan(0);
-    expect(sharedRangeAxis.startLabel).toBe(sharedRangeAxis.expectedStartLabel);
+    expect(sharedRangeAxis.startLabel).toEqual(sharedRangeAxis.expectedStartLabel);
     expect(sharedRangeAxis.lateStartLabel).toBe('');
-    expect(sharedRangeAxis.endLabel).toBe(sharedRangeAxis.expectedEndLabel);
+    expect(sharedRangeAxis.endLabel).toEqual(sharedRangeAxis.expectedEndLabel);
     expect(sharedRangeAxis.labelBasis).toBe('shared-range');
     expect(sharedRangeAxis.rangeStart).toBe(sharedRangeAxis.sharedStart);
     expect(sharedRangeAxis.rangeEnd).toBe(sharedRangeAxis.sharedEnd);

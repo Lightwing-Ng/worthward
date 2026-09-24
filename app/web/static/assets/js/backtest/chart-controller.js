@@ -1,4 +1,4 @@
-/* Code version: v1.12.3 */
+/* Code version: v1.13.0 */
 /**
  * Preserves the public Backtest chart-controller contract while delegating
  * mount preparation to the preceding classic-script helper.
@@ -27,24 +27,43 @@
 				const { ctx, chartArea, scales } = chart;
 				const xScale = scales?.x;
 				if (!chartArea || !xScale || !mount.labels.length) return;
-				const viewportWidth = mount.tradeChartStack?.clientWidth || chart.canvas?.clientWidth || window.innerWidth || document.documentElement.clientWidth || 0;
-				const tickIndexes = Array.from(mount.buildTickIndexSet(mount.labels.length, viewportWidth)).sort((left, right) => left - right);
 				const baselineY = chartArea.bottom;
 				const lineHeight = mount.chartAxisLineHeight;
 				ctx.save();
 				ctx.fillStyle = mount.resolvedTheme.muted;
 				ctx.font = mount.chartAxisCanvasFont;
 				ctx.textBaseline = "top";
-				tickIndexes.forEach((index, tickIndex) => {
-					const parsedDate = mount.parseRawDate(mount.rawDates[index]);
+				const datePartsByIndex = new Map();
+				const datePartsAt = (index) => {
+					if (!datePartsByIndex.has(index)) {
+						datePartsByIndex.set(index, mount.parseRawDate(mount.rawDates[index]));
+					}
+					return datePartsByIndex.get(index);
+				};
+				const linesAt = (index) => {
+					const parts = datePartsAt(index);
+					return parts ? mount.formatChartDateLines(parts) : [];
+				};
+				const ticks = mount.chartAxis.layoutDateAxisTicks({
+					count: mount.labels.length,
+					getPixel: (index) => xScale.getPixelForValue(index),
+					measureWidth: (index) => Math.max(0,
+						...linesAt(index).map((line) => ctx.measureText(line).width),
+					),
+					boundsLeft: 0,
+					boundsRight: chart.width,
+					getKey: (index) => {
+						const parts = datePartsAt(index);
+						return parts ? `${parts.year}-${parts.monthIndex}-${parts.day}` : null;
+					},
+				});
+				ticks.forEach((tick) => {
+					const {index, x} = tick;
+					const parsedDate = datePartsAt(index);
 					if (!parsedDate) return;
 					const [firstLine, secondLine] = mount.formatChartDateLines(parsedDate);
-					const x = xScale.getPixelForValue(index);
-					if (!Number.isFinite(x)) return;
-					if (tickIndex === 0) ctx.textAlign = "left";
-					else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
-					else ctx.textAlign = "center";
-					if (mount.strategyPresentation && mount.activePriceOverlay && !mount.hoverDateLabel.hidden) {
+					ctx.textAlign = tick.align;
+					if (mount.activePriceOverlay && !mount.hoverDateLabel.hidden) {
 						const width = Math.max(ctx.measureText(firstLine).width, ctx.measureText(secondLine).width);
 						const left = x - (ctx.textAlign === "right" ? width : ctx.textAlign === "center" ? width / 2 : 0);
 						const badgeX = Number.parseFloat(mount.hoverDateLabel.style.left) - getStaticStackContentLeft(chart.canvas);
@@ -145,7 +164,7 @@
 					return;
 				}
 				const point = chart.getDatasetMeta(0)?.data?.[mount.activeIndex];
-				const {ctx, chartArea, scales} = chart;
+				const {chartArea, scales} = chart;
 				const yScale = scales?.y;
 				if (!point || !chartArea || !yScale || !Number.isFinite(point.y)) return;
 				let guideX = point.x;
@@ -185,17 +204,6 @@
 					y: guideY,
 					...(Number.isFinite(contentX) ? {contentX} : {}),
 				};
-				if (mount.strategyPresentation) return;
-				const mutedSoft = getComputedStyle(document.body).getPropertyValue("--theme-muted-soft").trim()
-					|| mount.resolvedTheme.muted;
-				ctx.save();
-				ctx.strokeStyle = mutedSoft;
-				ctx.lineWidth = 1;
-				ctx.beginPath();
-				ctx.moveTo(chartArea.left, point.y);
-				ctx.lineTo(chartArea.right, point.y);
-				ctx.stroke();
-				ctx.restore();
 			},
 			afterDatasetsDraw(chart) {
 				if (mount.strategyPresentation) return;
@@ -952,7 +960,7 @@
 				return false;
 			}
 			let probabilityRendered = false;
-			if (mount.activePriceOverlay && pricePoint) {
+			if (mount.strategyPresentation && mount.activePriceOverlay && pricePoint) {
 				probabilityRendered = renderProbabilityTooltip(index, stackRect, pricePoint);
 			}
 			const currentStackRect = mount.tradeChartStack.getBoundingClientRect();
@@ -984,13 +992,29 @@
 				}
 				mount.hoverLine.style.setProperty("--trade-chart-hover-line-x", `${hoverLinePosition.x}px`);
 				mount.hoverLine.classList.add("is-visible");
-				mount.hoverCrosshairLine.classList.remove("is-visible");
 			}
 			if (probabilityRendered) {
 				mount.tooltip.classList.remove("is-visible");
 				return true;
 			}
 			hideProbabilityTooltip({immediate: sourceCanvas !== mount.priceCanvas});
+			if (!mount.strategyPresentation && pricePoint) {
+				const plotFrame = getPricePlotFrame(currentStackRect);
+				const pricePosition = getRelativePointPosition(
+					mount.priceCanvas, currentStackRect, pricePoint,
+				);
+				if (plotFrame && pricePosition) {
+					mount.hoverCrosshairLine.style.left = `${plotFrame.left}px`;
+					mount.hoverCrosshairLine.style.width = `${Math.max(0, plotFrame.right - plotFrame.left)}px`;
+					mount.hoverCrosshairLine.style.top = `${pricePosition.y}px`;
+					mount.hoverCrosshairLine.classList.add("is-visible");
+					mount.updateHoverDateLabel(pricePosition.x, plotFrame.bottom, index);
+				} else {
+					mount.hoverCrosshairLine.classList.remove("is-visible");
+				}
+			} else if (!mount.strategyPresentation) {
+				mount.hoverCrosshairLine.classList.remove("is-visible");
+			}
 			const relativeX = hoverLinePosition.x;
 			const visualRelativeX = relativeX - mount.probabilityScrollVisualPosition;
 			const relativeY = tooltipAnchorPosition.y;
@@ -1358,7 +1382,12 @@
 			mount.activeIndex = index;
 			mount.activeSourceCanvas = index === null ? null : sourceCanvas;
 			mount.activeSourceChart = index === null ? null : sourceChart;
-			mount.activePriceOverlay = Boolean(mount.strategyPresentation && index !== null && sourceCanvas === mount.priceCanvas);
+			mount.activePriceOverlay = Boolean(
+				index !== null
+				&& (!mount.strategyPresentation || sourceCanvas === mount.priceCanvas)
+				&& getDatasetPoint(mount.priceChart, index, 0),
+			);
+			const probabilityRendered = updateSharedTooltip(index, sourceCanvas, sourceChart);
 			const showTradeDetails = mount.isBacktestTradeDetailsEnabled();
 			const setActive = (chart) => {
 				if (!chart || !chart.ctx) return;
@@ -1369,7 +1398,6 @@
 			};
 			setActive(mount.priceChart);
 			setActive(mount.equityChart);
-			const probabilityRendered = updateSharedTooltip(index, sourceCanvas, sourceChart);
 
 			if (!showTradeDetails || index === null) {
 				activateBacktestRows([], null);

@@ -1,7 +1,11 @@
+import {createLiveTradingAxisPlugins} from "./live-trading/chart-axis.js?v=live-trading-chart-axis-v1.0.0";
+
 /**
  * Live trading frontend.
  *
- * Code version: v1.16.1
+ * Code version: v1.17.0
+ * - Changed: Intraday date ticks use the shared pixel layout, and hover
+ *   reuses the shared axis badges with a close-price crosshair.
  * - Changed: Intraday stock-price y-axis labels now reuse the shared
  *   three-digit integer and sub-100 two-decimal contract.
  * - Changed: The PIN-unlocked browser session now authenticates positions and order requests.
@@ -31,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const barsMeta = document.getElementById("live_trading_bars_meta");
     const barsShell = document.getElementById("live_trading_bars_shell");
     const barsCanvas = document.getElementById("live_trading_bars_canvas");
+    const hoverDateLabel = barsShell?.querySelector("[data-live-trading-hover-date-label]");
     const barsEmpty = document.getElementById("live_trading_bars_empty");
     const priceInput = document.getElementById("live_trading_price");
     const quantityInput = document.getElementById("live_trading_quantity");
@@ -1024,7 +1029,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const hideBarsHoverDateLabel = () => {
+        chartAxis.updateHoverDateLabel(hoverDateLabel, {lines: null});
+    };
+
     const destroyBarsChart = () => {
+        hideBarsHoverDateLabel();
         if (activeBarsChart && typeof activeBarsChart.destroy === "function") {
             activeBarsChart.destroy();
         }
@@ -1033,6 +1043,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const setBarsEmptyState = (metaText, message, preserveChart = false) => {
+        hideBarsHoverDateLabel();
         if (barsMeta) {
             barsMeta.textContent = metaText;
         }
@@ -1605,10 +1616,6 @@ document.addEventListener("DOMContentLoaded", () => {
             `${ticker} · ${formatRangeLabel(payload?.range || getSelectedRange())}${sessionSuffix} · ${rows.length} bars · ${payload?.interval || "1m"} · ${barsTimeZone} · ${sourceLabel}`,
         );
 
-        const chartAxis = window.WORTHWARD_CHART_AXIS || {};
-        // `chart-axis-utils.js` owns the one tick-selection algorithm.
-        // base.html loads it before every chart consumer.
-        const buildTickIndexSet = (count, plotWidth) => chartAxis.buildTickIndexSet(count, plotWidth);
         const candlestickPlugin = {
             id: "liveTradingCandlestickPlugin",
             afterDatasetsDraw(chartInstance) {
@@ -1654,50 +1661,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 ctx.restore();
             },
         };
-        const hoverGuidePlugin = {
-            id: "liveTradingHoverGuidePlugin",
-            afterDatasetsDraw(chartInstance) {
-                const { ctx, chartArea, tooltip } = chartInstance;
-                if (!chartArea || !tooltip || tooltip.opacity === 0) return;
-                const x = tooltip.caretX;
-                if (!Number.isFinite(x) || x < chartArea.left || x > chartArea.right) return;
-                ctx.save();
-                ctx.strokeStyle = theme.muted;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(x, chartArea.top);
-                ctx.lineTo(x, chartArea.bottom);
-                ctx.stroke();
-                ctx.restore();
-            },
-        };
-        const xAxisLabelPlugin = {
-            id: "liveTradingXAxisLabelPlugin",
-            afterDraw(chartInstance) {
-                const { ctx, chartArea, scales } = chartInstance;
-                const xScale = scales?.x;
-                if (!chartArea || !xScale || !labels.length) return;
-                const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-                const tickIndexes = Array.from(buildTickIndexSet(labels.length, viewportWidth)).sort((left, right) => left - right);
-                const baselineY = chartArea.bottom;
-                const lineHeight = 10;
-                ctx.save();
-                ctx.fillStyle = theme.muted;
-                ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
-                ctx.textBaseline = "top";
-                tickIndexes.forEach((index, tickIndex) => {
-                    const [firstLine, secondLine] = formatAxisLabel(labels[index]);
-                    const x = xScale.getPixelForValue(index);
-                    if (!Number.isFinite(x)) return;
-                    if (tickIndex === 0) ctx.textAlign = "left";
-                    else if (tickIndex === tickIndexes.length - 1) ctx.textAlign = "right";
-                    else ctx.textAlign = "center";
-                    ctx.fillText(firstLine, x, baselineY);
-                    ctx.fillText(secondLine, x, baselineY + lineHeight);
-                });
-                ctx.restore();
-            },
-        };
+        const {hoverGuidePlugin, xAxisLabelPlugin} = createLiveTradingAxisPlugins({
+            chartAxis,
+            canvas: barsCanvas,
+            shell: barsShell,
+            hoverDateLabel,
+            labels,
+            closeValues,
+            formatAxisLabel,
+            formatPrice: (value) => priceFormatter.format(value),
+            formatStockPriceAxisValue,
+            theme,
+        });
 
         activeBarsChart = new window.Chart(barsCanvas, {
             type: "line",

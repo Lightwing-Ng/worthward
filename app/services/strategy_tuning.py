@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.3.1."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -245,6 +245,24 @@ class ResearchSession:
                     for key in ("fingerprint", "source", "factors", "device")
                     if key in signals.presentation
                 }
+                cycle = signals.presentation.get("price_action_cycle")
+                if isinstance(cycle, dict) and {
+                    "cycle_stage",
+                    "cycle_state",
+                }.issubset(signals.frame):
+                    scored_cycle = signals.frame.loc[
+                        signal_dates.between(first, last)
+                    ]
+                    stages = scored_cycle["cycle_stage"].fillna("").astype(str)
+                    model_evidence["price_action_cycle"] = {
+                        "stage_counts": {
+                            stage: int((stages == stage).sum())
+                            for stage in cycle.get("stage_counts", {})
+                        },
+                        "latest_state": str(scored_cycle["cycle_state"].iloc[-1]),
+                        "buy_intents": int(scored_cycle["buy_signal"].sum()),
+                        "sell_intents": int(scored_cycle["sell_signal"].sum()),
+                    }
             if self.model_interval != request.interval:
                 if (
                     self.strategy.get_signal_bridge(request.interval)

@@ -1,4 +1,4 @@
-/* Shared chart axis helper contracts. Code version: v1.5.0 */
+/* Shared chart axis helper contracts. Code version: v1.5.1 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +12,42 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // package.json sets "type": "module", so the classic script attaches to globalThis.
 require(path.join(root, 'app/web/static/assets/js/chart-axis-utils.js'));
 const utils = globalThis.WORTHWARD_CHART_AXIS;
+
+test('hover date badge clamps in the visible viewport before adding a scrolled content offset', () => {
+    const styles = new Map();
+    const classes = new Set();
+    const spans = [{textContent: ''}, {textContent: '', hidden: false}];
+    const label = {
+        hidden: true,
+        offsetWidth: 50,
+        querySelectorAll: () => spans,
+        classList: {
+            add: (name) => classes.add(name),
+            remove: (name) => classes.delete(name),
+        },
+        style: {
+            getPropertyValue: (name) => styles.get(name) || '',
+            setProperty: (name, value) => styles.set(name, value),
+        },
+    };
+
+    utils.updateHoverDateLabel(label, {
+        lines: ['17 Jul', '2026'],
+        x: 190,
+        top: 260,
+        width: 180,
+        offsetX: 240,
+    });
+    assert.equal(styles.get('left'), '395px');
+    assert.equal(styles.get('top'), '260px');
+    assert.deepEqual(spans.map((span) => span.textContent), ['17 Jul', '2026']);
+    assert.equal(label.hidden, false);
+    assert.equal(classes.has('is-visible'), true);
+
+    utils.updateHoverDateLabel(label);
+    assert.equal(label.hidden, true);
+    assert.equal(classes.has('is-visible'), false);
+});
 
 const TOKEN_SPECS = Object.freeze([
     {

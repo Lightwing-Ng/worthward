@@ -1,6 +1,6 @@
 """One tick-selection owner and an explicit shared-chart load contract.
 
-Code version: v1.2.0
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ SHARED_AXIS_ASSET = "assets/js/chart-axis-utils.js"
 # and therefore always run after classic scripts.
 CLASSIC_TICK_CONSUMERS = (
     "assets/js/chart.js",
-    "assets/js/backtest/chart-controller-mount.js",
+    "assets/js/backtest/chart-controller.js",
     "assets/js/dca.js",
 )
 MODULE_TICK_CONSUMERS = (
-    "live-trading.js",
+    "live-trading/chart-axis.js",
     "investment/stock-details.js",
     "investment/runtime/realtime-chart.js",
 )
@@ -99,12 +99,16 @@ def test_shared_axis_owner_sets_chart_font_before_every_page_chart_consumer() ->
 
 def test_module_tick_consumers_depend_on_the_deferred_module_ordering() -> None:
     # Module scripts are deferred by specification, so the classic shared owner
-    # has always executed by the time these entrypoints run. Each one resolves
-    # the shared global rather than restating the algorithm.
+    # has executed by the time these entrypoints run. The Live trading adapter
+    # receives the shared owner from its entrypoint.
     for relative_path in MODULE_TICK_CONSUMERS:
         source = _read(JAVASCRIPT_ROOT / relative_path)
-        assert "WORTHWARD_CHART_AXIS" in source, relative_path
+        if relative_path == "live-trading/chart-axis.js":
+            assert "chartAxis.layoutDateAxisTicks(" in source
+        else:
+            assert "WORTHWARD_CHART_AXIS" in source, relative_path
 
     live_trading_template = _read(PROJECT_ROOT / "app/web/templates/live_trading.html")
     assert 'type="module"' in live_trading_template
     assert "assets/js/live-trading.js" in live_trading_template
+    assert "createLiveTradingAxisPlugins" in _read(JAVASCRIPT_ROOT / "live-trading.js")

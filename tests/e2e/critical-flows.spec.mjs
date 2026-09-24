@@ -1,9 +1,12 @@
-/* Code version: v1.215.0 */
+/* Code version: v1.218.0 */
 import './critical_flows/settings-and-navigation.mjs';
+import './critical_flows/settings-sidebar-and-allocation.mjs';
 import './critical_flows/comparison-and-portfolio.mjs';
 import './critical_flows/live-trading-dialog.mjs';
+import './critical_flows/live-and-dca-chart-axes.mjs';
 import './critical_flows/price-workspace-primary.mjs';
 import './critical_flows/price-workspace-cache.mjs';
+import './critical_flows/price-axis-followups.mjs';
 import './critical_flows/investment-import-and-holdings.mjs';
 import './critical_flows/investment-metrics-and-export.mjs';
 import './critical_flows/investment-profiles-and-history.mjs';

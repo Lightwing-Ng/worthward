@@ -1,4 +1,4 @@
-/* Code version: v0.47.2 */
+/* Code version: v0.47.3 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -289,7 +289,7 @@
 	--strategy-range-close-offset: calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2);
 	--strategy-range-title-font-size: var(--font-ui-lg);
 	--strategy-range-detail-font-size: var(--font-ui-xs);
-	--strategy-range-limit-thumb-background: var(--theme-background);
+	--strategy-range-limit-thumb-background: var(--surface-resizer-handle-background);
 	--settings-form-shell-max-width: var(--layout-content-width);
 	--settings-form-control-min-width: 220px;
 	--settings-form-control-max-width: var(--layout-control-width);
@@ -547,6 +547,12 @@
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
 	--frosted-glass-blur: blur(12px);
+	--surface-resizer-handle-background: var(--frosted-glass-background);
+	--surface-resizer-handle-background-hover: var(--frosted-glass-background-hover);
+	--surface-resizer-handle-border: var(--frosted-glass-border);
+	--surface-resizer-handle-shadow: var(--frosted-glass-shadow);
+	--surface-resizer-handle-shadow-hover: var(--frosted-glass-shadow-hover);
+	--surface-resizer-handle-blur: var(--frosted-glass-blur);
 	--tooltip-background: var(--frosted-glass-background);
 	--tooltip-border: var(--frosted-glass-border);
 	--tooltip-shadow: var(--frosted-glass-shadow);

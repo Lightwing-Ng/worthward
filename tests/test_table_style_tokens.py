@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.21.1."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.0."""
 
 from __future__ import annotations
 
@@ -102,12 +102,23 @@ def test_style_tokens_render_the_shared_process_list_component() -> None:
     assert process_html.count('data-process-continues') == 3
     assert process_html.count('class="process-list-marker"') == 4
     assert process_html.count('class="process-list-heading"') == 4
+    assert '<ol class="process-list-detail-list" role="list">' in process_html
+    assert '<ul class="process-list-detail-list" role="list">' in process_html
+    assert 'Open the latest account statement.' in process_html
+    assert 'Cash and cash equivalents' in process_html
+    assert 'class="style-token-process-list-copy"' in process_html
+    assert 'where each figure came from' in process_html
+    assert 'class="field style-token-settings-input-shell style-token-process-list-field"' in process_html
+    assert 'for="style_token_process_list_field"' in process_html
+    assert 'value="Weekly portfolio review" readonly' in process_html
+    assert '<built-in method copy' not in process_html
     assert '--process-list-marker-size' in process_html
     assert '--process-list-marker-background' in process_html
     assert 'transparent' in process_html
     assert '--process-list-marker-background: transparent;' in tokens_css
     marker_rule = component_css.split('.process-list-marker {', 1)[1].split('}', 1)[0]
     assert 'box-shadow:' not in marker_rule
+    assert '.process-list-content > :is(ol, ul)' in component_css
 
 
 def test_style_tokens_expose_shared_filter_and_complete_table_contract() -> None:

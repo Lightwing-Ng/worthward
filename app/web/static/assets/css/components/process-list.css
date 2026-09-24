@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 
 .process-list {
     display: grid;
@@ -73,4 +73,20 @@
     color: var(--process-list-copy-color);
     font-size: var(--process-list-copy-font-size);
     line-height: var(--process-list-copy-line-height);
+}
+
+.process-list-content > :is(ol, ul) {
+    margin: var(--process-list-copy-gap) 0 0;
+    padding-inline-start: 1.4em;
+    color: var(--process-list-copy-color);
+    font-size: var(--process-list-copy-font-size);
+    line-height: var(--process-list-copy-line-height);
+}
+
+.process-list-content > :is(ol, ul) li + li {
+    margin-block-start: var(--process-list-copy-gap);
+}
+
+.process-list-content > .field {
+    margin-block-start: var(--process-list-copy-gap);
 }

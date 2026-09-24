@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.21.3`
+Documentation version: `v1.21.4`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -37,6 +37,11 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - Shared select dropdown and filter triggers use
   `--shared-select-control-height: 30px` at all existing breakpoints. This does not
   change the separate 36px Agent session-control rail.
+- The Worthward Style tokens Shared select and Strategy tuning specimens use a
+  preview-column container query for two display tiers: the 384px control token
+  below a 640px column and the 640px content token at or above it. Below 384px,
+  each specimen fits its column. This specimen-only presentation leaves ordinary
+  production Shared select controls and standard menus at their 384px maximum.
 - On the Style tokens page, the owning sidebar consumes the same
   `--sidebar-shell-*` contract as every other application sidebar; it has no
   page-local material or padding override.

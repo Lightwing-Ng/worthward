@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.7."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.2.8."""
 
 from __future__ import annotations
 
@@ -52,6 +52,12 @@ def test_css_breakpoints_have_one_semantic_registry() -> None:
     }
 
     assert {name: registry[name] for name in EXPECTED_REGISTRY} == EXPECTED_REGISTRY
+    content_width_match = re.search(r"--layout-content-width:\s*([0-9]+)px;", token_source)
+    assert content_width_match is not None
+    content_width = int(content_width_match.group(1))
+    assert content_width == 640
+    settings_source = _read(PROJECT_ROOT / "app/web/static/assets/css/views/settings.css")
+    assert f"@container (min-width: {content_width}px)" in settings_source
 
     responsive_sources = list(
         (PROJECT_ROOT / "app/web/static/assets/css").rglob("*.css")
@@ -65,7 +71,7 @@ def test_css_breakpoints_have_one_semantic_registry() -> None:
         )
     }
 
-    assert media_values == EXPECTED_MEDIA_VALUES
+    assert media_values == EXPECTED_MEDIA_VALUES | {content_width}
 
 
 def test_javascript_reads_width_media_queries_from_shared_responsive_api() -> None:

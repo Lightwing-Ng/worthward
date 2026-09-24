@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -777,15 +777,21 @@ test('switches short price ranges and formats price axes by currency precision',
             const callback = chart.options.scales.x.ticks.callback;
             const indexes = [0, Math.floor((labels.length - 1) / 2), labels.length - 1];
             return {
-                count: canvas.dataset.singleDayTimeLabels,
+                timeLabelCount: canvas.dataset.singleDayTimeLabels,
+                axisTicks: chart.$priceDateAxisTicks || [],
                 labels: indexes.map((index) => callback(index, index)),
             };
         })
     ));
+    expect(oneDayAxisLabels.slice(0, -1).every((item) => item.timeLabelCount === '0')).toBe(true);
     expect(oneDayAxisLabels.every((item) => (
-        item.count === '3'
-        && item.labels.every((label) => Array.isArray(label) && label.length === 2 && /^\d{2}:\d{2}$/.test(label[0]))
+        item.labels[1] === ''
+        && [item.labels[0], item.labels[2]].every((label) => (
+            Array.isArray(label) && /^\d{2}:\d{2}$/.test(label[0])
+        ))
     ))).toBe(true);
+    expect(Number(oneDayAxisLabels.at(-1).timeLabelCount)).toBeGreaterThanOrEqual(2);
+    expect(oneDayAxisLabels.at(-1).axisTicks).toHaveLength(Number(oneDayAxisLabels.at(-1).timeLabelCount));
 
     const oneDaySessionDividers = await page.evaluate(async () => {
         const originalSeries = window.WORTHWARD_APP.chart.series;

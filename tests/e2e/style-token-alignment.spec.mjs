@@ -1,4 +1,4 @@
-/* Code version: v1.8.1 */
+/* Code version: v1.8.2 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -105,7 +105,7 @@ for (const width of [1024, 800, 390]) {
         }));
         expect(Math.abs((monetarySizes.minor / monetarySizes.major) - 0.76)).toBeLessThan(0.01);
         await expectFieldTitle(page.locator('.style-token-scrollable-table thead th:nth-child(2)'));
-        await expectFieldTitle(page.locator('.style-token-settings-input-label'));
+        await expectFieldTitle(page.locator('label[for="style_token_text_input"]'));
         for (const id of ['modal-dialog', 'modal-dialog-banner-message']) {
             const surface = page.locator(`#${id} .style-token-modal-demo`);
             const close = page.locator(`#${id} .dismiss-button`);

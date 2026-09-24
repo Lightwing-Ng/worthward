@@ -1,4 +1,4 @@
-/* Code version: v3.78.2 */
+/* Code version: v3.79.2 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -662,18 +662,6 @@
     min-width: 0;
     margin-top: 3px;
     pointer-events: none;
-}
-
-.backtest-probability-detail-scope,
-.backtest-probability-detail-one-step {
-    margin: 2px 0 0;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.2;
-}
-
-.backtest-probability-detail-one-step[hidden] {
-    display: none;
 }
 
 .backtest-probability-detail-plot {
@@ -1630,10 +1618,10 @@
     border-radius: var(--investment-holdings-allocation-badge-radius);
     background: var(--theme-accent-primary);
     color: #ffffff;
-    font-family: var(--backtest-chart-axis-font-family);
-    font-size: var(--backtest-chart-axis-font-size);
-    font-weight: var(--backtest-chart-axis-font-weight);
-    line-height: var(--backtest-chart-axis-line-height);
+    font-family: var(--backtest-chart-axis-font-family, var(--font-family-base));
+    font-size: var(--backtest-chart-axis-font-size, 12px);
+    font-weight: var(--backtest-chart-axis-font-weight, 400);
+    line-height: var(--backtest-chart-axis-line-height, 10px);
     text-align: center;
     white-space: nowrap;
     transform: translateX(-50%);
@@ -2388,6 +2376,7 @@
     margin: 0;
     background: transparent;
     pointer-events: none;
+    color: var(--theme-accent-primary);
 }
 
 .strategy-allocation-handle[data-allocation-boundary="primary"] {
@@ -2404,6 +2393,7 @@
     left: 0;
     width: 100%;
     z-index: 3;
+    color: var(--theme-accent-secondary);
 }
 
 .strategy-allocation-handle:focus-visible,
@@ -2417,32 +2407,45 @@
     box-sizing: border-box;
     width: var(--strategy-range-thumb-inline-size);
     height: var(--strategy-range-thumb-block-size);
-    border: 2px solid var(--theme-background);
-    border-radius: 4px;
-    background: var(--theme-accent-primary);
-    box-shadow: var(--theme-shadow-small);
+    border: var(--surface-resizer-handle-border);
+    border-color: currentColor;
+    border-radius: var(--radius-pill);
+    background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));
+    box-shadow: var(--surface-resizer-handle-shadow);
+    backdrop-filter: var(--surface-resizer-handle-blur);
+    -webkit-backdrop-filter: var(--surface-resizer-handle-blur);
     pointer-events: auto;
     cursor: ew-resize;
-}
-
-.strategy-allocation-handle[data-allocation-boundary="invested"]::-webkit-slider-thumb {
-    background: var(--theme-accent-secondary);
+    transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard);
 }
 
 .strategy-allocation-handle::-moz-range-thumb {
     box-sizing: border-box;
     width: var(--strategy-range-thumb-inline-size);
     height: var(--strategy-range-thumb-block-size);
-    border: 2px solid var(--theme-background);
-    border-radius: 4px;
-    background: var(--theme-accent-primary);
-    box-shadow: var(--theme-shadow-small);
+    border: var(--surface-resizer-handle-border);
+    border-color: currentColor;
+    border-radius: var(--radius-pill);
+    background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));
+    box-shadow: var(--surface-resizer-handle-shadow);
+    backdrop-filter: var(--surface-resizer-handle-blur);
     pointer-events: auto;
     cursor: ew-resize;
+    transition: background 160ms var(--motion-standard), box-shadow 160ms var(--motion-standard);
 }
 
-.strategy-allocation-handle[data-allocation-boundary="invested"]::-moz-range-thumb {
-    background: var(--theme-accent-secondary);
+.strategy-allocation-handle::-webkit-slider-thumb:hover,
+.strategy-allocation-handle:focus-visible::-webkit-slider-thumb,
+.strategy-allocation-handle:active::-webkit-slider-thumb {
+    background: var(--surface-resizer-handle-background-hover);
+    box-shadow: var(--surface-resizer-handle-shadow-hover);
+}
+
+.strategy-allocation-handle::-moz-range-thumb:hover,
+.strategy-allocation-handle:focus-visible::-moz-range-thumb,
+.strategy-allocation-handle:active::-moz-range-thumb {
+    background: var(--surface-resizer-handle-background-hover);
+    box-shadow: var(--surface-resizer-handle-shadow-hover);
 }
 
 .has-close-handles [data-allocation-boundary="primary"],
@@ -2461,9 +2464,18 @@
 .strategy-limit-caption { font-size: var(--strategy-range-detail-font-size); }
 .strategy-limit-range .strategy-allocation-track { background: currentColor; }
 .strategy-limit-range .strategy-allocation-handle { left: 0; width: 100%; }
-.strategy-limit-range .strategy-allocation-handle::-webkit-slider-thumb { background: var(--strategy-range-limit-thumb-background); border-color: currentColor; }
-.strategy-limit-range .strategy-allocation-handle::-moz-range-thumb { background: var(--strategy-range-limit-thumb-background); border-color: currentColor; }
-.strategy-limit-range .strategy-allocation-handle { color: inherit; }
+.strategy-limit-range .strategy-allocation-handle {
+    --strategy-range-thumb-background: var(--strategy-range-limit-thumb-background);
+    color: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+    .strategy-allocation-handle::-webkit-slider-thumb {
+        transition: none;
+    }
+    .strategy-allocation-handle::-moz-range-thumb {
+        transition: none;
+    }
+}
 .trade-strategy-param[data-strategy-param-content-sized="true"] .trade-strategy-param-select-shell {
     min-width: 0;
 }

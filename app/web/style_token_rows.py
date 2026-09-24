@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.34.1
+Code version: v1.35.0
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ def build_style_token_rows(
             "name": "Allocation range",
             "sample_kind": "allocation-range",
             "sample_title": "Allocation range",
-            "sample_copy": "The distribution and limit variants share one compact range geometry.",
+            "sample_copy": "Distribution and limit variants share compact geometry and the Frosted glass resizer handle material.",
             "tokens": [
                 raw_token("--strategy-range-gap", "var(--sidebar-form-gap)"),
                 raw_token("--strategy-range-label-block-size", "calc(var(--strategy-param-control-height) + var(--strategy-range-gap))"),
@@ -201,7 +201,7 @@ def build_style_token_rows(
                 raw_token("--strategy-range-close-offset", "calc((var(--strategy-range-thumb-block-size) + var(--strategy-range-gap) * 2) / 2)"),
                 raw_token("--strategy-range-title-font-size", "var(--font-ui-lg)"),
                 raw_token("--strategy-range-detail-font-size", "var(--font-ui-xs)"),
-                raw_token("--strategy-range-limit-thumb-background", "var(--theme-background)"),
+                raw_token("--strategy-range-limit-thumb-background", "var(--surface-resizer-handle-background)"),
             ],
             "related_styles": [],
         },
@@ -238,10 +238,38 @@ def build_style_token_rows(
             "name": "Process List",
             "sample_kind": "process-list",
             "sample_steps": [
-                {"title": "Prepare the source", "copy": "Identify the source and the exact data to use."},
-                {"title": "Review the details", "copy": "Check the relevant settings before proceeding."},
-                {"title": "Apply the change", "copy": "Complete the intended action in its owning workspace."},
-                {"title": "Verify the result", "copy": "Confirm that the result matches the source."},
+                {
+                    "title": "Gather the statement",
+                    "body_kind": "ordered-list",
+                    "items": [
+                        "Open the latest account statement.",
+                        "Choose the period printed on its cover.",
+                        "Keep the original file for comparison.",
+                    ],
+                },
+                {
+                    "title": "Check the contents",
+                    "body_kind": "unordered-list",
+                    "items": [
+                        "Cash and cash equivalents",
+                        "Open positions",
+                        "Trades posted during the period",
+                    ],
+                },
+                {
+                    "title": "Record the review",
+                    "body_kind": "paragraph",
+                    "copy": (
+                        "When balances and positions match the statement, record "
+                        "where each figure came from so another reader can retrace it."
+                    ),
+                },
+                {
+                    "title": "Name the review",
+                    "body_kind": "field",
+                    "field_label": "Review title",
+                    "field_value": "Weekly portfolio review",
+                },
             ],
             "tokens": [
                 px_token("--process-list-step-gap", 24),

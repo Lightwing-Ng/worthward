@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 import {
     expect,
     test,
@@ -78,7 +78,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.13.0');
+            && url.searchParams.get('v')?.endsWith('-chart-v0.14.0');
     }))).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -282,6 +282,220 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(Math.abs(mobileDonutGeometry.frameWidth - mobileDonutGeometry.frameHeight)).toBeLessThanOrEqual(1);
     expect(mobileDonutGeometry.frameWidth - mobileDonutGeometry.donutDiameter).toBeLessThanOrEqual(50);
 });
+
+for (const viewport of [
+    {width: 996, height: 801},
+    {width: 390, height: 844},
+]) {
+    test(`keeps Stock details metric layout fixed through live digit updates at ${viewport.width}px`, async ({page}) => {
+        await mockInvestmentReadApis(page, {
+            brokers: ['ibkr', 'hsbc'],
+            transactions: [
+                {
+                    ledger_no: 1,
+                    broker: 'ibkr',
+                    date: '2026-07-10',
+                    type: 'buy',
+                    ticker: 'DRAM',
+                    currency: 'USD',
+                    quantity: 5,
+                    price: 50,
+                    amount: -250,
+                },
+                {
+                    ledger_no: 2,
+                    broker: 'hsbc',
+                    date: '2026-07-10',
+                    type: 'buy',
+                    ticker: 'DRAM',
+                    currency: 'USD',
+                    quantity: 5,
+                    price: 50,
+                    amount: -250,
+                },
+            ],
+            priceHistoryByTicker: {
+                DRAM: [
+                    {date: '2026-07-10', close: 50},
+                    {date: '2026-07-13', close: 51},
+                ],
+            },
+            tickerProfiles: {
+                DRAM: {ticker: 'DRAM', company_name: 'Roundhill Memory ETF'},
+            },
+        });
+        await page.setViewportSize(viewport);
+        await page.goto('/trade/investment?view=stock-details&ticker=DRAM&range=1y');
+        await setSidebarExpanded(page, false);
+        const metricGrid = page.locator('#stock_panel .investment-stock-details-metrics');
+        await expect(metricGrid).toBeVisible();
+        await expect(metricGrid.locator('.investment-stock-details-metric-card')).toHaveCount(10);
+        const marketValueCard = metricGrid.locator('.investment-stock-details-metric-card')
+            .filter({has: page.locator('.trade-metric-label', {hasText: /^Market value$/})});
+        await expect(marketValueCard.locator('.investment-stock-details-metric-value-row')).toHaveCount(1);
+        await expect(marketValueCard.locator('.investment-stock-details-metric-breakdown')).toHaveCount(1);
+        await expect(page.locator('#stock_panel .investment-stock-details-price-chart-canvas')).toBeVisible();
+
+        const geometry = await page.evaluate(async () => {
+            await document.fonts.ready;
+            await Promise.allSettled(document.getAnimations().filter((animation) => (
+                Number.isFinite(animation.effect?.getTiming().iterations)
+            )).map((animation) => animation.finished));
+
+            const {createInvestmentLiveValueAnimator} = await import(
+                '/static/assets/js/investment/realtime.js'
+            );
+            const {renderNumericDisplayContent} = await import(
+                '/static/assets/js/numeric-display.js'
+            );
+            const animator = createInvestmentLiveValueAnimator({
+                easeOutCubic: (progress) => 1 - ((1 - progress) ** 3),
+                renderWorkspaceMetricValueContent: renderNumericDisplayContent,
+                scheduler: window.WorthwardMotion?.scheduler,
+            });
+            const panel = document.querySelector('#stock_panel');
+            const metrics = panel?.querySelector('.investment-stock-details-metrics');
+            const cards = Array.from(metrics?.querySelectorAll(':scope > .investment-stock-details-metric-card') || []);
+            const liveFields = [
+                'stock_unrealized_pnl',
+                'stock_total_pnl',
+                'stock_market_value',
+                'stock_last_price',
+                'stock_position_weight',
+            ];
+            const liveNodes = new Map(liveFields.map((field) => [
+                field,
+                metrics?.querySelector(`[data-investment-live-field="${field}"]`),
+            ]));
+            if (!metrics || cards.length !== 10 || [...liveNodes.values()].some((node) => !(node instanceof HTMLElement))) {
+                return null;
+            }
+            const marketValue = liveNodes.get('stock_market_value');
+            const rect = (element) => {
+                const box = element.getBoundingClientRect();
+                return [box.x, box.y, box.width, box.height];
+            };
+            const sample = () => ({
+                boxes: [
+                    rect(panel.querySelector('.investment-stock-details-overview')),
+                    rect(metrics),
+                    rect(panel.querySelector('.investment-stock-details-price-chart-card')),
+                    rect(panel.querySelector('.investment-stock-details-price-chart-shell')),
+                    rect(panel.querySelector('.investment-stock-details-donut-card')),
+                    ...cards.flatMap((card) => [
+                        rect(card),
+                        rect(card.querySelector('.trade-metric-label')),
+                        rect(card.querySelector('.investment-stock-details-metric-value')),
+                    ]),
+                ],
+                metricsScrollHeight: metrics.scrollHeight,
+                metricsScrollWidth: metrics.scrollWidth,
+                metricsClientWidth: metrics.clientWidth,
+                marketValuePaddingBottom: getComputedStyle(marketValue).paddingBottom,
+                documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                valueOverflow: cards.map((card) => {
+                    const value = card.querySelector('.investment-stock-details-metric-value');
+                    return Math.max(0, value.scrollWidth - value.clientWidth);
+                }),
+            });
+            const baseline = sample();
+            const frames = [];
+            const transitions = [
+                {
+                    stock_unrealized_pnl: ['999.99', 999.99],
+                    stock_total_pnl: ['999.99', 999.99],
+                    stock_market_value: ['999.99', 999.99],
+                    stock_last_price: ['9.99', 9.99],
+                    stock_position_weight: ['9.99%', 9.99],
+                },
+                {
+                    stock_unrealized_pnl: ['1,000.00', 1000],
+                    stock_total_pnl: ['1,000.00', 1000],
+                    stock_market_value: ['1,000.00', 1000],
+                    stock_last_price: ['10.00', 10],
+                    stock_position_weight: ['10.00%', 10],
+                },
+                {
+                    stock_unrealized_pnl: ['-999.99', -999.99],
+                    stock_total_pnl: ['-999.99', -999.99],
+                    stock_market_value: ['999.99', 999.99],
+                    stock_last_price: ['9.99', 9.99],
+                    stock_position_weight: ['9.99%', 9.99],
+                },
+            ];
+            for (const transition of transitions) {
+                for (const [field, [display, number]] of Object.entries(transition)) {
+                    animator.updateInvestmentLiveValueNode(liveNodes.get(field), display, number);
+                }
+                frames.push(sample());
+                for (let frame = 0; frame < 38; frame += 1) {
+                    await new Promise((resolve) => requestAnimationFrame(resolve));
+                    frames.push(sample());
+                }
+            }
+
+            return {baseline, frames};
+        });
+        expect(geometry).not.toBeNull();
+        const maxDelta = Math.max(...geometry.frames.flatMap((frame) => frame.boxes.flatMap((box, index) => (
+            box.map((dimension, coordinate) => Math.abs(dimension - geometry.baseline.boxes[index][coordinate]))
+        ))));
+        expect(maxDelta).toBeLessThanOrEqual(1);
+        expect(geometry.baseline.marketValuePaddingBottom).toBe('0px');
+        expect(geometry.frames.every((frame) => frame.metricsScrollHeight === geometry.baseline.metricsScrollHeight)).toBe(true);
+        expect(geometry.frames.every((frame) => (
+            frame.documentOverflow <= 1
+            && frame.metricsScrollWidth - frame.metricsClientWidth <= 1
+            && frame.valueOverflow.every((overflow) => overflow <= 1)
+        ))).toBe(true);
+
+        await page.emulateMedia({reducedMotion: 'reduce'});
+        const reducedMotion = await page.evaluate(async () => {
+            const {createInvestmentLiveValueAnimator} = await import(
+                '/static/assets/js/investment/realtime.js'
+            );
+            const {renderNumericDisplayContent} = await import(
+                '/static/assets/js/numeric-display.js'
+            );
+            const animator = createInvestmentLiveValueAnimator({
+                easeOutCubic: (progress) => 1 - ((1 - progress) ** 3),
+                renderWorkspaceMetricValueContent: renderNumericDisplayContent,
+                scheduler: window.WorthwardMotion?.scheduler,
+            });
+            const metrics = document.querySelector('#stock_panel .investment-stock-details-metrics');
+            const cards = Array.from(metrics.querySelectorAll(':scope > .investment-stock-details-metric-card'));
+            const rect = (element) => {
+                const box = element.getBoundingClientRect();
+                return [box.x, box.y, box.width, box.height];
+            };
+            const boxes = () => cards.flatMap((card) => [
+                rect(card),
+                rect(card.querySelector('.trade-metric-label')),
+                rect(card.querySelector('.investment-stock-details-metric-value')),
+            ]);
+            const baseline = boxes();
+            const value = metrics.querySelector('[data-investment-live-field="stock_unrealized_pnl"]');
+            animator.updateInvestmentLiveValueNode(value, '1,000.00', 1000);
+            const immediate = boxes();
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            const nextFrame = boxes();
+            return {
+                baseline,
+                immediate,
+                nextFrame,
+                animatedDigits: metrics.querySelectorAll('.investment-live-digit--changed').length,
+                documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            };
+        });
+        for (const boxes of [reducedMotion.immediate, reducedMotion.nextFrame]) {
+            expect(boxes.every((box, index) => box.every((dimension, coordinate) => (
+                Math.abs(dimension - reducedMotion.baseline[index][coordinate]) <= 1
+            )))).toBe(true);
+        }
+        expect(reducedMotion.animatedDigits).toBe(0);
+        expect(reducedMotion.documentOverflow).toBeLessThanOrEqual(1);
+    });
+}
 
 test('keeps QQQI Stock details cost labels out of metrics and tooltip', async ({page}) => {
     const ticker = 'QQQI';
@@ -504,7 +718,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.81.1';
+            && url.searchParams.get('v') === '1.81.2';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');

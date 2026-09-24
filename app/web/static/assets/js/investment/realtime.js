@@ -1,7 +1,9 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.5
+ * Code version: v1.3.6
+ * - Fixed: Stock-details live values keep a CSS-owned line box through digit
+ *   transitions, and digit slots retain exact measured widths at completion.
  * - Fixed: Stock-details live metrics retain their card-owned responsive
  *   geometry instead of reserving a stale full-panel width after quote updates.
  * - Fixed: Holdings live values retain their CSS-owned geometry instead of
@@ -15,7 +17,7 @@
 
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.5';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.6';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -247,7 +249,7 @@ export function createInvestmentLiveValueAnimator({
         measurer.textContent = safeChar;
         wrapper.appendChild(measurer);
         documentRef.body.appendChild(wrapper);
-        const width = Math.ceil(Math.max(0, measurer.getBoundingClientRect().width || 0));
+        const width = Math.max(0, measurer.getBoundingClientRect().width || 0);
         wrapper.remove();
         charWidthCache.set(cacheKey, width);
         return width;
@@ -255,7 +257,7 @@ export function createInvestmentLiveValueAnimator({
 
     function applyDigitSlotWidth(digit, width) {
         if (!isElement(digit) || !Number.isFinite(width) || width <= 0) return;
-        const pixelWidth = `${Math.ceil(width)}px`;
+        const pixelWidth = `${width}px`;
         digit.style.width = pixelWidth;
         digit.style.minWidth = pixelWidth;
         digit.style.maxWidth = pixelWidth;
@@ -370,10 +372,10 @@ export function createInvestmentLiveValueAnimator({
             partClassName,
         }) => {
             const slotWidth = Math.max(
+                0,
                 ...[previousChar, nextChar]
                     .filter(Boolean)
                     .map((char) => measureCharWidth(referenceNode, char, partClassName)),
-                measureCharWidth(referenceNode, '0', partClassName),
             );
             const {digit, animate} = createDigit(previousChar, nextChar, direction, slotWidth);
             ensureSplitWrapper(partClassName).appendChild(digit);
@@ -417,9 +419,13 @@ export function createInvestmentLiveValueAnimator({
     function reserveValueLayout(node, previousDisplay, nextDisplay, useSplit) {
         if (!isElement(node)) return;
         if (node.closest('#investment_holdings_panel')) return;
-        const usesCardOwnedWidth = Boolean(
-            node.closest('.investment-stock-details-metrics'),
-        );
+        if (node.closest('.investment-stock-details-metrics')) {
+            delete node.dataset.investmentLiveReserveWidth;
+            delete node.dataset.investmentLiveReserveHeight;
+            node.style.removeProperty('min-width');
+            node.style.removeProperty('min-height');
+            return;
+        }
         const currentRect = node.getBoundingClientRect();
         const previousSize = measureStaticContent(node, previousDisplay, useSplit);
         const nextSize = measureStaticContent(node, nextDisplay, useSplit);
@@ -435,10 +441,7 @@ export function createInvestmentLiveValueAnimator({
             previousSize.height,
             nextSize.height,
         ));
-        if (usesCardOwnedWidth) {
-            delete node.dataset.investmentLiveReserveWidth;
-            node.style.removeProperty('min-width');
-        } else if (reserveWidth > 0) {
+        if (reserveWidth > 0) {
             node.dataset.investmentLiveReserveWidth = String(reserveWidth);
             node.style.minWidth = `${reserveWidth}px`;
         }

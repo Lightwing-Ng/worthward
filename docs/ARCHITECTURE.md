@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.126.4`
+Documentation version: `v1.127.4`
 
 ## Reuse and dependency boundaries
 
@@ -86,7 +86,7 @@ aligned.
 
 ## Shared Backtest controls and research
 
-Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and theme-canvas adaptive vertical handles. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the limit-thumb surface; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
+Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and shared Frosted Glass vertical handle material with asset-colored borders. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the resizer-handle material; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
 
 The same strategy is available through `scripts/strategy_tune.py --strategy leveraged-rotation --ticker QQQ --ticker TQQQ`, including JSON fixed parameters, numeric bounds, categorical Return window search, genetic search, and random-forest search. Runs read existing local history and write explicit research outputs, with validation ranking and a separate final holdout. The adapter retains pre-fold observations for return-window warmup while stamping the scored fold's first date as the decision boundary, so a stateful strategy cannot inherit a rotation that the fold-local portfolio never executed. The default ranking is risk-adjusted; `--objective net-return` ranks the two validation folds by their mean net return percentage without changing the disclosed drawdown or allowing holdout data into selection. The result records normalized parameters for reuse in Backtest URLs or subsequent CLI requests.
 
@@ -358,11 +358,11 @@ and lower-price shares at the right end of the horizontal price guide. For each
 forecast horizon, divide each direction's complete lattice mass by the total
 represented mass, including threshold-hidden cells, then average those shares
 equally across nonempty horizons. These are conditional shares within the
-represented lattice, not full-distribution directional probabilities; visible
-copy identifies the price-range and horizon-average scope, while accessible
-labels explain the excluded tails and gaps. Cycle of Price Action also shows
-its separate Bayesian one-step rise probability, which gates cycle entries
-and targets the next-open to following-open return. Empty distributions show unavailable,
+represented lattice, not full-distribution directional probabilities. Accessible
+labels explain the excluded tails and gaps. The detail heading omits the
+longer scope explanation and Cycle of Price Action's separate Bayesian one-step
+rise probability; the latter remains in the strategy result and still gates
+cycle entries for the next-open to following-open target. Empty distributions show unavailable,
 not an invented split. Round the higher share to a hundredth of a percent and
 derive the lower label as its exact complement, totaling 100.00%. Individual cell
 probabilities, thresholding, and model outputs remain unchanged. The right-aligned
@@ -689,6 +689,25 @@ alias these values instead of introducing page-local pixel widths. A page may
 still opt into a wider surface, such as the Style tokens specimen shell, when
 its scrollable demo layout requires it.
 
+The Style tokens Shared select and Strategy tuning specimens choose their width
+from the preview column, not the viewport. Below the 640px content tier, their
+outer controls are capped by `--layout-control-width` (384px); at or above that
+tier, they use `--layout-content-width` (640px). Both shrink to their available
+column width below 384px, and dragging the Style tokens divider can switch the
+tier without a page resize. Standard Shared select menus keep their separate
+384px maximum even when a specimen trigger uses the wider tier. Production
+Shared select controls retain their standard 384px maximum.
+
+The Style tokens Process List specimen assembles each step from structured
+content: an ordered list, an unordered list, a paragraph, or a standard read-only
+Settings field. The shared `.process-list-content` layout owns spacing for these
+body types, so product workflows can compose them without copying specimen-only
+styles. Dictionary-backed copy is accessed by key to avoid resolving a dictionary
+method as visible text. The Investment Holdings allocation specimen keeps all
+decimal values on `numeric-display.js`'s shared major/minor/suffix structure and
+fraction scale. Its production badge may additionally use equal-width glyph
+slots for stable live updates; those slots inherit the shared numeric hierarchy.
+
 The Settings workspace shell itself stays `overflow: visible`. All non-Style-token
 routes place their content in one `.settings-content-scrollport`, which is the only
 page-level vertical overflow owner. The default scrollport remains inside the
@@ -754,12 +773,18 @@ card shadows, blur, translated controls, or focus rings must escape. Effect host
 uses the 48px effect bleed where needed. Chart canvases, tables, dropdowns, and long
 text may retain local clipping only when that element is the documented viewport.
 
+On Settings pages, the sidebar heading and toggle remain outside the scrolling
+navigation. The `.settings-nav` is the sidebar's sole vertical scrollport and
+keeps the dock clearance for its last section link. This applies to the desktop
+sidebar and the narrow overlay without introducing a page-level scroll owner.
+
 ## Shared date-axis layout
 
 `WORTHWARD_CHART_AXIS.layoutDateAxisTicks` is the reference x-axis layout for
 date charts. New date charts use it, and legacy `buildTickIndexSet` consumers
-migrate to it when their axis is touched. Investment Overview and Stock details
-already use it.
+migrate to it when their axis is touched. Investment Overview, Stock details,
+Return comparison, Portfolio, Market cap, Price comparison, Backtest, DCA, and
+Live trading use it on their current chart routes.
 
 - Placement: the first label is left-aligned at its point and the last is
   right-aligned; every interior label is centered on its point.
@@ -775,8 +800,19 @@ already use it.
   wins a collision.
 - Deduplication: `getKey` collapses points that share a label, such as the
   minute points of one trading day, to the earliest point.
-- Format: date-axis and hover-axis labels are date and year only on every
-  range. A time of day belongs to the tooltip, never to the axis.
+- Format: calendar-date axis and hover-axis labels contain only date and year,
+  including when daily source timestamps happen to end in `00:00`. Time of day
+  stays in the tooltip for multi-day and longer charts. Exact one-day Return
+  comparison and Price comparison retain meaningful session `HH:mm` ticks;
+  Live trading's minute-only candlestick chart likewise retains actual session
+  `HH:mm` values for one- and three-day ranges. A midnight suffix on a daily
+  record never becomes an axis time.
+
+The shared `updateHoverDateLabel` positions the filled x-axis hover badge and
+accepts an optional content offset for Backtest's horizontally scrolled Price
+Field. Chart owners supply their own data-to-pixel mapping, while the shared
+`drawYAxisValueBadge` handles the corresponding y-axis badge. Each chart keeps
+its domain-specific y-axis values and tooltip content.
 
 ## Shared stock-price axis labels
 
@@ -805,6 +841,14 @@ for the same point and anchor skip DOM replacement and layout measurement. A
 theme change updates the connected Stock-details chart colors and cached marker
 layer in place instead of destroying the chart, refetching intraday data, or
 rebuilding the surrounding DOM.
+
+Stock-details live metrics keep their value line boxes CSS-owned throughout a
+quote transition. The realtime animator does not accumulate measured pixel
+minimum heights or widths on those metric values; the two-column card grid
+continues to own responsive width, and the metric cards, labels, adjacent
+chart, and scroll region stay fixed while digits change. Animated character
+slots use measured glyph widths without per-character integer expansion. The
+Market value breakdown row retains its zero-bottom-padding line box.
 
 The Bayesian Backtest overview reuses the same filled blue Y-axis badge for the
 horizontal hover guide, with its value taken from the exact polyline intersection
@@ -1459,7 +1503,7 @@ sets of values.
   source-format parser dispatch plus the normalize, idempotent merge, atomic
   persistence, cache invalidation, and readback-verification boundary. The
   cohesive Zircon (HK) template and parser remain in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `layoutDateAxisTicks` is the reference pixel-space date-axis layout used by Investment Overview and Stock details (see Shared date-axis layout); `buildTickIndexSet` remains the legacy index-based algorithm for Price comparison, Backtest, DCA, and Live trading. Neither may be copied into a consumer. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `layoutDateAxisTicks` is the reference pixel-space date-axis layout used by Investment Overview, Stock details, Price comparison, Backtest, DCA, Live trading, Return comparison, Portfolio, and Market cap (see Shared date-axis layout). `buildTickIndexSet` remains a compatibility helper and must not be copied into a consumer. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.

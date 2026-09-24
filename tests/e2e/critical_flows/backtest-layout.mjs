@@ -1,4 +1,4 @@
-/* Code version: v1.1.2 */
+/* Code version: v1.2.0 */
 import {
     expect,
     test,
@@ -984,19 +984,20 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
             window.WORTHWARD_BOOTSTRAP.initBacktestWorkspace();
             const canvas = document.querySelector('#tradeEquityChart');
             const chart = window.Chart?.getChart?.(canvas);
-            const plugin = chart?.config?._config?.plugins?.find((item) => item.id === 'tradeXAxisLabelPlugin');
-            if (!(canvas instanceof HTMLCanvasElement) || !plugin) return [];
+            if (!(canvas instanceof HTMLCanvasElement) || !chart) return [];
             const calls = [];
-            plugin.afterDraw({
-                canvas,
-                ctx: {
-                    save: () => {},
-                    restore: () => {},
-                    fillText: (text) => calls.push(String(text)),
-                },
-                chartArea: {bottom: 200},
-                scales: {x: {getPixelForValue: (value) => Number(value) * 40}},
-            });
+            const originalFillText = chart.ctx.fillText;
+            try {
+                chart.ctx.fillText = function captureAxisLabel(text, x, y) {
+                    if (this.textBaseline === 'top' && y >= chart.chartArea.bottom - 1) {
+                        calls.push(String(text));
+                    }
+                    return originalFillText.apply(this, arguments);
+                };
+                chart.draw();
+            } finally {
+                chart.ctx.fillText = originalFillText;
+            }
             return calls;
         };
         return {
@@ -1018,7 +1019,9 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
     expect(axisLabels.daily).toContain('9 Aug');
     expect(axisLabels.daily).toContain('2026');
     expect(axisLabels.daily.every((label) => !label.includes('00:00'))).toBe(true);
-    expect(axisLabels.intraday).toContain('2026 09:30');
+    expect(axisLabels.intraday).toContain('9 Aug');
+    expect(axisLabels.intraday).toContain('2026');
+    expect(axisLabels.intraday.every((label) => !/\d{2}:\d{2}/.test(label))).toBe(true);
 
     const dailyHoverPoint = await page.evaluate(() => {
         const result = window.WORTHWARD_APP?.backtestResult;
@@ -1061,6 +1064,34 @@ test('formats daily Backtest x-axis labels without a midnight time', async ({pag
     await expect(dailyTooltip).toHaveClass(/is-visible/);
     await expect(dailyTooltip.locator('.chart-tooltip-date')).toHaveText('10 Aug 2026');
     await expect(dailyTooltip.locator('.chart-tooltip-date')).not.toContainText('00:00');
+    const hoverAxis = await page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const dateLabel = document.querySelector('[data-backtest-hover-date-label]');
+        const horizontalLine = document.querySelector('.trade-chart-hover-horizontal-line');
+        const guide = chart?._activeBacktestPriceGuideBounds;
+        if (!chart || !dateLabel || !horizontalLine || !guide) return null;
+        const dateRect = dateLabel.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const lineRect = horizontalLine.getBoundingClientRect();
+        return {
+            dateLines: [...dateLabel.querySelectorAll('span')].map((span) => span.textContent),
+            dateVisible: !dateLabel.hidden && dateLabel.classList.contains('is-visible'),
+            horizontalVisible: horizontalLine.classList.contains('is-visible'),
+            dateCenterX: dateRect.left + dateRect.width / 2,
+            pointX: canvasRect.left + guide.x * canvasRect.width / chart.width,
+            lineCenterY: lineRect.top + lineRect.height / 2,
+            pointY: canvasRect.top + guide.y * canvasRect.height / chart.height,
+            price: guide.price,
+        };
+    });
+    expect(hoverAxis).not.toBeNull();
+    expect(hoverAxis.dateLines).toEqual(['10 Aug', '2026']);
+    expect(hoverAxis.dateVisible).toBe(true);
+    expect(hoverAxis.horizontalVisible).toBe(true);
+    expect(Math.abs(hoverAxis.dateCenterX - hoverAxis.pointX)).toBeLessThanOrEqual(2);
+    expect(Math.abs(hoverAxis.lineCenterY - hoverAxis.pointY)).toBeLessThanOrEqual(2);
+    expect(hoverAxis.price).toBe(101);
 });
 
 test('switches an unsupported 1 year Backtest period to the available 1m maximum', async ({page}) => {

@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 import {
     expect,
     test,
@@ -618,9 +618,9 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
     await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
         .toHaveText(sideSummary.downText);
     await expect(detailPanel.locator('.backtest-probability-detail-scope'))
-        .toHaveText('Higher/lower values average probability mass within the displayed price range across forecast horizons.');
+        .toHaveCount(0);
     await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
-        .toBeHidden();
+        .toHaveCount(0);
     expect(sideSummary.upText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
     expect(sideSummary.downText).toMatch(/^\d{1,3}(?:,\d{3})*\.\d{2}%$/);
     expect(sideSummary.forecastHorizonCount).toBeGreaterThan(0);
@@ -750,7 +750,7 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
     expect(narrowOverflow.statusRight).toBeLessThanOrEqual(narrowOverflow.panelRight + 1);
 });
 
-test('separates Cycle one-step rise probability from the displayed-range field share', async ({page}) => {
+test('keeps the Cycle price field clear of redundant probability copy', async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 867, height: 1297});
     await page.emulateMedia({colorScheme: 'dark'});
@@ -770,22 +770,14 @@ test('separates Cycle one-step rise probability from the displayed-range field s
     await expect(detailPanel).toBeVisible();
     await expect.poll(() => detailPanel.locator('.backtest-probability-detail-cell').count())
         .toBeGreaterThan(0);
-    const expectedOneStep = await page.evaluate(() => {
-        const panel = document.querySelector('#backtest_probability_detail_panel');
-        const index = Number(panel?.dataset.activeIndex);
-        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
-        const probability = presentation?.probability_up?.[index];
-        if (presentation?.schema !== 'cycle-of-price-action/v1'
-            || !Number.isInteger(index) || !Number.isFinite(probability)) return null;
-        return `${new Intl.NumberFormat('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(probability * 100)}%`;
-    });
-    expect(expectedOneStep).not.toBeNull();
     await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
-        .toHaveText(`Bayesian next-open to following-open rise: ${expectedOneStep}`);
-    await expect(detailPanel.locator('.backtest-probability-detail-scope')).toBeVisible();
+        .toHaveCount(0);
+    await expect(detailPanel.locator('.backtest-probability-detail-scope'))
+        .toHaveCount(0);
+    await expect(detailPanel.locator('[data-backtest-probability-detail-up-summary]'))
+        .not.toHaveText('');
+    await expect(detailPanel.locator('[data-backtest-probability-detail-down-summary]'))
+        .not.toHaveText('');
     const overflow = await detailPanel.evaluate((element) => ({
         horizontal: element.scrollWidth - element.clientWidth,
         vertical: element.scrollHeight - element.clientHeight,
@@ -918,9 +910,7 @@ test('keeps the Cycle Price field stable when an early date has no model', async
     await expect(observedPaths).toHaveCount(2);
     for (const path of await observedPaths.all()) await expect(path).toHaveAttribute('d', '');
     await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
-        .toHaveText('Bayesian next-open to following-open rise: unavailable for this date');
-    await expect(detailPanel.locator('[data-backtest-cycle-one-step-probability]'))
-        .toBeVisible();
+        .toHaveCount(0);
     const unavailableGeometry = await readGeometry();
     expect(Math.abs(unavailableGeometry.historyHeight - baselineGeometry.historyHeight))
         .toBeLessThanOrEqual(1);

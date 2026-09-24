@@ -1,4 +1,4 @@
-/* Code version: v0.27.5 */
+/* Code version: v0.28.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -8,6 +8,27 @@
 		state.currentView === "prices"
 		&& String(state.comparisonMetric || "").trim().toLowerCase() !== "market-cap"
 	);
+	const formatDateAxisLines = (rawValue) => {
+		const match = String(rawValue || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+		if (!match) return null;
+		const parts = {
+			year: Number(match[1]),
+			monthIndex: Number(match[2]) - 1,
+			day: Number(match[3]),
+		};
+		if (typeof bootstrap.dateDisplay?.formatFullDateLines === "function") {
+			return bootstrap.dateDisplay.formatFullDateLines(parts, {allowWrap: true});
+		}
+		const month = new Date(Date.UTC(2000, parts.monthIndex, 1))
+			.toLocaleString("en-US", {month: "short", timeZone: "UTC"});
+		return [`${parts.day} ${month}`, String(parts.year)];
+	};
+	const hidePriceHoverDateLabels = () => {
+		document.querySelectorAll("[data-price-hover-date-label]").forEach((label) => {
+			label.hidden = true;
+			label.classList.remove("is-visible");
+		});
+	};
 
 	const REFRESH_MS = 45000;
 	const Y_AXIS_MIN_WIDTH = 36;
@@ -94,6 +115,7 @@
 		if (sharedHoverFrame) window.cancelAnimationFrame(sharedHoverFrame);
 		sharedHoverFrame = 0;
 		pendingSharedHover = null;
+		hidePriceHoverDateLabels();
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			canvas.onmouseleave = null;
 			canvas.onpointermove = null;
@@ -852,7 +874,43 @@
 		chipHoverState = null;
 		restoreFullChipDistributions();
 		document.querySelector(".price-shared-tooltip")?.classList.remove("is-visible");
+		hidePriceHoverDateLabels();
 		drawSharedHoverGuides();
+	};
+
+	const updateSharedHoverDateLabel = (dataIndex, rawDate) => {
+		const bottomSection = document.querySelector("#price_subplot_region > [data-price-subplot]:last-child");
+		const label = bottomSection?.querySelector("[data-price-hover-date-label]");
+		const canvas = bottomSection?.querySelector("[data-price-subplot-canvas]");
+		const chart = canvas instanceof HTMLCanvasElement ? window.Chart?.getChart?.(canvas) : null;
+		if (!(label instanceof HTMLElement) || !chart?.chartArea || !chart.scales?.x) {
+			hidePriceHoverDateLabels();
+			return;
+		}
+		const placementKey = [
+			dataIndex, rawDate, chart.width, chart.height,
+			chart.chartArea.left, chart.chartArea.right, chart.chartArea.bottom,
+			document.fonts?.status || "",
+		].join(":");
+		if (label.dataset.priceHoverPlacementKey === placementKey && !label.hidden) return;
+		const lines = formatDateAxisLines(rawDate);
+		if (!lines) {
+			hidePriceHoverDateLabels();
+			return;
+		}
+		const wrap = canvas.parentElement;
+		const canvasRect = canvas.getBoundingClientRect();
+		const wrapRect = wrap.getBoundingClientRect();
+		const scaleX = canvasRect.width / Math.max(chart.width, 1);
+		const scaleY = canvasRect.height / Math.max(chart.height, 1);
+		const x = canvasRect.left - wrapRect.left + (chart.scales.x.getPixelForValue(dataIndex) * scaleX);
+		const top = canvasRect.top - wrapRect.top + (chart.chartArea.bottom * scaleY);
+		if (!Number.isFinite(x) || !Number.isFinite(top)) {
+			hidePriceHoverDateLabels();
+			return;
+		}
+		chartAxis.updateHoverDateLabel(label, {lines, x, top, width: wrap.clientWidth});
+		label.dataset.priceHoverPlacementKey = placementKey;
 	};
 
 	const commitSharedHover = (dataIndex, sourceChart, pointerY, {series, profiles, showCurrency, period}) => {
@@ -920,6 +978,7 @@
 		top = Math.max(padding, Math.min(top, surfaceRect.height - tooltipRect.height - padding));
 		tooltip.style.left = `${Math.round(left)}px`;
 		tooltip.style.top = `${Math.round(top)}px`;
+		updateSharedHoverDateLabel(dataIndex, rawDate);
 		drawSharedHoverGuides();
 	};
 
@@ -994,6 +1053,7 @@
 		sharedHoverIndex = -1;
 		sharedHoverSourceChart = null;
 		chipHoverState = {chart, binIndex};
+		hidePriceHoverDateLabels();
 		const theme = readTheme();
 		const dateElement = tooltip.querySelector(".chart-tooltip-date");
 		const listElement = tooltip.querySelector(".chart-tooltip-list");
@@ -1098,9 +1158,7 @@
 			const isBottom = index === sections.length - 1;
 			if (chart.options.scales?.x) chart.options.scales.x.display = isBottom;
 			if (chart.options.layout?.padding && typeof chart.options.layout.padding === "object") {
-				chart.options.layout.padding.bottom = isBottom && Number(canvas.dataset.marketSessionEvents || 0) > 0
-					? 22
-					: 4;
+				chart.options.layout.padding.bottom = isBottom ? 28 : 4;
 			}
 			chart.update("none");
 		});
@@ -1370,9 +1428,6 @@
 		const marketSessionEvents = requestedPeriod === "1d"
 			? buildMarketSessionEvents(sharedRawDates, series.map((item) => item.ticker))
 			: [];
-		const marketSessionEventByIndex = new Map(
-			marketSessionEvents.map((event) => [event.index, event]),
-		);
 		const theme = readTheme();
 		hideSharedHover();
 		destroyPriceCharts();
@@ -1386,7 +1441,7 @@
 			const prices = Array.isArray(item.prices) ? item.prices.map(finiteNumber) : [];
 			const rawDates = Array.isArray(item.raw_dates) ? item.raw_dates : [];
 			const labels = rawDates.length ? rawDates : (item.dates || []);
-			const sharedXAxisDates = sharedRawDates.length === labels.length ? sharedRawDates : rawDates;
+			const sharedXAxisDates = sharedRawDates.length === labels.length ? sharedRawDates : labels;
 			const sharedRangeFirstIndex = 0;
 			const sharedRangeLastIndex = Math.max(0, labels.length - 1);
 			const validIndexes = prices.flatMap((value, valueIndex) => value === null ? [] : [valueIndex]);
@@ -1396,17 +1451,9 @@
 			const lastPrice = prices[lastIndex];
 			const currency = currencies[index];
 			const intraday = rawDates.some((value) => /[ T]\d{2}:\d{2}$/.test(String(value)) && !/[ T]00:00$/.test(String(value)));
+			const isOneDayTimeAxis = requestedPeriod === "1d" && intraday;
 			const intradayDayGroups = intraday ? buildIntradayDayGroups(rawDates) : [];
 			const isShortMultiDayRange = intradayDayGroups.length >= 2 && intradayDayGroups.length <= 5;
-			const singleDayLabelIndexes = intradayDayGroups.length === 1
-				? new Set([0, Math.floor((rawDates.length - 1) / 2), rawDates.length - 1])
-				: new Set();
-			const dayLabelByIndex = new Map(isShortMultiDayRange
-				? intradayDayGroups.map((group) => [
-					Math.floor((group.startIndex + group.endIndex) / 2),
-					formatXAxisDate(rawDates[group.startIndex]),
-				])
-				: []);
 			const profile = profiles.find((candidate) => candidate.ticker === item.ticker) || {};
 			const seriesColor = theme.accent || "#0055cc";
 			const priceCandles = Array.isArray(item.candlestick_prices) ? item.candlestick_prices : [];
@@ -1475,7 +1522,7 @@
 			canvas.dataset.seriesColor = seriesColor;
 			canvas.dataset.tradingDayCount = String(intradayDayGroups.length);
 			canvas.dataset.tradingDaySeparators = String(isShortMultiDayRange ? intradayDayGroups.length - 1 : 0);
-			canvas.dataset.singleDayTimeLabels = String(singleDayLabelIndexes.size);
+			canvas.dataset.singleDayTimeLabels = "0";
 			canvas.dataset.marketSessionEvents = String(marketSessionEvents.length);
 			canvas.dataset.marketSessionLineStyle = marketSessionEvents.length ? "solid-session-divider" : "";
 			canvas.dataset.oneDaySessionDividers = String(oneDayUsSessionDividerIndexes.length);
@@ -1667,6 +1714,7 @@
 			const sharedHoverGuidePlugin = {
 				id: `priceSharedHoverGuide${index}`,
 				afterDatasetsDraw(chart) {
+					chart.$priceHoverGuideBounds = null;
 					if (sharedHoverIndex < 0 || !chart.chartArea || !chart.scales?.x) return;
 					const x = chart.scales.x.getPixelForValue(sharedHoverIndex);
 					if (!Number.isFinite(x) || x < chart.chartArea.left || x > chart.chartArea.right) return;
@@ -1679,6 +1727,29 @@
 					chart.ctx.lineTo(x, chart.chartArea.bottom);
 					chart.ctx.stroke();
 					chart.ctx.restore();
+					if (chart !== sharedHoverSourceChart || !chart.scales?.y) return;
+					const hoveredPrice = finiteNumber(chart.data.datasets[0]?.data[sharedHoverIndex]);
+					if (hoveredPrice === null) return;
+					const y = chart.scales.y.getPixelForValue(hoveredPrice);
+					if (!Number.isFinite(y) || y < chart.chartArea.top || y > chart.chartArea.bottom) return;
+					chart.ctx.save();
+					chart.ctx.strokeStyle = theme.muted;
+					chart.ctx.globalAlpha = 0.72;
+					chart.ctx.lineWidth = 1;
+					chart.ctx.beginPath();
+					chart.ctx.moveTo(chart.chartArea.left, y);
+					chart.ctx.lineTo(chart.chartArea.right, y);
+					chart.ctx.stroke();
+					chart.ctx.restore();
+					chartAxis.drawYAxisValueBadge(chart, {
+						y,
+						value: hoveredPrice,
+						formattedValue: formatPriceAxis(hoveredPrice, currency, false),
+						formatTickLabel: (value) => formatPriceAxis(value, currency, false),
+						fillColor: theme.accent,
+						boundsProperty: "$priceHoverGuideBounds",
+						boundsAliases: {index: sharedHoverIndex},
+					});
 				},
 			};
 			const multiDaySessionDividerPlugin = {
@@ -1736,27 +1807,85 @@
 					chart.ctx.restore();
 				},
 			};
-			const multiMarketSessionLabelPlugin = {
-				id: `priceMultiMarketSessionLabel${index}`,
+			const dateXAxisLabelPlugin = {
+				id: `priceDateXAxisLabel${index}`,
 				afterDraw(chart) {
-					if (!isBottomSubplot() || !marketSessionEvents.length || !chart.chartArea || !chart.scales?.x) return;
+					if (!isBottomSubplot() || !chart.chartArea || !chart.scales?.x || !labels.length) {
+						chart.$priceDateAxisTicks = [];
+						canvas.dataset.singleDayTimeLabels = "0";
+						return;
+					}
+					const formatAxisLines = isOneDayTimeAxis ? formatSingleDayXAxisValue : formatDateAxisLines;
 					chart.ctx.save();
 					chart.ctx.fillStyle = theme.muted;
-					chart.ctx.font = `12px ${getComputedStyle(document.body).fontFamily}`;
-					chart.ctx.textAlign = "center";
-					const labels = layoutMarketSessionLabels({
-						events: marketSessionEvents,
-						getX: (event) => chart.scales.x.getPixelForValue(event.index),
-						measureText: (line) => chart.ctx.measureText(line).width,
-						left: chart.chartArea.left,
-						right: chart.chartArea.right,
-					});
-					labels.forEach(({event, x}) => {
-						event.labelLines.forEach((line, lineIndex) => {
-							chart.ctx.fillText(line, x, chart.chartArea.bottom + 18 + (lineIndex * 15));
+					chart.ctx.font = `400 12px ${getComputedStyle(document.body).fontFamily}`;
+					chart.ctx.textBaseline = "top";
+					const axisKey = [
+						chart.width, chart.height, chart.chartArea.left, chart.chartArea.right,
+						chart.chartArea.bottom, labels.length, isOneDayTimeAxis,
+						sharedXAxisDates[0], sharedXAxisDates[sharedXAxisDates.length - 1],
+						formatAxisLines(sharedXAxisDates[0])?.join("|"),
+						formatAxisLines(sharedXAxisDates[sharedXAxisDates.length - 1])?.join("|"),
+						marketSessionEvents.map((event) => event.index).join(","),
+						chart.ctx.font, document.fonts?.status || "",
+					].join(":");
+					let axisCache = chart.$priceDateAxisCache;
+					if (!axisCache || axisCache.key !== axisKey) {
+						axisCache = {key: axisKey, lines: new Map(), ticks: []};
+						chart.$priceDateAxisCache = axisCache;
+					}
+					const getLines = (axisIndex) => {
+						if (!axisCache.lines.has(axisIndex)) {
+							axisCache.lines.set(axisIndex, formatAxisLines(sharedXAxisDates[axisIndex]));
+						}
+						return axisCache.lines.get(axisIndex);
+					};
+					if (!axisCache.ticks.length) {
+						chart.$priceDateAxisLayoutRuns = (chart.$priceDateAxisLayoutRuns || 0) + 1;
+						axisCache.ticks = chartAxis.layoutDateAxisTicks({
+							count: labels.length,
+							getPixel: (axisIndex) => chart.scales.x.getPixelForValue(axisIndex),
+							measureWidth: (axisIndex) => Math.max(
+								0,
+								...(getLines(axisIndex) || []).map((line) => chart.ctx.measureText(String(line || "")).width),
+							),
+							boundsLeft: 0,
+							boundsRight: chart.width,
+							getKey: (axisIndex) => (
+								isOneDayTimeAxis
+									? String(sharedXAxisDates[axisIndex] || "")
+									: String(sharedXAxisDates[axisIndex] || "").slice(0, 10)
+							),
+							specialIndexes: marketSessionEvents.map((event) => event.index),
+							includeSpecialIndexes: isOneDayTimeAxis,
 						});
+					}
+					const ticks = axisCache.ticks;
+					chart.$priceDateAxisTicks = ticks;
+					canvas.dataset.singleDayTimeLabels = String(isOneDayTimeAxis ? ticks.length : 0);
+					const hoverLines = sharedHoverIndex >= 0
+						? formatDateAxisLines(sharedRawDates[sharedHoverIndex] || labels[sharedHoverIndex])
+						: null;
+					const hoverX = hoverLines ? chart.scales.x.getPixelForValue(sharedHoverIndex) : null;
+					const hoverBadgeWidth = hoverLines && Number.isFinite(hoverX)
+						? Math.max(42, ...hoverLines.map((line) => chart.ctx.measureText(String(line || "")).width + 10))
+						: 0;
+					const hoverBadgeLeft = hoverBadgeWidth > 0
+						? Math.max(0, Math.min(chart.width - hoverBadgeWidth, hoverX - (hoverBadgeWidth / 2)))
+						: 0;
+					const hoverBadgeRight = hoverBadgeLeft + hoverBadgeWidth;
+					ticks.forEach((tick) => {
+						// The hover badge replaces static ticks inside its footprint.
+						if (hoverBadgeWidth > 0 && tick.left < hoverBadgeRight + 4 && tick.right > hoverBadgeLeft - 4) return;
+						const [firstLine, secondLine] = getLines(tick.index) || [];
+						chart.ctx.textAlign = tick.align;
+						chart.ctx.fillText(firstLine, tick.x, chart.chartArea.bottom);
+						chart.ctx.fillText(secondLine, tick.x, chart.chartArea.bottom + 10);
 					});
 					chart.ctx.restore();
+					if (sharedHoverIndex >= 0) {
+						updateSharedHoverDateLabel(sharedHoverIndex, sharedRawDates[sharedHoverIndex] || labels[sharedHoverIndex]);
+					}
 				},
 			};
 			const oneDayPriceCandlestickPlugin = {
@@ -1881,7 +2010,7 @@
 					responsive: true,
 					maintainAspectRatio: false,
 					animation: false,
-					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot() && marketSessionEvents.length ? 22 : 4, left: 0}},
+					layout: {padding: {top: 8, right: RIGHT_GUTTER, bottom: isBottomSubplot() ? 28 : 4, left: 0}},
 					interaction: {mode: "index", intersect: false},
 					onHover(event, activeElements, chartInstance) {
 						const activeCostState = chartInstance.$costDistribution || fullChipState;
@@ -1921,16 +2050,15 @@
 							grid: {display: false},
 							border: {display: false},
 							ticks: {
+								display: false,
 								autoSkip: false,
 								maxRotation: 0,
 								color: theme.muted,
-							callback(_value, tickIndex) {
-								if (marketSessionEventByIndex.has(tickIndex)) return "";
-								if (marketSessionEvents.length) return "";
-								if (isShortMultiDayRange) return dayLabelByIndex.get(tickIndex) || "";
-								if (singleDayLabelIndexes.has(tickIndex)) return formatSingleDayXAxisValue(rawDates[tickIndex]);
-								return tickIndex === sharedRangeFirstIndex || tickIndex === sharedRangeLastIndex
-										? formatXAxisValue(sharedXAxisDates[tickIndex] || rawDates[tickIndex], intraday)
+								callback(_value, tickIndex) {
+									return tickIndex === sharedRangeFirstIndex || tickIndex === sharedRangeLastIndex
+										? (isOneDayTimeAxis
+											? formatSingleDayXAxisValue(sharedXAxisDates[tickIndex])
+											: formatDateAxisLines(sharedXAxisDates[tickIndex]) || "")
 										: "";
 								},
 							},
@@ -1948,7 +2076,7 @@
 						},
 					},
 				},
-				plugins: [chipDistributionLayoutPlugin, chipDistributionPlugin, dynamicScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, multiMarketSessionLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
+				plugins: [chipDistributionLayoutPlugin, chipDistributionPlugin, dynamicScaleWidthPlugin, oneDaySessionDividerPlugin, multiDaySessionDividerPlugin, multiMarketSessionEventPlugin, dateXAxisLabelPlugin, firstDayReferencePricePlugin, oneDayPriceCandlestickPlugin, closingLogoPlugin, sharedHoverGuidePlugin],
 			});
 			chart.$costDistributionContext = chipSnapshotContext;
 			chart.$costDistribution = chipsEnabled && fullChipState

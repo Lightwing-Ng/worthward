@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.37.1`
+Documentation version: `v3.37.2`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -127,6 +127,11 @@ python3 scripts/strategy_tune.py --strategy macd --ticker NVDA \
   --from 2025-09-04 --to 2026-09-04 --method genetic --trials 16 \
   --bounds '{"fast_span":[4,20],"slow_span":[24,50],"signal_span":[3,15]}' \
   --output /tmp/worthward-macd-research
+python3 scripts/strategy_tune.py --strategy cycle-of-price-action --ticker DRAM \
+  --from 2026-04-02 --to 2026-09-23 --trials 2 \
+  --params '{"training_window":30,"chip_window":20}' \
+  --bounds '{"fast_ema":[9,11]}' \
+  --output /tmp/worthward-cycle-research
 ```
 
 Use a new output directory for every run. Change `--method` to `random-forest`
@@ -137,6 +142,10 @@ evaluations, allowing an in-flight evaluation to finish. Local price stores are
 read-only; strategies with a declared Longbridge source use that canonical
 provider. Missing real data fails explicitly. See the architecture and operating
 constraints for chronology, provenance, and interval requirements.
+
+Cycle of Price Action uses the same CLI path. Its `result.json` records stage
+counts, latest state, and buy/sell intent counts for each scored window under
+`model_evidence.price_action_cycle`; these counts exclude warmup observations.
 
 ### Runtime structure
 

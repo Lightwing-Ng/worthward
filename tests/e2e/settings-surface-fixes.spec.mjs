@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1024, 390]) {
@@ -40,28 +40,31 @@ for (const width of [1024, 390]) {
             expect(saveAlignment.actionClasses).toContain('settings-form-actions');
 
             await page.goto('/settings/style-tokens');
-            const rangeThumbMaterial = await page.getByRole('slider', {name: 'QQQ minimum', exact: true}).evaluate(() => {
+            const rangeThumbMaterial = await page.getByRole('slider', {name: 'QQQ minimum', exact: true}).evaluate((input) => {
+                // Chromium reports the range input's style for its native thumb pseudo-element.
                 const probe = document.createElement('span');
-                const canvasProbe = document.createElement('span');
-                const whiteProbe = document.createElement('span');
-                probe.style.background = 'var(--strategy-range-limit-thumb-background)';
-                canvasProbe.style.background = 'var(--theme-background)';
-                whiteProbe.style.background = 'var(--color-white-adaptive)';
-                document.body.append(probe, canvasProbe, whiteProbe);
+                probe.style.cssText = `position:absolute;pointer-events:none;
+                    background:var(--strategy-range-limit-thumb-background);
+                    box-shadow:var(--surface-resizer-handle-shadow);
+                    backdrop-filter:var(--surface-resizer-handle-blur);
+                    border:var(--surface-resizer-handle-border);
+                    border-color:currentColor;
+                    border-radius:var(--radius-pill)`;
+                probe.style.color = getComputedStyle(input).color;
+                input.parentElement.append(probe);
+                const material = getComputedStyle(probe);
+                const shared = getComputedStyle(document.querySelector('[data-style-token-resizer]'), '::after');
                 const result = {
-                    actual: getComputedStyle(probe).backgroundColor,
-                    canvas: getComputedStyle(canvasProbe).backgroundColor,
-                    adaptiveWhite: getComputedStyle(whiteProbe).backgroundColor,
+                    backgroundMatches: material.background === shared.background,
+                    shadowMatches: material.boxShadow === shared.boxShadow,
+                    blurMatches: material.backdropFilter === shared.backdropFilter,
+                    radiusMatches: material.borderRadius === shared.borderRadius,
+                    accentBorder: material.borderTopColor === getComputedStyle(input).color,
                 };
                 probe.remove();
-                canvasProbe.remove();
-                whiteProbe.remove();
                 return result;
             });
-            expect(rangeThumbMaterial.actual).toBe(rangeThumbMaterial.canvas);
-            if (colorScheme === 'dark') {
-                expect(rangeThumbMaterial.actual).not.toBe(rangeThumbMaterial.adaptiveWhite);
-            }
+            expect(Object.values(rangeThumbMaterial).every(Boolean)).toBe(true);
 
             await page.goto('/settings/network');
             const mail = page.locator('[data-service-key="smtp"] .settings-service-heading');

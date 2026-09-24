@@ -1,4 +1,4 @@
-/* Code version: v1.81.1 */
+/* Code version: v1.81.2 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2769,6 +2769,11 @@
     align-content: start;
 }
 
+.investment-stock-details-metrics .investment-live-value {
+    line-height: var(--workspace-metric-value-line-height);
+    block-size: calc(1em + var(--trade-metric-value-padding-bottom));
+}
+
 .investment-stock-details-metric-card-with-breakdown,
 .investment-metric-card-with-breakdown {
     row-gap: 2px;
@@ -2789,6 +2794,10 @@
     max-inline-size: 100%;
     justify-content: flex-end;
     padding-bottom: 0;
+}
+
+.investment-stock-details-metric-value-row > .investment-live-value {
+    block-size: 1em;
 }
 
 .investment-stock-details-metric-breakdown-trigger {

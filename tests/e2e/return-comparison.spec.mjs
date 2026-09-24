@@ -1,4 +1,4 @@
-/* Return comparison regressions. Code version: v1.1.0 */
+/* Return comparison regressions. Code version: v1.2.1 */
 import {expect, test} from '@playwright/test';
 
 
@@ -43,6 +43,131 @@ test('exposes Return comparison title and result landmarks', async ({page}) => {
         'aria-labelledby',
         'return_performance_heading',
     );
+});
+
+
+test('uses date-only, collision-aware labels on a one-year Return comparison axis', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQI&ticker=JEPQ&period=1y');
+
+    const axis = await page.evaluate(() => {
+        const host = document.createElement('div');
+        host.className = 'chart-wrap';
+        host.style.width = '760px';
+        host.style.height = '320px';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'returnsChartAxisRegression';
+        host.appendChild(canvas);
+        document.body.appendChild(host);
+        window.history.replaceState({}, '', '/workspaces/compare?ticker=QQQI&ticker=JEPQ&period=1y');
+
+        const start = Date.UTC(2025, 8, 23);
+        const rawDates = Array.from({length: 366}, (_, index) => (
+            `${new Date(start + (index * 86_400_000)).toISOString().slice(0, 10)} 00:00`
+        ));
+        const series = ['QQQI', 'JEPQ'].map((ticker, index) => ({
+            ticker,
+            dates: rawDates,
+            raw_dates: rawDates,
+            normalized_returns: rawDates.map((_date, dateIndex) => dateIndex / 30 + index),
+            color: index ? '#ff2f92' : '#0055cc',
+            glow: false,
+        }));
+        const chart = window.WORTHWARD_BOOTSTRAP.renderReturnsChart({canvas}, {
+            state: {
+                currentView: 'tickers',
+                chart: {series, profiles: []},
+                theme: {muted: '#aaa', accent_primary: '#0055cc'},
+                chartConfig: {},
+            },
+        });
+        const plugin = chart.config._config.plugins.find((item) => item.id === 'xAxisLabelPlugin');
+        const calls = [];
+        plugin.afterDraw({
+            canvas,
+            width: chart.width,
+            chartArea: chart.chartArea,
+            scales: chart.scales,
+            ctx: {
+                save: () => {},
+                restore: () => {},
+                measureText: (text) => ({width: String(text).length * 7}),
+                fillText(text, x) {
+                    calls.push({text: String(text), x, align: this.textAlign});
+                },
+            },
+        });
+        const ticks = [...new Map(calls.map((call) => [call.x, call.align])).entries()]
+            .map(([x, align]) => ({x, align}));
+        return {labels: calls.map((call) => call.text), ticks};
+    });
+
+    expect(axis.labels.join(' ')).not.toMatch(/\d{2}:\d{2}/);
+    expect(axis.labels).toContain('2025');
+    expect(axis.labels).toContain('2026');
+    expect(axis.ticks.length).toBeGreaterThanOrEqual(5);
+    expect(axis.ticks.length).toBeLessThanOrEqual(12);
+    expect(axis.ticks[0].align).toBe('left');
+    expect(axis.ticks.at(-1).align).toBe('right');
+    expect(axis.ticks.slice(1, -1).every((tick) => tick.align === 'center')).toBe(true);
+});
+
+
+test('keeps meaningful session times on an exact one-day Return comparison axis', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQI&ticker=JEPQ&period=1d&range=exact&trading_date=2026-07-17');
+
+    const axisLabels = await page.evaluate(() => {
+        const host = document.createElement('div');
+        host.className = 'chart-wrap';
+        host.style.width = '760px';
+        host.style.height = '320px';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'returnsChartOneDayAxisRegression';
+        host.appendChild(canvas);
+        document.body.appendChild(host);
+        window.history.replaceState({}, '', '/workspaces/compare?ticker=QQQI&ticker=JEPQ&period=1d&range=exact&trading_date=2026-07-17');
+
+        const rawDates = [
+            '2026-07-17 09:30',
+            '2026-07-17 12:00',
+            '2026-07-17 14:00',
+            '2026-07-17 15:59',
+        ];
+        const series = ['QQQI', 'JEPQ'].map((ticker, index) => ({
+            ticker,
+            dates: rawDates,
+            raw_dates: rawDates,
+            normalized_returns: rawDates.map((_date, pointIndex) => pointIndex + index),
+            color: index ? '#ff2f92' : '#0055cc',
+            glow: false,
+        }));
+        const chart = window.WORTHWARD_BOOTSTRAP.renderReturnsChart({canvas}, {
+            state: {
+                currentView: 'tickers',
+                chart: {series, profiles: [], tradingDate: '2026-07-17'},
+                theme: {muted: '#aaa', accent_primary: '#0055cc'},
+                chartConfig: {},
+            },
+        });
+        const plugin = chart.config._config.plugins.find((item) => item.id === 'xAxisLabelPlugin');
+        const calls = [];
+        plugin.afterDraw({
+            canvas,
+            width: chart.width,
+            chartArea: chart.chartArea,
+            scales: chart.scales,
+            ctx: {
+                save: () => {},
+                restore: () => {},
+                fillText: (text) => calls.push(String(text)),
+            },
+        });
+        return calls;
+    });
+
+    expect(axisLabels.filter((label) => /^\d{2}:\d{2}$/.test(label)))
+        .toEqual(['09:30', '12:00', '14:00', '16:00']);
+    expect(axisLabels).not.toContain('00:00');
+    expect(axisLabels.filter((label) => label.includes('2026'))).toHaveLength(4);
 });
 
 

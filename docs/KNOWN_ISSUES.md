@@ -1,5 +1,32 @@
 # Known issues and operating constraints
 
+Style tokens specimen width tiers, 25 Sep 2026: the Shared select dropdown,
+Shared select filter, and Strategy tuning control demos use the existing 384px
+control token while their preview column is narrower than the 640px content
+tier, then use the 640px content token when that column reaches the wider tier.
+Below 384px they fit the column. The preview column itself is a resizable CSS
+container, so the tier follows divider drags at a fixed viewport width. Shared
+select menus retain their separate 384px maximum; production controls keep
+their standard sizing.
+
+Style tokens number and Process List specimens, 25 Sep 2026: all 12 decimal
+values in the Investment Holdings allocation specimen already use the shared
+numeric display's major/minor typography and 0.76 fraction scale. The actual
+Holdings badge reuses the same parts; its glyph slots preserve width during
+updates. Desktop and narrow browser regressions now guard this contract.
+The Process List specimen no longer renders Python's dictionary `copy` method
+as text. Its four steps now demonstrate an ordered list, an unordered list, a
+plain paragraph, and a read-only field assembled from shared controls.
+
+Settings sidebar and allocation handles, 24 Sep 2026: Settings keeps its
+heading and toggle fixed while the section navigation scrolls within the
+sidebar, with dock clearance for the last link on desktop and narrow layouts.
+The Allocation range Style tokens specimen and its Leveraged Rotation controls
+now draw all six range thumbs from the shared Frosted Glass resizer-handle
+material. Primary and leveraged colors remain on their tracks, labels, and
+thumb borders. The older active-theme-canvas limit-thumb treatment described
+below is superseded; range hit areas and constraints are unchanged.
+
 Investment share action placement, 24 Sep 2026: `contain: layout` on the
 Investment workspace header, added to keep gel transforms out of root scroll
 geometry, also makes that header the containing block of the fixed share
@@ -522,7 +549,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.1`
+Documentation version: `v1.264.4`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 
 .surface-resizer {
 	--surface-resizer-line-size: 2px;
@@ -38,11 +38,11 @@
 }
 
 .surface-resizer::after {
-	background: var(--frosted-glass-background);
-	border: var(--frosted-glass-border);
-	box-shadow: var(--frosted-glass-shadow);
-	backdrop-filter: var(--frosted-glass-blur);
-	-webkit-backdrop-filter: var(--frosted-glass-blur);
+	background: var(--surface-resizer-handle-background);
+	border: var(--surface-resizer-handle-border);
+	box-shadow: var(--surface-resizer-handle-shadow);
+	backdrop-filter: var(--surface-resizer-handle-blur);
+	-webkit-backdrop-filter: var(--surface-resizer-handle-blur);
 }
 
 .surface-resizer--inline {
@@ -89,9 +89,9 @@
 .surface-resizer:focus-visible::after,
 .surface-resizer.is-resizing::after,
 .is-surface-resizing .surface-resizer::after {
-	background: var(--frosted-glass-background-hover);
+	background: var(--surface-resizer-handle-background-hover);
 	border-color: var(--accent-border-medium);
-	box-shadow: var(--frosted-glass-shadow-hover);
+	box-shadow: var(--surface-resizer-handle-shadow-hover);
 }
 
 .surface-resizer--reveal::before,

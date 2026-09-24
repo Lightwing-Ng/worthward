@@ -1,4 +1,4 @@
-"""Tests for the shared inline and block resizer contract. Code version: v1.1.0."""
+"""Tests for the shared inline and block resizer contract. Code version: v1.2.1."""
 
 from __future__ import annotations
 
@@ -26,11 +26,24 @@ def test_shared_resizer_uses_canonical_frosted_glass_material() -> None:
     css = (ROOT / "app/web/static/assets/css/components/resizer.css").read_text(
         encoding="utf-8",
     )
+    tokens = (ROOT / "app/web/static/assets/css/foundation/tokens.css").read_text(
+        encoding="utf-8",
+    )
+    trade_css = (ROOT / "app/web/static/assets/css/views/trade.css").read_text(
+        encoding="utf-8",
+    )
     js = (ROOT / "app/web/static/assets/js/resizer.js").read_text(encoding="utf-8")
 
-    assert "background: var(--frosted-glass-background);" in css
-    assert "box-shadow: var(--frosted-glass-shadow);" in css
-    assert "backdrop-filter: var(--frosted-glass-blur);" in css
+    assert "--surface-resizer-handle-background: var(--frosted-glass-background);" in tokens
+    assert "--surface-resizer-handle-shadow: var(--frosted-glass-shadow);" in tokens
+    assert "--surface-resizer-handle-blur: var(--frosted-glass-blur);" in tokens
+    assert "background: var(--surface-resizer-handle-background);" in css
+    assert "box-shadow: var(--surface-resizer-handle-shadow);" in css
+    assert "backdrop-filter: var(--surface-resizer-handle-blur);" in css
+    assert "border: var(--surface-resizer-handle-border);" in trade_css
+    assert "background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));" in trade_css
+    assert "box-shadow: var(--surface-resizer-handle-shadow);" in trade_css
+    assert "backdrop-filter: var(--surface-resizer-handle-blur);" in trade_css
     assert ".surface-resizer--inline" in css
     assert ".surface-resizer--block" in css
     assert "ArrowUp" in js

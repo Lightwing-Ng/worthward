@@ -1,7 +1,7 @@
 /**
  * Shared chart axis helpers used by workspace and trade charts.
  *
- * Code version: v1.9.0
+ * Code version: v1.10.0
  * - Added: One pixel-space date-axis layout owner keeps edge labels flush,
  *   centers interior labels, maximizes even spacing without collisions, and
  *   can retain optional special dates.
@@ -493,7 +493,7 @@
 
     // Shared by Investment Overview and Stock details; styling stays in the
     // existing trade-chart-hover-date-label component.
-    const updateHoverDateLabel = (element, {lines, x, top, width} = {}) => {
+    const updateHoverDateLabel = (element, {lines, x, top, width, offsetX = 0} = {}) => {
         if (!element) return;
         if (!lines || !Number.isFinite(x) || !Number.isFinite(top)) {
             element.hidden = true;
@@ -513,7 +513,7 @@
         const clampedX = width > 0
             ? Math.max(halfWidth, Math.min(width - halfWidth, x))
             : x;
-        for (const [property, value] of [["left", `${clampedX}px`], ["top", `${top}px`]]) {
+        for (const [property, value] of [["left", `${clampedX + offsetX}px`], ["top", `${top}px`]]) {
             if (element.style.getPropertyValue(property) !== value) {
                 element.style.setProperty(property, value);
             }
@@ -658,7 +658,7 @@
         syncChartFontDefaults,
         installChartFontDefaults,
         DEFAULT_MARKET_TIME_CONFIG,
-        CHART_AXIS_UTILS_VERSION: "v1.8.0",
+        CHART_AXIS_UTILS_VERSION: "v1.10.0",
     });
 
     globalScope.WORTHWARD_CHART_AXIS = api;
