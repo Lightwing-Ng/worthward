@@ -1,4 +1,4 @@
-/* Code version: v1.2.3 */
+/* Code version: v1.2.4 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1423,6 +1423,12 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     padding-left: 0;
 }
 
+.investment-import-date-control-row .date-picker-trigger {
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+    padding-block: 0;
+}
+
 #investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value {
     height: var(--sidebar-form-control-min-height);
     min-height: var(--sidebar-form-control-min-height);
@@ -1638,7 +1644,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     z-index: var(--layer-control-affordance);
 }
 
-.investment-import-paste-shell:has(.investment-import-paste-display:focus) .investment-import-paste-clear.is-visible {
+.investment-import-paste-shell:hover .investment-import-paste-clear.is-visible,
+.investment-import-paste-shell:focus-within .investment-import-paste-clear.is-visible {
     opacity: 1;
     pointer-events: auto;
 }
@@ -1828,35 +1835,19 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     width: 100%;
     min-width: 0;
     max-width: none;
-    min-height: 44px;
-    padding: 10px 14px;
+    height: var(--sidebar-form-control-min-height);
+    min-height: var(--sidebar-form-control-min-height);
+    padding: 0 14px;
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--theme-glass-border) 72%, transparent);
     background: color-mix(in srgb, var(--glass-surface-background-strong) 88%, transparent);
     color: var(--text);
-    line-height: 1.4;
+    line-height: calc(var(--sidebar-form-control-min-height) - 2px);
 }
 
 #investment_import_hsbc_fields .investment-import-file-input {
-    height: var(--sidebar-form-control-min-height);
-    min-height: var(--sidebar-form-control-min-height);
-    padding-block: 0;
     font-size: var(--font-table-body);
     line-height: 1.2;
-}
-
-#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"] .investment-import-file-input {
-    height: var(--sidebar-form-control-min-height);
-    min-height: var(--sidebar-form-control-min-height);
-    padding-block: 0;
-    line-height: calc(var(--sidebar-form-control-min-height) - 2px);
-}
-
-#investment_import_ibkr_fields [data-ibkr-import-mode-panel="gainskeeper"] .investment-import-file-input {
-    height: var(--sidebar-form-control-min-height);
-    min-height: var(--sidebar-form-control-min-height);
-    padding-block: 0;
-    line-height: calc(var(--sidebar-form-control-min-height) - 2px);
 }
 
 .investment-import-file-input::file-selector-button {

@@ -1,6 +1,8 @@
 """Public compatibility facade for broker investment imports.
 
-Code version: v0.111.2
+Code version: v0.111.3
+- Changed: HSBC current-cash boundary helpers are re-exported from their
+  dedicated cash-boundary module.
 - Changed: Split broker parsing, evidence, reconciliation, and merge logic into
   bounded domain modules while preserving the established import API.
 """
@@ -686,11 +688,14 @@ from app.services.investment_import_hsbc_reconciliation import (
     build_investment_payload_from_hsbc_usd_savings_csv,
     _hsbc_usd_savings_csv_settlement_evidence,
     _reconcile_hsbc_orders_with_authoritative_cash_evidence,
+    repair_hsbc_order_settlement_reconciliation,
+    validate_hsbc_pasted_text,
+)
+
+from app.services.investment_import_hsbc_cash_boundary import (
     _reconcile_hsbc_order_settlement_balances_from_postings,
     _synchronize_hsbc_authoritative_current_cash_boundary,
     _preserve_authoritative_current_cash_scope,
-    repair_hsbc_order_settlement_reconciliation,
-    validate_hsbc_pasted_text,
 )
 
 from app.services.investment_import_hsbc_statements import (

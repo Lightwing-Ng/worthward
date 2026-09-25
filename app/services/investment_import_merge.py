@@ -1,6 +1,8 @@
 """Investment import domain: merge.
 
-Code version: v0.3.0
+Code version: v0.3.1
+- Changed: HSBC posting-balance and current-cash boundary helpers resolve from
+  their dedicated cash-boundary module.
 - Fixed: Re-imported HSBC pasted cash can restore missing immutable posting
   provenance without changing existing settlement economics.
 """
@@ -33,6 +35,8 @@ import app.services.investment_import_bindings as _ii_bindings
 import app.services.investment_import_hsbc_cash as _ii_hsbc_cash
 
 import app.services.investment_import_hsbc_core as _ii_hsbc_core
+
+import app.services.investment_import_hsbc_cash_boundary as _ii_hsbc_cash_boundary
 
 import app.services.investment_import_hsbc_reconciliation as _ii_hsbc_reconciliation
 
@@ -709,7 +713,7 @@ def merge_investment_payloads(
             merged_transactions,
             merged_source_artifacts,
         )
-        _ii_hsbc_reconciliation._reconcile_hsbc_order_settlement_balances_from_postings(
+        _ii_hsbc_cash_boundary._reconcile_hsbc_order_settlement_balances_from_postings(
             merged_transactions
         )
         _ii_records._sort_transactions(merged_transactions)
@@ -1470,12 +1474,12 @@ def merge_investment_payloads(
         ibkr_broker_summary["performance_snapshot"] = ibkr_performance_snapshot
         ibkr_broker_summary["performance_snapshot_authoritative"] = True
         ibkr_broker_summary["performance_snapshot_source"] = "ibkr_closed_trades"
-    _ii_hsbc_reconciliation._preserve_authoritative_current_cash_scope(
+    _ii_hsbc_cash_boundary._preserve_authoritative_current_cash_scope(
         payload,
         normalized_existing,
         normalized_incoming,
     )
-    _ii_hsbc_reconciliation._synchronize_hsbc_authoritative_current_cash_boundary(
+    _ii_hsbc_cash_boundary._synchronize_hsbc_authoritative_current_cash_boundary(
         payload
     )
     _ii_bindings.normalize_investment_payload_tickers(payload)
