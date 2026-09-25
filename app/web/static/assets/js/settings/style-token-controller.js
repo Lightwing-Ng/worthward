@@ -1,7 +1,9 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.1
+ * - Fixed: Keep the style-token resizer's accessible range current when its
+ *   preview column changes width without a drag or key press.
  * - Added: Keep a complete accessible allocation value while glyph slots stay
  *   visual-only.
  * - Added: Semantic allocation-badge values reuse the shared numeric parser before
@@ -211,6 +213,10 @@ export function createSettingsStyleTokenController({
         };
         const syncWidthToViewport = () => {
             refreshStyleTokenDemoDensity?.();
+            const range = getWidthRange();
+            handle.setAttribute("aria-valuemin", String(Math.round(range.minimum)));
+            handle.setAttribute("aria-valuemax", String(Math.round(range.maximum)));
+            handle.setAttribute("aria-valuenow", String(Math.round(getCurrentWidth())));
             syncHandleY();
         };
         let geometryFrame = 0;
@@ -220,6 +226,9 @@ export function createSettingsStyleTokenController({
                 geometryFrame = 0;
                 syncWidthToViewport();
             });
+        };
+        const syncAfterShellAnimation = (event) => {
+            if (event.target === shell) scheduleGeometrySync();
         };
         const syncHandleY = () => {
             const rect = shell.getBoundingClientRect();
@@ -250,6 +259,8 @@ export function createSettingsStyleTokenController({
         window.addEventListener("scroll", scheduleGeometrySync, {passive: true});
         scrollViewport?.addEventListener?.("scroll", scheduleGeometrySync, {passive: true});
         window.addEventListener("resize", scheduleGeometrySync, {passive: true});
+        shell.addEventListener("animationend", syncAfterShellAnimation);
+        shell.addEventListener("animationcancel", syncAfterShellAnimation);
 
         let resizeObserver = null;
         if (window.ResizeObserver) {
@@ -266,6 +277,8 @@ export function createSettingsStyleTokenController({
             window.removeEventListener("scroll", scheduleGeometrySync);
             scrollViewport?.removeEventListener?.("scroll", scheduleGeometrySync);
             window.removeEventListener("resize", scheduleGeometrySync);
+            shell.removeEventListener("animationend", syncAfterShellAnimation);
+            shell.removeEventListener("animationcancel", syncAfterShellAnimation);
             resizeObserver?.disconnect();
             if (geometryFrame) {
                 window.cancelAnimationFrame(geometryFrame);

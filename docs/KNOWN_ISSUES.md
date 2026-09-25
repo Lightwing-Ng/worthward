@@ -7,7 +7,8 @@ tier, then use the 640px content token when that column reaches the wider tier.
 Below 384px they fit the column. The preview column itself is a resizable CSS
 container, so the tier follows divider drags at a fixed viewport width. Shared
 select menus retain their separate 384px maximum; production controls keep
-their standard sizing.
+their standard sizing. The resizer's accessible minimum, maximum, and current
+values refresh when the column changes width, including viewport resize.
 
 Style tokens number and Process List specimens, 25 Sep 2026: all 12 decimal
 values in the Investment Holdings allocation specimen already use the shared
@@ -549,7 +550,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.4`
+Documentation version: `v1.264.5`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

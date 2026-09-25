@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {expect, test} from '@playwright/test';
 
 const widthTolerance = 1;
@@ -230,6 +230,48 @@ test('switches both specimens and the tuning panel as the same resizer crosses 6
     await expectPeriodMenuWithinSharedCap(page, 640);
     await dragDemoColumn(page, 574);
     await expectTier(page, 574, 384);
+});
+
+test('updates the resizer accessibility range when the viewport changes', async ({page}) => {
+    await page.setViewportSize({width: 996, height: 801});
+    await page.goto('/settings/style-tokens');
+    const sidebarToggle = page.locator('#sidebar_toggle');
+    if (await sidebarToggle.getAttribute('aria-expanded') === 'true') await sidebarToggle.click();
+    await expect(page.locator('.app-shell')).not.toHaveClass(/is-sidebar-animating/);
+    const handle = page.locator('[data-style-token-resizer]');
+    await expect(handle).toHaveAttribute('data-bound', '1');
+    const range = async () => handle.evaluate((element) => {
+        const shell = element.closest('[data-style-token-shell]');
+        const shellRect = shell.getBoundingClientRect();
+        const columnGap = Number.parseFloat(getComputedStyle(shell).getPropertyValue('--style-token-column-gap'));
+        return {
+            maximum: Math.round(Math.max(220, shellRect.width - columnGap - 280)),
+            actual: Math.round(shell.querySelector('.style-token-demo').getBoundingClientRect().width),
+            ariaMaximum: Number(element.getAttribute('aria-valuemax')),
+            ariaActual: Number(element.getAttribute('aria-valuenow')),
+        };
+    });
+    const expectAccessibleRange = async () => {
+        await waitForStableGeometry(page);
+        await expect.poll(async () => {
+            const state = await range();
+            return {
+                maximumGap: state.maximum - state.ariaMaximum,
+                currentGap: state.actual - state.ariaActual,
+            };
+        }).toEqual({maximumGap: 0, currentGap: 0});
+    };
+    await expectAccessibleRange();
+    const narrowMaximum = (await range()).maximum;
+    await page.setViewportSize({width: 1760, height: 900});
+    await expectAccessibleRange();
+    const wideMaximum = (await range()).maximum;
+    expect(wideMaximum).toBeGreaterThan(narrowMaximum);
+    await handle.press('End');
+    await expectTier(page, wideMaximum, 640);
+    await page.setViewportSize({width: 996, height: 801});
+    await expectAccessibleRange();
+    expect((await range()).maximum).toBe(narrowMaximum);
 });
 
 test('lets the specimens shrink with a narrow single-column container', async ({page}) => {
