@@ -1,4 +1,4 @@
-"""Tests for the shared inline and block resizer contract. Code version: v1.2.1."""
+"""Tests for the shared inline and block resizer contract. Code version: v1.2.2."""
 
 from __future__ import annotations
 
@@ -40,7 +40,11 @@ def test_shared_resizer_uses_canonical_frosted_glass_material() -> None:
     assert "background: var(--surface-resizer-handle-background);" in css
     assert "box-shadow: var(--surface-resizer-handle-shadow);" in css
     assert "backdrop-filter: var(--surface-resizer-handle-blur);" in css
-    assert "border: var(--surface-resizer-handle-border);" in trade_css
+    for pseudo in ("::-webkit-slider-thumb", "::-moz-range-thumb"):
+        thumb_rule = trade_css.split(f".strategy-allocation-handle{pseudo} {{", 1)[1]
+        thumb_rule = thumb_rule.split("}", 1)[0]
+        assert "border: 0;" in thumb_rule
+        assert "border-color:" not in thumb_rule
     assert "background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));" in trade_css
     assert "box-shadow: var(--surface-resizer-handle-shadow);" in trade_css
     assert "backdrop-filter: var(--surface-resizer-handle-blur);" in trade_css

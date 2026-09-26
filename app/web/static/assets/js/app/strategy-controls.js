@@ -1,5 +1,231 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.1.0 */
 (() => {
+    // The catalog and Backtest share immediate input updates and measured label layout.
+    const bindAllocationControls = (root, {
+        readTickerName,
+        readCapital,
+        resolveCash = ({capital, cashPercentage}) => capital * cashPercentage / 100,
+        tickerInputs = [],
+        capitalInput = null,
+        onChange = () => {},
+        onSync = () => {},
+    }) => {
+        const cleanups = [];
+        const refreshers = [];
+        let resizeFrame = null;
+        const listen = (target, event, listener) => {
+            target.addEventListener(event, listener);
+            cleanups.push(() => target.removeEventListener(event, listener));
+        };
+        const observe = (element, refresh) => {
+            const observer = new ResizeObserver(refresh);
+            observer.observe(element);
+            refreshers.push(refresh);
+            cleanups.push(() => observer.disconnect());
+        };
+        const separateAllocationHandles = (container, low, high) => {
+            const track = container.querySelector('.strategy-allocation-track-shell');
+            if (track) {
+                const close = (high - low) * track.clientWidth / 100 < 14;
+                track.classList.toggle('has-close-handles', close);
+                track.title = close ? 'Nearby boundaries use separate rows; percentages are unchanged.' : '';
+            }
+        };
+        listen(window, 'resize', () => {
+            if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+            resizeFrame = window.requestAnimationFrame(() => {
+                resizeFrame = null;
+                refreshers.forEach((refresh) => refresh());
+            });
+        });
+        root.querySelectorAll('[data-strategy-allocation-limits]').forEach((limits) => {
+            limits.dataset.bound = '1';
+            cleanups.push(() => { delete limits.dataset.bound; });
+            const read = (key) => limits.querySelector(`[name="${key}_pct"]`);
+            const syncLimits = (source = '') => {
+                const values = Object.fromEntries(['primary_min', 'primary_max', 'leveraged_min', 'leveraged_max']
+                    .map((key) => [key, Math.max(0, Math.min(100, Number(read(key).value) || 0))]));
+                values.leveraged_min = Math.min(values.leveraged_min, 100 - values.primary_min);
+                values.primary_max = Math.min(100 - values.leveraged_min, Math.max(values.primary_min, values.primary_max));
+                values.leveraged_max = Math.min(100 - values.primary_min, Math.max(values.leveraged_min, values.leveraged_max));
+                if (source.endsWith('_max')) {
+                    const asset = source.split('_')[0];
+                    values[`${asset}_min`] = Math.min(values[`${asset}_min`], Number(read(source).value));
+                    values[source] = Math.min(Number(read(source).value), 100 - values[`${asset === 'primary' ? 'leveraged' : 'primary'}_min`]);
+                }
+                Object.entries(values).forEach(([key, value]) => { read(key).value = String(value); });
+                limits.querySelectorAll('[data-limit-range]').forEach((bar) => {
+                    const asset = bar.dataset.limitRange;
+                    const ticker = readTickerName(Number(bar.dataset.tickerIndex));
+                    bar.querySelector('[data-limit-ticker]').textContent = ticker;
+                    ['min', 'max'].forEach((boundary) => {
+                        const value = values[`${asset}_${boundary}`];
+                        bar.querySelector(`[data-limit-value="${boundary}"]`).textContent = `${Math.round(value)}%`;
+                        read(`${asset}_${boundary}`).setAttribute('aria-label', `${ticker} ${boundary === 'min' ? 'minimum' : 'maximum'}`);
+                    });
+                    const labelNodes = [...bar.querySelectorAll('.strategy-limit-labels label')];
+                    const width = bar.clientWidth;
+                    const centers = labelNodes.map((label, index) => Math.max(label.offsetWidth / 2,
+                        Math.min(width - label.offsetWidth / 2, width * values[`${asset}_${index ? 'max' : 'min'}`] / 100)));
+                    const spacing = (labelNodes[0].offsetWidth + labelNodes[1].offsetWidth) / 2 + 8;
+                    if (centers[1] - centers[0] < spacing) {
+                        centers[1] = Math.min(width - labelNodes[1].offsetWidth / 2, centers[0] + spacing);
+                        centers[0] = Math.max(labelNodes[0].offsetWidth / 2, centers[1] - spacing);
+                    }
+                    labelNodes.forEach((label, index) => {
+                        const value = values[`${asset}_${index ? 'max' : 'min'}`];
+                        label.style.left = `${centers[index]}px`;
+                        label.classList.toggle('is-range-start', value === 0);
+                        label.classList.toggle('is-range-end', value === 100);
+                    });
+                    separateAllocationHandles(bar, values[`${asset}_min`], values[`${asset}_max`]);
+                });
+            };
+            limits.querySelectorAll('input[data-limit-boundary]').forEach((input) => {
+                listen(input, 'input', () => syncLimits(input.name.replace('_pct', '')));
+                listen(input, 'change', onChange);
+            });
+            tickerInputs.forEach((input) => listen(input, 'input', () => syncLimits()));
+            observe(limits, () => syncLimits());
+            syncLimits();
+        });
+
+        root.querySelectorAll?.("[data-strategy-allocation-range]").forEach((allocation) => {
+            if (!(allocation instanceof HTMLElement)) return;
+            allocation.dataset.allocationBound = "1";
+            cleanups.push(() => { delete allocation.dataset.allocationBound; });
+            const primaryRange = allocation.querySelector("[data-allocation-boundary='primary']");
+            const investedRange = allocation.querySelector("[data-allocation-boundary='invested']");
+            const primaryInput = allocation.querySelector("[name='initial_primary_pct']");
+            const leveragedInput = allocation.querySelector("[name='initial_leveraged_pct']");
+            if (!(primaryRange instanceof HTMLInputElement)
+                || !(investedRange instanceof HTMLInputElement)
+                || !(primaryInput instanceof HTMLInputElement)
+                || !(leveragedInput instanceof HTMLInputElement)) return;
+
+            const formatCash = (value) => Math.max(0, value).toLocaleString("en-US", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            });
+            const formatPercentage = (value) => `${value.toFixed(2)}%`;
+            const labels = allocation.querySelector("[data-allocation-labels]");
+            const primaryLabel = allocation.querySelector("[data-allocation-primary-label]");
+            const leveragedLabel = allocation.querySelector("[data-allocation-leveraged-label]");
+            const cashLabel = allocation.querySelector("[data-allocation-cash-label]");
+
+            const positionLabels = (primary, leveraged) => {
+                separateAllocationHandles(allocation, primary, primary + leveraged);
+                if (!(labels instanceof HTMLElement)
+                    || !(primaryLabel instanceof HTMLElement)
+                    || !(leveragedLabel instanceof HTMLElement)
+                    || !(cashLabel instanceof HTMLElement)) return;
+                const nodes = [primaryLabel, leveragedLabel, cashLabel];
+                const width = labels.clientWidth;
+                if (!(width > 0)) return;
+                const gap = 6;
+                labels.classList.toggle(
+                    "is-compressed",
+                    nodes.reduce((sum, node) => sum + node.scrollWidth, 0) + (gap * 2) > width,
+                );
+                const halfWidths = nodes.map((node) => Math.min(node.offsetWidth, width) / 2);
+                const cash = Math.max(0, 100 - primary - leveraged);
+                const desired = [
+                    primary / 2,
+                    primary + (leveraged / 2),
+                    primary + leveraged + (cash / 2),
+                ].map((percentage) => width * percentage / 100);
+                const centers = desired.map((center, index) => (
+                    Math.max(halfWidths[index], Math.min(width - halfWidths[index], center))
+                ));
+                for (let index = 1; index < centers.length; index += 1) {
+                    centers[index] = Math.max(
+                        centers[index],
+                        centers[index - 1] + halfWidths[index - 1] + gap + halfWidths[index],
+                    );
+                }
+                centers[centers.length - 1] = Math.min(
+                    centers[centers.length - 1],
+                    width - halfWidths[halfWidths.length - 1],
+                );
+                for (let index = centers.length - 2; index >= 0; index -= 1) {
+                    centers[index] = Math.min(
+                        centers[index],
+                        centers[index + 1] - halfWidths[index + 1] - gap - halfWidths[index],
+                    );
+                }
+                if (centers[0] < halfWidths[0]) {
+                    const shift = halfWidths[0] - centers[0];
+                    centers.forEach((center, index) => {
+                        centers[index] = center + shift;
+                    });
+                }
+                nodes.forEach((node, index) => {
+                    node.style.left = `${centers[index].toFixed(2)}px`;
+                    node.dataset.allocationLabelPosition = (centers[index] / width * 100).toFixed(2);
+                });
+            };
+
+            const sync = (source = "") => {
+                let primary = Number.parseFloat(source === "primary" ? primaryRange.value : primaryInput.value) || 0;
+                let invested;
+                if (source === "primary") {
+                    invested = Number.parseFloat(investedRange.value) || 0;
+                    invested = Math.max(0, Math.min(100, invested));
+                    primary = Math.max(0, Math.min(invested, primary));
+                } else if (source === "invested") {
+                    primary = Math.max(0, Math.min(100, primary));
+                    invested = Number.parseFloat(investedRange.value) || 0;
+                    invested = Math.max(primary, Math.min(100, invested));
+                } else {
+                    primary = Math.max(0, Math.min(100, primary));
+                    invested = primary + (Number.parseFloat(leveragedInput.value) || 0);
+                    invested = Math.max(primary, Math.min(100, invested));
+                }
+                const leveraged = invested - primary;
+                const cashPercentage = 100 - invested;
+                primaryRange.max = '100';
+                primaryRange.value = primary.toFixed(2);
+                investedRange.min = '0';
+                investedRange.value = invested.toFixed(2);
+                primaryInput.value = primary.toFixed(2);
+                leveragedInput.value = leveraged.toFixed(2);
+                allocation.style.setProperty("--allocation-primary", `${primary}%`);
+                allocation.style.setProperty("--allocation-leveraged", `${leveraged}%`);
+                allocation.style.setProperty("--allocation-cash", `${cashPercentage}%`);
+                const capital = readCapital();
+                const cash = resolveCash({allocation, capital, primary, leveraged, cashPercentage});
+                allocation.dataset.allocationCash = cash.toFixed(2);
+                allocation.querySelector("[data-allocation-primary-name]").textContent = readTickerName(0);
+                allocation.querySelector("[data-allocation-leveraged-name]").textContent = readTickerName(1);
+                allocation.querySelector("[data-allocation-primary-value]").textContent = formatPercentage(primary);
+                allocation.querySelector("[data-allocation-leveraged-value]").textContent = formatPercentage(leveraged);
+                allocation.querySelector("[data-allocation-cash-value]").textContent = formatCash(cash);
+                primaryRange.setAttribute("aria-label", `${readTickerName(0)} allocation boundary`);
+                investedRange.setAttribute("aria-label", `${readTickerName(1)} and Cash boundary`);
+                const allocationText = `${readTickerName(0)} ${formatPercentage(primary)}, ${readTickerName(1)} ${formatPercentage(leveraged)}, Cash ${formatPercentage(cashPercentage)}`;
+                primaryRange.setAttribute("aria-valuetext", allocationText);
+                investedRange.setAttribute("aria-valuetext", allocationText);
+                onSync(allocation);
+                positionLabels(primary, leveraged);
+            };
+            listen(primaryRange, "input", () => sync("primary"));
+            listen(investedRange, "input", () => sync("invested"));
+            listen(primaryRange, "change", onChange);
+            listen(investedRange, "change", onChange);
+            tickerInputs.forEach((input) => listen(input, "input", () => sync()));
+            if (capitalInput) listen(capitalInput, "input", () => sync());
+            observe(allocation, () => positionLabels(
+                Number.parseFloat(primaryInput.value) || 0,
+                Number.parseFloat(leveragedInput.value) || 0,
+            ));
+            sync();
+        });
+        return () => {
+            if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+            cleanups.forEach((cleanup) => cleanup());
+        };
+    };
+
     const create = (context) => {
         const {
             $,
@@ -392,27 +618,7 @@
             if (collapse instanceof HTMLDetailsElement) collapse.open = false;
         };
 
-        const allocationLabelLayouts = new WeakMap();
-        const separateAllocationHandles = (container, low, high) => {
-            const track = container.querySelector('.strategy-allocation-track-shell');
-            if (track) {
-                const close = (high - low) * track.clientWidth / 100 < 14;
-                track.classList.toggle('has-close-handles', close);
-                track.title = close ? 'Nearby boundaries use separate rows; percentages are unchanged.' : '';
-            }
-        };
-        let allocationLabelResizeFrame = null;
-        window.addEventListener("resize", () => {
-            if (allocationLabelResizeFrame !== null) {
-                window.cancelAnimationFrame(allocationLabelResizeFrame);
-            }
-            allocationLabelResizeFrame = window.requestAnimationFrame(() => {
-                allocationLabelResizeFrame = null;
-                document.querySelectorAll("[data-strategy-allocation-range]").forEach((allocation) => {
-                    allocationLabelLayouts.get(allocation)?.();
-                });
-            });
-        });
+        let cleanupAllocationControls = () => {};
 
         const readBacktestTickerName = (index) => {
             const tickerInputs = document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]");
@@ -561,198 +767,26 @@
             syncStrategyParamFieldVisibility(root);
             syncStrategyTickerLabels(root);
 
-            root.querySelectorAll('[data-strategy-allocation-limits]').forEach((limits) => {
-                if (limits.dataset.bound === '1') return;
-                limits.dataset.bound = '1';
-                const read = (key) => limits.querySelector(`[name="${key}_pct"]`);
-                const syncLimits = (source = '') => {
-                    const values = Object.fromEntries(['primary_min', 'primary_max', 'leveraged_min', 'leveraged_max']
-                        .map((key) => [key, Math.max(0, Math.min(100, Number(read(key).value) || 0))]));
-                    values.leveraged_min = Math.min(values.leveraged_min, 100 - values.primary_min);
-                    values.primary_max = Math.min(100 - values.leveraged_min, Math.max(values.primary_min, values.primary_max));
-                    values.leveraged_max = Math.min(100 - values.primary_min, Math.max(values.leveraged_min, values.leveraged_max));
-                    if (source.endsWith('_max')) {
-                        const asset = source.split('_')[0];
-                        values[`${asset}_min`] = Math.min(values[`${asset}_min`], Number(read(source).value));
-                        values[source] = Math.min(Number(read(source).value), 100 - values[`${asset === 'primary' ? 'leveraged' : 'primary'}_min`]);
-                    }
-                    Object.entries(values).forEach(([key, value]) => { read(key).value = String(value); });
-                    limits.querySelectorAll('[data-limit-range]').forEach((bar) => {
-                        const asset = bar.dataset.limitRange;
-                        const ticker = readBacktestTickerName(Number(bar.dataset.tickerIndex));
-                        bar.querySelector('[data-limit-ticker]').textContent = ticker;
-                        ['min', 'max'].forEach((boundary) => {
-                            const value = values[`${asset}_${boundary}`];
-                            bar.querySelector(`[data-limit-value="${boundary}"]`).textContent = `${Math.round(value)}%`;
-                            read(`${asset}_${boundary}`).setAttribute('aria-label', `${ticker} ${boundary === 'min' ? 'minimum' : 'maximum'}`);
-                        });
-                        const labelNodes = [...bar.querySelectorAll('.strategy-limit-labels label')];
-                        const width = bar.clientWidth;
-                        const centers = labelNodes.map((label, index) => Math.max(label.offsetWidth / 2,
-                            Math.min(width - label.offsetWidth / 2, width * values[`${asset}_${index ? 'max' : 'min'}`] / 100)));
-                        const spacing = (labelNodes[0].offsetWidth + labelNodes[1].offsetWidth) / 2 + 8;
-                        if (centers[1] - centers[0] < spacing) {
-                            centers[1] = Math.min(width - labelNodes[1].offsetWidth / 2, centers[0] + spacing);
-                            centers[0] = Math.max(labelNodes[0].offsetWidth / 2, centers[1] - spacing);
-                        }
-                        labelNodes.forEach((label, index) => {
-                            const value = values[`${asset}_${index ? 'max' : 'min'}`];
-                            label.style.left = `${centers[index]}px`;
-                            label.classList.toggle('is-range-start', value === 0);
-                            label.classList.toggle('is-range-end', value === 100);
-                        });
-                        separateAllocationHandles(bar, values[`${asset}_min`], values[`${asset}_max`]);
-                    });
-                };
-                limits.querySelectorAll('input[type="range"]').forEach((input) => {
-                    input.addEventListener('input', () => syncLimits(input.name.replace('_pct', '')));
-                    input.addEventListener('change', () => scheduleStrategyParamSubmit(80));
-                });
-                document.querySelectorAll('[data-backtest-ticker-fields] [data-ticker-input]').forEach((input) => input.addEventListener('input', () => syncLimits()));
-                new ResizeObserver(() => syncLimits()).observe(limits);
-                syncLimits();
-            });
-
-            root.querySelectorAll?.("[data-strategy-allocation-range]").forEach((allocation) => {
-                if (!(allocation instanceof HTMLElement) || allocation.dataset.allocationBound === "1") return;
-                allocation.dataset.allocationBound = "1";
-                const primaryRange = allocation.querySelector("[data-allocation-boundary='primary']");
-                const investedRange = allocation.querySelector("[data-allocation-boundary='invested']");
-                const primaryInput = allocation.querySelector("[name='initial_primary_pct']");
-                const leveragedInput = allocation.querySelector("[name='initial_leveraged_pct']");
-                if (!(primaryRange instanceof HTMLInputElement)
-                    || !(investedRange instanceof HTMLInputElement)
-                    || !(primaryInput instanceof HTMLInputElement)
-                    || !(leveragedInput instanceof HTMLInputElement)) return;
-
-                const formatCash = (value) => Math.max(0, value).toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                });
-                const formatPercentage = (value) => `${value.toFixed(2)}%`;
-                const readCapital = () => Number.parseFloat(
+            cleanupAllocationControls();
+            cleanupAllocationControls = bindAllocationControls(root, {
+                readTickerName: readBacktestTickerName,
+                readCapital: () => Number.parseFloat(
                     String(document.getElementById("trade_initial_capital")?.value || "0").replaceAll(",", ""),
-                ) || 0;
-                const initial = window.WORTHWARD_APP?.backtestResult?.initial_allocation || {};
-                const primaryOpen = Number(initial.primary_open || 0);
-                const leveragedOpen = Number(initial.leveraged_open || 0);
-                const tickerInputs = Array.from(document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]"));
-                const labels = allocation.querySelector("[data-allocation-labels]");
-                const primaryLabel = allocation.querySelector("[data-allocation-primary-label]");
-                const leveragedLabel = allocation.querySelector("[data-allocation-leveraged-label]");
-                const cashLabel = allocation.querySelector("[data-allocation-cash-label]");
-
-                const positionLabels = (primary, leveraged) => {
-                    separateAllocationHandles(allocation, primary, primary + leveraged);
-                    if (!(labels instanceof HTMLElement)
-                        || !(primaryLabel instanceof HTMLElement)
-                        || !(leveragedLabel instanceof HTMLElement)
-                        || !(cashLabel instanceof HTMLElement)) return;
-                    const nodes = [primaryLabel, leveragedLabel, cashLabel];
-                    const width = labels.clientWidth;
-                    if (!(width > 0)) return;
-                    const gap = 6;
-                    labels.classList.toggle(
-                        "is-compressed",
-                        nodes.reduce((sum, node) => sum + node.scrollWidth, 0) + (gap * 2) > width,
-                    );
-                    const halfWidths = nodes.map((node) => Math.min(node.offsetWidth, width) / 2);
-                    const cash = Math.max(0, 100 - primary - leveraged);
-                    const desired = [
-                        primary / 2,
-                        primary + (leveraged / 2),
-                        primary + leveraged + (cash / 2),
-                    ].map((percentage) => width * percentage / 100);
-                    const centers = desired.map((center, index) => (
-                        Math.max(halfWidths[index], Math.min(width - halfWidths[index], center))
-                    ));
-                    for (let index = 1; index < centers.length; index += 1) {
-                        centers[index] = Math.max(
-                            centers[index],
-                            centers[index - 1] + halfWidths[index - 1] + gap + halfWidths[index],
-                        );
-                    }
-                    centers[centers.length - 1] = Math.min(
-                        centers[centers.length - 1],
-                        width - halfWidths[halfWidths.length - 1],
-                    );
-                    for (let index = centers.length - 2; index >= 0; index -= 1) {
-                        centers[index] = Math.min(
-                            centers[index],
-                            centers[index + 1] - halfWidths[index + 1] - gap - halfWidths[index],
-                        );
-                    }
-                    if (centers[0] < halfWidths[0]) {
-                        const shift = halfWidths[0] - centers[0];
-                        centers.forEach((center, index) => {
-                            centers[index] = center + shift;
-                        });
-                    }
-                    nodes.forEach((node, index) => {
-                        node.style.left = `${centers[index].toFixed(2)}px`;
-                        node.dataset.allocationLabelPosition = (centers[index] / width * 100).toFixed(2);
-                    });
-                };
-
-                const sync = (source = "") => {
-                    let primary = Number.parseFloat(source === "primary" ? primaryRange.value : primaryInput.value) || 0;
-                    let invested;
-                    if (source === "primary") {
-                        invested = Number.parseFloat(investedRange.value) || 0;
-                        invested = Math.max(0, Math.min(100, invested));
-                        primary = Math.max(0, Math.min(invested, primary));
-                    } else if (source === "invested") {
-                        primary = Math.max(0, Math.min(100, primary));
-                        invested = Number.parseFloat(investedRange.value) || 0;
-                        invested = Math.max(primary, Math.min(100, invested));
-                    } else {
-                        primary = Math.max(0, Math.min(100, primary));
-                        invested = primary + (Number.parseFloat(leveragedInput.value) || 0);
-                        invested = Math.max(primary, Math.min(100, invested));
-                    }
-                    const leveraged = invested - primary;
-                    const cashPercentage = 100 - invested;
-                    primaryRange.max = '100';
-                    primaryRange.value = primary.toFixed(2);
-                    investedRange.min = '0';
-                    investedRange.value = invested.toFixed(2);
-                    primaryInput.value = primary.toFixed(2);
-                    leveragedInput.value = leveraged.toFixed(2);
-                    allocation.style.setProperty("--allocation-primary", `${primary}%`);
-                    allocation.style.setProperty("--allocation-leveraged", `${leveraged}%`);
-                    allocation.style.setProperty("--allocation-cash", `${cashPercentage}%`);
-                    const capital = readCapital();
+                ) || 0,
+                tickerInputs: Array.from(document.querySelectorAll("[data-backtest-ticker-fields] [data-ticker-input]")),
+                capitalInput: document.getElementById("trade_initial_capital"),
+                resolveCash: ({allocation, capital, primary, leveraged}) => {
+                    const initial = window.WORTHWARD_APP?.backtestResult?.initial_allocation || {};
+                    const primaryOpen = Number(initial.primary_open || 0);
+                    const leveragedOpen = Number(initial.leveraged_open || 0);
                     const primaryShares = primaryOpen > 0 ? Math.floor(capital * primary / 100 / primaryOpen) : 0;
                     const leveragedShares = leveragedOpen > 0 ? Math.floor(capital * leveraged / 100 / leveragedOpen) : 0;
-                    const cash = capital - (primaryShares * primaryOpen) - (leveragedShares * leveragedOpen);
                     allocation.dataset.allocationPrimaryShares = String(primaryShares);
                     allocation.dataset.allocationLeveragedShares = String(leveragedShares);
-                    allocation.dataset.allocationCash = cash.toFixed(2);
-                    allocation.querySelector("[data-allocation-primary-name]").textContent = readBacktestTickerName(0);
-                    allocation.querySelector("[data-allocation-leveraged-name]").textContent = readBacktestTickerName(1);
-                    allocation.querySelector("[data-allocation-primary-value]").textContent = formatPercentage(primary);
-                    allocation.querySelector("[data-allocation-leveraged-value]").textContent = formatPercentage(leveraged);
-                    allocation.querySelector("[data-allocation-cash-value]").textContent = formatCash(cash);
-                    primaryRange.setAttribute("aria-label", `${readBacktestTickerName(0)} allocation boundary`);
-                    investedRange.setAttribute("aria-label", `${readBacktestTickerName(1)} and Cash boundary`);
-                    const allocationText = `${readBacktestTickerName(0)} ${formatPercentage(primary)}, ${readBacktestTickerName(1)} ${formatPercentage(leveraged)}, Cash ${formatPercentage(cashPercentage)}`;
-                    primaryRange.setAttribute("aria-valuetext", allocationText);
-                    investedRange.setAttribute("aria-valuetext", allocationText);
-                    syncStrategyTickerLabels(allocation.closest("[data-trade-strategy-panel]") || root);
-                    positionLabels(primary, leveraged);
-                };
-                primaryRange.addEventListener("input", () => sync("primary"));
-                investedRange.addEventListener("input", () => sync("invested"));
-                primaryRange.addEventListener("change", () => scheduleStrategyParamSubmit(80));
-                investedRange.addEventListener("change", () => scheduleStrategyParamSubmit(80));
-                tickerInputs.forEach((input) => input.addEventListener("input", () => sync()));
-                document.getElementById("trade_initial_capital")?.addEventListener("input", () => sync());
-                allocationLabelLayouts.set(allocation, () => positionLabels(
-                    Number.parseFloat(primaryInput.value) || 0,
-                    Number.parseFloat(leveragedInput.value) || 0,
-                ));
-                new ResizeObserver(() => allocationLabelLayouts.get(allocation)?.()).observe(allocation);
-                sync();
+                    return capital - (primaryShares * primaryOpen) - (leveragedShares * leveragedOpen);
+                },
+                onChange: () => scheduleStrategyParamSubmit(80),
+                onSync: (allocation) => syncStrategyTickerLabels(allocation.closest("[data-trade-strategy-panel]") || root),
             });
         };
 
@@ -1555,8 +1589,6 @@
 
         return Object.freeze({
             BACKTEST_COLLAPSE_AFTER_STRATEGY_CHANGE_KEY,
-            allocationLabelLayouts,
-            allocationLabelResizeFrame,
             applyDerivedStrategyParamDefault,
             collectStrategyParamEntries,
             getTradeStrategyOptionButtons,
@@ -1582,7 +1614,6 @@
             restoreBacktestCollapseAfterStrategyChange,
             restoreBacktestStrategyParams,
             scheduleStrategyParamSubmit,
-            separateAllocationHandles,
             setTradeStrategyDropdownOpen,
             setTradeStrategyPanelOpen,
             stageOrSubmitStrategyParam,
@@ -1600,5 +1631,5 @@
         });
     };
 
-    window.WORTHWARD_APP_STRATEGY_CONTROLS = Object.freeze({create});
+    window.WORTHWARD_APP_STRATEGY_CONTROLS = Object.freeze({create, bindAllocationControls});
 })();

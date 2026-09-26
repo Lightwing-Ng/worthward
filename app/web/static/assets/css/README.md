@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.5.0`
+Documentation version: `v1.5.1`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -81,6 +81,11 @@ inheriting the same primitive. Do not restore model-specific accordion CSS.
 Keep selector order stable unless the change intentionally modifies cascade
 behavior. Run the static cache-version contract and browser checks after a
 manifest or load-order change.
+
+Allocation range thumbs use the shared Frosted Glass background, shadow, and
+backdrop blur without a border in either browser pseudo-element. Hover, keyboard
+focus, and dragging retain the shared material highlight. Range colors belong to
+the tracks and labels; the thumb dimensions and pointer hit areas stay unchanged.
 
 ## Field-label typography
 

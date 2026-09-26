@@ -1,4 +1,4 @@
-{# Code version: v0.59.5 #}
+{# Code version: v0.59.7 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.103.17') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.103.19') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -470,8 +470,8 @@
     <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.2') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/date-controls.js', v=version ~ '-app-date-controls-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/range-controls.js', v=version ~ '-app-range-controls-v1.0.1') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.0.2') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.7') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.1.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.8') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
 {% endif %}

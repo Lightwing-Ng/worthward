@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.2 */
 import {expect, test, openBacktestParameterOverlay} from './support.mjs';
 
 const settingsViewports = [
@@ -173,15 +173,13 @@ for (const viewport of settingsViewports) {
                 shadow: style.boxShadow,
                 blur: style.backdropFilter,
                 radius: style.borderRadius,
-                borderWidth: style.borderTopWidth,
-                borderStyle: style.borderTopStyle,
             }) : null;
             const probe = document.createElement('span');
             probe.style.cssText = `position:absolute;pointer-events:none;
                 background:var(--surface-resizer-handle-background);
                 box-shadow:var(--surface-resizer-handle-shadow);
                 backdrop-filter:var(--surface-resizer-handle-blur);
-                border:var(--surface-resizer-handle-border);
+                border:0;
                 border-radius:var(--radius-pill);
                 width:var(--strategy-range-thumb-inline-size);
                 height:var(--strategy-range-thumb-block-size)`;
@@ -198,7 +196,7 @@ for (const viewport of settingsViewports) {
                     shadow: declaration(thumbRule, 'box-shadow'),
                     blur: declaration(thumbRule, 'backdrop-filter'),
                     radius: declaration(thumbRule, 'border-radius'),
-                    borderColor: declaration(thumbRule, 'border-color').toLowerCase(),
+                    border: declaration(thumbRule, 'border'),
                     hoverBackground: declaration(hoverRule, 'background'),
                     hoverShadow: declaration(hoverRule, 'box-shadow'),
                 },
@@ -226,7 +224,7 @@ for (const viewport of settingsViewports) {
             shadow: 'var(--surface-resizer-handle-shadow)',
             blur: 'var(--surface-resizer-handle-blur)',
             radius: 'var(--radius-pill)',
-            borderColor: 'currentcolor',
+            border: '0px',
             hoverBackground: 'var(--surface-resizer-handle-background-hover)',
             hoverShadow: 'var(--surface-resizer-handle-shadow-hover)',
         });
@@ -269,7 +267,7 @@ for (const viewport of settingsViewports) {
         await expect(handle).toBeVisible();
         await handle.scrollIntoViewIfNeeded();
         const before = Number(await handle.inputValue());
-        const target = await handle.evaluate((input) => {
+        const readTarget = () => handle.evaluate((input) => {
             const rect = input.getBoundingClientRect();
             const probe = document.createElement('span');
             probe.style.cssText = 'position:absolute;pointer-events:none;width:var(--strategy-range-thumb-inline-size);height:1px';
@@ -305,7 +303,11 @@ for (const viewport of settingsViewports) {
                 idealHit: {tag: hit?.tagName, className: String(hit?.className || '')},
             };
         });
-        expect(target.x, `Allocation thumb must expose a pointer hit: ${JSON.stringify(target)}`).toBeDefined();
+        let target;
+        await expect.poll(async () => {
+            target = await readTarget();
+            return target.x;
+        }, {message: 'The expanded allocation thumb must expose a pointer hit'}).toBeDefined();
         const hit = await page.evaluate(({x, y}) => {
             const input = document.querySelector('[data-strategy-allocation-range] [data-allocation-boundary="primary"]');
             const target = document.elementFromPoint(x, y);

@@ -1,4 +1,4 @@
-/* Code version: v0.28.1 */
+/* Code version: v0.28.2 */
 
 import {
     buildSettingsUrl,
@@ -6,7 +6,7 @@ import {
 } from './settings/url-state.js?v=settings-url-state-v0.2.0';
 import {
     createSettingsStyleTokenController,
-} from './settings/style-token-controller.js?v=settings-style-token-controller-v1.3.1';
+} from './settings/style-token-controller.js?v=settings-style-token-controller-v1.3.2';
 
 (() => {
     const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};

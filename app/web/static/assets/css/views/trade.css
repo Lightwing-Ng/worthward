@@ -1,4 +1,4 @@
-/* Code version: v3.79.3 */
+/* Code version: v3.79.4 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -2403,8 +2403,7 @@
     box-sizing: border-box;
     width: var(--strategy-range-thumb-inline-size);
     height: var(--strategy-range-thumb-block-size);
-    border: var(--surface-resizer-handle-border);
-    border-color: currentColor;
+    border: 0;
     border-radius: var(--radius-pill);
     background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));
     box-shadow: var(--surface-resizer-handle-shadow);
@@ -2419,8 +2418,7 @@
     box-sizing: border-box;
     width: var(--strategy-range-thumb-inline-size);
     height: var(--strategy-range-thumb-block-size);
-    border: var(--surface-resizer-handle-border);
-    border-color: currentColor;
+    border: 0;
     border-radius: var(--radius-pill);
     background: var(--strategy-range-thumb-background, var(--surface-resizer-handle-background));
     box-shadow: var(--surface-resizer-handle-shadow);

@@ -1,4 +1,4 @@
-/* Code version: v0.37.1 */
+/* Code version: v0.37.2 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -15,16 +15,6 @@
 
 .style-token-allocation-demo .strategy-allocation-handle {
     pointer-events: none;
-}
-
-.style-token-allocation-demo .strategy-limit-labels label.is-range-start {
-    left: 0 !important;
-    transform: none;
-}
-
-.style-token-allocation-demo .strategy-limit-labels label.is-range-end {
-    left: 100% !important;
-    transform: translateX(-100%);
 }
 
 .style-token-collapse-example {

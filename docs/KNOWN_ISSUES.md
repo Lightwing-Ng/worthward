@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Interactive Allocation range specimen, 26 Sep 2026: Style tokens and production
+strategy controls share `bindAllocationControls(root, options)` from
+`assets/js/app/strategy-controls.js`. Labels and track segments update on input,
+and both consumers use the same measured collision, edge-label, and close-handle
+geometry. The catalog uses illustrative capital of 10,000 with proportional
+cash; production retains whole-share purchases and its residual-cash calculation.
+Demonstration values are neither submitted nor persisted. All six range thumbs
+use borderless Frosted Glass material; asset colors remain on tracks and labels.
+
 Approved waiting-notification parity, 26 Sep 2026: centered waiting overlays,
 floating banners, and their Style tokens specimens consume one explicit
 notification Frosted Glass variant, matching the approved AgenticContext Local
@@ -40,9 +49,10 @@ heading and toggle fixed while the section navigation scrolls within the
 sidebar, with dock clearance for the last link on desktop and narrow layouts.
 The Allocation range Style tokens specimen and its Leveraged Rotation controls
 now draw all six range thumbs from the shared Frosted Glass resizer-handle
-material. Primary and leveraged colors remain on their tracks, labels, and
-thumb borders. The older active-theme-canvas limit-thumb treatment described
-below is superseded; range hit areas and constraints are unchanged.
+material. The 26 Sep 2026 update removes thumb borders while keeping primary and
+leveraged colors on their tracks and labels. The older active-theme-canvas
+limit-thumb treatment described below is superseded; range hit areas and
+constraints are unchanged.
 
 Investment share action placement, 24 Sep 2026: `contain: layout` on the
 Investment workspace header, added to keep gel transforms out of root scroll
@@ -566,7 +576,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.6`
+Documentation version: `v1.264.7`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

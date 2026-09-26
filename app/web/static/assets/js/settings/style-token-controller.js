@@ -1,7 +1,8 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.3.1
+ * Code version: v1.3.2
+ * - Fixed: Bind allocation specimens to the production range controller.
  * - Fixed: Keep the style-token resizer's accessible range current when its
  *   preview column changes width without a drag or key press.
  * - Added: Keep a complete accessible allocation value while glyph slots stay
@@ -12,6 +13,7 @@
  */
 
 import {getNumericDisplayParts} from '../numeric-display.js?v=numeric-display-v1.3.0';
+import '../app/strategy-controls.js?v=app-strategy-controls-v1.1.0';
 
 export function createSettingsStyleTokenController({
     setActionPackageLiveState,
@@ -27,6 +29,7 @@ export function createSettingsStyleTokenController({
     let activeSettingsSummaryMorphCleanup = null;
     let refreshStyleTokenDemoDensity = null;
     let styleTokenQrCodeLibraryPromise = null;
+    let activeAllocationDemoCleanup = null;
 
     const getStyleTokenShell = () => (
         document.querySelector("[data-export-image-shell]")
@@ -872,8 +875,65 @@ export function createSettingsStyleTokenController({
         });
     };
 
+    const attachStyleTokenAllocationDemos = (shell) => {
+        activeAllocationDemoCleanup?.();
+        activeAllocationDemoCleanup = null;
+        if (!(shell instanceof HTMLElement)) return;
+        shell.querySelectorAll('.style-token-allocation-demo').forEach((demo, demoIndex) => {
+            // Adapt the existing specimen markup, including cached server templates.
+            demo.dataset.strategyAllocationLimits = '';
+            const allocation = demo.querySelector('.strategy-allocation-range');
+            allocation.dataset.strategyAllocationRange = '';
+            allocation.querySelector('.strategy-allocation-labels').dataset.allocationLabels = '';
+            ['primary', 'leveraged', 'cash'].forEach((asset) => {
+                const label = allocation.querySelector(`.strategy-allocation-label--${asset}`);
+                label.setAttribute(`data-allocation-${asset}-label`, '');
+                label.querySelector('.strategy-allocation-label-name').setAttribute(`data-allocation-${asset}-name`, '');
+                label.querySelector('.strategy-allocation-label-value').setAttribute(`data-allocation-${asset}-value`, '');
+            });
+            const ranges = allocation.querySelectorAll('input[type="range"]');
+            ranges.forEach((input, index) => {
+                input.dataset.allocationBoundary = index ? 'invested' : 'primary';
+                input.step = '0.01';
+            });
+            ['primary', 'leveraged'].forEach((asset, index) => {
+                const name = `initial_${asset}_pct`;
+                if (allocation.querySelector(`[name="${name}"]`)) return;
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = String(index ? Number(ranges[1].value) - Number(ranges[0].value) : Number(ranges[0].value));
+                allocation.append(input);
+            });
+            demo.querySelectorAll('.strategy-limit-range').forEach((bar, index) => {
+                const asset = index ? 'leveraged' : 'primary';
+                bar.dataset.limitRange = asset;
+                bar.dataset.tickerIndex = String(index);
+                bar.querySelector('.strategy-limit-ticker').dataset.limitTicker = '';
+                const labels = bar.querySelectorAll('.strategy-limit-labels label');
+                bar.querySelectorAll('input[type="range"]').forEach((input, boundaryIndex) => {
+                    const boundary = boundaryIndex ? 'max' : 'min';
+                    input.name = `${asset}_${boundary}_pct`;
+                    input.id = `style_token_allocation_${demoIndex}_${input.name}`;
+                    input.dataset.limitBoundary = boundary;
+                    input.step = '1';
+                    labels[boundaryIndex].htmlFor = input.id;
+                    labels[boundaryIndex].querySelector('.strategy-limit-value').dataset.limitValue = boundary;
+                });
+            });
+            demo.querySelectorAll('input[type="range"]').forEach((input) => input.removeAttribute('tabindex'));
+        });
+        if (shell.querySelector('.style-token-allocation-demo')) {
+            activeAllocationDemoCleanup = window.WORTHWARD_APP_STRATEGY_CONTROLS.bindAllocationControls(shell, {
+                readTickerName: (index) => ['QQQ', 'TQQQ'][index],
+                readCapital: () => 10000,
+            });
+        }
+    };
+
     const attachStyleTokenDemoInteractions = () => {
         const shell = getStyleTokenShell();
+        attachStyleTokenAllocationDemos(shell);
         if (!(shell instanceof HTMLElement) || shell.dataset.bound === "1") return;
         shell.dataset.bound = "1";
         shell.addEventListener("click", (event) => {

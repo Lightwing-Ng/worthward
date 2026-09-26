@@ -1,4 +1,4 @@
-/* Code version: v1.1.2 */
+/* Code version: v1.1.3 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1024, 390]) {
@@ -42,15 +42,24 @@ for (const width of [1024, 390]) {
             await page.goto('/settings/style-tokens');
             const rangeThumbMaterial = await page.getByRole('slider', {name: 'QQQ minimum', exact: true}).evaluate((input) => {
                 // Chromium reports the range input's style for its native thumb pseudo-element.
+                const findThumbRule = (rules) => {
+                    for (const rule of rules) {
+                        if (rule.selectorText === '.strategy-allocation-handle::-webkit-slider-thumb') return rule;
+                        const childRules = rule.styleSheet?.cssRules || rule.cssRules;
+                        const nested = childRules && findThumbRule(childRules);
+                        if (nested) return nested;
+                    }
+                    return null;
+                };
+                const thumbRule = Array.from(document.styleSheets)
+                    .map((sheet) => findThumbRule(sheet.cssRules)).find(Boolean);
+                if (!thumbRule) throw new Error('Allocation thumb rule is missing');
                 const probe = document.createElement('span');
-                probe.style.cssText = `position:absolute;pointer-events:none;
-                    background:var(--strategy-range-limit-thumb-background);
-                    box-shadow:var(--surface-resizer-handle-shadow);
-                    backdrop-filter:var(--surface-resizer-handle-blur);
-                    border:var(--surface-resizer-handle-border);
-                    border-color:currentColor;
-                    border-radius:var(--radius-pill)`;
-                probe.style.color = getComputedStyle(input).color;
+                probe.style.cssText = thumbRule.style.cssText;
+                probe.style.position = 'absolute';
+                probe.style.pointerEvents = 'none';
+                probe.style.setProperty('--strategy-range-thumb-background',
+                    getComputedStyle(input).getPropertyValue('--strategy-range-thumb-background'));
                 input.parentElement.append(probe);
                 const material = getComputedStyle(probe);
                 const shared = getComputedStyle(document.querySelector('[data-style-token-resizer]'), '::after');
@@ -59,7 +68,7 @@ for (const width of [1024, 390]) {
                     shadowMatches: material.boxShadow === shared.boxShadow,
                     blurMatches: material.backdropFilter === shared.backdropFilter,
                     radiusMatches: material.borderRadius === shared.borderRadius,
-                    accentBorder: material.borderTopColor === getComputedStyle(input).color,
+                    borderless: material.borderTopWidth === '0px' && material.borderTopStyle === 'none',
                 };
                 probe.remove();
                 return result;
