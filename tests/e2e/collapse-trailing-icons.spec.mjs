@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from './backtest-parameter-overlay-helper.mjs';
 
@@ -22,7 +22,10 @@ for (const colorScheme of ['light', 'dark']) {
                     labelLeft: document.querySelector('label[for="trade_strategy"]').getBoundingClientRect().left,
                     before: getComputedStyle(el, '::before').content,
                     mask: after.maskImage || after.webkitMaskImage,
-                    transform: after.transform,
+                    rotation: (() => {
+                        const matrix = new DOMMatrixReadOnly(after.transform);
+                        return Math.round(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI);
+                    })(),
                     column: after.gridColumnStart,
                     width: after.width,
                     height: after.height,
@@ -37,7 +40,7 @@ for (const colorScheme of ['light', 'dark']) {
             expect(state.width).toBe('12px');
             expect(state.height).toBe('8px');
             expect(state.mask).toContain('M1.41');
-            expect(state.transform).toBe('matrix(-1, 0, 0, -1, 0, 0)');
+            expect(state.rotation).toBe(0);
             expect(state.overflow).toBeLessThanOrEqual(1);
             await summary.focus();
             await summary.press('Enter');
@@ -46,7 +49,7 @@ for (const colorScheme of ['light', 'dark']) {
             state = await read();
             expect(state.color).toBe(state.textColor);
             expect(state.mask).toContain('M1.41');
-            expect(state.transform).toBe('matrix(1, 0, 0, 1, 0, 0)');
+            expect(state.rotation).toBe(-90);
             expect(Math.abs(state.textLeft - state.labelLeft)).toBeLessThan(1);
             await summary.press('Space');
             await expect(page.locator('[data-collapse="backtest"]')).toHaveAttribute('open');
