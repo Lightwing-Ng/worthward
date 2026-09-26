@@ -1,8 +1,9 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.4 */
 import {expect, test, openBacktestParameterOverlay} from './support.mjs';
 
 const settingsViewports = [
     {width: 996, height: 801},
+    {width: 768, height: 791},
     {width: 390, height: 844},
 ];
 
@@ -34,6 +35,10 @@ function readSettingsSidebarGeometry() {
         navScrollTop: nav?.scrollTop ?? -1,
         navScrollRange: nav ? nav.scrollHeight - nav.clientHeight : -1,
         navOverflowY: nav ? getComputedStyle(nav).overflowY : '',
+        navRowHeights: nav ? [...nav.querySelectorAll('.settings-nav-item')]
+            .map((item) => item.getBoundingClientRect().height) : [],
+        dockRadius: dock ? getComputedStyle(dock).borderRadius : '',
+        dockBlur: dock ? getComputedStyle(dock).backdropFilter : '',
         documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
 }
@@ -85,6 +90,11 @@ for (const viewport of settingsViewports) {
         expect(initial.sidebarScrollTop).toBe(0);
         expect(initial.heading.top).toBeGreaterThanOrEqual(initial.sidebar.top - 1);
         expect(initial.heading.bottom).toBeLessThanOrEqual(initial.nav.top + 1);
+        expect(Math.abs(initial.sidebar.bottom - initial.nav.bottom)).toBeLessThanOrEqual(1);
+        expect(initial.nav.bottom).toBeGreaterThan(initial.dock.bottom);
+        expect(initial.navRowHeights.every((height) => Math.abs(height - 36) <= 1)).toBe(true);
+        expect(initial.dockRadius).toBe('999px');
+        expect(initial.dockBlur).toContain('blur(12px)');
 
         await page.mouse.move(
             (initial.nav.left + initial.nav.right) / 2,
@@ -167,19 +177,20 @@ for (const viewport of settingsViewports) {
             };
             const thumbRule = findRule('.strategy-allocation-handle::-webkit-slider-thumb');
             const hoverRule = findRule('.strategy-allocation-handle::-webkit-slider-thumb:hover');
-            const declaration = (rule, name) => rule?.style?.getPropertyValue(name).trim() || '';
+            const declaration = (rule, name) => rule?.style?.getPropertyValue(name).trim().replace(/\s+/g, ' ') || '';
             const readMaterial = (style) => style ? ({
                 background: style.background,
                 shadow: style.boxShadow,
                 blur: style.backdropFilter,
                 radius: style.borderRadius,
+                border: style.borderTop,
             }) : null;
             const probe = document.createElement('span');
-            probe.style.cssText = `position:absolute;pointer-events:none;
+            probe.style.cssText = `position:absolute;pointer-events:none;box-sizing:border-box;
                 background:var(--surface-resizer-handle-background);
                 box-shadow:var(--surface-resizer-handle-shadow);
                 backdrop-filter:var(--surface-resizer-handle-blur);
-                border:0;
+                border:var(--surface-resizer-handle-border);
                 border-radius:var(--radius-pill);
                 width:var(--strategy-range-thumb-inline-size);
                 height:var(--strategy-range-thumb-block-size)`;
@@ -187,6 +198,17 @@ for (const viewport of settingsViewports) {
             const resolvedShared = readMaterial(getComputedStyle(probe));
             const thumbRect = probe.getBoundingClientRect();
             probe.remove();
+            const interactionReference = document.createElement('span');
+            interactionReference.style.cssText = `position:absolute;pointer-events:none;
+                border:1px solid var(--accent-border-medium);
+                box-shadow:var(--surface-resizer-handle-shadow-hover),
+                    0 0 0 4px var(--accent-focus-ring), 0 0 18px var(--accent-focus-glow)`;
+            element.append(interactionReference);
+            const expectedInteraction = {
+                shadow: getComputedStyle(interactionReference).boxShadow,
+                borderColor: getComputedStyle(interactionReference).borderTopColor,
+            };
+            interactionReference.remove();
             const handles = Array.from(element.querySelectorAll('.strategy-allocation-handle'));
             return {
                 reference: readMaterial(referenceStyle),
@@ -198,6 +220,7 @@ for (const viewport of settingsViewports) {
                     radius: declaration(thumbRule, 'border-radius'),
                     border: declaration(thumbRule, 'border'),
                     hoverBackground: declaration(hoverRule, 'background'),
+                    hoverBorderColor: declaration(hoverRule, 'border-color'),
                     hoverShadow: declaration(hoverRule, 'box-shadow'),
                 },
                 thumbWidth: thumbRect.width,
@@ -205,11 +228,24 @@ for (const viewport of settingsViewports) {
                 handles: handles.map((input) => {
                     const inputStyle = getComputedStyle(input);
                     const bounds = input.getBoundingClientRect();
-                    return {
+                    // Chromium exposes the input style for a native thumb; resolve its CSSOM rule on a probe.
+                    const interactionProbe = document.createElement('span');
+                    interactionProbe.style.cssText = `${thumbRule.style.cssText};${hoverRule.style.cssText}`;
+                    interactionProbe.style.position = 'absolute';
+                    interactionProbe.style.pointerEvents = 'none';
+                    interactionProbe.style.transition = 'none';
+                    interactionProbe.style.color = inputStyle.color;
+                    input.parentElement.append(interactionProbe);
+                    const interactionStyle = getComputedStyle(interactionProbe);
+                    const result = {
                         accent: inputStyle.color,
                         inputWidth: bounds.width,
                         inputHeight: bounds.height,
+                        standardBlueGlow: interactionStyle.boxShadow === expectedInteraction.shadow,
+                        standardBlueBorder: interactionStyle.borderTopColor === expectedInteraction.borderColor,
                     };
+                    interactionProbe.remove();
+                    return result;
                 }),
                 demoWidth: element.getBoundingClientRect().width,
                 cardWidth: element.closest('.style-token-card')?.getBoundingClientRect().width ?? 0,
@@ -224,9 +260,10 @@ for (const viewport of settingsViewports) {
             shadow: 'var(--surface-resizer-handle-shadow)',
             blur: 'var(--surface-resizer-handle-blur)',
             radius: 'var(--radius-pill)',
-            border: '0px',
+            border: 'var(--surface-resizer-handle-border)',
             hoverBackground: 'var(--surface-resizer-handle-background-hover)',
-            hoverShadow: 'var(--surface-resizer-handle-shadow-hover)',
+            hoverBorderColor: 'var(--accent-border-medium)',
+            hoverShadow: 'var(--surface-resizer-handle-shadow-hover), 0 0 0 4px var(--accent-focus-ring), 0 0 18px var(--accent-focus-glow)',
         });
         expect(appearance.handles).toHaveLength(6);
         expect(appearance.demoWidth).toBeLessThanOrEqual(appearance.cardWidth + 1);
@@ -239,6 +276,8 @@ for (const viewport of settingsViewports) {
         for (const handle of appearance.handles) {
             expect(handle.inputWidth).toBeGreaterThan(appearance.thumbWidth);
             expect(handle.inputHeight).toBeGreaterThan(0);
+            expect(handle.standardBlueGlow).toBe(true);
+            expect(handle.standardBlueBorder).toBe(true);
         }
     });
 

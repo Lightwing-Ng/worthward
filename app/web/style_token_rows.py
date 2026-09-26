@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.35.1
+Code version: v1.37.0
 """
 
 from __future__ import annotations
@@ -425,8 +425,8 @@ def build_style_token_rows(
                 px_token("--shared-select-chevron-width", 12, 1),
                 px_token("--shared-select-chevron-height", 8, 1),
                 px_token("--shared-select-chevron-inline-end", 12, 0),
-                raw_token("--shared-select-chevron-closed-rotation", "0deg"),
-                raw_token("--shared-select-chevron-open-rotation", "180deg"),
+                raw_token("--shared-select-chevron-closed-rotation", "-90deg"),
+                raw_token("--shared-select-chevron-open-rotation", "0deg"),
                 raw_token("--shared-select-chevron-transition-duration", "180ms"),
                 raw_token("--control-liquid-background", "color-mix(in srgb, var(--color-white-adaptive) 0.01%, transparent)"),
                 raw_token("--control-liquid-background-hover", "color-mix(in srgb, var(--theme-muted) 8%, transparent)"),
@@ -461,6 +461,7 @@ def build_style_token_rows(
             ],
             "tokens": [
                 material_reference_token("--shared-select-dropdown-material", "Frosted glass"),
+                raw_token("--shared-select-dropdown-surface-opacity", "62%"),
                 raw_token("--shared-select-dropdown-max-width", "var(--layout-control-width)"),
             ],
             "related_styles": [
@@ -566,7 +567,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 material_reference_token("--circular-icon-button-material", "Frosted glass"),
-                px_token("--circular-icon-button-size", 36, 1),
+                px_token("--circular-icon-button-size", 30, 1),
                 px_token("--circular-icon-button-icon-size", 18, 1),
                 raw_token("--circular-icon-button-radius", "var(--radius-pill)"),
                 raw_token("--circular-icon-button-background", "var(--circular-icon-button-material)"),

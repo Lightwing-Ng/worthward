@@ -1,4 +1,4 @@
-{# Code version: v1.7.0 #}
+{# Code version: v1.8.0 #}
 {% from "_macros.html" import render_style_token_table with context %}
 {% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
@@ -205,10 +205,19 @@
                             <button type="button" class="dismiss-button workspace-modal-close" aria-label="{{ translate_ui('Close') }}">
                                 <span class="icon icon-dismiss-control"></span>
                             </button>
-                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" aria-hidden="true"></span>
+                            <span class="icon {{ row.sample_icon_class }} workspace-modal-icon" data-loading-demo-indicator aria-hidden="true"></span>
                             <p class="workspace-modal-title">{{ row.sample_title }}</p>
                             <p class="workspace-modal-copy">{{ row.sample_copy }}</p>
                         </div>
+                    </div>
+                    <div class="style-token-loading-controls">
+                        {{ render_switch(
+                            "style_token_loading_determinate",
+                            translate_ui('Determinate progress'),
+                            input_attrs="data-loading-demo-determinate"
+                        ) }}
+                        <label for="style_token_loading_value">{{ translate_ui('Preview progress') }} <output data-loading-demo-output for="style_token_loading_value">0%</output></label>
+                        <input id="style_token_loading_value" data-loading-demo-value type="range" min="0" max="100" step="1" value="0" disabled>
                     </div>
                     {% elif row.sample_kind == "floating-banner" %}
                     <div class="style-token-modal-shell">

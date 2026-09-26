@@ -1,4 +1,4 @@
-/* Code version: v1.1.3 */
+/* Code version: v1.1.4 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1024, 390]) {
@@ -68,7 +68,7 @@ for (const width of [1024, 390]) {
                     shadowMatches: material.boxShadow === shared.boxShadow,
                     blurMatches: material.backdropFilter === shared.backdropFilter,
                     radiusMatches: material.borderRadius === shared.borderRadius,
-                    borderless: material.borderTopWidth === '0px' && material.borderTopStyle === 'none',
+                    borderMatches: material.borderTop === shared.borderTop && material.borderTopStyle === 'solid',
                 };
                 probe.remove();
                 return result;

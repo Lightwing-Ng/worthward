@@ -1,6 +1,25 @@
 # Architecture guide
 
-Documentation version: `v1.127.5`
+Documentation version: `v1.128.0`
+
+## Shared loading indicator
+
+`loading-indicator.js` owns the opt-in determinate adapter for the existing
+`loading.spinner.svg` waiting indicator. `determinate: false` remains the default
+and preserves the fixed, rotating SVG. Only boolean `true` accepts measured
+progress: the 0% foreground is one perfect round dot at twelve o'clock, 75%
+reproduces the original rounded arc, and 100% is a seamless ring. Numeric values
+are finite and bounded to 0–100. The adapter owns progressbar semantics and removes
+its SVG and accessibility state when a shared modal is reused.
+
+The initial Holdings load trials four counted completion steps: validate the
+response, finish supporting history lookups, compose the replay model, and apply
+the view. The displayed fraction is completed steps, not elapsed time or predicted
+duration. A blocked server remains at 0%; each awaited step advances only after it
+finishes. The final ring is painted after the view is applied and before dismissal.
+Failure, cancellation, and superseded loads cannot signal completion. Other
+Investment loads retain the default waiting indicator. The catalog switch and
+range preview only local DOM state and never submit or persist sample progress.
 
 ## Reuse and dependency boundaries
 
@@ -86,7 +105,7 @@ aligned.
 
 ## Shared Backtest controls and research
 
-Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and borderless shared Frosted Glass vertical handle material. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the resizer-handle material; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
+Leveraged Rotation exposes two integer-step allocation-limit bars with dynamic ticker labels, primary blue and leveraged magenta tracks, and shared Frosted Glass vertical handle material with the resizer border and standard primary-blue interaction ring and glow. Browser constraints mirror strategy normalization: each minimum is at most its maximum, minimum allocations sum to at most 100%, and each maximum leaves room for the other minimum. Initial allocation remains a separate percentage preview subject to normalization on submission. Coincident or near-coincident handles move into separate vertical lanes without changing their true horizontal percentage positions; labels retain the exact values, including zero. Interior two-line limit labels are centered, while exact 0% and 100% labels align toward their respective track edges. The three bar components consume one foundation-backed allocation-range token family for compact geometry, title/detail type, and the resizer-handle material; Style tokens catalogs the three-segment distribution and two limit-bar variants together. Their custom collapse bodies remove only the trailing block padding. Return window uses intrinsic content width at the value-column edge, while the field-label column remains the sole wrapping region. Generic rotation labels preserve the two causal clocks without embedding the selected ticker symbols: `Enter leveraged: primary drop` uses the selected Return window, while `Rotate back to primary: leveraged gain since entry` starts from the actual leveraged open where the last entry rotation executed. The Return window and entry threshold form one uninterrupted visual group; the divider remains only before the since-entry exit threshold. The price subplot remains a single primary-ticker curve: primary trades keep their execution-price marker, while leveraged-ticker trades use the exact aligned transaction timestamp and the primary close at that timestamp as their display-only marker ordinate. The equity subplot retains the strategy curve and renders two independently calculated all-in references. Each reference buys the maximum integer shares of its own ticker at the first aligned open, carries residual cash, applies that ticker's dividend policy, and marks equity at each aligned close. Both references use the restrained shared muted token and the original one-pixel all-in reference width so the green strategy-equity curve remains visually dominant. Summary alpha and beat-rate metrics continue to use the primary ticker as their benchmark.
 
 `assets/js/app/strategy-controls.js` owns `bindAllocationControls(root, options)`
 for both production strategy controls and the Style tokens Allocation range
@@ -1542,6 +1561,15 @@ sets of values.
 Each extracted browser module retains a versioned cache key. Direct Node suites
 protect pure contracts, static bundle helpers assert the true owner files, and
 Playwright verifies assembled browser behavior.
+
+Standard Shared select product adapters and the catalog consume the same
+foundation menu and chevron tokens. The approved Backtest Period menu retains its
+56%/16% theme-highlight gradient, 62% theme-background base, and 12px blur through
+`--shared-select-dropdown-material` and its select-only surface-opacity token.
+General Frosted Glass, trigger material, and explicitly opaque strategy-parameter
+adapters remain independent. The current-color chevron points right while closed
+and down while expanded, without changing controller focus, native selection
+authority, or Reduced Motion behavior.
 
 ### Historical Bayesian Price Field geometry amendment
 

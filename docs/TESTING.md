@@ -1,6 +1,53 @@
 # Testing guide
 
-Documentation version: `v1.87.1`
+Documentation version: `v1.90.0`
+
+## Standard circular icon button geometry
+
+`tests/e2e/circular-icon-button-contract.spec.mjs` measures the catalog, its copy
+action, and production sidebar/theme/language controls in Light and Dark at
+1,006 by 791 with fine and coarse pointers, 390 by 844 with touch, 1,006 by 500,
+and the 900px/901px boundary.
+It asserts a 30px desktop target, the unchanged 18px centered glyph, the existing
+44px narrow touch branch, and the 10px sidebar equal-edge gap. The wide coarse
+pointer keeps the 30px canonical size, not a separate 44px override. Expanded and collapsed
+states preserve the global centerline, 20px viewport anchors, title clearance,
+and horizontal containment. Hover and keyboard focus retain the shared accent
+color. Modal dismiss, topic icon, and Process List dimensions remain independent.
+An additional Investment matrix at 1,006px, 390px, 900px, and 901px checks that
+import placement and its calculated height use the actual visible rail, not a
+root/body token that misses the page-scoped touch override. Empty read-only API
+fixtures are used; no import or production financial write is performed.
+The suite blocks non-GET requests and saves one screenshot per theme and size.
+`tests/test_layout_anchor_contract.py` also protects canonical/compatibility
+ownership, the editable catalog default, import-height fallback, and unchanged
+semantic dimensions. Run both through the supported wrappers. The existing
+`backtest-title-alignment.spec.mjs` verifies the responsive result/title rails.
+
+## Determinate loading indicator
+
+`tests/test_loading_indicator.mjs` verifies the exact 0%, 75%, and 100% geometry,
+finite input guards, strict boolean opt-in, stable SVG identity, and accessibility
+cleanup. `tests/e2e/loading-indicator.spec.mjs` exercises the real Style tokens
+controls, theme and viewport containment, reduced motion, and the Holdings loading
+lifecycle with delayed, failed, and successful isolated responses. Progress is
+counted completed work; a held request must not advance just because time passes.
+
+## Shared select menu and chevron parity
+
+`tests/e2e/shared-select-parity.spec.mjs` measures the real Backtest Period
+adapter and the Shared select dropdown catalog specimen at 1,006 by 791,
+390 by 844 with touch, and 1,006 by 500 in Light and Dark. The menu retains the
+approved 56%/16% highlight gradient over a 62% theme-background surface, 12px
+blur, 10px radius, and 36px option targets; the ordinary Frosted Glass material
+and select trigger are unchanged. The chevron points right when closed and down
+when open. The suite checks horizontal containment, visible option hit testing,
+keyboard focus, Escape restoration, unchanged native values, and Reduced Motion,
+and blocks every non-GET request. It saves separate Period and catalog screenshots
+for every theme and viewport. `tests/test_shared_select_contract.py` protects the
+select-only opacity token, scoped material formula, catalog projection, and
+currentColor chevron contract. Existing `select-keyboard.spec.mjs` coverage retains
+selection, outside-click, Tab, and cached-template behavior.
 
 ## Shared modal and floating-banner rows
 

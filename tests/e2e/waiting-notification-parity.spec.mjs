@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 
 const cases = [
@@ -222,7 +222,14 @@ for (const viewport of cases) {
             expect(paragraphMeasurement.bodyColor).toBe(paragraphMeasurement.mutedColor);
 
             // Reveal the existing feedback shell with neutral text, without importing broker data.
+            const investmentResponse = page.waitForResponse((response) => (
+                new URL(response.url()).pathname === '/api/investment/transactions'
+                && response.request().method() === 'GET'
+            ));
             await page.goto('/trade/investment');
+            await investmentResponse;
+            // Initial rendering owns and clears the feedback shell before the test uses it.
+            await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
             await page.evaluate((value) => {
                 document.documentElement.dataset.themeOverride = value;
             }, theme);

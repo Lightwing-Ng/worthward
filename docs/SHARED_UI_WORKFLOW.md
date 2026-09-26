@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.2.1`
+Documentation version: `v1.3.0`
 
 This is the public entrypoint for shared visual and interaction work. A private
 sibling synchronization ledger may exist in a maintainer checkout, but it is not
@@ -64,8 +64,11 @@ trigger and field, and mirrors each native option's hidden or disabled state to
 its enhanced option. The trigger is 30 px high, options are at least 36 px high, and
 an in-flow dropdown stays within both its parent and the 384 px shared control
 width. The trigger and standard dropdown use the semantic Shared select Frosted
-Glass material tokens. The closed chevron points down and the open chevron points
-up, with reduced-motion behavior preserved.
+Glass material tokens. The closed chevron points right and the open chevron points
+down through the shared -90-degree and zero-degree rotation tokens. The menu uses
+the approved 62%-opacity theme-adaptive base and 56%-to-16% highlight gradient;
+`--shared-select-dropdown-surface-opacity` owns its opacity without changing the
+general Frosted Glass or trigger material. Reduced-motion behavior is preserved.
 
 Product-owned portaled selectors keep their existing viewport-aware 420 px cap.
 That exception includes Strategy, investment import broker, investment transfer,

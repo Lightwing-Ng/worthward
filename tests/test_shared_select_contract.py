@@ -1,4 +1,4 @@
-"""Focused Shared select presentation contract tests. Code version: v1.0.8."""
+"""Focused Shared select presentation contract tests. Code version: v1.1.2."""
 
 from __future__ import annotations
 
@@ -24,7 +24,11 @@ def test_shared_select_tokens_publish_material_geometry_and_chevron_contract() -
     expected_declarations = (
         "--shared-select-trigger-material: var(--frosted-glass-background);",
         "--shared-select-trigger-material-hover: var(--frosted-glass-background-hover);",
-        "--shared-select-dropdown-material: var(--frosted-glass-background);",
+        "--shared-select-dropdown-surface-opacity: 62%;",
+        "--shared-select-dropdown-material:",
+        "color-mix(in srgb, var(--theme-glass-highlight) 56%, transparent) 0%,",
+        "color-mix(in srgb, var(--theme-glass-highlight) 16%, transparent) 100%",
+        "color-mix(in srgb, var(--theme-background) var(--shared-select-dropdown-surface-opacity), transparent);",
         "--shared-select-border: var(--frosted-glass-border);",
         "--shared-select-shadow: var(--frosted-glass-shadow);",
         "--shared-select-shadow-hover: var(--frosted-glass-shadow-hover);",
@@ -35,8 +39,8 @@ def test_shared_select_tokens_publish_material_geometry_and_chevron_contract() -
         "--shared-select-option-min-height: 36px;",
         "--shared-select-chevron-width: 12px;",
         "--shared-select-chevron-height: 8px;",
-        "--shared-select-chevron-closed-rotation: 0deg;",
-        "--shared-select-chevron-open-rotation: 180deg;",
+        "--shared-select-chevron-closed-rotation: -90deg;",
+        "--shared-select-chevron-open-rotation: 0deg;",
         "--shared-select-chevron-transition-duration: 180ms;",
     )
     for declaration in expected_declarations:
@@ -46,6 +50,7 @@ def test_shared_select_tokens_publish_material_geometry_and_chevron_contract() -
         "--shared-select-trigger-material",
         "--shared-select-trigger-material-hover",
         "--shared-select-dropdown-material",
+        "--shared-select-dropdown-surface-opacity",
         "--shared-select-border",
         "--shared-select-shadow",
         "--shared-select-shadow-hover",
@@ -121,7 +126,7 @@ def test_public_layout_contract_carries_complete_standard_select_semantics() -> 
     contract = _read(LAYOUT_CONTRACT_PATH)
     normalized_contract = " ".join(contract.split())
 
-    assert "Documentation version: `v1.21.5`" in contract
+    assert "Documentation version: `v1.23.1`" in contract
     assert "This specimen-only presentation leaves ordinary" in normalized_contract
     assert "### Standard single-value Shared select" in contract
     for required_text in (
@@ -135,7 +140,9 @@ def test_public_layout_contract_carries_complete_standard_select_semantics() -> 
         "skips hidden or disabled options",
         "--shared-select-trigger-material",
         "--shared-select-dropdown-material",
+        "--shared-select-dropdown-surface-opacity: 62%",
         "12px by 8px `currentColor` down-chevron",
+        "points right while closed and down while open",
         "Reduced motion removes that transition",
         "Standard field and menu width is `min(parent inline size, 384px)`",
         "Internal menu scrolling does not move the portal",

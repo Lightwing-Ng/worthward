@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -418,8 +418,8 @@ test('keeps the canonical shared primitives aligned across themes and narrow lay
                 };
             });
             expect(circularGeometry).toEqual({
-                width: width <= 900 ? 44 : 36,
-                height: width <= 900 ? 44 : 36,
+                width: width <= 900 ? 44 : 30,
+                height: width <= 900 ? 44 : 30,
                 iconWidth: 18,
                 iconHeight: 18,
                 radius: '999px',

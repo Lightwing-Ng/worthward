@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.2
+Code version: v0.25.3
 """
 
 from pathlib import Path
@@ -48,7 +48,7 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
     responsive = _read(ASSET_ROOT / "css/utilities/responsive.css")
 
     expected_tokens = {
-        "size": "36px",
+        "size": "30px",
         "icon-size": "18px",
         "radius": "var(--radius-pill)",
         "background": "var(--circular-icon-button-material)",
@@ -82,6 +82,52 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
     assert "var(--circular-icon-button-icon-size)" in shell
     assert responsive.count("--circular-icon-button-size: 44px;") == 2
     assert "--settings-round-icon-button-size: 44px;" not in responsive
+    assert "px_token(\"--circular-icon-button-size\", 30, 1)" in _read(
+        PROJECT_ROOT / "app/web/style_token_rows.py"
+    )
+    import_runtime = _read(
+        ASSET_ROOT / "js/investment/runtime/metrics-import.js"
+    )
+    assert "getPropertyValue('--circular-icon-button-size')" in import_runtime
+    assert "getPropertyValue('--settings-round-icon-button-size')" not in import_runtime
+    assert "const buttonSize = quickActionsRect?.height || Number.parseFloat(" in import_runtime
+    assert "getComputedStyle(circularOwner).getPropertyValue" in import_runtime
+    assert "runtime.globalQuickActions || document.querySelector('.page') || runtime.formContainer" in import_runtime
+    assert ") || 30;" in import_runtime
+    for independent_token in (
+        "--workspace-modal-close-size: 24px;",
+        "--workspace-modal-icon-size: 36px;",
+        "--process-list-marker-size: 32px;",
+    ):
+        assert independent_token in tokens
+    compact = responsive[
+        responsive.index("@media (max-width: 600px)"):
+        responsive.index("@media (max-width: 500px)")
+    ]
+    compact_toggle = compact[compact.index(".page > .sidebar-toggle {"):]
+    assert "--workspace-title-rail-pad-block-start: var(--global-quick-actions-top);" in compact
+    assert "--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));" in compact
+    assert "top: var(--sidebar-overlay-inset-top);" not in compact_toggle
+    assert "left: var(--sidebar-overlay-inset-left);" not in compact_toggle
+    assert "top: var(--global-quick-actions-top);" in compact_toggle
+    assert "left: var(--layout-global-anchor-left);" in compact_toggle
+    settings = _read(ASSET_ROOT / "css/views/settings.css")
+    assert ".workspace > .settings-shell-style-tokens:first-child > .settings-summary-card {" in settings
+    assert "padding-block-start: var(--workspace-title-rail-pad-block-start);" in settings
+    assert "padding-inline-start: var(--workspace-title-rail-collapsed-pad-inline-start);" in settings
+    workspace = _read(ASSET_ROOT / "css/views/workspace.css")
+    compact_workspace_start = workspace.index("@media (max-width: 600px) {")
+    compact_workspace_toggle = workspace[
+        compact_workspace_start:
+        workspace.index("\n.portfolio-summary {", compact_workspace_start)
+    ]
+    assert "top: var(--global-quick-actions-top);" in compact_workspace_toggle
+    assert "var(--layout-global-anchor-left)" in compact_workspace_toggle
+    assert "top: var(--sidebar-overlay-inset-top);" not in compact_workspace_toggle
+    coarse_toggle = responsive[responsive.index("@media (hover: none) and (pointer: coarse)"):]
+    for property_name in ("width", "min-width", "height", "min-height"):
+        assert f"{property_name}: var(--circular-icon-button-size);" in coarse_toggle
+        assert f"{property_name}: 44px;" not in coarse_toggle
     assert "var(--settings-round-icon-button-" not in "\n".join(
         _read(path)
         for path in (ASSET_ROOT / "css").rglob("*.css")

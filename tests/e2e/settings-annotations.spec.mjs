@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -31,7 +31,7 @@ for (const width of [1138, 800, 390]) {
         });
         expect(sidebarMaterial.width).toBeLessThanOrEqual(312);
         expect(sidebarMaterial.width).toBe(width === 390 ? 252 : 312);
-        expect(sidebarMaterial.padding).toBe(width > 900 ? '9px 10px 96px' : '9px 18px 84px');
+        expect(sidebarMaterial.padding).toBe(width > 900 ? '9px 10px 0px' : '9px 18px 0px');
         expect(sidebarMaterial.backgroundColor).toBe('rgba(255, 255, 255, 0.08)');
         expect(sidebarMaterial.backgroundImage).toContain('rgba(255, 255, 255, 0.24)');
         expect(sidebarMaterial.borderRadius).toBe('10px');

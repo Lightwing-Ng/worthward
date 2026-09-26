@@ -1,4 +1,4 @@
-/* Code version: v0.2.1 */
+/* Code version: v0.3.0 */
 import {expect, test} from '@playwright/test';
 
 const assertNoVisibleNativeSelects = async (page) => {
@@ -110,6 +110,8 @@ test('publishes the canonical Shared select material, geometry, and chevron stat
                 maskImage: chevron.maskImage || chevron.webkitMaskImage,
                 transitionDuration: chevron.transitionDuration,
                 matrixA: matrix.a,
+                matrixB: matrix.b,
+                matrixC: matrix.c,
                 matrixD: matrix.d,
             },
             legacyChevronDisplay: legacyChevron instanceof HTMLElement
@@ -134,8 +136,10 @@ test('publishes the canonical Shared select material, geometry, and chevron stat
             height: '8px',
             color: closed.chevron.triggerColor,
             transitionDuration: '0.18s',
-            matrixA: 1,
-            matrixD: 1,
+            matrixA: 0,
+            matrixB: -1,
+            matrixC: 1,
+            matrixD: 0,
         },
     });
     expect(closed.chevron.maskImage).not.toBe('none');
@@ -185,6 +189,8 @@ test('publishes the canonical Shared select material, geometry, and chevron stat
             expectedBoxShadow: expected.boxShadow,
             expectedBackdropFilter: expected.backdropFilter || expected.webkitBackdropFilter,
             matrixA: matrix.a,
+            matrixB: matrix.b,
+            matrixC: matrix.c,
             matrixD: matrix.d,
         };
         materialProbe.remove();
@@ -199,8 +205,10 @@ test('publishes the canonical Shared select material, geometry, and chevron stat
         border: open?.expectedBorder,
         boxShadow: open?.expectedBoxShadow,
         backdropFilter: open?.expectedBackdropFilter,
-        matrixA: -1,
-        matrixD: -1,
+        matrixA: 1,
+        matrixB: 0,
+        matrixC: 0,
+        matrixD: 1,
     });
     expect(Math.abs((open?.optionHeight ?? 0) - 36)).toBeLessThanOrEqual(1);
     expect(open?.dropdownWidth).toBeLessThanOrEqual(384);

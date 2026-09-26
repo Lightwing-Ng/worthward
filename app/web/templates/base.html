@@ -1,4 +1,4 @@
-{# Code version: v0.59.7 #}
+{# Code version: v0.60.6 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.103.19') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.104.6') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.2.0') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -440,6 +440,7 @@
 </script>
 <script type="module" src="{{ url_for('static', filename='assets/js/numeric-display.js', v=version ~ '-numeric-display-v1.3.0') }}"></script>
 <script type="module" src="{{ url_for('static', filename='assets/js/local-store-pagination.js', v=version ~ '-local-store-pagination-v1.2.5') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/loading-indicator.js', v='loading-indicator-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/motion.js', v=version ~ '-motion-v1.2.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/resizer.js', v=version ~ '-resizer-v1.0.0') }}"></script>
 <script src="{{ url_for('static', filename='assets/js/table-controller.js', v=version ~ '-table-controller-v1.0.4') }}"></script>
@@ -450,7 +451,7 @@
     <script src="{{ url_for('static', filename='assets/js/workspace/url-state.js', v=version ~ '-workspace-url-state-v1.6.0') }}"></script>
 {% endif %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest", "trade"] %}
-<script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.4') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/workspace-share.js', v=version ~ '-workspace-share-v0.6.5') }}"></script>
 {% endif %}
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
@@ -466,12 +467,12 @@
     <script src="{{ url_for('static', filename='assets/js/app/navigation.js', v=version ~ '-app-navigation-v1.3.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-enhancements.js', v=version ~ '-app-workspace-enhancements-v1.0.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/workspace-hydration.js', v=version ~ '-app-workspace-hydration-v1.4.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app/ticker-controls.js', v=version ~ '-app-ticker-controls-v1.0.3') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app/ticker-controls.js', v=version ~ '-app-ticker-controls-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/select-controls.js', v=version ~ '-app-select-controls-v1.0.2') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/date-controls.js', v=version ~ '-app-date-controls-v1.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/range-controls.js', v=version ~ '-app-range-controls-v1.0.1') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/app/strategy-controls.js', v=version ~ '-app-strategy-controls-v1.1.0') }}"></script>
-    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.8') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/app.js', v=version ~ '-app-v0.74.9') }}"></script>
 {% if current_view in ["tickers", "prices", "portfolio"] %}
 <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
 {% endif %}

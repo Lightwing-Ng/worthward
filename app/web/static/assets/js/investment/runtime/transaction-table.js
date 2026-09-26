@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.4.7
+ * Code version: v1.5.0
+ * - Added: Loading observes completed historical lookups and replay rendering
+ *   without changing the ordered accounting calculations.
  * - Changed: Loads the history projection that corroborates same-day cash
  *   against the opening balance of an immutable SEC posting chain.
  * - Changed: Loads the history projection that folds unscoped same-currency
@@ -45,14 +47,33 @@ export function resolveInvestmentEvidenceSafeCashDelta(
 }
 
 export function createInvestmentTransactionTableRuntime(runtime) {
-async function renderTransactionTable(transactions, { preserveHistoryPage = false, scrollToTop = true } = {}) {
+async function renderTransactionTable(transactions, {
+        preserveHistoryPage = false,
+        scrollToTop = true,
+        onLoadingStep = null,
+        assertActive = () => {},
+    } = {}) {
+        const reportLoadingStep = async (completed, label) => {
+            assertActive();
+            if (typeof onLoadingStep === 'function') {
+                await onLoadingStep(completed, label);
+                assertActive();
+            }
+        };
+        assertActive();
         const tbody = runtime.getInvestmentHistoryTableBody();
-        if (!tbody) return { isDegraded: false, message: '' };
+        if (!tbody) {
+            if (typeof onLoadingStep === 'function') {
+                throw new Error('The investment workspace is no longer available.');
+            }
+            return { isDegraded: false, message: '' };
+        }
         runtime.clearInvestmentHistoryHighlights();
         runtime.syncInvestmentHistoryHeading();
         runtime.state.investmentRawTransactionsCache = Array.isArray(transactions) ? [...transactions] : [];
 
         if (!transactions.length) {
+            await reportLoadingStep(2, 'Building Holdings from the stored activity.');
             runtime.state.investmentProcessedTransactionsCache = [];
             runtime.refreshInvestmentAvailableBrokerCodes();
             runtime.setInvestmentExportButtonVisibility(false);
@@ -77,6 +98,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             runtime.mountInvestmentDescriptionBindingFilterHeaders();
             runtime.renderInvestmentHistoryPagination(0);
             runtime.attachHistoryTableAlignmentSync(runtime.historyTable);
+            await reportLoadingStep(3, 'Applying the selected Holdings view.');
             return { isDegraded: false, message: '' };
         }
 
@@ -668,6 +690,12 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                 rows: await runtime.loadInvestmentOverviewIntradayRows(ticker, Array.from(daySet), '1w'),
             })),
         );
+        assertActive();
+        if (transactionIntradayResults.some((result) => (
+            result.status === 'rejected' && result.reason?.name === 'AbortError'
+        ))) {
+            throw new DOMException('Investment history loading was interrupted.', 'AbortError');
+        }
         transactionIntradayResults
             .filter((result) => result.status === 'fulfilled')
             .forEach(({value}) => {
@@ -681,6 +709,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
                     transactionIntradayClosePrices.set(`${normalizedTicker}|${ledgerDate}`, close);
                 });
             });
+        await reportLoadingStep(2, 'Building Holdings from the stored activity.');
         const processed = orderedTransactions.map((txn, processedIndex) => {
             // ========== COMPLETELY COMPATIBLE FIELD READING ==========
             // 1. Quantity: for holdings and description
@@ -1258,6 +1287,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
             ? Promise.resolve([])
             : runtime.bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot);
         realtimeBootstrap.then((fresh) => {
+            assertActive();
             const merged = runtime.mergeInvestmentRealtimeQuotePayloads(embeddedQuotes, fresh);
             runtime.rememberInvestmentRealtimeQuotes(merged);
             runtime.syncInvestmentStockDetailsLivePulse();
@@ -1317,6 +1347,7 @@ async function renderTransactionTable(transactions, { preserveHistoryPage = fals
         if (!aggregateSecurityTransferState.blocked) {
             runtime.restartInvestmentRealtimeQuotePolling();
         }
+        await reportLoadingStep(3, 'Applying the selected Holdings view.');
         return valuationStatus;
     }
 

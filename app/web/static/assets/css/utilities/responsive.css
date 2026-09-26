@@ -1,4 +1,4 @@
-/* Code version: v3.37.1 */
+/* Code version: v3.37.4 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -156,10 +156,14 @@
 		width: fit-content;
 		max-width: calc(var(--layout-sidebar-overlay-inline-size) - (var(--layout-edge-gap) * 2));
 		z-index: var(--layer-fixed-dock);
-		box-shadow: var(--frosted-glass-shadow);
 	}
 }
 @media (max-width: 600px) {
+	.workspace-controls-overlay-shell {
+		--workspace-title-rail-pad-block-start: var(--global-quick-actions-top);
+		--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
+	}
+
 	body { overflow-x: hidden; overflow-y: auto; width: 100%; }
 	#compare_summary_region {
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 189px), 1fr)) !important;
@@ -211,6 +215,7 @@
 			var(--layout-sidebar-overlay-inline-size)
 			- var(--sidebar-overlay-toggle-inset)
 			- var(--circular-icon-button-size)
+			- var(--layout-edge-gap)
 		) !important;
 	}
 	.app-shell.is-sidebar-collapsed,
@@ -274,14 +279,14 @@
 		border-width: 0;
 	}
 	.page > .sidebar-toggle {
-		width: 44px;
-		min-width: 44px;
-		height: 44px;
-		min-height: 44px;
+		width: var(--circular-icon-button-size);
+		min-width: var(--circular-icon-button-size);
+		height: var(--circular-icon-button-size);
+		min-height: var(--circular-icon-button-size);
 		display: inline-flex;
 		position: fixed;
-		top: var(--sidebar-overlay-inset-top);
-		left: var(--sidebar-overlay-inset-left);
+		top: var(--global-quick-actions-top);
+		left: var(--layout-global-anchor-left);
 		right: auto;
 		bottom: auto;
 		margin: 0;
@@ -290,7 +295,7 @@
 		transition: transform var(--workspace-article-sidebar-morph-duration) var(--workspace-article-sidebar-morph-easing), background var(--motion-duration-fast) var(--motion-standard);
 	}
 	.global-quick-actions {
-		top: var(--sidebar-overlay-inset-top);
+		top: var(--global-quick-actions-top);
 	}
 	.page > .sidebar-toggle {
 		margin: 0;
@@ -342,7 +347,6 @@
 		width: fit-content;
 		max-width: calc(min(var(--sidebar-width), var(--sidebar-overlay-available-inline-size)) - 20px);
 		z-index: var(--layer-fixed-dock);
-		box-shadow: var(--frosted-glass-shadow);
 	}
 	.app-shell.is-sidebar-collapsed ~ .sidebar-dock {
 		transform: translateX(-50%) translateY(8px) scale(0.95);
@@ -397,6 +401,7 @@
 			var(--layout-sidebar-overlay-inline-size)
 			- var(--sidebar-overlay-toggle-inset)
 			- var(--circular-icon-button-size)
+			- var(--layout-edge-gap)
 		) !important;
 	}
 	.sidebar { width: var(--layout-sidebar-overlay-inline-size); }
@@ -426,10 +431,10 @@
 	.page > .sidebar-toggle:hover,
 	.page > .sidebar-toggle:focus-visible,
 	.page > .sidebar-toggle:active {
-		width: 44px;
-		min-width: 44px;
-		height: 44px;
-		min-height: 44px;
+		width: var(--circular-icon-button-size);
+		min-width: var(--circular-icon-button-size);
+		height: var(--circular-icon-button-size);
+		min-height: var(--circular-icon-button-size);
 		touch-action: manipulation;
 		z-index: var(--layer-sidebar-toggle);
 		transform: translate3d(var(--sidebar-toggle-x), 0, 0);

@@ -1,4 +1,4 @@
-/* Code version: v0.47.4 */
+/* Code version: v0.49.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -237,7 +237,7 @@
 	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
 	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
 	--primary-button-font-weight: var(--font-weight-medium);
-	--circular-icon-button-size: 36px;
+	--circular-icon-button-size: 30px;
 	--circular-icon-button-icon-size: 18px;
 	--circular-icon-button-radius: var(--radius-pill);
 	--circular-icon-button-material: var(--frosted-glass-background);
@@ -492,7 +492,14 @@
 	--shared-select-option-gap: 8px;
 	--shared-select-trigger-material: var(--frosted-glass-background);
 	--shared-select-trigger-material-hover: var(--frosted-glass-background-hover);
-	--shared-select-dropdown-material: var(--frosted-glass-background);
+	--shared-select-dropdown-surface-opacity: 62%;
+	--shared-select-dropdown-material:
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--theme-glass-highlight) 56%, transparent) 0%,
+			color-mix(in srgb, var(--theme-glass-highlight) 16%, transparent) 100%
+		),
+		color-mix(in srgb, var(--theme-background) var(--shared-select-dropdown-surface-opacity), transparent);
 	--shared-select-border: var(--frosted-glass-border);
 	--shared-select-shadow: var(--frosted-glass-shadow);
 	--shared-select-shadow-hover: var(--frosted-glass-shadow-hover);
@@ -502,8 +509,8 @@
 	--shared-select-chevron-width: 12px;
 	--shared-select-chevron-height: 8px;
 	--shared-select-chevron-inline-end: 12px;
-	--shared-select-chevron-closed-rotation: 0deg;
-	--shared-select-chevron-open-rotation: 180deg;
+	--shared-select-chevron-closed-rotation: -90deg;
+	--shared-select-chevron-open-rotation: 0deg;
 	--shared-select-chevron-transition-duration: 180ms;
 	--secondary-button-min-height: 32px;
 	--investment-holdings-cell-padding: 4px 6px;

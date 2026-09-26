@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.0 */
 
 /* Shared waiting indicator: a resolution-independent SVG arc with rounded caps. */
 .suggestion-loading-spinner {
@@ -13,6 +13,23 @@
 	transform-origin: center;
 	animation: ticker-suggestion-loading 700ms linear infinite;
 	will-change: transform;
+}
+
+/* Measured progress owns a static SVG while the default keeps its original mask. */
+.suggestion-loading-spinner[data-loading-determinate="true"] {
+	background-color: transparent;
+	color: var(--accent-fill);
+	mask: none;
+	-webkit-mask: none;
+	animation: none;
+	transform: none;
+	will-change: auto;
+}
+
+.suggestion-loading-spinner > [data-loading-indicator-svg] {
+	display: block;
+	width: 100%;
+	height: 100%;
 }
 
 @keyframes ticker-suggestion-loading {

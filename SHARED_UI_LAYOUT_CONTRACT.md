@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.21.5`
+Documentation version: `v1.23.1`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -43,15 +43,19 @@ The Collapse specimen has no placeholder explanatory paragraph.
   each specimen fits its column. This specimen-only presentation leaves ordinary
   production Shared select controls and standard menus at their 384px maximum.
 - On the Style tokens page, the owning sidebar consumes the same
-  `--sidebar-shell-*` contract as every other application sidebar; it has no
-  page-local material or padding override.
+  `--sidebar-shell-*` material as every other application sidebar. Settings keeps
+  its heading fixed and places Dock clearance inside its navigation scroll content,
+  rather than reserving a fixed bottom band on the outer sidebar. The list extends
+  behind the frosted Dock pill and fades only at the sidebar's bottom edge; its
+  final item can still scroll fully above the Dock.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
 - Workspace navigation items use the shared `--settings-nav-item-block-size`,
   `--settings-nav-item-padding-block`, and `--settings-nav-item-gap` tokens. Their
   default block size is `48px`; the sidebar-overlay state uses `36px` for workspace
-  destinations while leaving full Settings navigation density unchanged.
+  destinations. Settings navigation locally uses `36px` rows with `4px` vertical
+  padding at every breakpoint, including the selected-row indicator.
 - The strategy-tuning row reserves at most `60%` for its label track so the
   right-aligned value track can display seven-digit holding limits without
   clipping. This is a component token, not a Grid Trading page override.
@@ -137,9 +141,17 @@ The Collapse specimen has no placeholder explanatory paragraph.
   Investment feedback lists use the same muted ordinary copy; explicit inline
   emphasis and success/error colors remain semantic presentation.
 - Circular icon actions use the `.circular-icon-button` primitive. Its canonical
-  `--circular-icon-button-*` token family owns the `36px` desktop target, `18px`
+  `--circular-icon-button-*` token family owns the `30px` desktop target, `18px`
   current-color glyph, pill radius, Frosted Glass material, and idle, hover, active,
-  and focus-visible states. Responsive layouts may raise the shared target to `44px`.
+  and focus-visible states. The existing `max-width: 900px` responsive branch keeps
+  its `44px` touch target, including the existing 600px compact override. The global
+  rail, title clearance, and equal top/right sidebar-button insets continue to
+  derive from this token and the shared 10px edge gap; they do not introduce a new
+  viewport exception. Compact global controls keep the global 20px viewport inset,
+  not the sidebar's 10px outer inset. The catalog and existing single-line
+  workspace-controls title rails derive their block start from these anchors.
+  Modal dismiss controls, Process List markers, and topic
+  icons retain their independent semantic dimensions.
   Product-specific class names are adapters only; the legacy
   `--settings-round-icon-button-*` names remain compatibility aliases and do not own
   independent values.
@@ -213,21 +225,24 @@ implements this complete contract.
   Enter or Space commits once. Escape is consumed, closes, and restores trigger focus.
   Tab closes without preventing native traversal. Rendering, pointer dismissal, native
   synchronization, and optional portal placement remain adapter-owned.
-- The trigger uses `--shared-select-trigger-material`; a standard menu uses
-  `--shared-select-dropdown-material`. Both resolve to the shared translucent Frosted
-  Glass surface with its standard border, shadow, hover shadow, and blur. A deliberately
-  opaque product menu is an explicitly named local variant, not the default material.
+- The trigger uses `--shared-select-trigger-material` and retains the general Frosted
+  Glass surface. A standard menu uses `--shared-select-dropdown-material`, matching
+  the approved Backtest Period menu: a 56%-to-16% theme-highlight gradient over
+  `color-mix(in srgb, var(--theme-background) var(--shared-select-dropdown-surface-opacity), transparent)`.
+  `--shared-select-dropdown-surface-opacity: 62%` owns that menu-only opacity, with
+  the standard border, shadow, and 12px blur. General Frosted Glass, trigger material,
+  and explicitly opaque strategy-parameter adapters remain unchanged.
 - The cross-project semantic token surface is named identically:
   `--shared-select-trigger-material`, `--shared-select-trigger-material-hover`,
-  `--shared-select-dropdown-material`, `--shared-select-border`,
+  `--shared-select-dropdown-material`, `--shared-select-dropdown-surface-opacity`, `--shared-select-border`,
   `--shared-select-shadow`, `--shared-select-shadow-hover`, `--shared-select-blur`,
   `--shared-select-trigger-padding-inline-end`, `--shared-select-dropdown-max-width`,
   the existing control/dropdown/option geometry tokens, and the
   `--shared-select-chevron-*` mask, width, height, inline-end, rotation, and duration
   tokens. Local compatibility aliases may resolve into this surface; component rules
   consume the canonical names.
-- The trigger affordance is one 12px by 8px `currentColor` down-chevron. It points down
-  while closed and rotates 180 degrees to point up while open, using the shared 180ms
+- The trigger affordance is one 12px by 8px `currentColor` down-chevron. It points right while closed and down while open
+  through -90-degree and zero-degree rotations, using the shared 180ms
   standard easing. Reduced motion removes that transition. The affordance is a distinct
   mask or pseudo-element so a material `background` declaration cannot erase it.
 - The trigger is 30px high with a pill radius. The menu opens 4px from the trigger, uses

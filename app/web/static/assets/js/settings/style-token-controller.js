@@ -1,7 +1,7 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.3.2
+ * Code version: v1.4.0
  * - Fixed: Bind allocation specimens to the production range controller.
  * - Fixed: Keep the style-token resizer's accessible range current when its
  *   preview column changes width without a drag or key press.
@@ -14,6 +14,7 @@
 
 import {getNumericDisplayParts} from '../numeric-display.js?v=numeric-display-v1.3.0';
 import '../app/strategy-controls.js?v=app-strategy-controls-v1.1.0';
+import '../loading-indicator.js?v=loading-indicator-v1.0.0';
 
 export function createSettingsStyleTokenController({
     setActionPackageLiveState,
@@ -934,6 +935,7 @@ export function createSettingsStyleTokenController({
     const attachStyleTokenDemoInteractions = () => {
         const shell = getStyleTokenShell();
         attachStyleTokenAllocationDemos(shell);
+        attachStyleTokenLoadingDemo(shell);
         if (!(shell instanceof HTMLElement) || shell.dataset.bound === "1") return;
         shell.dataset.bound = "1";
         shell.addEventListener("click", (event) => {
@@ -1013,6 +1015,28 @@ export function createSettingsStyleTokenController({
                 }
             }
         });
+    };
+
+    const attachStyleTokenLoadingDemo = (shell) => {
+        const control = shell?.querySelector('[data-loading-demo-determinate]');
+        const range = shell?.querySelector('[data-loading-demo-value]');
+        const indicator = shell?.querySelector('[data-loading-demo-indicator]');
+        const output = shell?.querySelector('[data-loading-demo-output]');
+        if (!control || !range || !indicator || control.dataset.bound === '1') return;
+        control.dataset.bound = '1';
+        const sync = () => {
+            range.disabled = !control.checked;
+            const value = Number(range.value);
+            if (output) output.textContent = `${value}%`;
+            window.WORTHWARD_LOADING_INDICATOR.setProgress(indicator, {
+                determinate: control.checked,
+                value,
+                label: translateUi('Preview progress'),
+            });
+        };
+        control.addEventListener('change', sync);
+        range.addEventListener('input', sync);
+        sync();
     };
 
     const attachStyleTokenActionPackageLiveControl = () => {

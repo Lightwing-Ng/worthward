@@ -1,5 +1,40 @@
 # Known issues and operating constraints
 
+Circular-action size convergence, 26 Sep 2026: standard circular buttons now use
+the shared 30px desktop target and unchanged 18px glyph. The existing 900px touch
+branch retains 44px targets, including its 600px compact override. Shared rails,
+title clearance, sidebar equal-edge insets, and Investment import height read the
+canonical token; independent modal dismiss, topic-icon, and Process List sizes
+remain unchanged. Compact circular shell anchors also use the canonical 20px
+viewport insets rather than the sidebar's 10px outer inset. The Style tokens
+compact title adopts the shared title rail with control-derived clearance. The
+existing single-line workspace-controls title rail also derives its compact
+block start from the global anchor, preserving alignment without changing graph,
+result, or other product content styles. Import height measures the
+visible rail before falling back to its page-scoped token, preserving the 44px
+touch override. A source or isolated-test result does not establish adoption by
+the user-owned service on port 8688, which this task does not restart.
+The coarse-pointer stationary-toggle rule inherits the same size token, so it
+cannot diverge to 44px above the existing 900px responsive boundary.
+
+Holdings measured loading, 26 Sep 2026: the initial Holdings overlay now opts
+into the shared determinate ring. It reports four actual completed loading steps,
+not estimated seconds or backend record-level progress. While the server request
+is pending the indicator correctly remains at 0%; failures never display 100%.
+The original fixed SVG and default waiting behavior remain available through
+`determinate: false`. The Style tokens modal provides an isolated switch and
+0–100% range preview. No accounting or production persistence behavior changes.
+
+
+Shared select convergence, 26 Sep 2026: the approved Backtest Period menu now owns
+the standard dropdown's 62%-opacity theme-adaptive base and 56%-to-16% highlight
+gradient through a menu-only opacity token. This preserves Worthward's approved
+rendered material without changing general Frosted Glass, triggers, or explicitly
+opaque strategy-parameter menus. The standard current-color chevron points right
+when closed and down when expanded through the shared rotation tokens. Product
+controls and Style tokens consume those same states; keyboard selection, native
+form values, responsive geometry, and Reduced Motion remain unchanged.
+
 Interactive Allocation range specimen, 26 Sep 2026: Style tokens and production
 strategy controls share `bindAllocationControls(root, options)` from
 `assets/js/app/strategy-controls.js`. Labels and track segments update on input,
@@ -7,7 +42,9 @@ and both consumers use the same measured collision, edge-label, and close-handle
 geometry. The catalog uses illustrative capital of 10,000 with proportional
 cash; production retains whole-share purchases and its residual-cash calculation.
 Demonstration values are neither submitted nor persisted. All six range thumbs
-use borderless Frosted Glass material; asset colors remain on tracks and labels.
+use the vertical resizer's bordered Frosted Glass material, with the standard blue
+focus ring and glow on hover, keyboard focus, and drag. This restores visibility
+after the earlier borderless treatment; asset colors remain on tracks and labels.
 
 Approved waiting-notification parity, 26 Sep 2026: centered waiting overlays,
 floating banners, and their Style tokens specimens consume one explicit
@@ -49,8 +86,9 @@ heading and toggle fixed while the section navigation scrolls within the
 sidebar, with dock clearance for the last link on desktop and narrow layouts.
 The Allocation range Style tokens specimen and its Leveraged Rotation controls
 now draw all six range thumbs from the shared Frosted Glass resizer-handle
-material. The 26 Sep 2026 update removes thumb borders while keeping primary and
-leveraged colors on their tracks and labels. The older active-theme-canvas
+material. The latest 26 Sep 2026 update restores shared thumb borders and adds a
+standard blue interaction glow while keeping primary and leveraged colors on their
+tracks and labels. The older active-theme-canvas
 limit-thumb treatment described below is superseded; range hit areas and
 constraints are unchanged.
 
@@ -576,7 +614,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.7`
+Documentation version: `v1.267.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

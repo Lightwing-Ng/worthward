@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.10.1
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -320,6 +320,8 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Resize style token demos", "調整樣式權杖示範區大小", "调整样式令牌示范区大小"),
         ("Style token range mode", "樣式權杖範圍模式", "样式令牌范围模式"),
         ("Live marker", "即時標記", "实时标记"),
+        ("Determinate progress", "確定進度", "确定进度"),
+        ("Preview progress", "預覽進度", "预览进度"),
         ("Clear input", "清除輸入內容", "清除输入内容"),
         ("Clear ticker", "清除股票代號", "清除股票代码"),
         ("Remove ticker", "移除股票代號", "移除股票代码"),

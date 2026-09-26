@@ -1,4 +1,4 @@
-/* Code version: v3.33.1 */
+/* Code version: v3.33.2 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -522,17 +522,23 @@ h1 { max-width: none; line-height: 1.18; text-wrap: balance; min-height: 48px; d
 body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar {
 	display: flex;
 	flex-direction: column;
+	padding-bottom: 0;
 	overflow: hidden;
 }
 body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar > .hero {
 	flex: 0 0 auto;
 }
 body:has(.sidebar-dock-item-settings.is-active) .panel.sidebar > .settings-nav {
+	--settings-nav-item-block-size: 36px;
+	--settings-nav-item-padding-block: 4px;
 	flex: 1 1 auto;
 	min-height: 0;
+	padding-bottom: var(--sidebar-shell-scroll-padding-bottom);
 	overflow-x: hidden;
 	overflow-y: auto;
 	scroll-padding-bottom: var(--sidebar-shell-scroll-padding-bottom);
+	mask-image: linear-gradient(to bottom, #000 calc(100% - (var(--layout-edge-gap) * 2)), transparent 100%);
+	-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - (var(--layout-edge-gap) * 2)), transparent 100%);
 	overscroll-behavior: contain;
 	-webkit-overflow-scrolling: touch;
 }

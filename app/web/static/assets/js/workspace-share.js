@@ -1,4 +1,4 @@
-/* Code version: v0.6.4 */
+/* Code version: v0.6.5 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const appState = () => window.WORTHWARD_APP || {};
@@ -41,6 +41,7 @@
 		if (workspaceModalOverlayCopy) workspaceModalOverlayCopy.textContent = copy;
 		if (workspaceModalOverlayIcon) {
 			workspaceModalOverlayIcon.className = `icon ${iconClass} workspace-modal-icon`;
+			window.WORTHWARD_LOADING_INDICATOR?.setProgress(workspaceModalOverlayIcon, {determinate: false});
 		}
 		if (workspaceModalOverlayClose) {
 			workspaceModalOverlayClose.hidden = lockClose;
@@ -53,6 +54,7 @@
 	const hideWorkspaceShareModal = ({ resetContent = false } = {}) => {
 		if (!workspaceModalOverlay) return;
 		workspaceModalOverlay.hidden = true;
+		window.WORTHWARD_LOADING_INDICATOR?.setProgress(workspaceModalOverlayIcon, {determinate: false});
 		if (workspaceModalOverlayClose) {
 			workspaceModalOverlayClose.hidden = false;
 			workspaceModalOverlayClose.disabled = false;

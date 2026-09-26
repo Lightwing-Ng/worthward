@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.1.0 */
 (() => {
     const create = (context) => {
         const {
@@ -1742,6 +1742,11 @@
             if (workspaceModalOverlayCopy && options.copy) workspaceModalOverlayCopy.textContent = options.copy;
             if (workspaceModalOverlayIcon) {
                 workspaceModalOverlayIcon.className = "suggestion-loading-spinner workspace-modal-icon";
+                window.WORTHWARD_LOADING_INDICATOR?.setProgress(workspaceModalOverlayIcon, {
+                    determinate: options.determinate === true,
+                    value: options.progress,
+                    label: options.title || 'Loading',
+                });
             }
             workspaceModalOverlay.hidden = false;
         };
@@ -1782,6 +1787,7 @@
                 compareOverlayTimer = null;
             }
             workspaceModalOverlay.hidden = true;
+            window.WORTHWARD_LOADING_INDICATOR?.setProgress(workspaceModalOverlayIcon, {determinate: false});
         };
 
         const cancelActiveWorkspaceSubmission = () => {

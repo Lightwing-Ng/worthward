@@ -1,7 +1,10 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.1
+ * - Changed: Import height reads the canonical responsive circular-action size.
+ * - Added: Initial Holdings loading reports completed work stages and rejects
+ *   stale or interrupted requests before claiming completion.
  * - Fixed: The import dialog confirms its browser write session when it opens
  *   and keeps Import disabled until the session is ready, so a server restart
  *   no longer rejects the import only after files were chosen.
@@ -11,8 +14,35 @@
  *   broker's authoritative cash snapshot.
  */
 
+export function waitForInvestmentLoadingPaint(browserWindow = window, browserDocument = document) {
+    if (browserDocument.visibilityState === 'hidden') return Promise.resolve();
+    return new Promise((resolve) => {
+        let firstFrame = 0;
+        let secondFrame = 0;
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            browserWindow.cancelAnimationFrame(firstFrame);
+            browserWindow.cancelAnimationFrame(secondFrame);
+            browserDocument.removeEventListener('visibilitychange', onVisibilityChange);
+            browserWindow.removeEventListener('pagehide', finish);
+            resolve();
+        };
+        const onVisibilityChange = () => {
+            if (browserDocument.visibilityState === 'hidden') finish();
+        };
+        browserDocument.addEventListener('visibilitychange', onVisibilityChange);
+        browserWindow.addEventListener('pagehide', finish, {once: true});
+        firstFrame = browserWindow.requestAnimationFrame(() => {
+            secondFrame = browserWindow.requestAnimationFrame(finish);
+        });
+    });
+}
+
 export function createInvestmentMetricsImportRuntime(runtime) {
 const INVESTMENT_SESSION_TOKEN_ENDPOINT = '/api/investment/session-token';
+let investmentFetchSerial = 0;
 
 function setInvestmentHoverContainerPayload(container, payload = null) {
         if (!(container instanceof HTMLElement)) return;
@@ -633,9 +663,10 @@ function syncInvestmentImportContainerHeight() {
         if (quickActionsRect && quickActionsRect.width > 0 && quickActionsRect.height > 0) {
             document.body.style.setProperty('--investment-import-control-rail-top', `${quickActionsTop}px`);
         }
-        const buttonSize = Number.parseFloat(
-            getComputedStyle(document.body).getPropertyValue('--settings-round-icon-button-size'),
-        ) || 36;
+        const circularOwner = runtime.globalQuickActions || document.querySelector('.page') || runtime.formContainer;
+        const buttonSize = quickActionsRect?.height || Number.parseFloat(
+            getComputedStyle(circularOwner).getPropertyValue('--circular-icon-button-size'),
+        ) || 30;
         const modalTop = quickActionsTop + buttonSize + 10;
         const alignedHeight = viewportHeight - modalTop - modalTop;
         runtime.formContainer.style.setProperty(
@@ -822,7 +853,21 @@ function buildInvestmentRequestOptions(overrides = {}) {
         };
     }
 
-async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
+async function fetchInvestmentData({ expectedStoreVersion = '', onProgress = null } = {}) {
+        const requestSerial = ++investmentFetchSerial;
+        const assertActive = () => {
+            if (runtime.state.investmentPageDisposed || requestSerial !== investmentFetchSerial) {
+                throw new DOMException('Investment loading was interrupted.', 'AbortError');
+            }
+        };
+        const reportProgress = async (completed, label) => {
+            assertActive();
+            if (typeof onProgress === 'function') {
+                await onProgress({completed, total: 4, label});
+                assertActive();
+            }
+        };
+        await reportProgress(0, 'Reading locally stored broker activity.');
         runtime.reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'starting transactions fetch', {
             pathname: window.location.pathname,
             search: window.location.search,
@@ -851,6 +896,7 @@ async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
             visibilityState: document.visibilityState,
         });
         const data = await response.json();
+        assertActive();
         if (!response.ok || data.success === false) {
             runtime.reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload reported failure', {
                 status: response.status,
@@ -874,7 +920,8 @@ async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
                 verified_tax_lot_fallbacks: appliedTaxLotCompatibilityFallbacks,
             };
         }
-        runtime.reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload rendered successfully', {
+        await reportProgress(1, 'Preparing the historical prices used by Holdings.');
+        runtime.reportInvestmentFetchAbortDebug('C', 'investment.js:fetchInvestmentData', 'transactions payload validated successfully', {
             transactionCount: Array.isArray(data.transactions) ? data.transactions.length : -1,
             success: data.success,
         });
@@ -883,16 +930,21 @@ async function fetchInvestmentData({ expectedStoreVersion = '' } = {}) {
         runtime.state.investmentUrlStateApplying = true;
         let valuationStatus;
         try {
-            valuationStatus = await runtime.renderTransactionTable(data.transactions || []);
+            valuationStatus = await runtime.renderTransactionTable(data.transactions || [], {
+                assertActive,
+                onLoadingStep: typeof onProgress === 'function' ? reportProgress : null,
+            });
         } finally {
             runtime.state.investmentUrlStateApplying = previousUrlStateApplying;
         }
+        assertActive();
         const processedTransactions = Array.isArray(runtime.state.investmentProcessedTransactionsCache)
             ? [...runtime.state.investmentProcessedTransactionsCache]
             : [];
         runtime.clearStaleTransferReviewFeedback(processedTransactions);
         runtime.applyInvestmentUrlStateFromLocation({render: true});
         runtime.scheduleInvestmentSegmentedPillUpdate();
+        await reportProgress(4, 'Holdings are ready.');
         return { data, valuationStatus, processedTransactions };
     }
 

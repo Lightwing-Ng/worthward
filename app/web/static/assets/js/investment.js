@@ -1,7 +1,10 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.156.2
+ * Code version: v2.157.1
+ * - Changed: Loads canonical circular-action sizing for import height.
+ * - Added: Initial Holdings loading displays four measured completed steps
+ *   with the shared determinate indicator.
  * - Fixed: Loads Stock-details live values with stable card-owned line boxes.
  * - Fixed: Loads share-action placement that aligns to the global anchor.
  * - Fixed: Import refreshes the browser write session immediately before it
@@ -56,6 +59,7 @@
  * Historical changes are recorded in docs/INVESTMENT_FRONTEND_CHANGELOG.md.
  */
 
+import './loading-indicator.js?v=loading-indicator-v1.0.0';
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
 import {
     adaptInvestmentImportProcessLists,
@@ -70,12 +74,15 @@ import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/his
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.1';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.2';
-import {createInvestmentMetricsImportRuntime} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.2.0';
+import {
+    createInvestmentMetricsImportRuntime,
+    waitForInvestmentLoadingPaint,
+} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.3.1';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.1';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.0.2';
-import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.4.7';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.1.0';
+import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.0';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
 
 import {
@@ -179,7 +186,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.156.2',
+    entry: 'v2.157.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1357,10 +1364,17 @@ Object.assign(runtime, createInvestmentDataUtils({
     runtime.state.investmentBootstrapTimer = window.setTimeout(() => {
         runtime.state.investmentBootstrapTimer = 0;
         if (runtime.state.investmentPageDisposed || document.visibilityState === 'hidden') return;
-        runtime.showInvestmentLoadingModal();
-        runtime.fetchInvestmentData()
+        const determinate = new URLSearchParams(window.location.search).get('view') === 'holdings';
+        const loadingOwner = runtime.showInvestmentLoadingModal({determinate});
+        const onProgress = determinate ? async (progress) => {
+            runtime.updateInvestmentLoadingProgress({...progress, owner: loadingOwner});
+            // Let each completed step paint, including the final full circle,
+            // without estimating elapsed time or advancing unfinished work.
+            await waitForInvestmentLoadingPaint();
+        } : null;
+        runtime.fetchInvestmentData({onProgress})
             .then(({ valuationStatus }) => {
-                runtime.hideInvestmentLoadingModal({ resetContent: true });
+                runtime.hideInvestmentLoadingModal({ resetContent: true, owner: loadingOwner });
                 if (valuationStatus?.isDegraded) {
                     runtime.setImportFeedback(valuationStatus.message, 'warning');
                     return;
@@ -1368,7 +1382,7 @@ Object.assign(runtime, createInvestmentDataUtils({
                 runtime.clearImportFeedback();
             })
             .catch(err => {
-                runtime.hideInvestmentLoadingModal({ resetContent: true });
+                runtime.hideInvestmentLoadingModal({ resetContent: true, owner: loadingOwner });
                 if (runtime.isLifecycleInterruptedFetch(err)) return;
                 console.error('Failed to load transactions:', err);
                 runtime.setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');

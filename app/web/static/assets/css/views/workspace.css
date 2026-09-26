@@ -1,4 +1,4 @@
-/* Code version: v1.30.2 */
+/* Code version: v1.30.3 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -445,9 +445,9 @@
 
 @media (max-width: 600px) {
     .workspace-controls-toggle {
-        top: var(--sidebar-overlay-inset-top);
+        top: var(--global-quick-actions-top);
         left: calc(
-            var(--sidebar-overlay-inset-left)
+            var(--layout-global-anchor-left)
             + var(--circular-icon-button-size)
             + var(--layout-edge-gap)
         );

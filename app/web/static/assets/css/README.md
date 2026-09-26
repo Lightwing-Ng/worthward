@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.5.1`
+Documentation version: `v1.6.1`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -38,6 +38,19 @@ dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
 
+Standard circular icon actions use `--circular-icon-button-size`: 30px above
+900px and the existing 44px touch target at or below 900px. The 18px glyph is
+unchanged. Compatibility aliases, shared action rails, sidebar positions, and
+title clearance derive from that owner; do not restore private 36px control
+dimensions or change independent modal-dismiss, topic-icon, or Process List sizes.
+
+The sidebar Dock retains its pill-shaped Frosted Glass surface at every breakpoint.
+Settings navigation extends behind it instead of ending above a fixed footer band.
+Dock clearance belongs to the navigation scroll content's trailing padding and
+scroll padding, with a short fade at the sidebar's bottom edge. Keep the sidebar
+material, Dock indicator, and tooltip surfaces intact. Settings rows locally use
+36px block size and 4px vertical padding; other navigation keeps its own density.
+
 Shared workspace modals and floating notices use a two-column, two-row semantic
 grid. The absolutely positioned upper-left dismiss target stays out of flow. The
 title occupies the flexible first-row cell and centers on that dismiss target;
@@ -70,6 +83,13 @@ controls, strategy parameters, training factors, and private action slots all
 reuse it. Settings strategy cards retain their dense card-specific branch while
 inheriting the same primitive. Do not restore model-specific accordion CSS.
 
+Standard Shared select menus use their own opacity token while retaining the
+approved Backtest Period material: a 56%/16% theme-highlight gradient over a 62%
+theme-background surface. The trigger and general Frosted Glass material are
+unchanged. The shared current-color chevron uses the same right-closed,
+down-expanded states as Collapse. Explicitly opaque strategy-parameter adapters
+retain their existing local surface rather than changing the standard menu.
+
 - Put design tokens, globals, and cross-cutting primitives in `foundation/`.
 - Put app shell and structural layout rules in `layout/`.
 - Put reusable controls and interaction patterns in `components/`.
@@ -82,10 +102,11 @@ Keep selector order stable unless the change intentionally modifies cascade
 behavior. Run the static cache-version contract and browser checks after a
 manifest or load-order change.
 
-Allocation range thumbs use the shared Frosted Glass background, shadow, and
-backdrop blur without a border in either browser pseudo-element. Hover, keyboard
-focus, and dragging retain the shared material highlight. Range colors belong to
-the tracks and labels; the thumb dimensions and pointer hit areas stay unchanged.
+Allocation range thumbs use the shared resizer's Frosted Glass background, border,
+shadow, and backdrop blur in both browser pseudo-elements. Hover, keyboard focus,
+and dragging add its accent border with the standard primary-blue focus ring and
+glow tokens. Range colors belong to the tracks and labels; the thumb dimensions
+and pointer hit areas stay unchanged.
 
 ## Field-label typography
 

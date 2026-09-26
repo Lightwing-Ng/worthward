@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 import {
     expect,
     test,
@@ -439,9 +439,7 @@ test('validates the investment import flow without mutating the local store', as
         const controlRail = document.querySelector('.investment-import-control-rail');
         const closeButton = modal.querySelector('#investment_import_close_button');
         const quickActions = document.querySelector('#global_quick_actions');
-        const buttonSize = Number.parseFloat(
-            getComputedStyle(document.body).getPropertyValue('--settings-round-icon-button-size'),
-        ) || 36;
+        const buttonSize = quickActions.getBoundingClientRect().height;
         const expectedModalTop = quickActions.getBoundingClientRect().top + buttonSize + 10;
         container.scrollTop = container.scrollHeight;
         stack.scrollTop = stack.scrollHeight;

@@ -1,7 +1,9 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.0.2
+ * Code version: v1.1.0
+ * - Added: Shared modals explicitly select fixed loading or measured progress
+ *   and restore the indicator when the modal is reused.
  * - Fixed: Revealing the share actions re-aligns them to the global anchor.
  * - Fixed: Workbook validation refreshes the browser write session first.
  * - Added: Extracted from the Investment workspace composition root.
@@ -1120,8 +1122,12 @@ function showInvestmentWorkspaceModal({
         copy = runtime.WORKSPACE_MODAL_DEFAULT_COPY,
         iconClass = runtime.WORKSPACE_MODAL_DEFAULT_ICON_CLASS.replace(/^icon\s+/, ''),
         lockClose = false,
+        determinate = false,
+        progress = 0,
     } = {}) {
         if (!runtime.workspaceModalOverlay) return;
+        const owner = Symbol('investment-workspace-modal');
+        runtime.state.investmentLoadingModalOwner = owner;
         if (runtime.workspaceModalOverlayTitle) {
             runtime.workspaceModalOverlayTitle.textContent = title;
         }
@@ -1133,6 +1139,11 @@ function showInvestmentWorkspaceModal({
             runtime.workspaceModalOverlayIcon.className = normalizedIconClass
                 ? `icon ${normalizedIconClass} workspace-modal-icon`
                 : runtime.WORKSPACE_MODAL_DEFAULT_ICON_CLASS;
+            window.WORTHWARD_LOADING_INDICATOR?.setProgress(runtime.workspaceModalOverlayIcon, {
+                determinate,
+                value: progress,
+                label: title,
+            });
         }
         if (runtime.workspaceModalOverlayClose) {
             runtime.workspaceModalOverlayClose.hidden = lockClose;
@@ -1140,15 +1151,38 @@ function showInvestmentWorkspaceModal({
             runtime.workspaceModalOverlayClose.setAttribute('aria-hidden', lockClose ? 'true' : 'false');
         }
         runtime.workspaceModalOverlay.hidden = false;
+        return owner;
     }
 
-function showInvestmentLoadingModal() {
-        showInvestmentWorkspaceModal({
+function showInvestmentLoadingModal({determinate = false} = {}) {
+        return showInvestmentWorkspaceModal({
             title: runtime.INVESTMENT_LOADING_MODAL_TITLE,
             copy: runtime.INVESTMENT_LOADING_MODAL_COPY,
             iconClass: runtime.INVESTMENT_LOADING_MODAL_ICON_CLASS,
             lockClose: true,
+            determinate,
+            progress: 0,
         });
+    }
+
+function updateInvestmentLoadingProgress({completed, total, label, owner = null}) {
+        if (!runtime.workspaceModalOverlay || runtime.workspaceModalOverlay.hidden) return;
+        if (runtime.state.investmentPageDisposed) return;
+        if (owner && runtime.state.investmentLoadingModalOwner !== owner) return;
+        if (
+            !Number.isInteger(completed) || !Number.isInteger(total)
+            || total <= 0 || completed < 0 || completed > total
+        ) return;
+        const copy = `${completed} of ${total} loading steps complete. ${label}`;
+        if (runtime.workspaceModalOverlayCopy) {
+            runtime.workspaceModalOverlayCopy.textContent = copy;
+        }
+        window.WORTHWARD_LOADING_INDICATOR?.setProgress(runtime.workspaceModalOverlayIcon, {
+            determinate: true,
+            value: completed / total * 100,
+            label: `${runtime.INVESTMENT_LOADING_MODAL_TITLE}. ${copy}`,
+        });
+        runtime.workspaceModalOverlayIcon?.setAttribute('aria-valuetext', copy);
     }
 
 function showInvestmentImportProgressModal(copy = 'We are parsing and merging the imported broker activity. Please keep this tab open until the import finishes.') {
@@ -1169,9 +1203,14 @@ function showInvestmentTransferBindingModal() {
         });
     }
 
-function hideInvestmentLoadingModal({ resetContent = false } = {}) {
+function hideInvestmentLoadingModal({ resetContent = false, owner = null } = {}) {
         if (!runtime.workspaceModalOverlay) return;
+        if (owner && runtime.state.investmentLoadingModalOwner !== owner) return;
+        runtime.state.investmentLoadingModalOwner = null;
         runtime.workspaceModalOverlay.hidden = true;
+        window.WORTHWARD_LOADING_INDICATOR?.setProgress(runtime.workspaceModalOverlayIcon, {
+            determinate: false,
+        });
         if (runtime.workspaceModalOverlayClose) {
             runtime.workspaceModalOverlayClose.hidden = false;
             runtime.workspaceModalOverlayClose.disabled = false;
@@ -1471,6 +1510,7 @@ function isMoneyMarketFundTicker(ticker) {
         clearImportFeedback,
         showInvestmentWorkspaceModal,
         showInvestmentLoadingModal,
+        updateInvestmentLoadingProgress,
         showInvestmentImportProgressModal,
         showInvestmentTransferBindingModal,
         hideInvestmentLoadingModal,
@@ -1498,4 +1538,3 @@ function isMoneyMarketFundTicker(ticker) {
         isMoneyMarketFundTicker,
     };
 }
-
