@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -43,7 +43,7 @@ test('uses the compact Apple-style Live trading PIN dialog geometry', async ({pa
         };
     });
     expect(Math.abs(geometry.iconCenterY - geometry.titleCenterY)).toBeLessThanOrEqual(0.5);
-    expect(geometry.dialogBorderWidth).toBe(0);
+    expect(geometry.dialogBorderWidth).toBe(1);
     expect(geometry.dialogRadius).toBe(10);
     expect(geometry.dialogWidth).toBeLessThanOrEqual(392);
     expect(geometry.buttonPaddingInline).toBe(14);
@@ -139,4 +139,3 @@ test('applies the stored light and dark appearance to the Live trading PIN gate'
     expect(lightTheme.bodyBackground).not.toBe(darkTheme.bodyBackground);
     expect(lightTheme.titleColor).not.toBe(darkTheme.titleColor);
 });
-

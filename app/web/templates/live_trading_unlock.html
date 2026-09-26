@@ -1,4 +1,4 @@
-{# Code version: v1.10.20 #}
+{# Code version: v1.10.21 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -115,7 +115,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.103.16') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.103.17') }}">
     <style>
         html,
         body {
@@ -129,9 +129,6 @@
 
         .live-trading-pin-overlay {
             isolation: isolate;
-            background: color-mix(in srgb, var(--bg) 76%, transparent);
-            backdrop-filter: blur(18px) saturate(1.08);
-            -webkit-backdrop-filter: blur(18px) saturate(1.08);
         }
 
         .live-trading-pin-dialog {
@@ -140,24 +137,8 @@
             gap: 0;
             width: min(var(--live-trading-pin-dialog-width), calc(100vw - 32px));
             padding: var(--live-trading-pin-dialog-padding);
-            border: 0;
             border-radius: var(--live-trading-pin-dialog-radius);
-            background: color-mix(in srgb, var(--glass-surface-background-dense) 94%, transparent);
-            box-shadow:
-                0 34px 90px -44px color-mix(in srgb, var(--theme-shadow) 68%, transparent),
-                0 14px 34px -24px var(--theme-shadow-ambient),
-                inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 82%, transparent);
-            backdrop-filter: blur(32px) saturate(1.28);
-            -webkit-backdrop-filter: blur(32px) saturate(1.28);
             font-family: var(--font-family-base);
-        }
-
-        .live-trading-pin-dialog::after {
-            background: linear-gradient(
-                180deg,
-                color-mix(in srgb, var(--color-white-adaptive) 14%, transparent) 0%,
-                transparent 58%
-            );
         }
 
         .live-trading-pin-heading {

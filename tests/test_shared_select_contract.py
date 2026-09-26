@@ -1,4 +1,4 @@
-"""Focused Shared select presentation contract tests. Code version: v1.0.7."""
+"""Focused Shared select presentation contract tests. Code version: v1.0.8."""
 
 from __future__ import annotations
 
@@ -121,7 +121,7 @@ def test_public_layout_contract_carries_complete_standard_select_semantics() -> 
     contract = _read(LAYOUT_CONTRACT_PATH)
     normalized_contract = " ".join(contract.split())
 
-    assert "Documentation version: `v1.21.4`" in contract
+    assert "Documentation version: `v1.21.5`" in contract
     assert "This specimen-only presentation leaves ordinary" in normalized_contract
     assert "### Standard single-value Shared select" in contract
     for required_text in (

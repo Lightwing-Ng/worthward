@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.0."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.1."""
 
 from __future__ import annotations
 
@@ -928,19 +928,35 @@ def test_style_tokens_portfolio_orbit_centers_logos_on_their_segments() -> None:
         assert f'{logo} data-style-token-donut-angle="{midpoint}" data-style-token-donut-segment-start="{start}" data-style-token-donut-segment-end="{end}"' in html
 
 
-def test_style_tokens_modal_title_uses_shared_bold_weight() -> None:
+def test_style_tokens_modal_title_reuses_the_waiting_notification_weight() -> None:
     project_root = Path(__file__).resolve().parents[1]
     trade_css = (
         project_root / "app/web/static/assets/css/views/trade.css"
     ).read_text(encoding="utf-8")
 
-    modal_title_rule = trade_css.split(
-        ".style-token-modal-demo .workspace-modal-title {",
+    workspace_css = (
+        project_root / "app/web/static/assets/css/views/workspace.css"
+    ).read_text(encoding="utf-8")
+    modal_title_rule = workspace_css.split(
+        ".workspace-modal-title {",
         maxsplit=1,
     )[1].split("}", maxsplit=1)[0]
 
-    assert "font-weight: var(--font-weight-bold);" in modal_title_rule
-    assert "font-weight: var(--font-weight-regular);" not in modal_title_rule
+    assert "font-weight: var(--font-weight-semibold);" in modal_title_rule
+    assert ".style-token-modal-demo .workspace-modal-title {" not in trade_css
+
+
+def test_style_tokens_notification_rows_expose_the_approved_material_variant() -> None:
+    rows_source = (PROJECT_ROOT / "app/web/style_token_rows.py").read_text(
+        encoding="utf-8"
+    )
+    modal_row = rows_source.split('"name": "Modal dialog",', maxsplit=1)[1]
+    modal_row = modal_row.split('"related_styles":', maxsplit=1)[0]
+    for suffix in ("background", "border", "shadow", "blur"):
+        token = f"--frosted-glass-notice-{suffix}"
+        assert f'raw_token("{token}", foundation_token_value("{token}"))' in modal_row
+    banner_row = rows_source.split('"name": "Modal dialog banner message",', maxsplit=1)[1]
+    assert '"target_id": style_token_id("Modal dialog")' in banner_row
 
 
 def test_investment_ranges_reuse_the_investment_view_segmented_control_contract() -> None:

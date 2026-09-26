@@ -1,4 +1,4 @@
-/* Code version: v0.37.0 */
+/* Code version: v0.37.1 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -1093,11 +1093,11 @@ div.style-token-modal-demo {
     max-width: 420px;
     box-sizing: border-box;
     overflow: clip;
-    background: var(--frosted-glass-background);
-    box-shadow: var(--frosted-glass-shadow);
-    backdrop-filter: var(--frosted-glass-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-blur);
-    border: var(--frosted-glass-border);
+    background: var(--frosted-glass-notice-background);
+    box-shadow: var(--frosted-glass-notice-shadow);
+    backdrop-filter: var(--frosted-glass-notice-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-notice-blur);
+    border: var(--frosted-glass-notice-border);
 }
 
 .style-token-demo .workspace-modal-dialog,

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.87.0`
+Documentation version: `v1.87.1`
 
 ## Shared modal and floating-banner rows
 
@@ -15,6 +15,24 @@ wrapped second item. `tests/test_layout_anchor_contract.py` and
 message-container fallback, shared list-indentation tokens, and valid `ol > li`
 macro structure. The browser suite also exercises the reduced-motion duration and
 touch-visible dismiss control.
+
+`tests/e2e/waiting-notification-parity.spec.mjs` checks the existing production
+waiting overlay and both catalog specimens at 1,006 by 791, 390 by 844 with touch,
+and 1,006 by 500 in light and dark themes. It verifies the approved translucent
+notification material, 18px saturated blur, 15px heading/body hierarchy, 12px
+dismiss glyph, one-line heading centering, wrapped-title row growth, long-path
+containment, viewport centering, owner-hover or touch visibility, and keyboard
+dismissal. Plain numbered copy is muted; system Dark and manual Light resolve
+the production notification material independently. The standalone locked PIN
+adapter inherits the same material and soft scrim while preserving its 392px,
+one-column form, existing 420px narrow breakpoint, and six unfilled input slots.
+No unlock submission is made.
+The existing Investment feedback shell also verifies muted plain list copy,
+retained inline semantic emphasis, and its separate 460px desktop width without
+starting an import.
+The suite only reveals the existing DOM surface; it does not start a broker
+import, order, or production cache operation. The independent motion suite keeps
+the ordinary Frosted Glass material at 62% opacity and 12px blur.
 
 ## Prices secondary-sidebar overlay
 

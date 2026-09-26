@@ -1,4 +1,4 @@
-/* Code version: v3.79.2 */
+/* Code version: v3.79.3 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -2100,10 +2100,6 @@
     background-color: var(--accent-fill);
     mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
     -webkit-mask: url("/static/images/hourglass.bottomhalf.filled.svg") center/contain no-repeat;
-}
-
-.style-token-modal-demo .workspace-modal-title {
-    font-weight: var(--font-weight-bold);
 }
 
 .style-token-settings-input-shell {

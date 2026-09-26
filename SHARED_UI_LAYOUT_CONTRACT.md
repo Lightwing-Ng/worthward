@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.21.4`
+Documentation version: `v1.21.5`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -105,7 +105,8 @@ The Collapse specimen has no placeholder explanatory paragraph.
   a content rail. The first row has a minimum height of
   `--workspace-modal-title-row-min-height`, which resolves to the dismiss size; the
   title occupies its flexible second column and is vertically centered on the dismiss
-  target. In the second row, the unchanged `36px` topic icon starts at the surface's
+  target while it fits one line. A wrapped title may grow that row without moving the
+  fixed, equal-inset dismiss control. In the second row, the unchanged `36px` topic icon starts at the surface's
   left inset and the paragraph or list starts at the same top coordinate in the
   flexible column after the standard gap. Row gap is the only vertical separation:
   neither the topic icon nor the body adds a private top margin. Ordered and unordered
@@ -117,6 +118,24 @@ The Collapse specimen has no placeholder explanatory paragraph.
   The Investment import overlay uses the same upper-left dismiss inset and size.
   Its close button is absolutely positioned inside the modal, not in the
   history-card control rail, so it cannot displace broker or method controls.
+  The approved Local resources waiting notification owns the shared notification
+  Frosted Glass variant: `--frosted-glass-notice-background`,
+  `--frosted-glass-notice-border`, `--frosted-glass-notice-shadow`, and
+  `--frosted-glass-notice-blur`. The two existing semantic material aliases resolve
+  to that background. The variant uses `saturate(160%) blur(18px)` with its approved
+  light and dark translucent gradients, without an extra painted pseudo-element.
+  A notification title uses 15px semibold text; paragraph and list bodies use 15px
+  regular text with a 1.45 line height, and ordinary paragraph and list copy is muted. The
+  close glyph is 12px inside the unchanged 24px target. Catalog specimens consume
+  the same variant and hierarchy. Ordinary controls retain the separate general
+  62%-opacity, 12px-blur Frosted Glass material. Full-page product forms and the
+  460px Investment feedback width remain explicit adapters, not extra notification
+  grid owners. The standalone PIN adapter inherits the notification material and
+  soft overlay scrim while retaining its one-column form, 392px width, 24px padding,
+  six input slots, and authentication boundary. Its existing 420px narrow breakpoint
+  keeps a viewport-minus-24px width and 20px padding.
+  Investment feedback lists use the same muted ordinary copy; explicit inline
+  emphasis and success/error colors remain semantic presentation.
 - Circular icon actions use the `.circular-icon-button` primitive. Its canonical
   `--circular-icon-button-*` token family owns the `36px` desktop target, `18px`
   current-color glyph, pill radius, Frosted Glass material, and idle, hover, active,

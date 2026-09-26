@@ -1,6 +1,6 @@
-/* Code version: v1.30.1 */
+/* Code version: v1.30.2 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
-/* Fixed: Floating-banner copy now uses the same primary text token as its heading. */
+/* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
 /* Keep the shared workspace shell from clipping child card shadows. */
 /* Keep Portfolio result metadata and share actions inside the full-width result card. */
@@ -1667,11 +1667,11 @@
     pointer-events: auto;
     opacity: 1;
     border-radius: var(--workspace-modal-radius);
-    background: var(--frosted-glass-background);
-    box-shadow: var(--frosted-glass-shadow);
-    backdrop-filter: var(--frosted-glass-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-blur);
-    border: var(--frosted-glass-border);
+    background: var(--workspace-modal-material);
+    box-shadow: var(--frosted-glass-notice-shadow);
+    backdrop-filter: var(--frosted-glass-notice-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-notice-blur);
+    border: var(--frosted-glass-notice-border);
     overflow: hidden;
 }
 
@@ -1699,19 +1699,23 @@
     text-align: left;
     font-size: var(--font-ui-lg);
     line-height: 1.2;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     color: var(--text);
+    overflow-wrap: anywhere;
 }
 
 .workspace-modal-copy {
     grid-column: 2;
     grid-row: 2;
+    min-width: 0;
     margin: 0;
     align-self: start;
     text-align: left;
-    font-size: var(--font-form-label);
+    font-size: var(--font-size-5);
     line-height: 1.45;
     color: var(--muted);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
 }
 
 .workspace-modal-list {
@@ -1721,6 +1725,12 @@
     padding-inline-start: var(--workspace-modal-list-padding-inline-start);
     align-self: start;
     list-style-position: outside;
+    min-width: 0;
+    color: var(--muted);
+    font-size: var(--font-size-5);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
 .workspace-modal-list li {
@@ -1747,11 +1757,11 @@
     width: min(420px, calc(100% - 12px));
     margin: 0;
     padding: 12px 12px 12px 14px;
-    background: var(--frosted-glass-background);
-    box-shadow: var(--frosted-glass-shadow);
-    backdrop-filter: var(--frosted-glass-blur);
-    -webkit-backdrop-filter: var(--frosted-glass-blur);
-    border: var(--frosted-glass-border);
+    background: var(--notice-floating-material);
+    box-shadow: var(--frosted-glass-notice-shadow);
+    backdrop-filter: var(--frosted-glass-notice-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-notice-blur);
+    border: var(--frosted-glass-notice-border);
     z-index: var(--layer-chart-tooltip);
 }
 
@@ -1809,6 +1819,7 @@
     min-width: 0;
     margin: 0;
     align-self: start;
+    color: var(--muted);
     font-weight: var(--font-weight-regular);
 }
 
@@ -1823,9 +1834,10 @@
     margin: 0;
     color: var(--text);
     font-size: var(--font-ui-lg);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     line-height: 1.2;
     text-align: left;
+    overflow-wrap: anywhere;
 }
 
 .notice-floating-banner-list {
@@ -1835,10 +1847,12 @@
     margin: 0;
     padding-inline-start: var(--workspace-modal-list-padding-inline-start);
     color: inherit;
-    font-size: var(--font-form-label);
+    font-size: var(--font-size-5);
     font-weight: var(--font-weight-regular);
     line-height: 1.45;
     list-style-position: outside;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .notice-floating-banner-copy {
@@ -1846,10 +1860,12 @@
     grid-row: 2;
     align-self: start;
     margin: 0;
-    color: var(--text);
-    font-size: var(--font-form-label);
+    color: var(--muted);
+    font-size: var(--font-size-5);
     font-weight: var(--font-weight-regular);
     line-height: 1.45;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .notice-floating-banner-list li {
@@ -1908,6 +1924,12 @@
 .dismiss-button .icon {
     width: 10px;
     height: 10px;
+}
+
+.workspace-modal-close .icon,
+.notice-floating-banner .notice-close .icon {
+    width: 12px;
+    height: 12px;
 }
 
 .notice-close {

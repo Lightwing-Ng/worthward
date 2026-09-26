@@ -1,5 +1,21 @@
 # Known issues and operating constraints
 
+Approved waiting-notification parity, 26 Sep 2026: centered waiting overlays,
+floating banners, and their Style tokens specimens consume one explicit
+notification Frosted Glass variant, matching the approved AgenticContext Local
+resources waiting surface. The variant preserves the shared two-row geometry,
+uses 18px saturated blur, 15px semibold headings, 15px regular supporting copy,
+and a 12px dismiss glyph. Ordinary controls keep their existing 62%-opacity,
+12px-blur material. Product-specific Investment feedback remains 460px wide;
+full-page import and PIN forms retain their independent content layout. The PIN
+surface inherits the canonical shader and soft scrim instead of adding its own
+opaque surface and second overlay blur. Ordinary numbered copy, including
+Investment feedback, is muted; explicit inline emphasis stays semantic. A wrapped
+title may grow its row while the close target keeps equal top and left insets.
+No real import, order, or deletion was performed. The user-owned 8688 process was
+not restarted, so rendered live adoption remains a separate owner-controlled
+verification boundary.
+
 Style tokens specimen width tiers, 25 Sep 2026: the Shared select dropdown,
 Shared select filter, and Strategy tuning control demos use the existing 384px
 control token while their preview column is narrower than the 640px content
@@ -550,7 +566,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.264.5`
+Documentation version: `v1.264.6`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

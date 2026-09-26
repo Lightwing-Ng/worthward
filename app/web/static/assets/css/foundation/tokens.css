@@ -1,4 +1,4 @@
-/* Code version: v0.47.3 */
+/* Code version: v0.47.4 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -390,6 +390,8 @@
 	--strategy-stepper-button-height: 18px;
 	--strategy-stepper-font-size: 9px;
 	--workspace-modal-radius: var(--radius-panel);
+	--workspace-modal-material: var(--frosted-glass-notice-background);
+	--notice-floating-material: var(--frosted-glass-notice-background);
 	--workspace-modal-pad-block: 12px;
 	--workspace-modal-pad-inline: 12px;
 	--workspace-modal-close-offset: 12px;
@@ -547,6 +549,13 @@
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(10, 14, 25, 0.16), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 64%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(10, 14, 25, 0.14), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 48%, transparent);
 	--frosted-glass-blur: blur(12px);
+	/* Approved Local resources waiting surface; ordinary controls keep their material. */
+	--frosted-glass-notice-background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(248, 249, 250, 0.18) 100%),
+		rgba(255, 255, 255, 0.08);
+	--frosted-glass-notice-border: var(--layout-glass-border-width) solid rgba(255, 255, 255, 0.30);
+	--frosted-glass-notice-shadow: 0 18px 40px rgba(10, 14, 25, 0.12), inset 0 1px 0 color-mix(in srgb, rgba(255, 255, 255, 0.55) 52%, transparent);
+	--frosted-glass-notice-blur: saturate(160%) blur(18px);
 	--surface-resizer-handle-background: var(--frosted-glass-background);
 	--surface-resizer-handle-background-hover: var(--frosted-glass-background-hover);
 	--surface-resizer-handle-border: var(--frosted-glass-border);
@@ -663,6 +672,11 @@
 		--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 		--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 		--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
+		--frosted-glass-notice-background:
+			linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
+			rgba(10, 14, 20, 0.06);
+		--frosted-glass-notice-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.225);
+		--frosted-glass-notice-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, rgba(255, 255, 255, 0.08) 36%, transparent);
 	}
 }
 :root[data-theme-override="dark"] {
@@ -676,6 +690,11 @@
 	--frosted-glass-shadow: 0 18px 40px rgba(0, 0, 0, 0.20), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 36%, transparent);
 	--frosted-glass-shadow-hover: 0 22px 48px rgba(0, 0, 0, 0.26), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 44%, transparent);
 	--frosted-glass-shadow-active: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 1px 0 color-mix(in srgb, var(--theme-glass-highlight) 32%, transparent);
+	--frosted-glass-notice-background:
+		linear-gradient(180deg, rgba(72, 88, 112, 0.18) 0%, rgba(42, 48, 64, 0.135) 100%),
+		rgba(10, 14, 20, 0.06);
+	--frosted-glass-notice-border: var(--layout-glass-border-width) solid rgba(210, 224, 244, 0.225);
+	--frosted-glass-notice-shadow: 0 18px 40px rgba(0, 0, 0, 0.22), inset 0 1px 0 color-mix(in srgb, rgba(255, 255, 255, 0.08) 36%, transparent);
 }
 html {
 	height: 100%;
