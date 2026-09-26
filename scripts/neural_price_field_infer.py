@@ -1,4 +1,4 @@
-"""One-shot JSON pipe entrypoint for neural forecast inference. Code version: v1.0.0."""
+"""One-shot JSON pipe entrypoint for neural forecast inference. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ def main() -> int:
     request = json.load(sys.stdin)
     import numpy as np
     import torch
-    from strategies.neural_price_field_compute import walk_forward_neural_predictions
-    from strategies.neural_price_field_runtime import forecast_payload
+    from strategies.price_field.neural.compute import walk_forward_neural_predictions
+    from strategies.price_field.neural.runtime import forecast_payload
 
     # This child owns its runtime. Limit launch overhead and avoid multiplying
     # native thread pools when the application already has active workloads.

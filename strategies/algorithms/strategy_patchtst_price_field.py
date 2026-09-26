@@ -1,6 +1,6 @@
-"""PatchTST probability strategy adapter. Code version: v1.0.0."""
+"""PatchTST probability strategy adapter. Code version: v1.0.1."""
 
-from strategies.neural_price_field import NeuralPriceFieldStrategy
+from strategies.price_field.neural.strategy import NeuralPriceFieldStrategy
 
 
 class PatchTSTPriceFieldStrategy(NeuralPriceFieldStrategy):

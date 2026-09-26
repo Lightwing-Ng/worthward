@@ -5,7 +5,7 @@ read-only market-factor service for remote data. The emitted configuration
 contains a deterministic, compressed snapshot so the durable optimizer can run
 without network access or provider credentials.
 
-Code version: v1.2.1
+Code version: v1.2.2
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from app.infrastructure.broker_market_data import (  # noqa: E402
 from strategies.algorithms.strategy_bayesian_price_field import (  # noqa: E402
     BayesianPriceFieldStrategy,
 )
-from strategies.price_field_pipeline import (  # noqa: E402
+from strategies.price_field.pipeline import (  # noqa: E402
     load_price_field_market_bundle,
 )
 
@@ -95,13 +95,13 @@ OPTION_PARAMETER_FIELDS: dict[str, tuple[str, ...]] = {
 CRITICAL_SOURCE_PATHS = (
     "app/infrastructure/broker_market_data.py",
     "app/infrastructure/parallel.py",
-    "app/services/price_field_market_factors.py",
+    "app/services/research/price_field_market_factors.py",
     "strategies/base.py",
     "strategies/algorithms/strategy_bayesian_price_field.py",
     "strategies/interval_bridge.py",
-    "strategies/price_field_contract.py",
-    "strategies/price_field_pipeline.py",
-    "strategies/price_field_scoring.py",
+    "strategies/price_field/contract.py",
+    "strategies/price_field/pipeline.py",
+    "strategies/price_field/scoring.py",
     "scripts/bayesian_crps_ga_job.py",
     "scripts/prepare_bayesian_crps_ga_config.py",
 )

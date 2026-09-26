@@ -108,7 +108,7 @@
 			return groups;
 		};
 	
-		// `app/core/market_sessions.py` owns ticker market identity, timezones,
+		// `app/core/markets/sessions.py` owns ticker market identity, timezones,
 		// and session minutes. `chart-axis-utils.js` exposes its serialized
 		// projection, so Price comparison keeps no suffix or timezone table.
 		const marketForTicker = (ticker) => (

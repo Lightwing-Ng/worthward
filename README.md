@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.37.2`
+Documentation version: `v3.37.4`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -111,8 +111,9 @@ non-browser API clients.
 
 ### Backtest research CLI
 
-`scripts/strategy_tune.py` v1.1.0 discovers the same enabled strategy registry as
-the dropdown (18 strategies on 8 Sep 2026). It supports genetic search and a
+`scripts/strategy_tune.py` v1.2.1 discovers the same enabled strategy registry as
+the Backtest dropdown, including new strategy modules without a CLI allowlist.
+It supports genetic search and a
 random-forest regression surrogate, reuses each strategy's production execution
 engine, ranks two chronological validation windows, and evaluates the winner on
 an untouched final holdout. Buy and hold has no tunable parameters and is evaluated
@@ -123,6 +124,7 @@ return while continuing to disclose drawdown and keeping holdout out of selectio
 
 ```bash
 python3 scripts/strategy_tune.py --catalog
+python3 scripts/strategy_tune.py --describe macd
 python3 scripts/strategy_tune.py --strategy macd --ticker NVDA \
   --from 2025-09-04 --to 2026-09-04 --method genetic --trials 16 \
   --bounds '{"fast_span":[4,20],"slow_span":[24,50],"signal_span":[3,15]}' \
@@ -142,6 +144,38 @@ evaluations, allowing an in-flight evaluation to finish. Local price stores are
 read-only; strategies with a declared Longbridge source use that canonical
 provider. Missing real data fails explicitly. See the architecture and operating
 constraints for chronology, provenance, and interval requirements.
+
+`--describe STRATEGY` prints the complete parameter definitions (types, defaults,
+limits, choices, and whether each field can be optimized), the required ticker
+order, the market-data source, and supported model/execution intervals. Discovery
+does not load prices or require a running web server. `--version` prints the CLI
+version, which is also recorded in `result.json`.
+
+For a single fixed configuration, pass `--bounds '{}'`; unspecified parameters
+retain their strategy defaults, and the configuration is evaluated once across
+the same two validation folds and separate final holdout. This is a research
+evaluation, not a full-range Backtest equity report. To reuse configuration files,
+pass `--params @params.json` and/or `--bounds @bounds.json`; each UTF-8 file must
+contain a JSON object. Paths containing spaces should be quoted, for example
+`--params '@research files/params.json'`.
+
+```bash
+python3 scripts/strategy_tune.py --strategy macd --ticker NVDA \
+  --from 2025-09-04 --to 2026-09-04 \
+  --params '{"fast_span":8,"slow_span":26,"signal_span":9}' --bounds '{}' \
+  --no-stop-loss --output /tmp/worthward-macd-fixed
+```
+
+The existing CLI default allows loss-making algorithmic exits; add
+`--no-stop-loss` to match the Backtest UI's default exit gate. A run requires
+at least 40 distinct trading dates and real complete OHLC data. Price Field
+strategies require their declared Longbridge source and the selected model's
+runtime dependencies. Invalid configuration or missing data returns a nonzero
+exit code. Progress goes to stderr; stdout contains the final `result.json` path.
+The result includes normalized winning parameters, per-trial metrics, data
+provenance, and the final holdout; `evaluations.jsonl` retains each trial.
+Buy and hold enters independently at the beginning of each scored fold, so
+warmup history cannot consume its only entry signal.
 
 Cycle of Price Action uses the same CLI path. Its `result.json` records stage
 counts, latest state, and buy/sell intent counts for each scored window under
@@ -660,17 +694,25 @@ scripts/test.sh                 -> Supported host-Python pytest wrapper
 scripts/test_js.sh              -> Node unit tests and gradual JavaScript coverage thresholds
 scripts/check.sh                -> Complete local and CI quality gate
 .github/workflows/quality.yml   -> Push and pull-request quality-gate workflow
-app/core/                       -> Shared config, settings helpers, and market-calendar primitives
+app/core/preferences/           -> Persisted settings and shared settings storage
+app/core/markets/               -> Shared ticker identity, calendars, and sessions
 app/infrastructure/             -> Storage, connectivity, and broker market-data integration
-app/services/                   -> Business logic and bounded investment-import domain modules
+app/services/                   -> Market, analysis, research, and investment domain packages
+app/services/investment/importing/ -> Broker adapters, merge rules, and shared import support
 app/web/routes/                 -> Flask route registration by workspace
 app/web/runtime.py              -> Static WebRuntime facade and dependency composition
-app/web/runtime_*.py            -> Bounded request, page, import, market, and mutation factories
+app/web/runtime_domains/        -> Bounded request, page, import, market, and mutation factories
+app/web/presentation/           -> Token registries, strategy forms, and table metadata
 app/web/templates/              -> Server-rendered HTML templates
 app/web/static/assets/js/app/   -> Shared workspace browser factories
 app/web/static/assets/js/investment/runtime/ -> Investment workspace browser factories
 app/web/static/                 -> Versioned CSS, JavaScript, and image assets
 strategies/                     -> Strategy framework, loader, backtest engine, and algorithms
+strategies/price_field/         -> Shared Price Field pipeline and neural implementation packages
+tests/python/                  -> Python tests grouped by architectural layer and domain
+tests/support/                 -> Shared source readers and broker-import test mixins
+tests/js/                      -> Node unit tests grouped by feature
+tests/e2e/                     -> Browser tests grouped by feature
 market_store/                   -> Local market history, profile, and logo caches
 settings_store/                 -> Runtime-generated local settings, investment ledger, and search caches
 outputs/                        -> Ignored, potentially sensitive local review output; never canonical docs

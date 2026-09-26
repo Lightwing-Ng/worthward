@@ -1,7 +1,7 @@
 """
 Application factory for the stock comparison web app.
 
-Code version: v0.13.0
+Code version: v0.13.1
 - Changed: Keep the package facade dependency-light until create_app() is called.
 - Added: Publish the canonical market-session projection to every template.
 - Added: Publish one Backtest transaction-column structure to every template.
@@ -42,8 +42,8 @@ def create_app() -> Flask:
         SETTINGS_BROKER_CODES,
         sorted_broker_entries,
     )
-    from app.core.market_sessions import browser_market_session_config
-    from app.web.backtest_table_columns import backtest_transaction_columns
+    from app.core.markets.sessions import browser_market_session_config
+    from app.web.presentation.backtest_table_columns import backtest_transaction_columns
     from app.web.request_security import get_or_create_investment_csrf_token, protect_settings_writes
     from app.web.routes_entry import register_routes
 

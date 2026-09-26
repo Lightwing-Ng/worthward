@@ -1,7 +1,7 @@
 """
 Project entrypoint.
 
-Code version: v0.6.1
+Code version: v0.6.2
 - Changed: Spawned CPU workers skip application bootstrap when importing this
   entrypoint, preventing Flask and broker prewarm side effects in child
   processes while preserving the normal WSGI and CLI launch paths.
@@ -21,7 +21,7 @@ try:
 except RuntimeError as exc:
     raise SystemExit(str(exc)) from exc
 
-from app.core.broker_settings import (  # noqa: E402
+from app.core.preferences.broker import (  # noqa: E402
     has_longbridge_credentials,
     load_broker_settings,
     uses_longbridge_cli_oauth,

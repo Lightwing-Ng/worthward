@@ -1,6 +1,6 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.5.0
+Code version: v1.5.1
 - Added: Investment session-token handler for import dialog readiness.
 - Changed: Investment transaction cache schema v16 invalidates payloads built
   before broker snapshots exposed dated IBKR interest-accrual boundaries.
@@ -44,26 +44,26 @@ from flask import (
 from openpyxl import Workbook, load_workbook
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from app.core.backtest_settings import (
+from app.core.preferences.backtest import (
     load_backtest_execution_mode,
     save_backtest_execution_mode,
 )
-from app.core.cash_equivalent_settings import (
+from app.core.preferences.cash_equivalent import (
     load_cash_equivalent_tickers,
     save_cash_equivalent_tickers,
 )
-from app.core.investment_settings import (
+from app.core.preferences.investment import (
     load_investment_cost_basis_method,
     save_investment_cost_basis_method,
 )
-from app.core.market_identity import infer_ticker_market, market_timezone_for_ticker
+from app.core.markets.identity import infer_ticker_market, market_timezone_for_ticker
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
-from app.core.date_display_settings import (
+from app.core.preferences.date_display import (
     load_date_display_settings,
     save_full_date_display_format,
     save_short_date_display_format,
 )
-from app.core.language_settings import (
+from app.core.preferences.language import (
     HTML_LANG_BY_LANGUAGE,
     LANGUAGE_LABELS,
     SUPPORTED_LANGUAGE_CODES,
@@ -103,13 +103,13 @@ from app.infrastructure.longbridge_cli import (
     start_longbridge_cli_browser_oauth,
     test_longbridge_cli_connection,
 )
-from app.core.broker_settings import (
+from app.core.preferences.broker import (
     BrokerSettings,
     load_broker_settings,
     sanitize_broker_settings_for_view,
     save_broker_settings,
 )
-from app.services.comparisons import (
+from app.services.analysis.comparisons import (
     align_intraday_datasets_for_compare,
     build_series_payload,
     calculate_ttm_dividend_yield,
@@ -124,7 +124,7 @@ from app.services.comparisons import (
     slice_datasets_for_compare_period,
     slice_intraday_datasets_for_compare_period,
 )
-from app.core.email_settings import (
+from app.core.preferences.email import (
     SmtpSettings,
     YAHOO_SMTP_HOST,
     YAHOO_SMTP_PORT,
@@ -135,7 +135,7 @@ from app.core.email_settings import (
     test_smtp_connection,
 )
 from strategies.backtest import combine_backtest_datasets, run_single_ticker_backtest
-from strategies.price_field_contract import (
+from strategies.price_field.contract import (
     is_price_field_strategy,
 )
 from strategies.interval_bridge import (
@@ -171,7 +171,7 @@ from app.core.config import (
     SUPPORTED_PERIODS_1M,
 )
 from app.core.upload_limits import MAX_INVESTMENT_IMPORT_REQUEST_MIB
-from app.services.date_constraints import (
+from app.services.market.date_constraints import (
     build_date_constraint_payload,
     build_date_constraint_availability,
     is_nyse_early_close,
@@ -179,18 +179,18 @@ from app.services.date_constraints import (
     nyse_market_session_state,
     nyse_recent_trading_days,
 )
-from app.services.dca import simulate_recurring_investment
-from app.services.lstm_training import LstmTrainingConflict, LstmTrainingManager
-from app.services.price_field_training import (
+from app.services.analysis.dca import simulate_recurring_investment
+from app.services.research.lstm_training import LstmTrainingConflict, LstmTrainingManager
+from app.services.research.price_field_training import (
     PriceFieldTrainingConflict,
     PriceFieldTrainingManager,
 )
-from app.services.market_cap import (
+from app.services.market.market_cap import (
     build_market_cap_series_payload,
     extract_stock_split_events,
     fetch_usd_exchange_rate_history,
 )
-from app.services.range_options import (
+from app.services.analysis.range_options import (
     COMPARE_INTRADAY_PERIODS,
     build_supported_compare_periods,
     build_supported_periods_from_dates,
@@ -210,8 +210,8 @@ from app.services.investment_import import (
     validate_investment_internal_transfer_binding,
     validate_investment_security_transfer_attribution,
 )
-from app.services.investment_import_registry import commit_investment_import
-from app.services.zircon_hk_import import (
+from app.services.investment.importing.registry import commit_investment_import
+from app.services.investment.importing.brokers.zircon_hk import (
     STANDARD_INVESTMENT_EXPORT_FILENAME,
     ZIRCON_HK_MAX_TRANSACTION_ROWS,
     ZIRCON_HK_TEMPLATE_FILENAME,
@@ -219,13 +219,13 @@ from app.services.zircon_hk_import import (
     build_zircon_hk_template_xlsx,
 )
 
-from app.services.live_trading import (
+from app.services.investment.live_trading import (
     load_longbridge_account_balances,
     load_longbridge_account_label,
     load_longbridge_stock_positions,
     submit_longbridge_limit_order,
 )
-from app.services.logos import (
+from app.services.market.logos import (
     fetch_quote_profile,
     has_valid_ticker_format,
     normalize_ticker_input,
@@ -233,7 +233,7 @@ from app.services.logos import (
     resolve_stored_logo_url,
     search_tickers,
 )
-from app.services.market_data import (
+from app.services.market.market_data import (
     canonical_compare_overnight_ticker,
     fetch_compare_one_day_extended_history,
     fetch_compare_one_day_overnight_history,
@@ -254,15 +254,15 @@ from app.services.market_data import (
     supports_compare_extended_hours,
     supports_compare_overnight,
 )
-from app.services.market_freshness import (
+from app.services.market.market_freshness import (
     ensure_latest_backtest_intraday_cache,
     ensure_latest_daily_caches,
     ensure_latest_investment_daily_caches,
     extract_open_investment_tickers,
 )
-from app.services.market_freshness import ensure_latest_backtest_caches
+from app.services.market.market_freshness import ensure_latest_backtest_caches
 from app.models.schemas import DateConstraintPayload, QuoteProfile, SeriesPayload
-from app.services.presentation import (
+from app.services.analysis.presentation import (
     build_series_colors,
     format_display_date,
     format_display_datetime,
@@ -346,14 +346,14 @@ from app.web.market_history import (
     slice_intraday_history_for_exact_range,
     slice_intraday_history_for_period,
 )
-from app.web.strategy_forms import (
+from app.web.presentation.strategy_forms import (
     STRATEGY_CATEGORY_KEYS,
     build_strategy_form_fields as build_strategy_form_fields_for_strategy,
     build_strategy_form_sections,
     build_strategy_option_groups as build_strategy_option_groups_from_catalog,
     build_strategy_settings_groups as build_strategy_settings_groups_for_factory,
 )
-from app.web.style_token_rows import (
+from app.web.presentation.style_token_rows import (
     build_color_token_rows,
     build_export_image_rows,
     build_font_token_rows,
@@ -768,15 +768,15 @@ def _build_runtime_context() -> dict[str, object]:
     return context
 
 
-from app.web.runtime_foundation import build_foundation_context
-from app.web.runtime_comparison import build_comparison_context
-from app.web.runtime_backtest_settings import build_backtest_settings_context
-from app.web.runtime_workspace import build_workspace_context
-from app.web.runtime_pages_settings import build_pages_settings_context
-from app.web.runtime_compare_training import build_compare_training_context
-from app.web.runtime_investment_imports import build_investment_import_context
-from app.web.runtime_investment_mutations import build_investment_mutation_context
-from app.web.runtime_investment_market_live import build_investment_market_live_context
+from app.web.runtime_domains.foundation import build_foundation_context
+from app.web.runtime_domains.comparison import build_comparison_context
+from app.web.runtime_domains.backtest_settings import build_backtest_settings_context
+from app.web.runtime_domains.workspace.context import build_workspace_context
+from app.web.runtime_domains.pages_settings import build_pages_settings_context
+from app.web.runtime_domains.compare_training import build_compare_training_context
+from app.web.runtime_domains.investment.imports import build_investment_import_context
+from app.web.runtime_domains.investment.mutations import build_investment_mutation_context
+from app.web.runtime_domains.investment.market_live import build_investment_market_live_context
 
 
 def build_web_runtime() -> WebRuntime:

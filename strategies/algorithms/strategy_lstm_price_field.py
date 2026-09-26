@@ -5,7 +5,7 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.12.2
+Code version: v1.12.3
 - Changed: Startup defaults use the robust validation-selected AAPL grid GA
   cohort profile and its CPU execution semantics.
 - Changed: Price Field strategies now declare the shared Price Field catalog
@@ -25,20 +25,20 @@ import numpy as np
 import pandas as pd
 
 from app.infrastructure.connectivity import is_remote_market_access_disabled
-from strategies.lstm_compute import (
+from strategies.price_field.lstm_compute import (
     LAG_RETURN_FEATURE,
     backend_presentation,
     lagged_close_return,
     resolve_lstm_backend,
     walk_forward_lstm_predictions,
 )
-from strategies.price_field_contract import (
+from strategies.price_field.contract import (
     LSTM_PRICE_FIELD_SCHEMA,
     LSTM_PRICE_FIELD_STRATEGY_ID,
     PROBABILITY_GRID_RENDERER,
     build_probability_grid_presentation,
 )
-from strategies.price_field_pipeline import (
+from strategies.price_field.pipeline import (
     PRICE_FIELD_FACTOR_DEFINITIONS,
     PRICE_FIELD_FACTOR_PARAMETER_KEYS,
     build_price_field_factor_columns as _build_factor_columns,
@@ -51,13 +51,13 @@ from strategies.price_field_pipeline import (
     merge_price_field_bundle_observations as _merge_bundle_observations,
     normal_probability_above_zero as _normal_probability_above_zero,
     normalize_price_field_ohlcv as _normalize_ohlcv_frame,
-    # Retained shared aliases: `tests/test_price_field_contract.py` asserts
+    # Retained shared aliases: `tests/python/strategies/test_price_field_contract.py` asserts
     # that both Price Field strategies expose the same pipeline owners.
     price_field_probabilistic_diagnostics as _probabilistic_diagnostics,  # noqa: F401
     probability_threshold_signals as _probability_threshold_signals,  # noqa: F401
     record_price_field_value as _record_value,
 )
-from strategies.price_field_scoring import (
+from strategies.price_field.scoring import (
     PriceFieldPredictionColumns,
     evaluate_gaussian_price_field,
     score_price_field_grid,  # noqa: F401

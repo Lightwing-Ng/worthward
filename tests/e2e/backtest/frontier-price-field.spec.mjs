@@ -1,0 +1,351 @@
+/* Additional neural Price Field GUI contracts. Code version: v1.7.1 */
+import {expect, test} from '@playwright/test';
+import {
+    closeBacktestParameterOverlay,
+    openBacktestParameterOverlay,
+} from '../support/backtest-parameter-overlay-helper.mjs';
+
+const models = [
+    ['itransformer', 'iTransformer'], ['tide', 'TiDE'], ['moderntcn', 'ModernTCN'], ['tft', 'TFT'],
+];
+const urlFor = (architecture) => `/workspaces/backtest?ticker=NVDA&strategy=${architecture}-price-field`
+    + '&range=exact&from=2024-07-14&to=2026-07-14&period=2y&interval=1d&show_trade_details=0'
+    + '&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8&training_window=64&retrain_interval=20&cell_display_threshold=0';
+// Match the fixed market fixture so causal warmup does not drift with the current date.
+const modernTcnAnnotatedUrl = '/workspaces/backtest?ticker=QQQ&strategy=moderntcn-price-field'
+    + '&range=exact&from=2024-07-14&to=2026-07-14&period=2y'
+    + '&show_trade_details=1&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8'
+    + '&training_window=64&retrain_interval=20&cell_display_threshold=1';
+const trainingMenu = (page) => page.locator('[data-strategy-action-slot="price-field-training"] [data-lstm-training-menu]');
+
+async function directHoverDetailSemantics(page, {height = 1404} = {}) {
+    await page.setViewportSize({width: 1023, height});
+    const canvas = page.locator('#tradePriceChart');
+    await canvas.scrollIntoViewIfNeeded();
+    const target = await page.evaluate(() => {
+        const element = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(element);
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const rect = element?.getBoundingClientRect();
+        if (!chart?.chartArea || !rect || !presentation) return null;
+        const centerY = (chart.chartArea.top + chart.chartArea.bottom) / 2;
+        const candidates = chart.getDatasetMeta(0).data.map((point, index) => ({
+            index,
+            x: Number(point?.x),
+            y: Number(point?.y),
+            horizons: presentation.horizon_predictive_mean?.[index]?.length || 0,
+        })).filter((candidate) => (
+            Number.isFinite(candidate.x) && Number.isFinite(candidate.y)
+            && candidate.horizons === presentation.max_horizon
+        ));
+        if (!candidates.length) return null;
+        const selected = candidates.reduce((best, candidate) => (
+            Math.abs(candidate.y - centerY) < Math.abs(best.y - centerY) ? candidate : best
+        ));
+        return {
+            index: selected.index,
+            x: rect.left + (selected.x * rect.width / chart.width),
+            y: rect.top + (selected.y * rect.height / chart.height),
+        };
+    });
+    expect(target).not.toBeNull();
+    await page.mouse.move(target.x, target.y);
+    await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
+        .toHaveClass(/is-visible/);
+    await expect.poll(() => page.evaluate(() => {
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
+        return new Set([...grid?.children || []].map((cell) => Number(cell.dataset.horizon))).size;
+    }), {timeout: 15_000}).toBe(20);
+    return page.evaluate(() => {
+        const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const grid = tooltip?.querySelector('[data-backtest-probability-grid]');
+        const detailGrid = document.querySelector('[data-backtest-probability-detail-grid]');
+        const detailPanel = document.querySelector('#backtest_probability_detail_panel');
+        const presentation = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+        const selectedIndex = Number(detailPanel?.dataset.activeIndex);
+        const hoverCells = [...grid?.querySelectorAll('.backtest-probability-cell') || []];
+        const detailCells = [...detailGrid?.querySelectorAll('.backtest-probability-detail-cell') || []];
+        const threshold = Number(detailPanel?.dataset.cellDisplayThresholdPct);
+        const anchorPrice = Number(
+            detailPanel?.querySelector('[data-backtest-probability-detail-anchor]')?.dataset.price,
+        );
+        const horizonMean = presentation?.horizon_predictive_mean?.[selectedIndex] || [];
+        const horizonStds = presentation?.horizon_predictive_std?.[selectedIndex] || [];
+        const semanticMismatches = (cells) => cells.filter((cell) => {
+            const probability = Number(cell.dataset.probability);
+            const expected = window.WORTHWARD_PRICE_FIELD_DISTRIBUTIONS.directGaussian
+                .probabilityBetweenPrices({
+                    anchorPrice,
+                    lowerPrice: Number(cell.dataset.lowerPrice),
+                    upperPrice: Number(cell.dataset.upperPrice),
+                    horizon: Number(cell.dataset.horizon),
+                    horizonMean,
+                    horizonStd: horizonStds,
+                });
+            return !Number.isFinite(expected)
+                || Math.abs(expected - probability) > 1e-12
+                || (cell.dataset.thresholdVisible === 'true') !== (expected * 100 >= threshold);
+        }).length;
+        const detailMasses = Array.from({length: 20}, (_, index) => detailCells
+            .filter((cell) => Number(cell.dataset.horizon) === index + 1)
+            .reduce((sum, cell) => sum + Number(cell.dataset.probability), 0));
+        const gridRect = detailGrid?.getBoundingClientRect();
+        const cellRect = detailCells[0]?.getBoundingClientRect();
+        const gridStyle = detailGrid ? getComputedStyle(detailGrid) : null;
+        return {
+            daysPerColumn: Number(grid?.dataset.daysPerColumn),
+            horizonStep: Number(grid?.dataset.horizonStep),
+            hoverColumns: new Set(hoverCells.map((cell) => Number(cell.dataset.column))).size,
+            hoverVisibleColumns: new Set(hoverCells.filter(
+                (cell) => cell.dataset.thresholdVisible === 'true',
+            ).map((cell) => Number(cell.dataset.column))).size,
+            hoverHorizons: [...new Set(hoverCells.map((cell) => Number(cell.dataset.horizon)))],
+            detailHorizons: [...new Set(detailCells.map((cell) => Number(cell.dataset.horizon)))],
+            firstHorizonStd: Number(horizonStds[0]),
+            lastHorizonStd: Number(horizonStds[19]),
+            hoverSemanticMismatches: semanticMismatches(hoverCells),
+            detailSemanticMismatches: semanticMismatches(detailCells),
+            minimumDetailMass: Math.min(...detailMasses),
+            domainKind: detailPanel?.dataset.priceDomain,
+            scaleKind: detailPanel?.dataset.priceScale,
+            lowerPrice: Number(detailPanel?.dataset.priceDomainLower),
+            upperPrice: Number(detailPanel?.dataset.priceDomainUpper),
+            anchorPrice,
+            gridWidth: Number(gridRect?.width),
+            gridHeight: Number(gridRect?.height),
+            cellWidth: Number(cellRect?.width),
+            cellHeight: Number(cellRect?.height),
+            columnGap: Number.parseFloat(gridStyle?.columnGap || ''),
+            rowGap: Number.parseFloat(gridStyle?.rowGap || ''),
+            threshold,
+        };
+    });
+}
+
+async function visibleConfiguration(page) {
+    return page.evaluate(() => {
+        const form = document.querySelector('[data-backtest-parameter-form]');
+        const field = (name) => form.querySelector(`[name="${name}"]:checked`) || form.querySelector(`[name="${name}"]`);
+        return {
+            strategy: field('strategy').value, ticker: field('ticker').value, period: field('period').value,
+            interval: field('interval').value, range: field('range').value,
+            from: field('from').value, to: field('to').value,
+            initial_capital: Number(field('capital').value.replaceAll(',', '')),
+            price_only: field('price_only').checked, reinvest_dividends: field('dividends').checked,
+            stop_loss: field('stop_loss').checked, show_trade_details: field('show_trade_details').checked,
+            params: Object.fromEntries([...form.querySelectorAll('[data-strategy-param-input][name]')].map(
+                (input) => [input.name, input.type === 'checkbox' ? input.checked : input.value],
+            )),
+        };
+    });
+}
+
+for (const width of [1024, 390]) {
+    test(`four additional models use the shared real CPU probability GUI at ${width}px`, async ({page}, testInfo) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({width, height: 1100});
+        const errors = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.route('**/api/price-field-training?*', (route) => route.fulfill({
+            json: {success: true, protocol_version: 3, runs: []},
+        }));
+        for (const [architecture, label] of models) {
+            const parityUrl = architecture === 'moderntcn'
+                ? modernTcnAnnotatedUrl
+                : urlFor(architecture).replace('cell_display_threshold=0', 'cell_display_threshold=1');
+            await page.goto(
+                width === 1024
+                    ? parityUrl
+                    : urlFor(architecture),
+            );
+            await openBacktestParameterOverlay(page);
+            await expect(trainingMenu(page).getByRole('button', {name: 'Start training', exact: true})).toBeEnabled();
+            await expect(page.getByRole('button', {name: `Strategy: ${label} Price Field`, exact: true})).toContainText(`${label} Price Field`);
+            const contract = await page.evaluate(() => {
+                const presentation = window.WORTHWARD_APP.backtestResult.strategy_presentation;
+                return {
+                    kind: presentation.distribution_kind, horizon: presentation.max_horizon,
+                    score: presentation.diagnostics.probability_score_pct,
+                    skill: presentation.diagnostics.crps_skill_score,
+                    horizonCount: presentation.diagnostics.horizon_count,
+                    count: presentation.diagnostics.valid_pairs, backend: presentation.device.resolved,
+                    fields: document.querySelectorAll('[data-strategy-param-input]').length,
+                    overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                };
+            });
+            expect(contract.kind).toBe('direct-normal-horizon');
+            expect(contract.horizon).toBe(20);
+            expect(contract.horizonCount).toBe(20);
+            expect(Number.isFinite(contract.score)).toBe(true);
+            expect(contract.score).toBeGreaterThanOrEqual(0);
+            expect(contract.score).toBeLessThanOrEqual(100);
+            expect(Number.isFinite(contract.skill)).toBe(true);
+            expect(contract.count).toBeGreaterThan(0);
+            expect(contract.backend).toBe('cpu');
+            expect(contract.fields).toBeGreaterThan(50);
+            expect(contract.overflow).toBeLessThanOrEqual(1);
+            const skill = page.locator('[data-backtest-metric="probability-field-distribution-skill"]');
+            const evidence = page.locator('[data-backtest-metric="probability-field-forecast-evidence"]');
+            await expect(skill.locator('.trade-metric-label')).toHaveText('CRPS skill vs baseline');
+            await expect(skill).toHaveAttribute('data-probability-field-metric', 'standardized-1-20d-crps-skill-vs-causal-baseline');
+            await expect(skill).toHaveAttribute('title', /Equal-weighted mean of historical causal walk-forward CRPS skill/);
+            await expect(evidence.locator('.trade-metric-label')).toHaveText('1–20d forecast coverage');
+            await expect(evidence).toHaveAttribute('title', /not a count of independent observations/);
+            const detailOverflow = await page.locator('.trade-metric-card--diagnostic .trade-metric-detail').evaluateAll(
+                (details) => details.map((detail) => detail.scrollWidth - detail.clientWidth),
+            );
+            expect(detailOverflow.every((overflow) => overflow <= 1)).toBe(true);
+            await expect(page.locator('[data-backtest-metric="probability-field-probability-score"]')).toHaveCount(0);
+            await expect(page.locator('[data-backtest-metric="probability-field-direction-hit-rate"]')).toHaveCount(0);
+            await closeBacktestParameterOverlay(page);
+            await page.locator('label[for="backtest_history_probability"]').click();
+            await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Direct close-price forecasts: 1–20 trading days');
+            await expect(page.locator('[data-backtest-probability-detail-status]')).toContainText('Log-price scale');
+            await expect.poll(() => page.locator('[data-backtest-probability-detail-grid] [data-horizon]').evaluateAll(
+                (cells) => new Set(cells.map((cell) => Number(cell.dataset.horizon))).size,
+            )).toBe(20);
+            if (width === 1024) {
+                const parity = await directHoverDetailSemantics(page, {
+                    height: architecture === 'moderntcn' ? 1580 : 1404,
+                });
+                expect(parity.daysPerColumn).toBeGreaterThan(1);
+                expect(parity.horizonStep).toBe(1);
+                expect(parity.hoverColumns).toBe(20);
+                expect(parity.hoverVisibleColumns).toBeGreaterThanOrEqual(16);
+                expect(parity.hoverHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
+                expect(parity.detailHorizons).toEqual(Array.from({length: 20}, (_, index) => index + 1));
+                expect(parity.firstHorizonStd).toBeLessThan(parity.lastHorizonStd);
+                expect(parity.hoverSemanticMismatches).toBe(0);
+                expect(parity.detailSemanticMismatches).toBe(0);
+                expect(parity.minimumDetailMass).toBeGreaterThan(0.99);
+                expect(parity.domainKind).toBe('direct-forecast-log');
+                expect(parity.scaleKind).toBe('symmetric-log-return');
+                expect(Math.abs(
+                    Math.log(parity.lowerPrice / parity.anchorPrice)
+                    + Math.log(parity.upperPrice / parity.anchorPrice),
+                )).toBeLessThan(1e-9);
+                expect(parity.columnGap).toBeCloseTo(2, 6);
+                expect(parity.rowGap).toBeCloseTo(2, 6);
+                expect(
+                    (parity.gridWidth + parity.columnGap)
+                    / (parity.gridHeight + parity.rowGap),
+                ).toBeCloseTo(20 / 24, 3);
+                expect(Math.abs(parity.cellWidth - parity.cellHeight)).toBeLessThanOrEqual(0.25);
+                expect(parity.threshold).toBe(1);
+                if (architecture === 'moderntcn') {
+                    await page.screenshot({
+                        path: testInfo.outputPath('moderntcn-price-field-1023x1580.png'),
+                        fullPage: true,
+                    });
+                }
+                await page.setViewportSize({width, height: 1100});
+            }
+        }
+        expect(errors).toEqual([]);
+        await page.screenshot({path: testInfo.outputPath(`frontier-price-field-${width}.png`), fullPage: true});
+    });
+
+    test(`additional-model history stays isolated and restores complete parameters at ${width}px`, async ({page}) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({width, height: 1100});
+        let runs = [];
+        const queried = new Set();
+        await page.route('**/api/price-field-training?*', (route) => {
+            queried.add(new URL(route.request().url()).searchParams.get('strategy'));
+            return route.fulfill({json: {success: true, protocol_version: 3, runs}});
+        });
+        await page.goto(urlFor('itransformer'));
+        await openBacktestParameterOverlay(page);
+        const original = await visibleConfiguration(page);
+        runs = models.map(([architecture], index) => ({
+            id: `price-field-${'abcd'[index].repeat(24)}`, strategy: `${architecture}-price-field`, ticker: 'NVDA',
+            period: '2y', interval: '1d', started_at: '2026-09-08T00:00:00Z',
+            status: 'completed', active: false, probability_score_pct: 55.21,
+            probability_score_label: 'Complete-grid probability score', result_available: true,
+            configuration: {...original, strategy: `${architecture}-price-field`}, files: [],
+            device: {resolved: 'cpu', optimizer_steps: 1200, train_ms: 1250, infer_ms: 240},
+        }));
+        runs.push({...runs[0], id: `price-field-${'e'.repeat(24)}`, strategy: 'patchtst-price-field', ticker: 'QQQ'});
+        for (const [architecture] of models) {
+            await page.goto(urlFor(architecture));
+            await openBacktestParameterOverlay(page);
+            const menu = trainingMenu(page);
+            const selection = menu.locator('.lstm-training-history-select');
+            await expect(selection).toHaveCount(1);
+            await expect(selection).toHaveAttribute('aria-pressed', 'false');
+            await expect(menu.locator('.lstm-training-history-run')).toHaveText('NVDA');
+            await expect(menu.locator('.lstm-training-accuracy')).toHaveText('55.21%');
+            await expect(menu.locator('.lstm-training-accuracy')).toHaveAttribute('title', 'Complete-grid probability score');
+            await selection.click();
+            const completed = runs.find((run) => run.strategy === `${architecture}-price-field`);
+            await expect(page).toHaveURL(new RegExp(`price_field_training_run=${completed.id}`));
+            await expect(selection).toHaveAttribute('aria-pressed', 'true');
+            expect(await visibleConfiguration(page)).toEqual(completed.configuration);
+            await selection.click();
+            await expect(menu.locator('.lstm-training-history-details')).toContainText('Backend cpu · 1,200 optimizer steps · 1.25 s training · 0.24 s inference');
+        }
+        expect(queried).toEqual(new Set(models.map(([architecture]) => `${architecture}-price-field`)));
+    });
+}
+
+for (const [index, [architecture]] of models.entries()) {
+    test(`${architecture} starts and stops asynchronously without a completed score`, async ({page}) => {
+        test.setTimeout(60_000);
+        await page.setViewportSize({width: index % 2 ? 390 : 1024, height: 1100});
+        let runs = [];
+        let request;
+        let releaseStart;
+        let releaseStop;
+        const startPending = new Promise((resolve) => { releaseStart = resolve; });
+        const stopPending = new Promise((resolve) => { releaseStop = resolve; });
+        const run = {
+            id: `price-field-${'f'.repeat(24)}`, strategy: `${architecture}-price-field`, ticker: 'NVDA',
+            period: '2y', interval: '1d', started_at: '2026-09-08T00:00:00Z', status: 'running', active: true,
+            progress: {percent: 40}, files: [],
+        };
+        await page.route('**/api/price-field-training?*', async (route) => {
+            expect(new URL(route.request().url()).searchParams.get('strategy')).toBe(run.strategy);
+            await route.fulfill({json: {success: true, protocol_version: 3, runs}});
+        });
+        await page.route('**/api/price-field-training/start', async (route) => {
+            request = route.request().postDataJSON();
+            expect(route.request().headers()['x-csrf-token']).toBeTruthy();
+            await startPending;
+            runs = [run];
+            await route.fulfill({status: 202, json: {success: true, run}});
+        });
+        await page.route('**/api/price-field-training/stop', async (route) => {
+            expect(route.request().postDataJSON()).toEqual({run_id: run.id});
+            await stopPending;
+            runs = [{...run, status: 'stopped', active: false, configuration: null, result_available: false}];
+            await route.fulfill({json: {success: true, run: runs[0]}});
+        });
+        await page.goto(urlFor(architecture));
+        await openBacktestParameterOverlay(page);
+        const menu = trainingMenu(page);
+        const action = menu.locator('[data-lstm-training-action]');
+        await expect(action).toBeEnabled();
+        await action.click();
+        await expect(action).toHaveText('Starting training…');
+        await expect(action).toBeDisabled();
+        releaseStart();
+        await expect(action).toHaveText('Stop training');
+        expect(request.strategy).toBe(run.strategy);
+        expect(request.ticker).toBe('NVDA');
+        expect(request.period).toBe('2y');
+        expect(request.params.compute_backend).toBe('CPU');
+        expect(request.params.epochs).toBe('1');
+        expect(request.params.lstm_epochs).toBeUndefined();
+        await expect(menu.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40');
+        await action.click();
+        await expect(action).toHaveText('Stopping training…');
+        await expect(action).toBeDisabled();
+        await expect(menu.locator('.lstm-training-accuracy')).toHaveCount(0);
+        releaseStop();
+        await expect(action).toHaveText('Start training');
+        await expect(menu.locator('.lstm-training-history-entry')).toContainText('Stopped');
+        await expect(menu.locator('.lstm-training-accuracy')).toHaveCount(0);
+        await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'false');
+    });
+}

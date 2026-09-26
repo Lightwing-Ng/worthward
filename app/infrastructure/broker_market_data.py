@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.18.0
+Code version: v0.18.1
 - Fixed: Daily candles now resolve their trading dates in each ticker's native
   market timezone instead of applying New York dates to every market.
 """
@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.core.broker_settings import (
+from app.core.preferences.broker import (
     BrokerSettings,
     has_longbridge_market_data_source,
     has_longbridge_credentials,
@@ -32,13 +32,13 @@ from app.core.broker_settings import (
     uses_longbridge_cli_oauth,
 )
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
-from app.core.market_calendar import latest_completed_nyse_trading_day
-from app.core.market_identity import (
+from app.core.markets.calendar import latest_completed_nyse_trading_day
+from app.core.markets.identity import (
     MARKET_TIMEZONES,
     infer_ticker_market,
     market_timezone_for_ticker,
 )
-from app.core.market_sessions import market_included_bar_segments
+from app.core.markets.sessions import market_included_bar_segments
 from app.infrastructure.longbridge_cli import run_longbridge_cli_json, test_longbridge_cli_connection
 from app.infrastructure.longbridge_sdk import build_longbridge_sdk_config
 from app.infrastructure.storage import (

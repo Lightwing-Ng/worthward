@@ -1,6 +1,6 @@
 """Read-only local market-history helpers used by the web runtime.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from app.infrastructure.storage import (
     intraday_history_store_path_for,
     market_ticker_store_aliases,
 )
-from app.services.comparisons import market_trading_dates_for_history
-from app.services.range_options import build_supported_periods_from_dates
+from app.services.analysis.comparisons import market_trading_dates_for_history
+from app.services.analysis.range_options import build_supported_periods_from_dates
 
 
 def align_datasets_on_common_dates(datasets: list[pd.DataFrame]) -> list[pd.DataFrame]:

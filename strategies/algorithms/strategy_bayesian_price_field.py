@@ -6,7 +6,7 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.34.2
+Code version: v1.34.3
 - Changed: Startup defaults use the validation-selected AAPL Price Field
   cohort profile, while the display threshold remains presentation-only.
 - Changed: Price Field strategies now declare the shared Price Field catalog
@@ -106,11 +106,11 @@ from app.infrastructure.parallel import (
     map_ordered_batches,
     resolve_worker_count,
 )
-from strategies.price_field_contract import (
+from strategies.price_field.contract import (
     BAYESIAN_PRICE_FIELD_SCHEMA,
     build_probability_grid_presentation,
 )
-from strategies.price_field_pipeline import (
+from strategies.price_field.pipeline import (
     PriceFieldFactorDefinition,
     PRICE_FIELD_FACTOR_DEFINITIONS,
     PRICE_FIELD_FACTOR_PARAMETER_KEYS,
@@ -128,7 +128,7 @@ from strategies.price_field_pipeline import (
     normal_probability_above_zero as _normal_probability_above_zero,
     normalize_price_field_ohlcv as _normalize_ohlcv_frame,
     price_field_epsilon as _EPSILON,
-    # Retained shared aliases: `tests/test_price_field_contract.py` asserts
+    # Retained shared aliases: `tests/python/strategies/test_price_field_contract.py` asserts
     # that both Price Field strategies expose the same pipeline owners.
     price_field_probabilistic_diagnostics as _probabilistic_diagnostics,  # noqa: F401
     probability_threshold_signals as _probability_threshold_signals,  # noqa: F401
@@ -137,7 +137,7 @@ from strategies.price_field_pipeline import (
     rolling_price_field_volume_at_price_percentile as _rolling_volume_at_price_percentile,  # noqa: F401
     load_price_field_market_bundle,
 )
-from strategies.price_field_scoring import (
+from strategies.price_field.scoring import (
     PriceFieldPredictionColumns,
     evaluate_gaussian_price_field,
     score_price_field_grid,  # noqa: F401

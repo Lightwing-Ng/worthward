@@ -1,7 +1,7 @@
 """
 Strategy registry and dynamic loader.
 
-Code version: v1.1.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
@@ -20,7 +20,10 @@ ALGORITHMS_PATH = Path(__file__).resolve().parent / "algorithms"
 def _iter_strategy_classes() -> list[type[BaseStrategy]]:
     discovered: list[type[BaseStrategy]] = []
     for module_info in iter_modules([str(ALGORITHMS_PATH)]):
-        if module_info.name.startswith("_"):
+        if (
+            module_info.name.startswith("_")
+            or not module_info.name.isidentifier()
+        ):
             continue
         module = import_module(f"{ALGORITHMS_PACKAGE}.{module_info.name}")
         for attribute in vars(module).values():

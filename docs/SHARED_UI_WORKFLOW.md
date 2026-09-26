@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.3.1`
 
 This is the public entrypoint for shared visual and interaction work. A private
 sibling synchronization ledger may exist in a maintainer checkout, but it is not
@@ -90,8 +90,8 @@ portals. Rendering, pointer selection, outside-click dismissal, submission, and
 portal positioning remain adapter-owned. Keyboard binding exposes a teardown
 callback; dynamically hydrated Worthward fields use weakly keyed adapters.
 
-Run `node --test tests/test_select_controller.mjs` and the isolated
-`tests/e2e/select-keyboard.spec.mjs` tests for this migration.
+Run `node --test tests/js/shared/test_select_controller.mjs` and the isolated
+`tests/e2e/shared/select-keyboard.spec.mjs` tests for this migration.
 
 ## Verification evidence
 

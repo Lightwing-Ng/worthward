@@ -162,7 +162,7 @@
         };
 
         // The shared axis module owns the serialized market-session projection
-        // from `app/core/market_sessions.py` and the one timezone-offset
+        // from `app/core/markets/sessions.py` and the one timezone-offset
         // implementation. This exporter keeps only its own bar-edge geometry.
         const chartAxisApi = () => window.WORTHWARD_CHART_AXIS || {};
 

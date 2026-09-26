@@ -1,0 +1,337 @@
+{# Code version: v0.10.0 #}
+
+{% macro render_notice_banner(
+    title='',
+    icon_class='icon-modal-dialog-banner-default',
+    variant='notice',
+    banner_class='',
+    close_label='Close notice',
+    element_id='',
+    icon_id='',
+    message_id='',
+    role='',
+    is_hidden=false,
+    message_container=false,
+    numbered=true
+) -%}
+{% set color_class = 'error' if variant == 'error' else 'notice' %}
+<div{% if element_id %} id="{{ element_id }}"{% endif %}
+     class="{{ color_class }} notice-floating notice-floating-banner{% if banner_class %} {{ banner_class }}{% endif %}"
+     data-dismissible-notice{% if role %} role="{{ role }}"{% endif %}{% if role == 'status' %} aria-live="polite" aria-atomic="true"{% endif %}{% if is_hidden %} hidden{% endif %}>
+    <button type="button" class="dismiss-button notice-close" aria-label="{{ close_label }}">
+        <span class="icon icon-dismiss-control" aria-hidden="true"></span>
+    </button>
+    <span{% if icon_id %} id="{{ icon_id }}"{% endif %}
+          class="icon workspace-modal-icon notice-floating-banner-icon {{ icon_class }}"
+          aria-hidden="true"></span>
+    {% if message_container %}
+    <div{% if message_id %} id="{{ message_id }}"{% endif %} class="notice-floating-banner-content"></div>
+    {% else %}
+    <div class="notice-floating-banner-content">
+        {% if title %}<p class="notice-floating-banner-heading">{{ title }}</p>{% endif %}
+        {% if caller is defined %}
+            {% if numbered %}<ol class="notice-floating-banner-list">{{ caller() }}</ol>{% else %}<p class="notice-floating-banner-copy">{{ caller() }}</p>{% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{%- endmacro %}
+
+{% macro render_report_info(button_label) -%}
+<div class="report-info">
+    <button type="button" class="report-info-button" aria-label="{{ button_label }}">i</button>
+    <div class="report-info-tooltip chart-tooltip" role="tooltip">
+        <dl class="report-info-meta">
+            <div class="report-info-row">
+                <dt>{{ labels.period }}</dt>
+                <dd>{{ period_label }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.range }}</dt>
+                <dd>{{ display_range }}</dd>
+            </div>
+            <div class="report-info-row">
+                <dt>{{ labels.return_mode }}</dt>
+                <dd>{% if price_only %}{{ labels.return_mode_price }}{% elif include_dividends %}{{ labels.return_mode_reinvest }}{% else %}{{ labels.return_mode_total }}{% endif %}</dd>
+            </div>
+        </dl>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_chart_surface(chart_heading, has_series, placeholder_text=None, chart_region_id=None, range_text=None, range_class='workspace-result-date-range') -%}
+<article class="chart-surface">
+    {% if chart_heading %}
+    <div class="chart-heading-row">
+        <p class="chart-heading">{{ chart_heading }}</p>
+    </div>
+    {% endif %}
+    {% if range_text %}
+    <div class="chart-heading-row price-compare-range-row">
+        <span class="{{ range_class }}" data-workspace-mask="result-date-range">{{ range_text }}</span>
+    </div>
+    {% endif %}
+    <div{% if chart_region_id %} id="{{ chart_region_id }}"{% endif %} class="chart-region-wrap">
+    {% if has_series %}
+    <div class="chart-wrap" data-workspace-mask="chart-area">
+        <canvas id="returnsChart"></canvas>
+    </div>
+    {% else %}
+    <div class="placeholder-copy chart-placeholder-copy">
+        <p>{{ placeholder_text }}</p>
+    </div>
+    {% endif %}
+    </div>
+</article>
+{%- endmacro %}
+
+{% macro render_segmented_control(shell_class, name, active_value, options, shell_attrs='', overflow_frame=false, frame_class='') -%}
+{% if overflow_frame %}
+<div class="segmented-control-overflow-frame{% if frame_class %} {{ frame_class }}{% endif %}"
+     data-segmented-overflow-frame
+     data-overflow-start="0"
+     data-overflow-end="0">
+{% endif %}
+<div class="segmented-control {{ shell_class }}"{% if shell_attrs %} {{ shell_attrs|safe }}{% endif %}>
+    {% for option in options %}
+    <label class="segmented-control-option{% if option.class_name %} {{ option.class_name }}{% endif %}" for="{{ option.id }}"{% if option.hidden %} hidden{% endif %}{% if option.label_attrs %} {{ option.label_attrs|safe }}{% endif %}>
+        <input id="{{ option.id }}" name="{{ name }}" type="radio" value="{{ option.value }}" {% if option.value == active_value %}checked{% endif %}{% if option.disabled %} disabled{% endif %}{% if option.input_attrs %} {{ option.input_attrs|safe }}{% endif %}>
+        <span>{{ option.label }}</span>
+    </label>
+    {% endfor %}
+</div>
+{% if overflow_frame %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro render_switch(input_id, label='', input_name='', input_value='1', checked=false, row_class='switch-row', label_class='switch-label', input_attrs='', row_attrs='') -%}
+<label class="{{ row_class }}" for="{{ input_id }}"{% if row_attrs %} {{ row_attrs|safe }}{% endif %}>
+    <span class="{{ label_class }}">{% if caller is defined %}{{ caller() }}{% else %}{{ label }}{% endif %}</span>
+    <span class="ios-switch-shell">
+        <input id="{{ input_id }}"{% if input_name %} name="{{ input_name }}"{% endif %} type="checkbox" value="{{ input_value }}" {% if checked %}checked {% endif %}{% if input_attrs %}{{ input_attrs|safe }}{% endif %}>
+        <span class="ios-switch-slider" aria-hidden="true"></span>
+    </span>
+</label>
+{%- endmacro %}
+
+{% macro render_date_picker_field(role, input_id, input_name, value, label, aria_label, feedback_id, disabled=false, hidden=false) -%}
+{% set initial_date_text = format_display_date(value) if value and format_display_date is defined else '' %}
+<div class="date-picker-field" data-date-picker data-date-role="{{ role }}"{% if hidden %} hidden{% endif %}>
+    <label for="{{ input_id }}"{% if role == "end" %} class="date-end-label"{% endif %}>{{ label }}</label>
+    <input id="{{ input_id }}" name="{{ input_name }}" type="hidden" value="{{ value }}"{% if disabled %} disabled{% endif %}>
+    <div class="date-picker-trigger" data-date-trigger aria-haspopup="dialog" aria-expanded="false">
+        <span
+            class="date-picker-trigger-value"
+            data-date-trigger-value
+            data-date-editor
+            contenteditable="plaintext-only"
+            role="textbox"
+            aria-multiline="false"
+            aria-label="{{ aria_label }}"
+            aria-describedby="{{ feedback_id }}"
+            data-placeholder="Select date"
+            data-empty="{{ '0' if initial_date_text else '1' }}"
+            spellcheck="false"
+        >{{ initial_date_text }}</span>
+    </div>
+    <div class="date-picker-popover" data-date-popover hidden>
+        <p id="{{ feedback_id }}" class="date-picker-feedback date-picker-feedback-popover" data-date-feedback aria-live="polite"></p>
+        <div class="date-picker-toolbar">
+            <button type="button" class="date-picker-nav" data-date-nav="-1" aria-label="Previous month">
+                <span class="icon icon-page-prev" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="date-picker-title" data-date-title aria-label="Choose month and year">
+                <span data-date-month></span>
+            </button>
+            <button type="button" class="date-picker-nav" data-date-nav="1" aria-label="Next month">
+                <span class="icon icon-page-next" aria-hidden="true"></span>
+            </button>
+        </div>
+        <div data-date-calendar>
+            <div class="date-picker-weekdays" aria-hidden="true">
+                <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            </div>
+            <div class="date-picker-days" data-date-grid></div>
+        </div>
+        <div class="date-picker-months" data-date-month-grid hidden aria-label="Months"></div>
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_range_controls(range_mode, period, periods, period_labels, exact_start, exact_end, labels, shell_class='', exact_single_date=false, exact_single_date_label='Trading date', range_mode_after_period=false) -%}
+{% set range_mode_label = labels.mode if labels.mode is defined else "Mode" %}
+{% set selected_period_label = period_labels.get(period, period_labels.get(periods[0], labels.period) if periods else labels.period) %}
+{% if not range_mode_after_period %}
+<div class="field range-mode-field">
+    <label for="range_period">{{ range_mode_label }}</label>
+    {{ render_segmented_control(
+        "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
+        "range",
+        range_mode if range_mode == 'exact' else 'period',
+        [
+            {"id": "range_period", "value": "period", "label": labels.range_mode_period},
+            {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
+        ],
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
+    ) }}
+</div>
+{% endif %}
+<div class="field range-panel" id="period_panel" {% if range_mode == 'exact' %}hidden{% endif %}>
+    <label for="period">{{ labels.period }}</label>
+    <div class="trade-strategy-row backtest-shared-select-row backtest-shared-select-field" data-shared-select-field data-shared-select-kind="period">
+        <select id="period" name="period" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+            {% for item in periods %}
+            <option value="{{ item }}" {% if item == period %}selected{% endif %}>{{ period_labels[item] }}</option>
+            {% endfor %}
+        </select>
+        <div class="trade-strategy-combobox backtest-shared-select-combobox">
+            <button
+                type="button"
+                class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger"
+                data-shared-select-trigger
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="period_dropdown"
+                aria-label="{{ labels.period }}: {{ selected_period_label }}"
+                title="{{ selected_period_label }}"
+            >
+                <span class="trade-strategy-trigger-label" data-shared-select-trigger-label data-fallback-label="{{ selected_period_label }}">{{ selected_period_label }}</span>
+            </button>
+        </div>
+        <div
+            id="period_dropdown"
+            class="trade-strategy-dropdown backtest-shared-select-dropdown"
+            data-shared-select-dropdown
+            role="listbox"
+            aria-label="{{ labels.period }}"
+            hidden
+        ></div>
+        </div>
+</div>
+{% if range_mode_after_period %}
+<div class="field range-mode-field">
+    <label for="range_period">{{ range_mode_label }}</label>
+    {{ render_segmented_control(
+        "range-mode-shell" ~ (" " ~ shell_class if shell_class else ""),
+        "range",
+        range_mode if range_mode == 'exact' else 'period',
+        [
+            {"id": "range_period", "value": "period", "label": labels.range_mode_period},
+            {"id": "range_exact", "value": "exact", "label": labels.range_mode_exact},
+        ],
+        'data-active="' ~ (range_mode if range_mode == "exact" else "period") ~ '" data-option-count="2" style="--segmented-option-count: 2; --segmented-active-index: ' ~ (1 if range_mode == "exact" else 0) ~ ';"'
+    ) }}
+</div>
+{% endif %}
+<div class="field range-panel" id="exact_panel" {% if range_mode != 'exact' %}hidden{% endif %}>
+    {% set exact_trading_date = exact_start if exact_start else exact_end %}
+    <div class="date-picker-grid" data-exact-range-date-grid{% if exact_single_date %} hidden{% endif %}>
+        {{ render_date_picker_field("start", "exact_start", "from", exact_start, labels.start, "Type start date", "exact_start_feedback", exact_single_date, false) }}
+        {{ render_date_picker_field("end", "exact_end", "to", exact_end, labels.to, "Type end date", "exact_end_feedback", exact_single_date, false) }}
+    </div>
+    <div class="date-picker-grid" data-exact-single-date-grid{% if not exact_single_date %} hidden{% endif %}>
+        {{ render_date_picker_field("single", "exact_trading_date", "trading_date", exact_trading_date, exact_single_date_label, "Type trading date", "exact_trading_date_feedback", not exact_single_date, false) }}
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro render_investment_share_actions(shell_id=none, share_drawer=none, show_mask=true, show_standard_xlsx=false, capture_label='Save Current Screenshot', anchor_label='Export Transactions', anchor_title=None, placement=none) -%}
+<div class="investment-share-actions" data-layout-role="result-actions"{% if shell_id %} id="{{ shell_id }}"{% endif %}{% if share_drawer %} data-share-drawer="{{ share_drawer }}"{% endif %}{% if show_standard_xlsx %} data-standard-xlsx-action{% endif %}{% if placement %} data-share-placement="{{ placement }}"{% endif %} hidden>
+    <button type="button" class="circular-icon-button investment-share-action-button" id="share_capture_button"
+            aria-label="{{ capture_label }}" title="{{ capture_label }}">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/photo.badge.arrow.down.svg); mask-image: url(/static/images/photo.badge.arrow.down.svg);"></span>
+    </button>
+    <button type="button" class="circular-icon-button investment-share-action-button" id="share_mask_button"
+            aria-label="Mask Sensitive Values" title="Mask Sensitive Values" aria-pressed="false"{% if not show_mask %} hidden aria-hidden="true" tabindex="-1"{% endif %}>
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/eye.slash.fill.svg); mask-image: url(/static/images/eye.slash.fill.svg);"></span>
+    </button>
+    {% if show_standard_xlsx %}
+    <button type="button" class="circular-icon-button investment-share-action-button standard-investment-xlsx-button"
+            id="export_standard_xlsx_button"
+            aria-label="Export Standard XLSX" title="Export Standard XLSX">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/arrow.down.document.fill.svg); mask-image: url(/static/images/arrow.down.document.fill.svg);"></span>
+    </button>
+    {% endif %}
+    <button type="button" class="circular-icon-button export-transactions-button" id="export_transactions_button" data-layout-role="result-action"
+            aria-label="{{ anchor_label }}" title="{{ anchor_title or anchor_label }}">
+        <span class="icon"
+              style="-webkit-mask-image: url(/static/images/square.and.arrow.up.svg); mask-image: url(/static/images/square.and.arrow.up.svg);"></span>
+    </button>
+</div>
+{%- endmacro %}
+
+{% macro render_broker_select_options(broker_codes, selected_code=None) -%}
+{% for entry in sorted_broker_entries(broker_codes) %}
+<option value="{{ entry.code }}"
+        data-icon-url="{{ url_for('market_store_logo', filename='brokers/' ~ entry.icon_filename) }}"
+        data-icon-alt="{{ entry.label }} logo"
+        data-sort-key="{{ entry.label }}"
+        {% if selected_code == entry.code %}selected{% endif %}>{{ entry.label }}</option>
+{% endfor %}
+{%- endmacro %}
+
+{% macro render_style_token_table(row) -%}
+<div class="style-token-table-wrap">
+    <table class="style-token-table" aria-label="{{ row.name }} {{ translate_ui('tokens') }}">
+        <tbody>
+            {% for token in row.tokens %}
+            <tr>
+                <td class="style-token-name">{{ token.name }}</td>
+                <td class="style-token-value">
+                    {% if token.editable %}
+                    <div class="style-token-value-control" data-style-token-control data-style-token-name="{{ token.name }}" data-style-token-unit="{{ token.unit }}" data-style-token-value="{{ token.numeric_value }}" data-style-token-min="{{ token.min_value }}">
+                        <input type="text" class="trade-strategy-number-input trade-strategy-number-input--integer style-token-value-input" value="{{ token.value }}" readonly data-style-token-value-text aria-label="{{ token.name }}">
+                        <div class="trade-strategy-stepper style-token-control-stepper" aria-hidden="false">
+                            <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="up" aria-label="{{ translate_ui('Increase value') }}">▲</button>
+                            <button type="button" class="trade-strategy-stepper-button" data-style-token-stepper="down" aria-label="{{ translate_ui('Decrease value') }}">▼</button>
+                        </div>
+                    </div>
+                    {% else %}
+                    {% if token.reference_target_id %}
+                    <a
+                        href="{{ settings_urls['material-tokens'] }}#{{ token.reference_target_id }}"
+                        class="style-token-value-link"
+                        data-settings-section-link="material-tokens"
+                        data-style-token-material-link
+                    >{{ token.reference_label }}</a>
+                    {% else %}
+                    <span class="style-token-value-text">{{ token.value }}</span>
+                    {% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% for related_style in row.related_styles %}
+            <tr class="style-token-related-row">
+                <td class="style-token-name">
+                    <button type="button" class="style-token-reference" data-style-token-reference="{{ related_style.target_id }}">{{ related_style.name }}</button>
+                </td>
+                <td class="style-token-value">
+                    <span class="style-token-related-value">{{ translate_ui('Reusable style') }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{%- endmacro %}
+
+{# `app/web/backtest_table_columns.py` owns the column order, width tokens, and
+   labels shared by the server table and the optimistic hydration skeleton. #}
+{% macro render_backtest_transaction_colgroup(columns) -%}
+<colgroup>
+{% for column in columns %}    <col style="width: var({{ column.widthToken }});">
+{% endfor %}</colgroup>
+{%- endmacro %}
+
+{% macro render_backtest_transaction_header(columns) -%}
+<thead>
+<tr>
+{% for column in columns %}    <th data-markdown-export-label="{{ column.label }}">{{ column.label }}</th>
+{% endfor %}</tr>
+</thead>
+{%- endmacro %}

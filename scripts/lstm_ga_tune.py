@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.15.2
+Code version: v0.15.3
 - Changed: Snapshot and validation failures shared by exact training and GA now
   use model-neutral training language.
 - Fixed: Exact selected-configuration runs now apply the objective recorded in
@@ -65,10 +65,10 @@ MAX_WORKERS = 8
 
 from app.core.config import PERIOD_OFFSETS  # noqa: E402
 from app.infrastructure.compute_jobs import project_compute_workspace_root  # noqa: E402
-from app.services.price_field_market_factors import (  # noqa: E402
+from app.services.research.price_field_market_factors import (  # noqa: E402
     build_local_price_field_factor_bundle,
 )  # noqa: E402
-from strategies.price_field_pipeline import (  # noqa: E402
+from strategies.price_field.pipeline import (  # noqa: E402
     PRICE_FIELD_FACTOR_DEFINITIONS as _PRICE_FIELD_FACTOR_DEFINITIONS,
     build_price_field_factor_columns as _build_factor_columns,
     bundle_to_price_field_ohlcv as _bundle_ohlcv_frame,
@@ -80,7 +80,7 @@ from strategies.algorithms.strategy_lstm_price_field import (  # noqa: E402
     _MODEL_VERSION,
 )  # noqa: E402
 from strategies.backtest import run_single_ticker_backtest  # noqa: E402
-from strategies.price_field_scoring import (  # noqa: E402
+from strategies.price_field.scoring import (  # noqa: E402
     GRID_SCORING_VERSION,
     score_price_field_grid,
 )
@@ -265,9 +265,9 @@ def _default_state_root() -> Path:
 
 def _runner_fingerprint() -> str:
     sources = (
-        Path(__file__), PROJECT_ROOT / "strategies/price_field_scoring.py",
-        PROJECT_ROOT / "strategies/lstm_compute.py",
-        PROJECT_ROOT / "strategies/price_field_pipeline.py",
+        Path(__file__), PROJECT_ROOT / "strategies/price_field/scoring.py",
+        PROJECT_ROOT / "strategies/price_field/lstm_compute.py",
+        PROJECT_ROOT / "strategies/price_field/pipeline.py",
         PROJECT_ROOT / "strategies/algorithms/strategy_lstm_price_field.py",
     )
     return hashlib.sha256(b"".join(path.read_bytes() for path in sources)).hexdigest()

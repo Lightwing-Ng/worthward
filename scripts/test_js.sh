@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.4.1
+# Code version: v1.4.2
 
 set -euo pipefail
 
@@ -26,6 +26,15 @@ done
 
 echo "JavaScript coverage minimums: lines=${LINES_MINIMUM}%, branches=${BRANCHES_MINIMUM}%, functions=${FUNCTIONS_MINIMUM}%"
 
+JS_TEST_FILES=()
+while IFS= read -r test_file; do
+	JS_TEST_FILES+=("$test_file")
+done < <(find tests/js -type f -name 'test_*.mjs' | LC_ALL=C sort)
+if (( ${#JS_TEST_FILES[@]} == 0 )); then
+	echo "No JavaScript unit test files were found under tests/js." >&2
+	exit 1
+fi
+
 node --experimental-test-coverage --test \
 	--test-coverage-lines="$LINES_MINIMUM" \
 	--test-coverage-branches="$BRANCHES_MINIMUM" \
@@ -41,4 +50,4 @@ node --experimental-test-coverage --test \
 	--test-coverage-include='app/web/static/assets/js/settings/url-state.js' \
 	--test-coverage-include='app/web/static/assets/js/workspace/url-state.js' \
 	--test-coverage-include='app/web/static/assets/js/investment/*.js' \
-	tests/test_*.mjs
+	"${JS_TEST_FILES[@]}"

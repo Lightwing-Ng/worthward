@@ -391,7 +391,7 @@
 		};
 
 		// `chart-axis-utils.js` owns the market-session projection published by
-		// `app/core/market_sessions.py`. base.html loads it before this script.
+		// `app/core/markets/sessions.py`. base.html loads it before this script.
 		const resolveMarketTimeConfig = (ticker) => chartAxis.resolveMarketTimeConfig(ticker);
 
 		const formatSerialMinuteLocalTime = (serialMinute, config) => {

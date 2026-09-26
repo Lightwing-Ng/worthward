@@ -1,4 +1,4 @@
-"""Select an installed GPU-capable training interpreter. Code version: v1.0.0."""
+"""Select an installed GPU-capable training interpreter. Code version: v1.0.1."""
 from __future__ import annotations
 
 import json
@@ -13,7 +13,7 @@ if sys.version_info < (3, 13):
     raise SystemExit(2)
 import json
 import scripts.lstm_ga_tune
-from strategies.lstm_compute import resolve_lstm_backend
+from strategies.price_field.lstm_compute import resolve_lstm_backend
 backend = resolve_lstm_backend('GPU')
 print(json.dumps({'available': backend.engine == 'torch', 'device': backend.resolved}))
 """

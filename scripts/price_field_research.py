@@ -1,4 +1,4 @@
-"""Frozen-input neural probability research coordinator. Code version: v1.1.1.
+"""Frozen-input neural probability research coordinator. Code version: v1.1.2.
 
 Search, replicated validation selection, and reporting have separate data
 boundaries. This process never fetches data or updates production settings.
@@ -102,7 +102,7 @@ def validation_folds(count: int, *, smoke: bool = False) -> tuple[int, list[tupl
 
 
 def _load_snapshot(path: Path, *, smoke: bool = False) -> dict[str, Any]:
-    from strategies.price_field_pipeline import bundle_to_price_field_ohlcv
+    from strategies.price_field.pipeline import bundle_to_price_field_ohlcv
 
     payload = json.loads(path.read_text())
     if payload.get("interval") != "1d":
@@ -126,7 +126,7 @@ def _load_snapshot(path: Path, *, smoke: bool = False) -> dict[str, Any]:
 
 def _strategy_ids(requested: list[str] | None = None) -> tuple[str, ...]:
     from strategies.loader import instantiate_strategy, list_enabled_strategies
-    from strategies.neural_price_field_registry import LEGACY_NEURAL_STRATEGY_IDS
+    from strategies.price_field.neural.registry import LEGACY_NEURAL_STRATEGY_IDS
 
     candidates = set()
     for entry in list_enabled_strategies():
@@ -143,8 +143,8 @@ def _strategy_ids(requested: list[str] | None = None) -> tuple[str, ...]:
 
 def factor_eligibility(frame: pd.DataFrame, bundle: dict[str, Any], strategy: Any) -> dict[str, Any]:
     """Inspect only the supplied validation prefix, never a final report frame."""
-    from strategies.neural_price_field_inputs import factor_values_for_neural
-    from strategies.price_field_pipeline import PRICE_FIELD_FACTOR_DEFINITIONS
+    from strategies.price_field.neural.inputs import factor_values_for_neural
+    from strategies.price_field.pipeline import PRICE_FIELD_FACTOR_DEFINITIONS
 
     params = strategy.get_default_params()
     definitions = [item for item in strategy.get_parameter_definitions() if item.group == "factors"]
@@ -245,7 +245,7 @@ def _shutdown_owned_workers(pools: list[Any], previous_children: set[int], *, gr
 def evaluate_candidate(task: dict[str, Any]) -> dict[str, Any]:
     """Run one candidate against physically restricted inputs or frozen reporting."""
     from strategies.loader import instantiate_strategy
-    from strategies.neural_price_field_scoring import score_neural_price_field
+    from strategies.price_field.neural.scoring import score_neural_price_field
 
     started = time.monotonic()
     record = {key: task[key] for key in ("strategy_id", "params", "phase", "ticker")}
@@ -360,7 +360,7 @@ class ResearchRun:
 
     def __init__(self, args: argparse.Namespace):
         from strategies.loader import instantiate_strategy
-        from strategies.neural_price_field_registry import research_choices
+        from strategies.price_field.neural.registry import research_choices
 
         self.args = args
         self.cpu_only = bool(getattr(args, "cpu_only", False))

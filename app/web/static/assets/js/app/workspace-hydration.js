@@ -81,7 +81,7 @@
                 const pendingMetricCards = tradeMetricLabels.map((label) => (
                     `<div class="trade-metric-card"><span class="trade-metric-label">${label}</span><span class="trade-metric-value is-pending-value" data-workspace-mask="trade-metric">0000</span></div>`
                 )).join("");
-                // `app/web/backtest_table_columns.py` owns this structure. The
+                // `app/web/presentation/backtest_table_columns.py` owns this structure. The
                 // pending skeleton and the server-rendered table read the same
                 // column order, width tokens, and labels.
                 const backtestColumns = Array.isArray(window.WORTHWARD_BACKTEST_COLUMNS?.single)

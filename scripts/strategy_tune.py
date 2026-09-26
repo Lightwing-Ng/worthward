@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tune any Backtest registry entry without writing production stores. Code version: v1.1.0."""
+"""Tune any Backtest registry entry without writing production stores. Code version: v1.2.1."""
 # ruff: noqa: E402
 
 from __future__ import annotations
@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -17,9 +18,51 @@ if str(PROJECT_ROOT) not in sys.path:
 import pandas as pd
 
 from app.core.config import PERIOD_OFFSETS
-from app.services.strategy_tuning import ResearchRequest, ResearchSession
-from strategies.loader import instantiate_strategy, list_enabled_strategies
+from app.services.research.strategy_tuning import ResearchRequest, ResearchSession
+from strategies.loader import (
+    get_strategy_definition,
+    instantiate_strategy,
+    list_enabled_strategies,
+)
 from strategies.tuning import optimize, search_space
+
+
+CODE_VERSION = "v1.2.1"
+
+
+def strategy_contract(entry, *, include_parameters=False):
+    """Describe the same registry and parameter definitions used by Backtest."""
+    strategy = instantiate_strategy(entry["id"])
+    contract = {
+        **entry,
+        "market_data_source": strategy.strategy_market_data_source,
+        "execution_intervals": {
+            interval: {
+                "model_interval": strategy.get_model_interval(interval),
+                "signal_bridge": strategy.get_signal_bridge(interval),
+            }
+            for interval in strategy.get_supported_intervals()
+        },
+        "search_space": [asdict(dimension) for dimension in search_space(strategy)],
+    }
+    if include_parameters:
+        contract["parameters"] = [
+            asdict(definition) for definition in strategy.get_parameter_definitions()
+        ]
+    return contract
+
+
+def read_json_object(value, label):
+    """Accept inline JSON or an explicitly selected UTF-8 JSON file."""
+    source = (
+        Path(value[1:]).expanduser().read_text(encoding="utf-8")
+        if value.startswith("@")
+        else value
+    )
+    parsed = json.loads(source)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} must be a JSON object.")
+    return parsed
 
 
 def main(argv=None):
@@ -27,9 +70,18 @@ def main(argv=None):
         description="Registry-driven Backtest tuning; production market stores are read-only."
     )
     parser.add_argument(
+        "--version", action="version", version=f"strategy_tune {CODE_VERSION}"
+    )
+    discovery = parser.add_mutually_exclusive_group()
+    discovery.add_argument(
         "--catalog",
         action="store_true",
         help="List every enabled strategy and its search contract.",
+    )
+    discovery.add_argument(
+        "--describe",
+        metavar="STRATEGY",
+        help="Print one strategy's complete parameter and data contract without loading prices.",
     )
     parser.add_argument("--strategy")
     parser.add_argument(
@@ -48,7 +100,11 @@ def main(argv=None):
     )
     parser.add_argument("--price-only", action="store_true")
     parser.add_argument("--reinvest-dividends", action="store_true")
-    parser.add_argument("--no-stop-loss", action="store_true")
+    parser.add_argument(
+        "--no-stop-loss",
+        action="store_true",
+        help="Block loss-making algorithmic exits, matching the Backtest UI default; CLI allows them by default.",
+    )
     parser.add_argument(
         "--method", choices=("genetic", "random-forest"), default="genetic"
     )
@@ -67,11 +123,13 @@ def main(argv=None):
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
-        "--params", default="{}", help="Fixed strategy parameters as JSON."
+        "--params",
+        default="{}",
+        help="Fixed strategy parameters as JSON or @path/to/params.json.",
     )
     parser.add_argument(
         "--bounds",
-        help="Search only these parameter domains, as JSON; numeric [min,max], or categorical choices.",
+        help="Search domains as JSON or @path/to/bounds.json; numeric [min,max] or choices. Use '{}' to evaluate one fixed configuration.",
     )
     parser.add_argument(
         "--output",
@@ -81,22 +139,25 @@ def main(argv=None):
     if args.catalog:
         print(
             json.dumps(
-                [
-                    {
-                        **item,
-                        "search_space": [
-                            asdict(dimension)
-                            for dimension in search_space(
-                                instantiate_strategy(item["id"])
-                            )
-                        ],
-                    }
-                    for item in list_enabled_strategies()
-                ],
+                [strategy_contract(item) for item in list_enabled_strategies()],
                 indent=2,
             )
         )
         return 0
+    if args.describe:
+        try:
+            print(
+                json.dumps(
+                    strategy_contract(
+                        get_strategy_definition(args.describe), include_parameters=True
+                    ),
+                    indent=2,
+                )
+            )
+            return 0
+        except (ValueError, TypeError, RuntimeError) as exc:
+            print(f"strategy_tune failed: {exc}", file=sys.stderr)
+            return 1
     if not args.strategy or not args.ticker or not args.output:
         parser.error("--strategy, --ticker, and a new --output directory are required.")
     if bool(args.start) != bool(args.end):
@@ -112,12 +173,18 @@ def main(argv=None):
             "Research output cannot be inside production market or settings stores."
         )
     try:
-        fixed = json.loads(args.params)
-        bounds = json.loads(args.bounds) if args.bounds else None
-        if not isinstance(fixed, dict) or (
-            bounds is not None and not isinstance(bounds, dict)
-        ):
-            raise ValueError("Parameters and bounds must be JSON objects.")
+        if output.exists():
+            raise ValueError("The output directory must be new.")
+        if not 1 <= args.trials <= 1000:
+            raise ValueError("Trials must be between 1 and 1,000.")
+        if not math.isfinite(args.time_budget) or args.time_budget <= 0:
+            raise ValueError("Time budget must be positive and finite.")
+        if args.seed < 0:
+            raise ValueError("Seed must be nonnegative.")
+        fixed = read_json_object(args.params, "Parameters")
+        bounds = (
+            read_json_object(args.bounds, "Bounds") if args.bounds is not None else None
+        )
         end = (
             pd.Timestamp(args.end)
             if args.end
@@ -170,6 +237,7 @@ def main(argv=None):
         result.update(
             {
                 "schema": "backtest-tuning/v1",
+                "cli_version": CODE_VERSION,
                 "request": asdict(request),
                 "period": args.period,
                 "data_fingerprint": session.data_fingerprint,

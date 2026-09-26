@@ -1,13 +1,13 @@
 """Shared Longbridge SDK construction helpers.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.core.broker_settings import BrokerSettings, normalize_longbridge_access_token
+from app.core.preferences.broker import BrokerSettings, normalize_longbridge_access_token
 
 
 def build_longbridge_sdk_config(config_cls: Any, settings: BrokerSettings) -> Any:

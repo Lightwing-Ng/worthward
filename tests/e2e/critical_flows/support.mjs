@@ -1,8 +1,8 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {openBacktestParameterOverlay} from '../backtest-parameter-overlay-helper.mjs';
+import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 export {expect, test, readFile, openBacktestParameterOverlay};
 

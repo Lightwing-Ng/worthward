@@ -1,6 +1,6 @@
 """Public compatibility facade for broker investment imports.
 
-Code version: v0.111.3
+Code version: v0.111.4
 - Changed: HSBC current-cash boundary helpers are re-exported from their
   dedicated cash-boundary module.
 - Changed: Split broker parsing, evidence, reconciliation, and merge logic into
@@ -9,7 +9,7 @@ Code version: v0.111.3
 
 from __future__ import annotations
 
-from app.services.investment_import_support import (
+from app.services.investment.importing.support import (
     Any,
     BOCHK_ACCOUNT_SECTION_PATTERN,
     BOCHK_CURRENCY_ALIASES,
@@ -215,7 +215,7 @@ from app.services.investment_import_support import (
     uses_longbridge_cli_oauth,
 )
 
-from app.services.investment_import_basics import (
+from app.services.investment.importing.basics import (
     _normalize_ibkr_description,
     _normalize_transaction_description_separators,
     _normalize_standard_transaction_description,
@@ -277,7 +277,7 @@ from app.services.investment_import_basics import (
     _build_longbridge_cash_flow_record,
 )
 
-from app.services.investment_import_records import (
+from app.services.investment.importing.records import (
     _build_transaction_record,
     _build_ibkr_transfer_record,
     _build_ibkr_realized_summary_cash_record,
@@ -333,7 +333,7 @@ from app.services.investment_import_records import (
     apply_hsbc_order_execution_notification_timestamps,
 )
 
-from app.services.investment_import_merge_identity import (
+from app.services.investment.importing.merge.identity import (
     _grant_identity_key,
     _incoming_grant_superseded_tickers,
     _incoming_payload_is_older_period,
@@ -412,7 +412,7 @@ from app.services.investment_import_merge_identity import (
     _merge_slot_for_transaction,
 )
 
-from app.services.investment_import_merge_reconciliation import (
+from app.services.investment.importing.merge.reconciliation import (
     _merge_non_grant_transactions,
     _suppress_resolved_hsbc_dividend_warnings,
     _suppress_obsolete_hsbc_snapshot_warnings,
@@ -442,7 +442,7 @@ from app.services.investment_import_merge_reconciliation import (
     _stamp_payload_transaction_context,
 )
 
-from app.services.investment_import_payload_summaries import (
+from app.services.investment.importing.payload_summaries import (
     _payload_transaction_dates,
     _payload_sort_key,
     _payload_earliest_sort_key,
@@ -482,7 +482,7 @@ from app.services.investment_import_payload_summaries import (
     _attach_broker_summaries,
 )
 
-from app.services.investment_import_artifacts import (
+from app.services.investment.importing.artifacts import (
     _normalize_snapshot_keys,
     _normalize_source_artifact,
     _merge_source_artifact_records,
@@ -506,7 +506,7 @@ from app.services.investment_import_artifacts import (
     _merge_broker_snapshots,
 )
 
-from app.services.investment_import_bindings import (
+from app.services.investment.importing.bindings import (
     normalize_investment_payload_tickers,
     _canonicalize_investment_internal_transfer_binding_key,
     normalize_investment_internal_transfer_bindings,
@@ -539,7 +539,7 @@ from app.services.investment_import_bindings import (
     _build_legacy_investment_internal_transfer_binding_key,
 )
 
-from app.services.investment_import_ibkr import (
+from app.services.investment.importing.brokers.ibkr.parsers import (
     _extract_ibkr_statement_field,
     _has_ibkr_section,
     _is_ibkr_transaction_history_export,
@@ -578,7 +578,7 @@ from app.services.investment_import_ibkr import (
     build_investment_payload_from_ibkr_gainskeeper_files,
 )
 
-from app.services.investment_import_longbridge_files import (
+from app.services.investment.importing.brokers.longbridge_files import (
     build_investment_payload_from_longbridge,
     _infer_longbridge_sg_market_from_symbol,
     _longbridge_sg_market_timezone,
@@ -612,7 +612,7 @@ from app.services.investment_import_longbridge_files import (
     build_investment_payload_from_longbridge_hk_files,
 )
 
-from app.services.investment_import_hsbc_core import (
+from app.services.investment.importing.brokers.hsbc.core import (
     _parse_hsbc_capture_json,
     _parse_hsbc_iso_date,
     _parse_hsbc_decimal,
@@ -658,7 +658,7 @@ from app.services.investment_import_hsbc_core import (
     _build_hsbc_cash_account_capture_from_text,
 )
 
-from app.services.investment_import_hsbc_cash import (
+from app.services.investment.importing.brokers.hsbc.cash import (
     _resolve_hsbc_cash_capture_ending_components,
     _build_hsbc_cash_account_records_from_text_single,
     _hsbc_cash_record_identity_key,
@@ -679,7 +679,7 @@ from app.services.investment_import_hsbc_cash import (
     _annotate_hsbc_order_settlement_adjustment,
 )
 
-from app.services.investment_import_hsbc_reconciliation import (
+from app.services.investment.importing.brokers.hsbc.reconciliation import (
     _build_hsbc_pasted_snapshot_report,
     _build_hsbc_cash_only_pasted_payload,
     build_investment_payload_from_hsbc_pasted_text,
@@ -692,13 +692,13 @@ from app.services.investment_import_hsbc_reconciliation import (
     validate_hsbc_pasted_text,
 )
 
-from app.services.investment_import_hsbc_cash_boundary import (
+from app.services.investment.importing.brokers.hsbc.cash_boundary import (
     _reconcile_hsbc_order_settlement_balances_from_postings,
     _synchronize_hsbc_authoritative_current_cash_boundary,
     _preserve_authoritative_current_cash_scope,
 )
 
-from app.services.investment_import_hsbc_statements import (
+from app.services.investment.importing.brokers.hsbc.statements import (
     _parse_hsbc_statement_date,
     _parse_hsbc_statement_transaction_date,
     _extract_hsbc_statement_usd_section,
@@ -727,7 +727,7 @@ from app.services.investment_import_hsbc_statements import (
     build_investment_payload_from_hsbc_statement_bundle,
 )
 
-from app.services.investment_import_bochk import (
+from app.services.investment.importing.brokers.bochk import (
     _normalize_bochk_currency_code,
     _bochk_subaccount_short_number,
     _parse_bochk_statement_date,
@@ -745,7 +745,7 @@ from app.services.investment_import_bochk import (
     build_investment_payload_from_bochk_statement_pdfs,
 )
 
-from app.services.investment_import_futuhk import (
+from app.services.investment.importing.brokers.futuhk import (
     _is_futuhk_internal_transfer_remark,
     _stamp_futuhk_internal_transfer_metadata,
     _extract_futuhk_pdf_text,
@@ -769,7 +769,7 @@ from app.services.investment_import_futuhk import (
     build_investment_payload_from_futuhk_statement_pdfs,
 )
 
-from app.services.investment_import_usmart_tiger import (
+from app.services.investment.importing.brokers.usmart_tiger import (
     _extract_statement_pdf_text,
     _statement_decimal,
     _statement_record,
@@ -796,7 +796,7 @@ from app.services.investment_import_usmart_tiger import (
     build_investment_payload_from_tigertrade_statement_pdfs,
 )
 
-from app.services.investment_import_cmbwl import (
+from app.services.investment.importing.brokers.cmbwl import (
     _format_cmbwl_description,
     _build_cmbwl_bonus_share_grant_record,
     _infer_cmbwl_bonus_share_grant_day,
@@ -808,12 +808,12 @@ from app.services.investment_import_cmbwl import (
     build_investment_payload_from_cmbwl_securities_order_eml_paths,
 )
 
-from app.services.investment_import_merge import (
+from app.services.investment.importing.merge.operations import (
     merge_investment_payloads,
     repair_ibkr_web_compact_split_fill_duplicates,
 )
 
-from app.services.investment_import_schwab import (
+from app.services.investment.importing.brokers.schwab import (
     _canonicalize_schwab_legacy_transaction_type,
     _normalize_schwab_header_key,
     _parse_schwab_datetime,

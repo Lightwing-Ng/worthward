@@ -4,7 +4,7 @@ The entrypoint implements the fixed agenticContext compute-job protocol. Its
 configuration carries an immutable compressed market snapshot, so candidate
 evaluation never needs provider credentials, HTTP, or a child process.
 
-Code version: v1.2.0
+Code version: v1.2.1
 """
 
 from __future__ import annotations
@@ -84,14 +84,14 @@ REQUIRED_RUNTIME_SOURCE_PATHS = frozenset({
     "strategies/algorithms/strategy_bayesian_price_field.py",
     "strategies/base.py",
     "strategies/interval_bridge.py",
-    "strategies/price_field_contract.py",
-    "strategies/price_field_pipeline.py",
-    "strategies/price_field_scoring.py",
+    "strategies/price_field/contract.py",
+    "strategies/price_field/pipeline.py",
+    "strategies/price_field/scoring.py",
 })
 PREPARATION_SOURCE_PATHS = frozenset({
     "app/core/config.py",
     "app/infrastructure/broker_market_data.py",
-    "app/services/price_field_market_factors.py",
+    "app/services/research/price_field_market_factors.py",
     "scripts/prepare_bayesian_crps_ga_config.py",
 })
 
@@ -227,14 +227,14 @@ def resolve_project_root() -> Path:
     for candidate in candidates:
         resolved = candidate.resolve()
         if (
-            (resolved / "strategies/price_field_scoring.py").is_file()
+            (resolved / "strategies/price_field/scoring.py").is_file()
             and (resolved / "app/infrastructure/parallel.py").is_file()
         ):
             return resolved
     live_source = Path(__file__).resolve()
     if live_source.parent.name == "scripts":
         candidate = live_source.parent.parent
-        if (candidate / "strategies/price_field_scoring.py").is_file():
+        if (candidate / "strategies/price_field/scoring.py").is_file():
             return candidate
     raise ValueError("Worthward project root is unavailable from the approved source directory.")
 
@@ -796,8 +796,8 @@ def _runtime_modules(project_root: Path) -> tuple[Any, Any, Any]:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from strategies.algorithms import strategy_bayesian_price_field as bayesian
-    from strategies.price_field_pipeline import bundle_to_price_field_ohlcv
-    from strategies.price_field_scoring import score_price_field_grid
+    from strategies.price_field.pipeline import bundle_to_price_field_ohlcv
+    from strategies.price_field.scoring import score_price_field_grid
 
     # Keep every candidate on the same deterministic float64 implementation.
     # This also matches a Worthward runtime without optional Torch installed.

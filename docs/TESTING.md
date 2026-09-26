@@ -1,10 +1,29 @@
 # Testing guide
 
-Documentation version: `v1.90.0`
+Documentation version: `v1.90.2`
+
+## Registry-wide Backtest CLI
+
+`tests/python/tooling/test_strategy_tune_cli.py` invokes the CLI for every dynamically enabled
+strategy with both search methods, retaining production signals and execution
+engines while isolating market inputs and output files. It also launches real
+subprocesses against temporary local Parquet stores and verifies that inputs
+remain unchanged. Fixed-configuration smoke checks use explicit empty bounds;
+the seeded multi-trial optimizer checks remain in `tests/python/services/test_strategy_tuning.py`.
+`tests/python/tooling/test_strategy_tune_options.py` checks complete parameter discovery,
+inline/file configuration equivalence, and invalid-input rejection before data
+loading. `tests/python/services/test_strategy_research_boundaries.py` verifies that Buy and hold
+actually enters in each scored window, including market-local intraday boundaries,
+rather than passing with an idle cash balance.
+
+```bash
+./scripts/test.sh tests/python/services/test_strategy_tuning.py tests/python/tooling/test_strategy_tune_cli.py \
+  tests/python/tooling/test_strategy_tune_options.py tests/python/services/test_strategy_research_boundaries.py
+```
 
 ## Standard circular icon button geometry
 
-`tests/e2e/circular-icon-button-contract.spec.mjs` measures the catalog, its copy
+`tests/e2e/shared/circular-icon-button-contract.spec.mjs` measures the catalog, its copy
 action, and production sidebar/theme/language controls in Light and Dark at
 1,006 by 791 with fine and coarse pointers, 390 by 844 with touch, 1,006 by 500,
 and the 900px/901px boundary.
@@ -19,23 +38,23 @@ import placement and its calculated height use the actual visible rail, not a
 root/body token that misses the page-scoped touch override. Empty read-only API
 fixtures are used; no import or production financial write is performed.
 The suite blocks non-GET requests and saves one screenshot per theme and size.
-`tests/test_layout_anchor_contract.py` also protects canonical/compatibility
+`tests/python/web/test_layout_anchor_contract.py` also protects canonical/compatibility
 ownership, the editable catalog default, import-height fallback, and unchanged
 semantic dimensions. Run both through the supported wrappers. The existing
 `backtest-title-alignment.spec.mjs` verifies the responsive result/title rails.
 
 ## Determinate loading indicator
 
-`tests/test_loading_indicator.mjs` verifies the exact 0%, 75%, and 100% geometry,
+`tests/js/shared/test_loading_indicator.mjs` verifies the exact 0%, 75%, and 100% geometry,
 finite input guards, strict boolean opt-in, stable SVG identity, and accessibility
-cleanup. `tests/e2e/loading-indicator.spec.mjs` exercises the real Style tokens
+cleanup. `tests/e2e/shared/loading-indicator.spec.mjs` exercises the real Style tokens
 controls, theme and viewport containment, reduced motion, and the Holdings loading
 lifecycle with delayed, failed, and successful isolated responses. Progress is
 counted completed work; a held request must not advance just because time passes.
 
 ## Shared select menu and chevron parity
 
-`tests/e2e/shared-select-parity.spec.mjs` measures the real Backtest Period
+`tests/e2e/shared/shared-select-parity.spec.mjs` measures the real Backtest Period
 adapter and the Shared select dropdown catalog specimen at 1,006 by 791,
 390 by 844 with touch, and 1,006 by 500 in Light and Dark. The menu retains the
 approved 56%/16% highlight gradient over a 62% theme-background surface, 12px
@@ -44,26 +63,26 @@ and select trigger are unchanged. The chevron points right when closed and down
 when open. The suite checks horizontal containment, visible option hit testing,
 keyboard focus, Escape restoration, unchanged native values, and Reduced Motion,
 and blocks every non-GET request. It saves separate Period and catalog screenshots
-for every theme and viewport. `tests/test_shared_select_contract.py` protects the
+for every theme and viewport. `tests/python/web/test_shared_select_contract.py` protects the
 select-only opacity token, scoped material formula, catalog projection, and
 currentColor chevron contract. Existing `select-keyboard.spec.mjs` coverage retains
 selection, outside-click, Tab, and cached-template behavior.
 
 ## Shared modal and floating-banner rows
 
-`tests/e2e/style-token-alignment.spec.mjs` measures the real Style tokens route at
+`tests/e2e/settings/style-token-alignment.spec.mjs` measures the real Style tokens route at
 1,024px, 800px, and 390px. For both the centered modal and the floating banner it
 checks equal dismiss-center edge distances, exact title-to-dismiss vertical
 centering, second-row topic-icon/body top alignment, the 12px icon-to-copy gap,
 and zero surface or document overflow. The banner specimen also validates one
 direct heading and one direct semantic-list body, plus the hanging indent of a
-wrapped second item. `tests/test_layout_anchor_contract.py` and
-`tests/test_banner_contract.py` protect the two-row token/CSS mapping, dynamic
+wrapped second item. `tests/python/web/test_layout_anchor_contract.py` and
+`tests/python/web/test_banner_contract.py` protect the two-row token/CSS mapping, dynamic
 message-container fallback, shared list-indentation tokens, and valid `ol > li`
 macro structure. The browser suite also exercises the reduced-motion duration and
 touch-visible dismiss control.
 
-`tests/e2e/waiting-notification-parity.spec.mjs` checks the existing production
+`tests/e2e/shared/waiting-notification-parity.spec.mjs` checks the existing production
 waiting overlay and both catalog specimens at 1,006 by 791, 390 by 844 with touch,
 and 1,006 by 500 in light and dark themes. It verifies the approved translucent
 notification material, 18px saturated blur, 15px heading/body hierarchy, 12px
@@ -83,7 +102,7 @@ the ordinary Frosted Glass material at 62% opacity and 12px blur.
 
 ## Prices secondary-sidebar overlay
 
-`tests/e2e/price-comparison.spec.mjs` verifies that Ticker comparison reuses the
+`tests/e2e/workspaces/price-comparison.spec.mjs` verifies that Ticker comparison reuses the
 Backtest workspace-controls overlay at 751 by 912: the closed panel is fixed,
 inert, and non-consuming; results span the workspace; the 44 px toggle clears the
 title; opening restores one scroll owner and session memory; Escape restores
@@ -94,7 +113,7 @@ backdrop, and panel attributes while retaining product-specific identifiers.
 
 ## Settings optimistic navigation and bounded surfaces
 
-`tests/e2e/settings-surface-fixes.spec.mjs` covers the shared Settings geometry at
+`tests/e2e/settings/settings-surface-fixes.spec.mjs` covers the shared Settings geometry at
 desktop and narrow widths in both color schemes. It verifies the standard
 end-aligned language action row, theme-adaptive allocation handles, locally clipped
 network effects, and document-level overflow. Its `1,007 × 1,355` dark-mode case
@@ -123,42 +142,42 @@ the existing test-only PIN does not grant access to the host's real CLI account.
 The daily Yahoo fallback honors remote-disable even after the primary transport
 fails. Browser fixtures must provide enough local data for the intended test.
 
-`tests/test_settings_write_security.py` and `tests/e2e/settings-security.spec.mjs`
+`tests/python/web/test_settings_write_security.py` and `tests/e2e/settings/settings-security.spec.mjs`
 cover rejected Settings requests, native form and language-toggle compatibility,
 and hostile provider text in comparison and Live trading suggestions.
-`tests/test_settings_atomic_persistence.py` covers concurrent threads/processes,
+`tests/python/core/test_settings_atomic_persistence.py` covers concurrent threads/processes,
 failed replacement, owner-only file permissions, and corrupt-file preservation.
 
 ## Current workflow
 
 Reuse-boundary coverage is executable rather than review-only.
-`tests/test_architecture_boundaries.py` rejects outward imports from inner
+`tests/python/architecture/test_architecture_boundaries.py` rejects outward imports from inner
 application layers, eager outer-layer loading during a core import, route-module
 dependencies outside Flask and `WebRuntime`, and drift among runtime fields,
-builder arguments, and route consumers. `tests/test_market_identity.py` protects
+builder arguments, and route consumers. `tests/python/core/test_market_identity.py` protects
 the canonical aliases, every supported market family's representative timezone,
 and distinct Istanbul and Buenos Aires regular-session windows.
-`tests/test_market_session_contract.py` protects the one maintained session
+`tests/python/core/test_market_session_contract.py` protects the one maintained session
 source: every supported suffix family resolves to exactly one definition, the
 confirmed Buenos Aires, Istanbul, Sydney, and Seoul mismatches stay resolved,
 split sessions keep their lunch break, inclusive included-bar windows stay
 distinct from exclusive session windows, the browser projection preserves
 backend suffix precedence, and neither the chart nor the exporter keeps a
 private suffix, timezone, or session table.
-`tests/test_shared_chart_utility_contract.py` rejects a second copy of the
+`tests/python/architecture/test_shared_chart_utility_contract.py` rejects a second copy of the
 tick-selection algorithm or of `layoutDateAxisTicks` and asserts that
 `base.html` loads `chart-axis-utils.js` before every classic chart consumer.
-`tests/test_chart_date_axis_layout.mjs` verifies flush edge labels, centered
+`tests/js/shared/test_chart_date_axis_layout.mjs` verifies flush edge labels, centered
 interior labels, collision-free even spacing across widths, same-date
 deduplication, and opt-in special dates.
-`tests/test_price_field_evaluation.py` reproduces the previously duplicated
+`tests/python/strategies/test_price_field_evaluation.py` reproduces the previously duplicated
 inline Price Field orchestration as a reference implementation and asserts that
 the shared owner matches it frame for frame and diagnostic for diagnostic
 across warm-up and threshold variants.
-`tests/test_neighbor_indicator_ownership.py`,
-`tests/test_runtime_workspace_dependencies.py`,
-`tests/test_shared_ui_structure_contract.py`, and
-`tests/test_investment_import_compat_boundary.py` protect the neutral neighbor
+`tests/python/architecture/test_neighbor_indicator_ownership.py`,
+`tests/python/architecture/test_runtime_workspace_dependencies.py`,
+`tests/python/architecture/test_shared_ui_structure_contract.py`, and
+`tests/python/architecture/test_investment_import_compat_boundary.py` protect the neutral neighbor
 primitives, the declared workspace runtime namespace, the shared Settings
 token-table and Backtest column structures, and the declared investment-import
 patch seams. The compute-job,
@@ -190,15 +209,17 @@ Layout-only LSTM browser tests explicitly request CPU, one training epoch,
 and small model dimensions. They validate rendered geometry without inheriting
 expensive GPU defaults. This does not establish GPU training compatibility.
 
-Node discovers every `tests/test_*.mjs` file automatically. Coverage thresholds
-remain unchanged. New suites no longer require editing a manual filename list.
+The Node wrapper recursively discovers `tests/js/**/test_*.mjs` in stable
+bytewise path order. Helpers and browser suites are excluded, and an empty unit
+test tree fails explicitly. Coverage thresholds remain unchanged. New suites
+no longer require editing a manual filename list.
 
-`tests/test_repository_contracts.py` enforces a 100 KiB upper bound for every
+`tests/python/architecture/test_repository_contracts.py` enforces a 100 KiB upper bound for every
 first-party `.py`, `.js`, `.mjs`, `.css`, `.html`, `.sh`, and `.ps1` file under
 `main.py`, `app/`, `strategies/`, `scripts/`, and `tests/`. The scan includes
 present untracked files so a newly extracted module cannot bypass the guard;
 only the explicit browser `vendor/` tree is excluded. Large browser owners are
-tested through ordered bundle readers, including `tests/app_test_utils.py`,
+tested through ordered bundle readers, including `tests/support/app_test_utils.py`,
 while template, CSS, and runtime helpers preserve the corresponding source
 composition order. Static assertions must follow the real owner module rather
 than retaining implementation text in a facade comment.
@@ -245,8 +266,8 @@ Run the focused, fully offline Yahoo transport regression tests:
 
 ```bash
 ./scripts/test.sh \
-  tests/test_security_boundaries.py \
-  tests/test_market_data_freshness.py
+  tests/python/infrastructure/test_security_boundaries.py \
+  tests/python/services/test_market_data_freshness.py
 ```
 
 Run the complete quality gate:
@@ -258,11 +279,11 @@ Run the complete quality gate:
 Run the OpenAI Site tools contract, Flask rendering, and random-port disposable-browser layers:
 
 ```bash
-node --test tests/test_agent_optimization.mjs
+node --test tests/js/shared/test_agent_optimization.mjs
 ./scripts/test.sh \
-  tests/test_agent_optimization.py \
-  tests/test_agent_optimization_browser.py
-./scripts/test_e2e.sh tests/e2e/agent-optimization.spec.mjs
+  tests/python/web/test_agent_optimization.py \
+  tests/python/web/test_agent_optimization_browser.py
+./scripts/test_e2e.sh tests/e2e/shared/agent-optimization.spec.mjs
 ```
 
 The complete gate runs, in order:
@@ -301,7 +322,7 @@ coverage.py `7.15.0`:
 - Total combined statement-and-branch coverage: `71.92%` (`coverage.json`
   reports `20,331` covered lines of `26,841` statements and `6,994` covered
   branches of `11,162`).
-- `app/services/dca.py`: `97.6%`, with recurring schedule, contribution
+- `app/services/analysis/dca.py`: `97.6%`, with recurring schedule, contribution
   accounting, dividend, normalization, and error paths covered by
   deterministic unit tests.
 - Seven previously weak strategy variants now measure `88.4%` to `96.9%`
@@ -320,7 +341,7 @@ Priority coverage gaps:
 
 Recently strengthened coverage:
 
-- `app/services/live_trading.py`: `83.5%`, with offline CLI OAuth, the supported
+- `app/services/investment/live_trading.py`: `83.5%`, with offline CLI OAuth, the supported
   SDK order boundary, order validation, and API authorization contracts covered
   without a real account request or order.
 - `app/infrastructure/broker_market_data.py`: `55.6%`, with offline Longbridge
@@ -352,46 +373,51 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
 
 - `tests/conftest.py`: shared pytest application and client fixtures.
 - `tests/factories/`: deterministic market, profile, strategy, and result factories.
-- `tests/test_*.py`: Python unit and Flask integration tests.
-- `tests/test_app_startup.py`: portable startup contracts that do not require
+- `tests/python/`: Python tests grouped into architecture, core, infrastructure,
+  services, strategies, web, and tooling packages.
+- `tests/support/`: shared source readers and broker-import mixins.
+- `tests/js/`: shared, investment, backtest, and workspace Node suites.
+- `tests/e2e/`: shared, investment, settings, backtest, and workspace browser
+  suites; the critical-flow aggregator and its fragment order remain stable.
+- `tests/python/web/test_app_startup.py`: portable startup contracts that do not require
   local source-evidence stores.
-- `tests/test_repository_contracts.py`: documentation links and versions,
+- `tests/python/architecture/test_repository_contracts.py`: documentation links and versions,
   privacy-safe historical records, JavaScript and E2E resource versions,
   tracked E2E assets, CSS import-manifest integrity, and retired-entrypoint or
   unsafe-transport tombstones.
-- `tests/test_agent_optimization.py`, `tests/test_agent_optimization_browser.py`, and
-  `tests/test_agent_optimization.mjs`: manifest, schema, registration, security, unsupported-client,
+- `tests/python/web/test_agent_optimization.py`, `tests/python/web/test_agent_optimization_browser.py`, and
+  `tests/js/shared/test_agent_optimization.mjs`: manifest, schema, registration, security, unsupported-client,
   and random-port browser lifecycle contracts.
-- `tests/e2e/agent-optimization.spec.mjs`: project Playwright coverage for top-level Site tool
+- `tests/e2e/shared/agent-optimization.spec.mjs`: project Playwright coverage for top-level Site tool
   discovery, execution, navigation, fresh-document registration, and narrow-screen fallback.
-- `tests/e2e/price-comparison.spec.mjs`: adaptive Market cap linear/logarithmic scale selection,
+- `tests/e2e/workspaces/price-comparison.spec.mjs`: adaptive Market cap linear/logarithmic scale selection,
   absolute-value preservation, missing-history gaps, and visible tier separation.
-- `tests/test_compare_page.py`: comparison date, intraday alignment, live API,
+- `tests/python/web/test_compare_page.py`: comparison date, intraday alignment, live API,
   and identity-preservation contracts. A missing ticker stays in its original
   control slot and fails explicitly across Return, Price, and Market cap
   comparison; relative live API requests ignore client calendar input and
   publish the server-owned comparison date.
-- `tests/e2e/return-comparison.spec.mjs`: Return comparison heading and landmark
+- `tests/e2e/workspaces/return-comparison.spec.mjs`: Return comparison heading and landmark
   semantics plus the live-refresh lifecycle across same-page `1y` to `1d`
   hydration and the non-live teardown path.
-- `tests/test_compatibility_routes.py`: canonical destinations for the
+- `tests/python/web/test_compatibility_routes.py`: canonical destinations for the
   documented compatibility redirect families.
-- `tests/test_e2e_locking.py`: host-level E2E ownership across worktrees,
+- `tests/python/tooling/test_e2e_locking.py`: host-level E2E ownership across worktrees,
   fail-closed direct invocation, and no-cleanup-on-lock-conflict behavior.
-- `tests/test_debug_reporting.py`: opt-in local debug endpoint validation and
+- `tests/python/core/test_debug_reporting.py`: opt-in local debug endpoint validation and
   sensitive-data redaction.
-- `tests/test_longbridge_cli.py`: Longbridge CLI path safety and client-safe
+- `tests/python/infrastructure/test_longbridge_cli.py`: Longbridge CLI path safety and client-safe
   OAuth or connection failure feedback.
-- `tests/test_runtime_error_redaction.py`: stable client failures that retain
+- `tests/python/web/test_runtime_error_redaction.py`: stable client failures that retain
   full unexpected-error diagnostics only in local logs.
-- `tests/test_ibkr_interest_accruals.py` and
-  `tests/test_investment_interest_accruals.mjs`: synthetic IBKR Interest
+- `tests/python/services/test_ibkr_interest_accruals.py` and
+  `tests/js/investment/test_investment_interest_accruals.mjs`: synthetic IBKR Interest
   Accruals parsing, dated evidence persistence, and the
   `cash + market value + accrual` equity invariant for rows, aggregate rows,
   and daily points. They cover negative, positive, zero, missing, conflicting,
   and foreign-currency accruals, and prove that a boundary is neither carried
   forward nor added to another broker's equity.
-- `tests/test_investment_data_utils.mjs`: Node unit tests for investment
+- `tests/js/investment/test_investment_data_utils.mjs`: Node unit tests for investment
   calculations, including synthetic multi-account round trips, fail-closed
   handling for incomplete histories, validated open-position snapshots,
   same-day execution chronology, cost-method alternatives, zero-cost grant
@@ -400,7 +426,7 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   independent snapshot as-of dates, replay completion, the snapshot-baseline
   plus boundary-increment invariant, and rejection of missing supplemental
   boundaries and legacy ticker fallbacks.
-- `tests/test_longbridge_import.py` and `tests/test_longbridge_sg_import.py`:
+- `tests/python/services/test_longbridge_import.py` and `tests/python/services/test_longbridge_sg_import.py`:
   account-scoped synthetic performance calibrations and exact paired-file
   source-artifact bundle identities. No broker account data is required.
 - Investment replay coverage also asserts booking-date-first ordering when
@@ -412,22 +438,22 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   cash projection from cancelling earlier settled sale proceeds, and the
   cash-equivalent endpoint regression verifies that Overview and Holdings use
   the same valid live quote.
-- `tests/test_investment_equity_chart_realized_timeline.mjs` verifies that
+- `tests/js/investment/test_investment_equity_chart_realized_timeline.mjs` verifies that
   historical hover Realized P&L dates a broker performance baseline to its
   scope's last disposal rather than the artifact as-of date, keeps per-sale
   reconstruction dates, equals Holdings at the latest point, and stays
   unavailable when a ticker's Holdings realized value is unavailable.
-- `tests/test_investment_history_projection.mjs` verifies that a settlement
+- `tests/js/investment/test_investment_history_projection.mjs` verifies that a settlement
   boundary folds unscoped same-currency replay deltas into the only matching
   cash scope exactly once, and fails closed beside several same-currency
-  scopes. `tests/investment_import_hsbc_statements_mixin.py` verifies that a
+  scopes. `tests/support/investment_import/investment_import_hsbc_statements_mixin.py` verifies that a
   corroborating statement PDF digest leaves the CSV row's sequence aliases and
   that the current CSV upgrades a legacy row's chronological provenance. Import
   simulations must set the configured HSBC account, or deduplication results
   are not representative.
-- `tests/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
+- `tests/js/investment/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
-- `tests/test_investment_import.py` and `tests/test_more_page.py`: IBKR Trade
+- `tests/python/services/test_investment_import.py` and `tests/python/web/test_more_page.py`: IBKR Trade
   Notifications paste parsing, Beijing-to-New York conversion, synthetic
   position-gap validation, closed-trade aggregation, closed-lot metadata
   retention across CSV/GainsKeeper deduplication, verified realized-component
@@ -451,7 +477,7 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   attribution and its metadata, excludes empty-account, other-account, and
   other-broker decoys, fails closed for two plausible tickers or a local-history
   read error, and remains idempotent.
-  `tests/test_hsbc_cash_only_dividend_route.py` repeats the POST against a
+  `tests/python/web/test_hsbc_cash_only_dividend_route.py` repeats the POST against a
   temporary ledger and temporary dividend parquet, then verifies one persisted
   event and its immutable raw-text evidence. Separate settlement tests require
   both a sell's principal and fee posting, with the fee represented once in
@@ -467,7 +493,7 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   safe integer rows, statement-PDF row aliases, global SHA-plus-row ownership,
   standalone malformed direct cash, owner-wide provisional state, and removal
   of synthetic boundaries when immutable evidence conflicts.
-- `tests/test_zircon_hk_import.py` and `tests/test_more_page.py`: typed XLSX
+- `tests/python/services/test_zircon_hk_import.py` and `tests/python/web/test_more_page.py`: typed XLSX
   template structure, standard-export archive health, exact named ranges and
   validation ranges through the full selected scope, stable Reference ID and
   FX identity coverage, the 10,000-row boundary, full broker and
@@ -477,74 +503,74 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   Hong Kong-to-New York time conversion, text-date and text-number rejection,
   formula rejection, cash-sign contracts, precise cell diagnostics, read-only
   prevalidation, isolated persistence, and immutable workbook evidence.
-- `tests/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
+- `tests/js/investment/test_investment_realtime.mjs`: poll lifecycle, retry timing, numeric
   parsing, alignment, and green-up/red-down transition contracts.
-- `tests/test_investment_stock_details.mjs`: Stock-details range, minute,
+- `tests/js/investment/test_investment_stock_details.mjs`: Stock-details range, minute,
   session, day-boundary, shared transaction-applier, and static trade-marker
   Glow-raster reuse contracts.
-- `tests/test_investment_transaction_filters.mjs`: broker, currency, type, and
+- `tests/js/investment/test_investment_transaction_filters.mjs`: broker, currency, type, and
   canonical date-filter behavior.
-- `tests/test_investment_transaction_table.mjs`: visible-row selection,
+- `tests/js/investment/test_investment_transaction_table.mjs`: visible-row selection,
   descending page state, clamping, and ledger-to-page lookup.
-- `tests/test_investment_layout.mjs`: split-layout measurement and clamp rules.
-- `tests/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
-- `tests/test_investment_url_state.mjs`: Node unit tests for canonical Investment
+- `tests/js/investment/test_investment_layout.mjs`: split-layout measurement and clamp rules.
+- `tests/js/investment/test_investment_pagination.mjs`: Node unit tests for fixed five-page Investment pagination chunks and one-page arrow targets.
+- `tests/js/investment/test_investment_url_state.mjs`: Node unit tests for canonical Investment
   view, range, broker, table-filter, date, ticker, and pagination query state.
-- `tests/test_workspace_url_state.mjs`: Node unit tests for the shared Workspace
+- `tests/js/workspaces/test_workspace_url_state.mjs`: Node unit tests for the shared Workspace
   URL contract, including default omission, exact dates, repeated allocation
   order, backtest parameters, DCA schedule parameters, and legacy aliases.
-- `tests/test_settings_url_state.mjs`: Node unit tests for canonical Settings
+- `tests/js/workspaces/test_settings_url_state.mjs`: Node unit tests for canonical Settings
   sections, language tabs, pagination, default omission, and legacy aliases.
-- `tests/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
-- `tests/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `WORTHWARD_APP.theme`, empty string), and safe dynamic logo URL normalization.
-- `tests/test_backtest_probability_grid.mjs`, `tests/test_backtest_detail_chart.mjs`, and `tests/test_neural_price_field_presentation.mjs`: deterministic schema and date-key validation for the fixed 20-column tooltip; actual-cell-size minimum-plot-height derivation; independent up-to-12-row clamping by the 50% current-plot cap and the relevant chart boundary; the opt-in complete-row geometry used by the 20-by-24 detail surface; direct-horizon central-95% forecast-envelope domains with bounded recent-history context; a PatchTST-shaped 2% threshold regression requiring at least 14 occupied rows, 215 visible cells, seven cells in every horizon, a fully opaque per-field winner, and a lightest visible cell below 0.01 opacity; adaptive row-price allocation independent of the overview Y scale; stable median point spacing; integer-trading-day slots with a one-day minimum; direct-model separation of spatial day quantization from the one-horizon semantic step; fixed 2 px logical guide-to-first-cell and cell-to-cell gaps for the floating field; equal horizontal and vertical detail gaps that remain positive and never exceed the requested 2 px; 1:1 square geometry; exact price mapping; 4 px hover-cell floor, no-radius transparent matrix, 8 px top, bottom, and trailing padding; nonlinear per-hover opacity normalization; curve-hit plus pin-state contracts; and polyline intersection at the cursor X, including interrupted trading-day gaps. The dedicated Chromium flow uses `NVDA`, checks the adaptive direct-forecast detail domain and transparent matrix without changing Frosted Glass tokens, proves the dynamic Backtest resizer lower bound preserves a real near-midpoint forecastable point at full 12-by-12 density, exercises a real pointer drag with a pinned field, preserves exact content-space mapping through the temporary scroll rail, and verifies tracking, pin, blank-clear, Escape-clear, resize, and narrow-screen behavior. A dedicated `732 by 1,318` Bayesian regression verifies 480 cells, 12 rows on each side, square geometry of at least 12px, 2px gaps, full panel-width plot ownership, complete containment, and zero plot, panel, or document overflow. A separate `1,024 by 900` endpoint regression moves the shared splitter to `End` and proves that the active detail view retains its pre-endpoint cell resolution and remains overflow-free.
-- `tests/test_price_field_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date. The historical `app.services.bayesian_market_factors` import remains covered only through its compatibility alias.
+- `tests/js/shared/test_table_filter_contracts.mjs`: deterministic standard-table measurement, summary-scope, and All / Buy / Sell filter tests.
+- `tests/js/shared/test_chart_axis_utils.mjs`: Node unit tests for shared chart tick-index helpers, `readThemeTokens` priority (CSS, explicit fallbacks, `WORTHWARD_APP.theme`, empty string), and safe dynamic logo URL normalization.
+- `tests/js/backtest/test_backtest_probability_grid.mjs`, `tests/js/backtest/test_backtest_detail_chart.mjs`, and `tests/js/backtest/test_neural_price_field_presentation.mjs`: deterministic schema and date-key validation for the fixed 20-column tooltip; actual-cell-size minimum-plot-height derivation; independent up-to-12-row clamping by the 50% current-plot cap and the relevant chart boundary; the opt-in complete-row geometry used by the 20-by-24 detail surface; direct-horizon central-95% forecast-envelope domains with bounded recent-history context; a PatchTST-shaped 2% threshold regression requiring at least 14 occupied rows, 215 visible cells, seven cells in every horizon, a fully opaque per-field winner, and a lightest visible cell below 0.01 opacity; adaptive row-price allocation independent of the overview Y scale; stable median point spacing; integer-trading-day slots with a one-day minimum; direct-model separation of spatial day quantization from the one-horizon semantic step; fixed 2 px logical guide-to-first-cell and cell-to-cell gaps for the floating field; equal horizontal and vertical detail gaps that remain positive and never exceed the requested 2 px; 1:1 square geometry; exact price mapping; 4 px hover-cell floor, no-radius transparent matrix, 8 px top, bottom, and trailing padding; nonlinear per-hover opacity normalization; curve-hit plus pin-state contracts; and polyline intersection at the cursor X, including interrupted trading-day gaps. The dedicated Chromium flow uses `NVDA`, checks the adaptive direct-forecast detail domain and transparent matrix without changing Frosted Glass tokens, proves the dynamic Backtest resizer lower bound preserves a real near-midpoint forecastable point at full 12-by-12 density, exercises a real pointer drag with a pinned field, preserves exact content-space mapping through the temporary scroll rail, and verifies tracking, pin, blank-clear, Escape-clear, resize, and narrow-screen behavior. A dedicated `732 by 1,318` Bayesian regression verifies 480 cells, 12 rows on each side, square geometry of at least 12px, 2px gaps, full panel-width plot ownership, complete containment, and zero plot, panel, or document overflow. A separate `1,024 by 900` endpoint regression moves the shared splitter to `End` and proves that the active detail view retains its pre-endpoint cell resolution and remains overflow-free.
+- `tests/python/services/test_price_field_market_factors.py`: mocked Longbridge CLI chunking, optional-factor failure isolation, US/HK/SH/SZ/SG market-local trading-day normalization, availability-timestamp bounds (including rejection of report-period-only rows), current Dynamic P/E snapshot date binding without historical backfill, retries, bounded LRU expiry, same-key single-flight, immutable status, and provenance contracts. Backtest page coverage separately verifies that a relative strategy-provider window ends on the ticker's own market-local date. The historical `app.services.bayesian_market_factors` import remains covered only through its compatibility alias.
   The current Bayesian probability-grid assertions supersede historical material checks: the floating field sides are independently bounded by `min(12, floor(50% of current plot height capacity), floor(its chart-boundary distance in complete slots))`, while the contained detail panel renders all 12 rows above and below the anchor and scales the complete 20-by-24 lattice without clipping; the field fixes 20 columns, and actual quantized cell size determines the private dynamic stage minimum passed to the generic resizer. `Metrics` and `Transactions` retain the overview-priority Home endpoint and its one-pixel outer-layout buffer. While `Price Field` is active, the history-priority range reports an effective Home value that matches the protected split geometry; a constrained floating field may expose fewer complete rows through its normal fit calculation, and the splitter may converge to one effective endpoint when the two protected minimums consume all available height. Square cells map through the live Y scale and integer-day width exactly, and the transparent no-radius matrix leaves the curve Canvas range and global Frosted Glass tokens unchanged. The isolated flow seeds a horizontal pan and then traverses immutable pre-pan content coordinates, proving every intermediate curve index remains reachable instead of collapsing to the rightmost point. A left-side hover must keep the last trading day away from the pointer, place the vertical guide on the cursor, place the horizontal guide on the curve intersection, and draw the Price Field to the right of that guide. The shared resizer callback is verified after Chart.js resize, including a real pointer drag with a pinned field when range remains, or endpoint stability when the protected range converges, while the native probability rail is active; the rail keeps its own browser hit area and the resizer remains keyboard-accessible. Desktop and narrow tests permit only true viewport-fit reductions; they never permit distorted cells or fractional bars. The contained detail may reduce both gap axes equally below 2 px when necessary to retain positive square cells.
-- `tests/test_parallel.py`: bounded worker sizing, deterministic ordered results, spawn-process execution, contiguous batch argument handling, and safe thread fallback for unpicklable CPU tasks.
-- `tests/test_price_field_scoring.py`, `tests/test_neural_price_field_scoring.py`, and strategy integration tests: Gaussian CRPS math, causal zero-drift references, equal-horizon aggregation, candidate-equals-reference zero skill, complete 20-horizon and complete eligible-pair headline gates, warmup-inclusive causal context with visible-range outcomes, valid-pair-weighted central intervals, direct-versus-independent distribution parity, summary/export mapping, and the standalone LSTM GA's default validation-only CRPS ranking with incomplete folds rejected. Browser regressions additionally require readable diagnostic geometry, keyboard access to a scrollable Metrics region, and unclipped complete and incomplete evidence in the Backtest share card.
-- `tests/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; standardized 1–20 day CRPS skill with coverage and calibration evidence; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint including exclusion of LSTM-only parameters; end-to-end Bayesian compute isolation from LSTM-only parameters; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
-- `tests/test_price_field_contract.py`: identity checks prove that Bayesian and LSTM use the same model-neutral factor, target, state, diagnostic, and threshold helpers while retaining separate model modules; the shared payload builder and JavaScript schema allowlist remain aligned.
-- `tests/test_strategy_variants.py`: signal-result contracts for the retained kNN, Lorentzian, and SuperTrend strategies, kNN parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.
-- `tests/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
-- `tests/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-off and explicit-on algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.
-- `tests/e2e/critical-flows.spec.mjs`: the Backtest title/result-rail regression uses the annotated 974 by 1,354 desktop geometry to prove that the page-level `Backtest` title and the result-level `Performance` title occupy separate rows. `tests/e2e/backtest-title-alignment.spec.mjs` extends that contract across 390, 600, 687, 767, 768, 897, 900, 901, 1,021, and 1,276 px widths: the primary title shares the sidebar and theme control centerline at every width, the compact result title remains below it, and both states of the Backtest-parameter overlay keep its second left control on the same axis without obscuring the title. The Backtest control regression uses the exact 972 by 820 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844. The shared `Show trade details` regression verifies the default-off state, real switch transitions, price-subplot expansion with a retained time axis, hidden equity comparison, disabled Transactions option, URL-only display persistence, and the same contract after entering DCA. A separate interval regression selects `1 year`, restores `1m`, proves the smart fallback to the final available Period option, and verifies that `Allow algorithmic stop-loss exits` is disabled by default. Mocked-presence regressions verify repeated ticker parameters, all-required-ticker `1m` gating, intersected Period lists, and that a delayed older response cannot override the latest ordered ticker snapshot.
-- `tests/e2e/backtest-strategy-params-memory.spec.mjs`: the Backtest strategy-parameter memory regression verifies browser-local persistence across reloads, strategy-scoped values for Grid Trading and DCA, and explicit URL parameters taking precedence without changing the remembered value. Its 751 by 912 iPad-width case proves that the default-collapsed parameter overlay does not consume result width, uses the registered 900 px sidebar breakpoint and 44 px touch target, aligns the collapsed global toggle equally from the top and left, presents 36 px tokenized workspace destinations, keeps the full-viewport dismissal target transparent and rectangular, hides the parameter toggle while global navigation is open, remains within safe viewport insets, scrolls vertically, closes by Escape, and preserves focus; desktop resizing restores the 312 px in-grid controls column. Its Leveraged Rotation case reproduces the annotated 1,023 by 1,404 layout; verifies the selectable and intrinsically sized Return window, dynamic current-ticker range labels, generic causal trigger labels, zero-bottom-padding custom groups, token-derived 30 px bar shells, 15 px asset/cash names, 11 px values, centered interior and edge-aligned endpoint labels, two-decimal percentage controls, token-correct primary/leveraged/cash segments, integer-share-backed cash, and collision-free labels after compact resizing; proves the left allocation boundary transfers only between primary and leveraged while the right boundary transfers only between leveraged and cash; and checks that Style tokens renders the shared distribution and limit variants from the same foundation token family.
-- `tests/e2e/lstm-price-field.spec.mjs`, `tests/e2e/frontier-price-field.spec.mjs`, and `tests/e2e/shared-backtest-controls.spec.mjs`: LSTM regressions verify that Compute backend is the first training field, action-body padding is 4px inline and zero at the bottom, history entries have zero padding, factor-group titles report checked counts, and training-only backend/factor drafts reach Start training without a form submit, URL mutation, or current-chart recalculation. The intercepted request must contain the exact selected factors and parameters. Protocol v3 disables the action against both a stale pre-exact-training service and a malformed protocol response. Exact-run history verifies its accuracy badge and saved configuration replay; genetic-mode history separately verifies its CRPS badge, named objective, 10-hour budget, and baseline label. `tests/test_lstm_training.py` owns the service-level robust representative replay assertion, including the fixed seed-42 configuration. The iTransformer, TiDE, ModernTCN, and TFT regressions reproduce the annotated 1,023px desktop geometry at a 1% display threshold, require all 20 direct horizons in both surfaces while spatial quantization exceeds one day, reconcile every overlapping hover cell with its detail probability, and verify that the selected near-horizon Gaussian is narrower than horizon 20. ModernTCN additionally uses the reported QQQ two-year route with trade details visible at 1,023 by 1,580. A deterministic distribution test separately verifies that a centered fixed price band receives more mass from the narrower marginal; E2E does not misuse one boundary-dependent cell as a monotonic confidence score.
-- `tests/test_backtest_interval_sync_contract.mjs`: deterministic browser-state helper coverage verifies complete required-ticker snapshots, ordered Period intersections, strategy-declared interval capability, and monotonic stale-response rejection before state mutation.
-- `tests/test_form_parsing.py`: pure workspace query parsing, slot-preserving
+- `tests/python/infrastructure/test_parallel.py`: bounded worker sizing, deterministic ordered results, spawn-process execution, contiguous batch argument handling, and safe thread fallback for unpicklable CPU tasks.
+- `tests/python/strategies/test_price_field_scoring.py`, `tests/python/strategies/test_neural_price_field_scoring.py`, and strategy integration tests: Gaussian CRPS math, causal zero-drift references, equal-horizon aggregation, candidate-equals-reference zero skill, complete 20-horizon and complete eligible-pair headline gates, warmup-inclusive causal context with visible-range outcomes, valid-pair-weighted central intervals, direct-versus-independent distribution parity, summary/export mapping, and the standalone LSTM GA's default validation-only CRPS ranking with incomplete folds rejected. Browser regressions additionally require readable diagnostic geometry, keyboard access to a scrollable Metrics region, and unclipped complete and incomplete evidence in the Backtest share card.
+- `tests/python/strategies/test_strategy_bayesian_price_field.py`: `NVDA` default-ticker selection, alphabetical quantitative-factor parameter ordering, daily-model and one-minute-execution capability declarations, executable next-open target alignment, walk-forward no-lookahead for Open, Close, historical P/E, Dynamic P/E, options, and research observations; causal volume-at-price distribution; AR(1) multi-step state evolution; standardized prior scaling; incremental predictive factor evidence; standardized 1–20 day CRPS skill with coverage and calibration evidence; regularized noise-floor calibration; fail-closed research-factor statuses; finite aligned 20-column presentation; integer-trading-day metadata; execution mode; model fingerprint including exclusion of LSTM-only parameters; end-to-end Bayesian compute isolation from LSTM-only parameters; two-decimal threshold form rendering; adaptive Auto CPU/GPU heterogeneous execution; explicit GPU MPS/CUDA selection; whole-run CPU recomputation after GPU failure; bounded CPU worker selection; process-executor reporting; and serial-versus-parallel result equivalence.
+- `tests/python/strategies/test_price_field_contract.py`: identity checks prove that Bayesian and LSTM use the same model-neutral factor, target, state, diagnostic, and threshold helpers while retaining separate model modules; the shared payload builder and JavaScript schema allowlist remain aligned.
+- `tests/python/strategies/test_strategy_variants.py`: signal-result contracts for the retained kNN, Lorentzian, and SuperTrend strategies, kNN parallel-versus-serial causal prediction equivalence, and future-perturbation invariance before the perturbation boundary.
+- `tests/python/strategies/test_strategy_interval_bridge.py`: causal daily-final-bar signal placement, next-session first-minute execution, exchange-local US and HK session mapping, removal of daily-only presentation data from one-minute results, mixed-frequency provenance metadata, and fail-closed missing-session, duplicate-timestamp, out-of-order, or misaligned trading-date behavior.
+- `tests/python/web/test_backtest_page.py`: server-rendered interval capabilities, actual-store Period normalization, daily Bayesian model loading during one-minute execution, one-minute-only refresh and read-only-cache contracts, explicit refresh-failure notices, default-off and explicit-on algorithmic stop-loss semantics, pure-price loss-exit behavior, and Simplified or Traditional Chinese stop-loss copy.
+- `tests/e2e/critical-flows.spec.mjs`: the Backtest title/result-rail regression uses the annotated 974 by 1,354 desktop geometry to prove that the page-level `Backtest` title and the result-level `Performance` title occupy separate rows. `tests/e2e/backtest/backtest-title-alignment.spec.mjs` extends that contract across 390, 600, 687, 767, 768, 897, 900, 901, 1,021, and 1,276 px widths: the primary title shares the sidebar and theme control centerline at every width, the compact result title remains below it, and both states of the Backtest-parameter overlay keep its second left control on the same axis without obscuring the title. The Backtest control regression uses the exact 972 by 820 desktop geometry to prove that strategy parameters remain below Strategy, the complete controls surface owns vertical scrolling, and the final private parameter remains reachable. It then verifies natural page flow and no horizontal overflow at 390 by 844. The shared `Show trade details` regression verifies the default-off state, real switch transitions, price-subplot expansion with a retained time axis, hidden equity comparison, disabled Transactions option, URL-only display persistence, and the same contract after entering DCA. A separate interval regression selects `1 year`, restores `1m`, proves the smart fallback to the final available Period option, and verifies that `Allow algorithmic stop-loss exits` is disabled by default. Mocked-presence regressions verify repeated ticker parameters, all-required-ticker `1m` gating, intersected Period lists, and that a delayed older response cannot override the latest ordered ticker snapshot.
+- `tests/e2e/backtest/backtest-strategy-params-memory.spec.mjs`: the Backtest strategy-parameter memory regression verifies browser-local persistence across reloads, strategy-scoped values for Grid Trading and DCA, and explicit URL parameters taking precedence without changing the remembered value. Its 751 by 912 iPad-width case proves that the default-collapsed parameter overlay does not consume result width, uses the registered 900 px sidebar breakpoint and 44 px touch target, aligns the collapsed global toggle equally from the top and left, presents 36 px tokenized workspace destinations, keeps the full-viewport dismissal target transparent and rectangular, hides the parameter toggle while global navigation is open, remains within safe viewport insets, scrolls vertically, closes by Escape, and preserves focus; desktop resizing restores the 312 px in-grid controls column. Its Leveraged Rotation case reproduces the annotated 1,023 by 1,404 layout; verifies the selectable and intrinsically sized Return window, dynamic current-ticker range labels, generic causal trigger labels, zero-bottom-padding custom groups, token-derived 30 px bar shells, 15 px asset/cash names, 11 px values, centered interior and edge-aligned endpoint labels, two-decimal percentage controls, token-correct primary/leveraged/cash segments, integer-share-backed cash, and collision-free labels after compact resizing; proves the left allocation boundary transfers only between primary and leveraged while the right boundary transfers only between leveraged and cash; and checks that Style tokens renders the shared distribution and limit variants from the same foundation token family.
+- `tests/e2e/backtest/lstm-price-field.spec.mjs`, `tests/e2e/backtest/frontier-price-field.spec.mjs`, and `tests/e2e/backtest/shared-backtest-controls.spec.mjs`: LSTM regressions verify that Compute backend is the first training field, action-body padding is 4px inline and zero at the bottom, history entries have zero padding, factor-group titles report checked counts, and training-only backend/factor drafts reach Start training without a form submit, URL mutation, or current-chart recalculation. The intercepted request must contain the exact selected factors and parameters. Protocol v3 disables the action against both a stale pre-exact-training service and a malformed protocol response. Exact-run history verifies its accuracy badge and saved configuration replay; genetic-mode history separately verifies its CRPS badge, named objective, 10-hour budget, and baseline label. `tests/python/services/test_lstm_training.py` owns the service-level robust representative replay assertion, including the fixed seed-42 configuration. The iTransformer, TiDE, ModernTCN, and TFT regressions reproduce the annotated 1,023px desktop geometry at a 1% display threshold, require all 20 direct horizons in both surfaces while spatial quantization exceeds one day, reconcile every overlapping hover cell with its detail probability, and verify that the selected near-horizon Gaussian is narrower than horizon 20. ModernTCN additionally uses the reported QQQ two-year route with trade details visible at 1,023 by 1,580. A deterministic distribution test separately verifies that a centered fixed price band receives more mass from the narrower marginal; E2E does not misuse one boundary-dependent cell as a monotonic confidence score.
+- `tests/js/backtest/test_backtest_interval_sync_contract.mjs`: deterministic browser-state helper coverage verifies complete required-ticker snapshots, ordered Period intersections, strategy-declared interval capability, and monotonic stale-response rejection before state mutation.
+- `tests/python/web/test_form_parsing.py`: pure workspace query parsing, slot-preserving
   numbered and repeated portfolio allocation, weight, and navigation contracts.
-- `tests/test_portfolio_workspace.py`: mocked Portfolio route coverage for
+- `tests/python/web/test_portfolio_workspace.py`: mocked Portfolio route coverage for
   unique missing-data replacement, positional dataset/allocation binding, and
   legacy numbered share slots without production market or settings writes.
-- `tests/test_portfolio_preview.mjs` and
-  `tests/e2e/portfolio-allocation.spec.mjs`: share-value normalization from
+- `tests/js/workspaces/test_portfolio_preview.mjs` and
+  `tests/e2e/workspaces/portfolio-allocation.spec.mjs`: share-value normalization from
   aligned opening prices and a Chromium check that the donut changes before
   the scheduled server round-trip.
-- `tests/test_settings_url_state.py`: Flask route redirects and server-rendered
+- `tests/python/web/test_settings_url_state.py`: Flask route redirects and server-rendered
   Settings tab state for canonical and legacy URLs.
-- `tests/test_investment_settings.py`: isolated persistence and normalization
+- `tests/python/core/test_investment_settings.py`: isolated persistence and normalization
   tests for the Settings Investment cost-basis preference.
-- `tests/test_web_market_history.py`: extracted, read-only local-history date, exchange-local trading-date, exact-range slicing, and supported-period helpers.
-- `tests/test_web_strategy_forms.py`: pure authoritative strategy grouping,
+- `tests/python/web/test_web_market_history.py`: extracted, read-only local-history date, exchange-local trading-date, exact-range slicing, and supported-period helpers.
+- `tests/python/web/test_web_strategy_forms.py`: pure authoritative strategy grouping,
   unique category membership, field-schema, injected factory, and categorized
   Settings catalog presentation contracts.
-- `tests/test_live_trading_orders.py`: PIN-session-or-token authorization,
+- `tests/python/services/test_live_trading_orders.py`: PIN-session-or-token authorization,
   stable API failures, mocked Longbridge account readers, and order-validation
   contracts without a broker request or order.
-- `tests/test_web_token_registry.py`: foundation-default drift, canonical
+- `tests/python/web/test_web_token_registry.py`: foundation-default drift, canonical
   material references, globally unique Style token registry names, and pure
   Settings design-token builder inputs.
-- `tests/test_broker_market_data.py`: Longbridge normalization, CLI and SDK
+- `tests/python/infrastructure/test_broker_market_data.py`: Longbridge normalization, CLI and SDK
   candlestick adapters, fail-closed one-minute cache freshness and completeness,
   isolated refresh/status paths, and the absence of the retired IBKR Client
   Portal transport.
-- `tests/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
-- `tests/test_investment_import_registry.py`: parser registration, duplicate and
+- `tests/python/services/test_investment_record_basics.py`: shared import decimal and normalized-view accounting invariants.
+- `tests/python/services/test_investment_import_registry.py`: parser registration, duplicate and
   unknown-format rejection, payload validation, idempotent commit, atomic
   persistence, and readback boundaries.
-- `tests/test_strategy_variants.py`: behavior contracts for every formerly
+- `tests/python/strategies/test_strategy_variants.py`: behavior contracts for every formerly
   low-coverage alternative strategy without asserting implementation trivia.
-- `tests/test_investment_ticker_lineage.py`, `tests/test_logos.py`, and
+- `tests/python/infrastructure/test_investment_ticker_lineage.py`, `tests/python/services/test_logos.py`, and
   Investment Playwright coverage: standard-name fallbacks, bare-US alias
   placeholders, yfinance symbol-only profile responses, and rendered Holdings
   identity labels.
@@ -594,7 +620,7 @@ runtime copy after Playwright exits, including failed test runs.
 Pure layout tests intercept asynchronous training history with a stable empty
 response before navigation. Training-history lifecycle tests own their separate
 fixtures; a delayed history response must not alter a layout test's baseline.
-`tests/test_e2e_locking.py` executes the real launcher against isolated probes,
+`tests/python/tooling/test_e2e_locking.py` executes the real launcher against isolated probes,
 verifies all three roots at seeding and application startup, and checks that
 cleanup preserves an unrelated inherited compute directory byte-for-byte.
 

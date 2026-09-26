@@ -524,7 +524,7 @@
 
     /**
      * Resolve the serialized market-session projection published by the
-     * server. `app/core/market_sessions.py` is the sole maintained owner of
+     * server. `app/core/markets/sessions.py` is the sole maintained owner of
      * ticker suffixes, IANA timezones, and regular-session minutes; the
      * browser never keeps a second rule table.
      */

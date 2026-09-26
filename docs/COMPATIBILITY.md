@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.1.1`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -21,7 +21,7 @@ license to revive an independent page.
 | `/invest`, `/investment` | `/trade/investment` | Historical Investment aliases |
 | `/?view=<legacy-view>` | The corresponding canonical workspace | Normalize supported legacy query state before redirecting |
 
-Redirect behavior is covered by `tests/test_compatibility_routes.py` and the
+Redirect behavior is covered by `tests/python/web/test_compatibility_routes.py` and the
 domain route tests. New code and browser tests must use canonical URLs.
 
 ## Retired and quarantined renderers

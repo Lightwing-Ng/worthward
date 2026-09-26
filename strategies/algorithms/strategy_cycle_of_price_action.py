@@ -8,7 +8,7 @@ and ATR thresholds. The separate Bayesian Price Field posterior confirms
 entry intent and can trigger an optional probabilistic exit; cycle stages do
 not enter that probability model.
 
-Code version: v1.0.1
+Code version: v1.0.2
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from strategies.price_field_pipeline import (
+from strategies.price_field.pipeline import (
     bundle_to_price_field_ohlcv as _bundle_ohlcv_frame,
     normalize_price_field_ohlcv as _normalize_ohlcv_frame,
 )

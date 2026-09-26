@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.4.1`
+Documentation version: `v1.4.2`
 
 ## Scope and model evidence
 
@@ -95,14 +95,14 @@ would additionally require preserving its applicable notices and license terms.
 ## Ownership and causal model contract
 
 Thin discovered modules in `strategies/algorithms/` declare identity and
-architecture. `strategies/neural_price_field.py` owns the common strategy
+architecture. `strategies/price_field/neural/strategy.py` owns the common strategy
 parameters, provider boundary, result metadata, and renderer presentation.
-`neural_price_field_inputs.py` owns causal feature preparation;
-`neural_price_field_compute.py` owns training and direct horizon inference;
-`neural_price_field_scoring.py` owns evaluation. Model-specific implementations
+`strategies/price_field/neural/inputs.py` owns causal feature preparation;
+`strategies/price_field/neural/compute.py` owns training and direct horizon inference;
+`strategies/price_field/neural/scoring.py` owns evaluation. Model-specific implementations
 do not copy templates, chart lifecycle, grid geometry, training controllers, or
 the market-factor catalog. The second cohort's compact encoders are isolated in
-`neural_price_field_models.py` and `neural_price_field_tft.py`.
+`strategies/price_field/neural/models.py` and `strategies/price_field/neural/tft.py`.
 
 Every forecast origin `t` predicts the marginal distribution of
 `log(Close[t+h] / Close[t])` separately for `h = 1..20` trading sessions.
@@ -310,15 +310,15 @@ these CLI capabilities alone do not prove that such a run has started or finishe
 Use the repository's selected Python environment for focused tests:
 
 ```sh
-./scripts/test.sh -q tests/test_neural_price_field_compute.py tests/test_neural_price_field_runtime.py tests/test_neural_price_field_strategy.py tests/test_neural_price_field_scoring.py tests/test_price_field_research.py tests/test_price_field_training.py
-./scripts/test.sh -q tests/test_neural_price_field_models.py tests/test_neural_price_field_tft.py
+./scripts/test.sh -q tests/python/strategies/test_neural_price_field_compute.py tests/python/strategies/test_neural_price_field_runtime.py tests/python/strategies/test_neural_price_field_strategy.py tests/python/strategies/test_neural_price_field_scoring.py tests/python/tooling/test_price_field_research.py tests/python/services/test_price_field_training.py
+./scripts/test.sh -q tests/python/strategies/test_neural_price_field_models.py tests/python/strategies/test_neural_price_field_tft.py
 ./scripts/check.sh
 ```
 
 Focused coverage includes actual CPU model execution, future-data mutation,
 training-label boundaries, score identities, factor availability, runtime
 failure/cancellation, and isolated training lifecycle. The browser suite includes
-`tests/e2e/neural-price-field.spec.mjs` for all four strategies, the direct grid,
+`tests/e2e/backtest/neural-price-field.spec.mjs` for all four strategies, the direct grid,
 responsive controls, and training state. Actual MPS smoke results are separate
 runtime evidence. The complete gate is serialized and uses isolated port 8699;
 it never reuses or restarts the user-owned application on port 8688.

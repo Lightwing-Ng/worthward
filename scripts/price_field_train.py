@@ -1,4 +1,4 @@
-"""Train one saved neural Price Field configuration. Code version: v1.1.1."""
+"""Train one saved neural Price Field configuration. Code version: v1.1.2."""
 
 from __future__ import annotations
 
@@ -28,11 +28,11 @@ def run(request_path: Path, run_token: str) -> dict:
     ensure_price_field_runtime(request["params"]["compute_backend"], Path(__file__), sys.argv[1:])
 
     import pandas as pd
-    from app.services.price_field_training import completed_probability_score, training_strategy, validate_parameters, write_json
+    from app.services.research.price_field_training import completed_probability_score, training_strategy, validate_parameters, write_json
     from scripts.lstm_ga_tune import _date_bounds, _frame_rows, _json_safe
-    from strategies.neural_price_field_inputs import plain_market_bundle
-    from strategies.neural_price_field_compute import NeuralTrainingCancelled
-    from strategies.price_field_pipeline import bundle_to_price_field_ohlcv
+    from strategies.price_field.neural.inputs import plain_market_bundle
+    from strategies.price_field.neural.compute import NeuralTrainingCancelled
+    from strategies.price_field.pipeline import bundle_to_price_field_ohlcv
 
     state = request_path.parent
     started = time.monotonic()

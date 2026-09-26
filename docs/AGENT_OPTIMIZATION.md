@@ -1,6 +1,6 @@
 # OpenAI Site tools and Agent Optimization
 
-Documentation version: `v1.2.4`
+Documentation version: `v1.2.5`
 
 This document is the complete public contract for Worthward's Agent Optimization
 adapter. Maintainer checkouts may also use a private sibling contract for
@@ -14,9 +14,9 @@ contribute to this repository.
 | Shared runtime | `app/web/static/assets/js/agent-optimization.js` |
 | Project manifest | `app/web/templates/_agent_optimization.html` |
 | Shared page bootstrap | `app/web/templates/base.html` |
-| Node contract tests | `tests/test_agent_optimization.mjs` |
-| Flask render tests | `tests/test_agent_optimization.py` |
-| Disposable-browser tests | `tests/test_agent_optimization_browser.py` and `tests/e2e/agent-optimization.spec.mjs` |
+| Node contract tests | `tests/js/shared/test_agent_optimization.mjs` |
+| Flask render tests | `tests/python/web/test_agent_optimization.py` |
+| Disposable-browser tests | `tests/python/web/test_agent_optimization_browser.py` and `tests/e2e/shared/agent-optimization.spec.mjs` |
 
 The runtime is byte-identical to the sibling agenticContext copy and registers tools only when
 the top-level document exposes `document.modelContext.registerTool`. Unsupported browsers receive the
@@ -60,16 +60,16 @@ default.
 Run the focused contract, rendering, and random-port disposable-browser layers with:
 
 ```bash
-node --test tests/test_agent_optimization.mjs
+node --test tests/js/shared/test_agent_optimization.mjs
 ./scripts/test.sh -p no:cacheprovider \
-  tests/test_agent_optimization.py \
-  tests/test_agent_optimization_browser.py
+  tests/python/web/test_agent_optimization.py \
+  tests/python/web/test_agent_optimization_browser.py
 ```
 
 Run the isolated project Playwright case and complete gate with:
 
 ```bash
-./scripts/test_e2e.sh tests/e2e/agent-optimization.spec.mjs
+./scripts/test_e2e.sh tests/e2e/shared/agent-optimization.spec.mjs
 ./scripts/check.sh
 ```
 

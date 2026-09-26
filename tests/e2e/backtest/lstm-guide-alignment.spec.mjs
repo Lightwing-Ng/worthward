@@ -1,0 +1,316 @@
+import {expect, test} from '@playwright/test';
+
+/* Code version: v1.3.1 */
+
+const lstmUrl = (
+    '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
+    + '&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40'
+    + '&show_trade_details=0&use_option_total_open_interest=1'
+    + '&use_option_total_volume=1&cell_display_threshold=2.00'
+);
+
+const readPresentation = (page) => page.evaluate(() => {
+    const payload = window.WORTHWARD_APP?.backtestResult?.strategy_presentation;
+    return payload?.schema === 'lstm-price-field/v1' ? payload : null;
+});
+
+const injectPriceFieldPresentation = (page) => page.evaluate(() => {
+    const result = window.WORTHWARD_APP?.backtestResult;
+    if (!result?.chart) throw new Error('Backtest chart shell is unavailable.');
+    const rawDates = [];
+    const cursor = new Date('2026-06-01T00:00:00Z');
+    while (rawDates.length < 65) {
+        const weekday = cursor.getUTCDay();
+        if (weekday !== 0 && weekday !== 6) rawDates.push(cursor.toISOString().slice(0, 10));
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    const close = rawDates.map((date, index) => {
+        const baseline = 50 + (Math.sin(index / 4) * 7);
+        if (date === '2026-07-28') return 52;
+        if (date === '2026-07-29') return 51;
+        return baseline;
+    });
+    const equity = close.map((value, index) => 10_000 + ((value - close[0]) * 40) + (index * 3));
+    result.interval = '1d';
+    result.multi_asset = false;
+    result.trades = [];
+    result.chart = {
+        ...(result.chart || {}),
+        dates: [...rawDates],
+        raw_dates: [...rawDates],
+        open: close.map((value) => value - 0.4),
+        high: close.map((value) => value + 0.8),
+        low: close.map((value) => value - 0.9),
+        close,
+        equity,
+        all_in_equity: equity.map((value, index) => value + index),
+    };
+    result.strategy_presentation = {
+        schema: 'lstm-price-field/v1',
+        renderer: 'probability-grid-v1',
+        rows_above: 12,
+        rows_below: 12,
+        columns: 20,
+        width_fraction: 0.25,
+        gap_px: 2,
+        padding_px: 8,
+        min_cell_px: 4,
+        cell_opacity_mapping: 'instant-contrast-power-v1',
+        cell_opacity_exponent: 1.6,
+        cell_opacity_tail_ratio: 0.02,
+        cell_display_threshold_pct: 0,
+        time_quantization: 'integer-trading-days',
+        distribution_kind: 'dynamic-normal-log-return',
+        target_interval: 'next-open-to-following-open',
+        price_anchor_kind: 'signal-close-display-anchor',
+        multi_step_kind: 'causal-ar1-return-state',
+        return_autoregression: rawDates.map(() => 0.2),
+        return_long_run_mean: rawDates.map(() => 0),
+        return_innovation_scale: rawDates.map(() => 0.012),
+        data_keys: [...rawDates],
+        predictive_mean: rawDates.map(() => 0.001),
+        predictive_scale: rawDates.map(() => 0.02),
+    };
+    window.WORTHWARD_BOOTSTRAP?.initBacktestWorkspace?.();
+    window.WORTHWARD_BOOTSTRAP?.initBacktestLayout?.();
+});
+
+const readSnapshot = (page) => page.evaluate(() => {
+    const canvas = document.querySelector('#tradePriceChart');
+    const chart = window.Chart?.getChart?.(canvas);
+    const stack = canvas?.closest('.trade-chart-stack');
+    const tooltip = document.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+    const horizontalLine = document.querySelector('.trade-chart-hover-horizontal-line');
+    const bounds = chart?._activeBacktestProbabilityGridBounds;
+    const canvasRect = canvas?.getBoundingClientRect();
+    const stackRect = stack?.getBoundingClientRect();
+    const tooltipRect = tooltip?.getBoundingClientRect();
+    const lineRect = horizontalLine?.getBoundingClientRect();
+    const point = Number.isInteger(bounds?.index)
+        ? chart?.getDatasetMeta?.(0)?.data?.[bounds.index]
+        : null;
+    const cells = Array.from(tooltip?.querySelectorAll('.backtest-probability-cell') || [])
+        .filter((cell) => cell.dataset.column === '0')
+        .map((cell) => {
+            const rect = cell.getBoundingClientRect();
+            return {
+                bottom: rect.bottom,
+                className: cell.className,
+                row: Number(cell.dataset.row),
+                sign: cell.classList.contains('is-up') ? 'up' : 'down',
+                top: rect.top,
+            };
+        });
+    return {
+        activeIndex: bounds?.index ?? null,
+        anchorY: bounds?.anchorY ?? null,
+        canvas: canvasRect ? {height: canvasRect.height, top: canvasRect.top} : null,
+        chart: chart ? {height: chart.height} : null,
+        cells,
+        date: Number.isInteger(bounds?.index)
+            ? window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates?.[bounds.index]
+            : null,
+        intersectionY: bounds?.intersectionY ?? null,
+        lineY: lineRect ? lineRect.top + (lineRect.height / 2) : null,
+        pointY: point?.y ?? null,
+        tooltip: tooltipRect ? {
+            bottom: tooltipRect.bottom,
+            left: tooltipRect.left,
+            right: tooltipRect.right,
+            top: tooltipRect.top,
+        } : null,
+        stack: stackRect ? {left: stackRect.left, right: stackRect.right} : null,
+    };
+});
+
+test('keeps every right-half hover frame coherent during vertical movement', async ({page}) => {
+    await page.setViewportSize({width: 1018, height: 1294});
+    await page.goto(lstmUrl);
+    await expect.poll(() => readPresentation(page), {timeout: 90_000}).not.toBeNull();
+    await injectPriceFieldPresentation(page);
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+    const frames = await page.evaluate(async () => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart.getChart(canvas);
+        const stack = canvas.closest('.trade-chart-stack');
+        const tooltip = stack.querySelector('[data-backtest-chart-tooltip="probability-grid"]');
+        const samples = [];
+        const nextFrame = () => new Promise(requestAnimationFrame);
+        const rect = stack.getBoundingClientRect();
+        const y = rect.top + rect.height / 2;
+        for (const ratio of [0.55, 0.65, 0.75, 0.85, 0.95]) {
+            const x = Math.round(rect.left + rect.width * ratio);
+            for (let step = 0; step < 10; step += 1) {
+                stack.dispatchEvent(new MouseEvent('mousemove', {
+                    bubbles: true, clientX: x, clientY: y + (step % 2 ? 25 : -25),
+                }));
+                await nextFrame();
+                const bounds = chart._activeBacktestProbabilityGridBounds;
+                const field = tooltip.getBoundingClientRect();
+                const line = stack.querySelector('.trade-chart-hover-line').getBoundingClientRect();
+                const horizontal = stack.querySelector('.trade-chart-hover-horizontal-line').getBoundingClientRect();
+                const canvasRect = canvas.getBoundingClientRect();
+                const screenCurveX = canvasRect.left + bounds.intersectionX * canvasRect.width / chart.width;
+                const chartX = (x - canvasRect.left) * chart.width / canvasRect.width;
+                const points = chart.getDatasetMeta(0).data.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+                const left = points.findLast(p => p.x <= chartX) || points[0];
+                const right = points.find(p => p.x >= chartX) || points.at(-1);
+                const fraction = left.x === right.x ? 0 : (chartX - left.x) / (right.x - left.x);
+                const curveY = canvasRect.top
+                    + (left.y + (right.y - left.y) * fraction) * canvasRect.height / chart.height;
+                samples.push({ratio, step, index: bounds?.index,
+                    pointerX: x, lineX: line.left + line.width / 2, screenCurveX,
+                    curveY, horizontalY: horizontal.top + horizontal.height / 2,
+                    anchorY: bounds?.anchorY, intersectionY: bounds?.intersectionY,
+                    left: field.left, top: field.top,
+                    pan: Number(stack.dataset.probabilityPanVisualPosition || 0),
+                    visible: tooltip.classList.contains('is-visible'),
+                });
+            }
+        }
+        return samples;
+    });
+    for (const frame of frames) {
+        expect(frame.visible, JSON.stringify(frame)).toBe(true);
+        expect(Math.abs(frame.lineX - frame.pointerX), JSON.stringify(frame)).toBeLessThan(1);
+        expect(Math.abs(frame.screenCurveX - frame.pointerX), JSON.stringify(frame)).toBeLessThan(1);
+        expect(Math.abs(frame.horizontalY - frame.curveY), JSON.stringify(frame)).toBeLessThan(1);
+        expect(Math.abs(frame.anchorY - frame.intersectionY), JSON.stringify(frame)).toBeLessThan(0.01);
+        const first = frames.find((sample) => sample.ratio === frame.ratio);
+        expect(frame.index, JSON.stringify({first, frame})).toBe(first.index);
+        expect(Math.abs(frame.left - first.left), JSON.stringify({first, frame})).toBeLessThan(0.1);
+        expect(Math.abs(frame.top - first.top), JSON.stringify({first, frame})).toBeLessThan(0.1);
+        expect(Math.abs(frame.pan - first.pan), JSON.stringify({first, frame})).toBeLessThan(0.1);
+    }
+    const sweep = await page.evaluate(async () => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart.getChart(canvas);
+        const stack = canvas.closest('.trade-chart-stack');
+        const rect = stack.getBoundingClientRect();
+        const result = [];
+        for (const direction of [1, -1]) {
+            for (let step = 0; step <= 40; step += 1) {
+                const offset = direction === 1 ? step : 40 - step;
+                stack.dispatchEvent(new MouseEvent('mousemove', {
+                    bubbles: true, clientX: Math.round(rect.left + rect.width * 0.65) + offset,
+                    clientY: rect.top + rect.height / 2,
+                }));
+                await new Promise(requestAnimationFrame);
+                const bounds = chart._activeBacktestProbabilityGridBounds;
+                result.push({offset, direction, index: bounds.index, x: bounds.intersectionX,
+                    y: bounds.intersectionY, anchorY: bounds.anchorY});
+            }
+        }
+        return result;
+    });
+    for (const [index, frame] of sweep.entries()) {
+        expect(Math.abs(frame.y - frame.anchorY)).toBeLessThan(0.01);
+        if (index > 0) {
+            expect(Math.abs(frame.index - sweep[index - 1].index)).toBeLessThanOrEqual(1);
+            // One screen pixel plus at most one pixel of bounded auto-pan.
+            expect(Math.abs(frame.x - sweep[index - 1].x)).toBeLessThanOrEqual(2.01);
+        }
+        if (frame.direction === -1) {
+            const outbound = sweep.find((sample) => sample.direction === 1 && sample.offset === frame.offset);
+            expect(frame.index).toBe(outbound.index);
+            expect(frame.y).toBeCloseTo(outbound.y, 6);
+        }
+    }
+});
+
+test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({page}) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({width: 974, height: 1278});
+    await page.goto(lstmUrl);
+    await expect.poll(() => readPresentation(page), {timeout: 90_000}).not.toBeNull();
+    await injectPriceFieldPresentation(page);
+    const sidebarToggle = page.getByRole('button', {name: 'Toggle sidebar'});
+    if (await sidebarToggle.getAttribute('aria-expanded') === 'true') {
+        await sidebarToggle.click();
+    }
+    await page.locator('label[for="backtest_history_probability"]').click();
+    await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
+
+    const readTargetPoints = () => page.evaluate(() => {
+        const canvas = document.querySelector('#tradePriceChart');
+        const chart = window.Chart?.getChart?.(canvas);
+        const rect = canvas?.getBoundingClientRect();
+        const dates = window.WORTHWARD_APP?.backtestResult?.chart?.raw_dates || [];
+        const points = chart?.getDatasetMeta?.(0)?.data || [];
+        const stack = canvas?.closest('.trade-chart-stack');
+        const stackRect = stack?.getBoundingClientRect();
+        const pan = Number(stack?.dataset.probabilityPanVisualPosition || 0);
+        const fieldWidth = Number(chart?._activeBacktestProbabilityGridBounds?.width || 0);
+        return ['2026-07-28', '2026-07-29'].map((date) => {
+            const index = dates.indexOf(date);
+            const point = points[index];
+            const contentX = point && rect && stackRect
+                ? rect.left - stackRect.left + pan + (point.x * rect.width / chart.width)
+                : Number.NaN;
+            return index >= 0 && point && rect && chart?.width > 0 && chart?.height > 0
+                ? {
+                    date,
+                    index,
+                    // Invert the settled pan mapping for this exact target date.
+                    x: stackRect.left + Math.min(
+                        contentX, (contentX + stackRect.width - fieldWidth) / 2,
+                    ),
+                    y: rect.top + (point.y * (rect.height / chart.height)),
+                }
+                : null;
+        });
+    });
+    await expect.poll(
+        async () => (await readTargetPoints()).filter(Boolean).length,
+        {timeout: 90_000},
+    ).toBe(2);
+    const targetDates = ['2026-07-28', '2026-07-29'];
+    for (const [targetPosition, date] of targetDates.entries()) {
+        if (targetPosition > 0) {
+            await page.mouse.move(10, 10);
+            await page.keyboard.press('Escape');
+            await expect(page.locator('[data-backtest-chart-tooltip="probability-grid"]'))
+                .not.toHaveClass(/is-visible/);
+            await page.waitForTimeout(80);
+        }
+        const target = (await readTargetPoints()).find((point) => point?.date === date);
+        expect(target).toBeTruthy();
+        await page.mouse.move(target.x, target.y);
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+        await expect.poll(async () => {
+            const settledTarget = (await readTargetPoints()).find((point) => point?.date === date);
+            await page.mouse.move(settledTarget.x, settledTarget.y);
+            await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+            return readSnapshot(page);
+        }).toMatchObject({
+            activeIndex: target.index,
+            date: target.date,
+        });
+        await expect.poll(async () => {
+            const snapshot = await readSnapshot(page);
+            const upCells = snapshot.cells.filter((cell) => cell.sign === 'up');
+            const downCells = snapshot.cells.filter((cell) => cell.sign === 'down');
+            if (!snapshot.canvas || !snapshot.chart || !Number.isFinite(snapshot.lineY)
+                || !Number.isFinite(snapshot.anchorY) || !Number.isFinite(snapshot.intersectionY)
+                || !upCells.length || !downCells.length) return false;
+            const expectedLineY = snapshot.canvas.top
+                + (snapshot.anchorY * (snapshot.canvas.height / snapshot.chart.height));
+            return Math.abs(snapshot.intersectionY - snapshot.anchorY) < 0.01
+                && Math.abs(snapshot.lineY - expectedLineY) <= 1.5
+                && upCells.at(-1).bottom <= snapshot.lineY + 1
+                && downCells[0].top >= snapshot.lineY - 1;
+        }, {timeout: 5_000}).toBe(true);
+        const snapshot = await readSnapshot(page);
+        expect(Math.abs(snapshot.intersectionY - snapshot.anchorY)).toBeLessThan(0.01);
+        const expectedLineY = snapshot.canvas.top
+            + (snapshot.anchorY * (snapshot.canvas.height / snapshot.chart.height));
+        expect(Math.abs(snapshot.lineY - expectedLineY)).toBeLessThanOrEqual(1.5);
+        const upCells = snapshot.cells.filter((cell) => cell.sign === 'up');
+        const downCells = snapshot.cells.filter((cell) => cell.sign === 'down');
+        expect(upCells.length).toBeGreaterThan(0);
+        expect(downCells.length).toBeGreaterThan(0);
+        expect(upCells.at(-1).bottom).toBeLessThanOrEqual(snapshot.lineY + 1);
+        expect(downCells[0].top).toBeGreaterThanOrEqual(snapshot.lineY - 1);
+    }
+});

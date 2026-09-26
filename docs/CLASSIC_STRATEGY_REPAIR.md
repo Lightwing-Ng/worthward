@@ -1,6 +1,6 @@
 # Classic strategy signal and execution contract
 
-Documentation version: `v1.4.0`
+Documentation version: `v1.4.1`
 
 The 7 Sep 2026 repair covered MACD, SuperTrend, kNN, Lorentzian, DCA, and
 Leveraged Rotation. On 8 Sep 2026, the duplicate MACD (Gemini), kNN Machine
@@ -111,9 +111,9 @@ segment would otherwise cause a collision.
 
 ## Verification ownership
 
-Focused regression owners are `tests/test_macd_supertrend_regressions.py`,
-`tests/test_strategy_neighbor_regressions.py`, `tests/test_dca_input_contract.py`,
-and `tests/test_leveraged_rotation.py`. They cover future append invariance,
+Focused regression owners are `tests/python/strategies/test_macd_supertrend_regressions.py`,
+`tests/python/strategies/test_strategy_neighbor_regressions.py`, `tests/python/services/test_dca_input_contract.py`,
+and `tests/python/strategies/test_leveraged_rotation.py`. They cover future append invariance,
 indicator seeds, mature labels, neutral neighbors, parameter boundaries,
 duplicate contributions, delayed execution with distinct Open and Close,
 blocked rotation retries, and preserved input frames. Existing strategy-variant

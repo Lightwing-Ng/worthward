@@ -1,6 +1,6 @@
-"""iTransformer probability adapter. Code version: v1.0.0."""
+"""iTransformer probability adapter. Code version: v1.0.1."""
 
-from strategies.frontier_price_field import FrontierPriceFieldStrategy
+from strategies.price_field.neural.frontier import FrontierPriceFieldStrategy
 
 
 class ITransformerPriceFieldStrategy(FrontierPriceFieldStrategy):

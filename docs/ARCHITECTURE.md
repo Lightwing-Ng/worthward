@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.128.0`
+Documentation version: `v1.128.2`
 
 ## Shared loading indicator
 
@@ -21,10 +21,49 @@ Failure, cancellation, and superseded loads cannot signal completion. Other
 Investment loads retain the default waiting indicator. The catalog switch and
 range preview only local DOM state and never submit or persist sample progress.
 
+## Source package organization
+
+Implementation modules are grouped by domain within the existing architectural
+layers. Folder depth expresses ownership; it does not introduce another service
+abstraction or a runtime plugin loader.
+
+| Package | Responsibility |
+| --- | --- |
+| `app/core/preferences/` | Persisted settings and their shared storage primitives |
+| `app/core/markets/` | Dependency-neutral ticker identity, calendars, and sessions |
+| `app/services/market/` | Market data, freshness, capitalization, and logo services |
+| `app/services/analysis/` | Comparison, DCA, display projections, and range options |
+| `app/services/research/` | Training managers, model-neutral factors, and tuning |
+| `app/services/investment/` | Investment record primitives and live-trading services |
+| `app/services/investment/importing/` | Shared import support, broker adapters, and merge rules |
+| `app/services/investment/importing/brokers/` | Broker parsers, with HSBC and IBKR subpackages |
+| `app/services/investment/importing/merge/` | Merge operations, identity, and reconciliation |
+| `app/web/runtime_domains/` | Explicit context factories; investment and workspace subpackages own their flows |
+| `app/web/presentation/` | Token registries, style-token rows, table columns, and strategy forms |
+| `strategies/price_field/` | Reusable Price Field contracts, pipelines, scoring, and compute |
+| `strategies/price_field/neural/` | Neural input, model, runtime, registry, and scoring implementations |
+
+New package initializers are dependency-light and do not eagerly re-export their
+children. Static imports follow the existing inward dependency direction.
+`app/services/investment_import.py` retains its established facade and deferred
+patch seams. `app/services/bayesian_market_factors.py` retains object identity
+with the canonical research factor module. `app/web/runtime.py` remains the
+public `WebRuntime` facade. Internal callers use the owning package directly;
+there is no parallel set of legacy leaf-module wrappers.
+
+The strategy discovery boundary under `strategies/algorithms/`, public command
+paths under `scripts/`, and browser asset URLs remain stable. Static images,
+SVGs, and other media assets are outside code-package organization. Source-path
+attestation manifests and subprocess working directories use the relocated
+owners while retaining the same checkout root and persistence boundaries.
+Strategy discovery accepts public Python module identifiers. Numbered collision
+copies such as `strategy_example 2.py` are retained as files but never imported
+as registered strategies.
+
 ## Reuse and dependency boundaries
 
 Reuse follows the smallest stable contract, not a shared mutable subsystem.
-`app/core/market_identity.py` is the sole ticker-suffix and market-timezone
+`app/core/markets/identity.py` is the sole ticker-suffix and market-timezone
 authority. Its contract keeps Warsaw (`.WA`) in the European family while
 distinguishing Istanbul (`.IS`) and Buenos Aires (`.BA`) from the Paris and
 Mexico City timezones. Services and broker adapters may retain compatibility
@@ -33,7 +72,7 @@ market-date projection belongs to the comparison service; the web history
 adapter imports that pure projection rather than being a dependency of strategy
 tuning.
 
-`app/core/market_sessions.py` builds on that identity and is the sole owner of
+`app/core/markets/sessions.py` builds on that identity and is the sole owner of
 every supported market family's regular-session definition. Each segment
 carries three explicitly separate minutes: `open_minute` is the session opening
 boundary and the first included minute bar, `close_minute` is the session
@@ -48,7 +87,7 @@ split sessions are separate segments. The module holds no holiday calendar.
 Session adapters pick a view instead of restating rules.
 `market_session_segments()` returns half-open `[open, close)` windows and
 answers "is the continuous session running right now";
-`runtime_comparison.py`'s live-session check uses it.
+`app/web/runtime_domains/comparison.py`'s live-session check uses it.
 `market_included_bar_segments()` returns inclusive `[open, last bar]` windows
 and answers "does this minute bar belong to the regular session";
 `comparisons.py` and `broker_market_data.py`'s candlestick filter use it.
@@ -84,13 +123,13 @@ adapter per persisted schema; and broker market data owns one OHLCV value/schema
 adapter while each transport retains its timestamp, defaulting, session, and
 filter behavior.
 
-`app/web/runtime_workspace.py` no longer converts the whole runtime context
-into a namespace. `app/web/runtime_workspace_dependencies.py` owns that
+`app/web/runtime_domains/workspace/context.py` no longer converts the whole runtime context
+into a namespace. `app/web/runtime_domains/workspace/dependencies.py` owns that
 contract: `WORKSPACE_RUNTIME_DEPENDENCIES` declares exactly the runtime
 names the workspace renderer and its request, history, finalize, and response
 modules read, `build_workspace_dependencies()` builds a namespace from only
 those names and fails loudly on a missing one, and
-`tests/test_runtime_workspace_dependencies.py` rejects both an undeclared
+`tests/python/architecture/test_runtime_workspace_dependencies.py` rejects both an undeclared
 dependency and a declared name no module still uses. The remaining domain
 factories already bind their dependencies by explicit name at the top of each
 builder.
@@ -162,7 +201,7 @@ Numeric search bounds must be a two-number array, excluding JSON booleans and
 numeric strings. Malformed domains fail explicitly rather than being coerced
 into a different search range.
 
-`app/services/strategy_tuning.py` loads real read-only local OHLC or the
+`app/services/research/strategy_tuning.py` loads real read-only local OHLC or the
 strategy-declared provider once, reserves candidate warmup/factors, and reuses
 the canonical single/multi-ticker, grid, rotation, DCA, and interval-bridge engines.
 It requires 40 distinct trading dates, uses the first half for warmup, scores
@@ -186,7 +225,7 @@ only in warmup cannot make an otherwise unavailable validation/holdout eligible.
 
 ## Shared Price Field evaluation orchestration
 
-`strategies/price_field_scoring.py` owns `evaluate_gaussian_price_field()`, the
+`strategies/price_field/scoring.py` owns `evaluate_gaussian_price_field()`, the
 model-neutral part of a Gaussian log-return Price Field run. Given per-origin
 predictive means, scales, probabilities, and AR(1) return state computed on the
 complete causal frame, it joins predictions onto the visible backtest interval,
@@ -221,11 +260,11 @@ owns model evidence, factor timing, probability-score interpretation, runtime
 selection, and frozen validation boundaries. Legacy LSTM and Bayesian numerical
 contracts remain separate.
 
-The immutable `neural_price_field_registry.py` catalog owns architecture identity
+The immutable `strategies/price_field/neural/registry.py` catalog owns architecture identity
 and bounded research domains. `FrontierPriceFieldStrategy` narrows width defaults
 for the four additional architectures while inheriting the complete existing
 strategy contract. Their independently implemented cores live in
-`neural_price_field_models.py` and `neural_price_field_tft.py`; dispatch preserves
+`strategies/price_field/neural/models.py` and `strategies/price_field/neural/tft.py`; dispatch preserves
 the original four model construction paths. A new research process must explicitly
 select its strategy group. The coordinator defaults to the original four and can
 run CPU-only search, replicated validation, and reporting without creating a GPU
@@ -314,7 +353,7 @@ service restart, never an agent-triggered restart.
 Bayesian Price Field and LSTM Price Field share one Backtest history `Price Field`
 option between `Metrics` and `Transactions` when a valid strategy presentation is
 available. Both strategies emit the `probability-grid-v1` renderer payload defined
-in `strategies/price_field_contract.py`. The browser uses three shared owners:
+in `strategies/price_field/contract.py`. The browser uses three shared owners:
 
 - `app/web/static/assets/js/backtest/chart-controller.js` exposes a controller
   factory with `mount(state)`, `update(state)`, and idempotent `destroy()`. It owns
@@ -338,7 +377,7 @@ The existing template `app/web/templates/_backtest_probability_field.html` and
 shared styles remain common to both strategies. Neither model forks these files.
 
 The model-neutral server-side foundation is
-`strategies/price_field_pipeline.py`. It owns the warm-up-inclusive Longbridge
+`strategies/price_field/pipeline.py`. It owns the warm-up-inclusive Longbridge
 factor bundle request, OHLCV normalization, point-in-time as-of observation
 merge, shared factor definitions and transforms, the executable
 `Open[t+1] -> Open[t+2]` target, causal AR(1) return state, probabilistic
@@ -349,7 +388,7 @@ and its backend policy. Neither strategy is an infrastructure container for
 the other.
 
 The underlying read-only Longbridge provider is canonically named
-`app/services/price_field_market_factors.py` and exposes model-neutral bundle
+`app/services/research/price_field_market_factors.py` and exposes model-neutral bundle
 and cache APIs. `app/services/bayesian_market_factors.py` is only a live
 backward-compatible import alias for older callers; the shared pipeline does
 not import it.
@@ -526,7 +565,7 @@ main.py
 ```
 
 `app/web/runtime.py` is the static `WebRuntime` facade and composition root. It
-assembles explicit context-factory modules under `app/web/runtime_*.py` for
+assembles explicit context-factory modules under `app/web/runtime_domains/` for
 foundation services, comparison and training, workspace requests and
 responses, Settings pages, investment imports, market/live reads, and
 investment mutations. The facade keeps its public fields and late-bound
@@ -610,7 +649,7 @@ Dependencies should point inward: web handlers call services; services use infra
 Infrastructure may import `app/core`, models, and infrastructure peers, but it
 must not import a service merely to reuse a domain-neutral primitive. NYSE
 calendar and completed-session calculations therefore live in
-`app/core/market_calendar.py`; `app/services/date_constraints.py` re-exports
+`app/core/markets/calendar.py`; `app/services/market/date_constraints.py` re-exports
 their established public names for compatibility.
 
 ## OpenAI Site tools and Agent Optimization boundary
@@ -897,7 +936,7 @@ The former `/trade/timing` and `/trade/invest` aliases resolve to the current
 Investment workspace. There is no separate Timing renderer in the current
 runtime.
 
-Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. Above the registered 900 px sidebar-overlay breakpoint, the page-level `Backtest` title rail remains in its own row above the results grid, the result column's `Performance` title rail begins below it, and the complete controls surface owns vertical scrolling as one logical sequence. At 900 px and below, the Backtest controls surface uses the shared workspace-controls overlay contract and becomes a fixed, safe-area-bounded left overlay. The result column then owns the full workspace width. A separate 44 px parameter toggle uses the shared round-control geometry; the overlay defaults closed, remembers its open state in session storage across parameter-driven reloads, closes through its transparent backdrop or Escape, and never remains open when the global navigation sidebar opens. The fixed panel retains one vertical scroll owner and marks its closed contents inert, so generic controls, Strategy, and every private parameter remain operable without adding a nested parameter-grid scrollbar. The Backtest-wide `Show trade details` preference defaults to disabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start training and Stop training actions, while the strategy dropdown remains dedicated to strategy choices; each durable history item uses a section with an accessible button-controlled disclosure region. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading interprets Initial cash as spendable cash in addition to Current holding. The first marked value of that existing holding and the cash define starting equity, return denominator, and the all-in benchmark, so a real existing position is never rejected merely because its marked value exceeds the cash balance. Frequency remains a right-aligned intrinsic-width shared select. Weekly day appears only for weekly schedules and exposes Monday through Sunday; weekend intentions use the existing next-trading-day alignment. Monthly calendar day appears only for monthly schedules. Daily chart tooltips omit a meaningless midnight suffix, while minute data retains its time. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
+Backtest owns the shared result presentation and market-range components. It exposes every enabled strategy in the dynamic catalog, including `dca`, `grid-trading`, `bayesian-price-field`, and `lstm-price-field`, and renders its parameter fields directly from the selected `strategy_*.py` implementation. Every strategy with private parameters uses the shared `Tune strategy parameters` control; the control starts pressed and the panel starts open. The panel remains in normal document flow immediately below the Strategy row. Above the registered 900 px sidebar-overlay breakpoint, the page-level `Backtest` title rail remains in its own row above the results grid, the result column's `Performance` title rail begins below it, and the complete controls surface owns vertical scrolling as one logical sequence. At 900 px and below, the Backtest controls surface uses the shared workspace-controls overlay contract and becomes a fixed, safe-area-bounded left overlay. The result column then owns the full workspace width. A separate 44 px parameter toggle uses the shared round-control geometry; the overlay defaults closed, remembers its open state in session storage across parameter-driven reloads, closes through its transparent backdrop or Escape, and never remains open when the global navigation sidebar opens. The fixed panel retains one vertical scroll owner and marks its closed contents inert, so generic controls, Strategy, and every private parameter remain operable without adding a nested parameter-grid scrollbar. The Backtest-wide `Show trade details` preference defaults to disabled and is rendered between Stop loss and Strategy. Its browser controller gates trade markers, the equity comparison panel, and the Transactions history option together; disabling it selects Metrics, hides the lower subplot so the price chart expands in the same measured stack, and writes only `show_trade_details=0` to the canonical URL. The preference is excluded from computation and result-cache keys. Strategy tuning values are retained in `localStorage` under `worthward:backtest-strategy-params:v1`, keyed by strategy ID and field name, so every Backtest strategy restores its own last-used panel state across reloads and strategy switches. Explicit URL parameters take precedence for the current render, and this browser preference never writes to broker or server settings stores. For `lstm-price-field`, `app.services.research.lstm_training.LstmTrainingManager` launches the durable `scripts/lstm_ga_tune.py` runner in a detached process session, verifies process identity by script and request seed before termination, and reads only the current project's hashed compute-job state root for history. The private `Strategy parameters` collapse opened by the round `Tune strategy parameters` button contains the LSTM Start training and Stop training actions, while the strategy dropdown remains dedicated to strategy choices; each durable history item uses a section with an accessible button-controlled disclosure region. Browser writes require the existing same-origin session CSRF proof; no training metadata enters market, broker, or investment stores. Dollar-cost averaging uses the recurring-investment simulator while sharing Backtest's charts, metrics, contribution table, export, and 100-row pagination contract. Grid Trading interprets Initial cash as spendable cash in addition to Current holding. The first marked value of that existing holding and the cash define starting equity, return denominator, and the all-in benchmark, so a real existing position is never rejected merely because its marked value exceeds the cash balance. Frequency remains a right-aligned intrinsic-width shared select. Weekly day appears only for weekly schedules and exposes Monday through Sunday; weekend intentions use the existing next-trading-day alignment. Monthly calendar day appears only for monthly schedules. Daily chart tooltips omit a meaningless midnight suffix, while minute data retains its time. The legacy `/workspaces/grid-trading` and `/workspaces/dca` paths redirect to `/workspaces/backtest` with the corresponding strategy preselected for compatibility.
 
 Strategies declare their input contract through `StrategySupportMatrix.required_tickers`, `BaseStrategy.get_default_tickers()`, supported execution intervals, optional execution-to-model interval overrides, causal signal bridges, and strategy-owned market-data hooks. The strategy registry carries the declared execution intervals into both the initial browser state and the strategy-fields response, so temporary data availability is never mistaken for permanent strategy capability. Backtest preserves the ordered ticker inputs, fetches their common local-history range for ordinary strategies, and passes a combined dataset to multi-asset strategies. The browser requests presence for the complete ordered required-ticker snapshot, intersects each interval's Period options across that set, and exposes `1m` only when the strategy declares it and every required ticker shares a real one-minute Period. A monotonic request token plus required-count and ordered-snapshot revalidation makes availability updates latest-wins after rapid ticker or strategy edits. A strategy-owned provider is called before visible-range slicing so it can retain a trailing training window without leaking future observations. When model and execution intervals differ, the strategy must declare a bridge; the runtime never treats a daily posterior as a native minute posterior. Strategies may opt out of the process result cache when their posterior depends on live factor snapshots. `leveraged-rotation` uses the first ticker as the primary and benchmark, defaults the pair to QQQ/TQQQ, and accepts any ordered primary/leveraged pair with aligned observations. Initial capital is divided among integer shares of both assets and cash. Its Return window maps Single day, 1 week, 1 month, and 3 months to 1, 5, 21, and 63 completed daily trading sessions and applies only to the primary-decline entry trigger. Minute execution retains those daily signals through the causal daily-close-to-next-session-open bridge. A primary drop across the window creates a next-open rebalance toward the primary minimum and leveraged maximum. That execution open becomes the leveraged entry basis; a later leveraged close that reaches the configured gain from this basis creates a next-open rebalance toward the primary maximum and leveraged minimum. The left Initial allocation boundary holds cash fixed and transfers only between the primary and leveraged assets; the right boundary holds the primary allocation fixed and transfers only between leveraged and cash. Percentage targets are market-value constraints before integer-share rounding, and no fee model is applied.
 
@@ -1497,10 +1536,10 @@ sets of values.
 - `app/web/market_history.py`: read-only local-history range and date-alignment helpers used by WebRuntime.
 - `app/web/request_security.py`: local-host, same-origin, and session-CSRF
   validation for browser investment writes.
-- `app/web/strategy_forms.py`: pure shared-category strategy selector,
+- `app/web/presentation/strategy_forms.py`: pure shared-category strategy selector,
   parameter-field, and Settings catalog presentation builders. WebRuntime
   supplies the strategy factory while retaining request assembly.
-- `app/web/backtest_table_columns.py`: one pure definition of the Backtest
+- `app/web/presentation/backtest_table_columns.py`: one pure definition of the Backtest
   transaction-table column order, CSS width tokens, and header labels. The
   `_macros.html` colgroup and header macros render it server side, and
   `base.html` publishes it as `window.WORTHWARD_BACKTEST_COLUMNS` so the
@@ -1508,29 +1547,29 @@ sets of values.
   transaction values.
 - `app/web/templates/_macros.html`: `render_style_token_table` owns the Settings
   token-table body shared by the Style tokens and Export image sections.
-- `app/web/style_token_rows.py`: pure Settings design-token presentation
+- `app/web/presentation/style_token_rows.py`: pure Settings design-token presentation
   builders. WebRuntime supplies translated labels, the project display URL,
   and the Light / Dark theme mappings;
   the module has no request, storage, broker, or live-order dependency.
-- `app/services/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
+- `app/services/investment/investment_record_basics.py`: shared import text, decimal, and normalized transaction-view helpers reused by `investment_import.py`.
 - `app/services/investment_import.py`: stable import facade. Broker parsing,
   statement evidence, merge identity, reconciliation, payload summaries, and
   shared support live in bounded `investment_import_*.py` domain modules. The
   facade preserves documented patch seams while avoiding dynamic source
   assembly.
-- `app/services/investment_import_compat.py`: the declared patch-seam bridge.
+- `app/services/investment/importing/compat.py`: the declared patch-seam bridge.
   Six facade names are addressed by both production code and tests, so a domain
   module resolves them through `investment_import` at call time instead of
   binding the owning module's function at import time. `PATCHABLE_SEAMS` names
   each seam's real owner, and
-  `tests/test_investment_import_compat_boundary.py` proves that every seam
+  `tests/python/architecture/test_investment_import_compat_boundary.py` proves that every seam
   still re-exports its owner when unpatched, is still observed through the
   bridge when patched, and that the bridge holds no logic of its own.
-- `app/services/investment_import_registry.py`: explicit broker and
+- `app/services/investment/importing/registry.py`: explicit broker and
   source-format parser dispatch plus the normalize, idempotent merge, atomic
   persistence, cache invalidation, and readback-verification boundary. The
-  cohesive Zircon (HK) template and parser remain in `zircon_hk_import.py`.
-- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `layoutDateAxisTicks` is the reference pixel-space date-axis layout used by Investment Overview, Stock details, Price comparison, Backtest, DCA, Live trading, Return comparison, Portfolio, and Market cap (see Shared date-axis layout). `buildTickIndexSet` remains a compatibility helper and must not be copied into a consumer. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
+  cohesive Zircon (HK) template and parser remain in `app/services/investment/importing/brokers/zircon_hk.py`.
+- `app/web/static/assets/js/chart-axis-utils.js`: shared stock-price label, chart tick-index, market-session, timezone-conversion, theme-token, and dynamic logo-URL helpers loaded from `base.html` as `window.WORTHWARD_CHART_AXIS` before consumer scripts. `layoutDateAxisTicks` is the reference pixel-space date-axis layout used by Investment Overview, Stock details, Price comparison, Backtest, DCA, Live trading, Return comparison, Portfolio, and Market cap (see Shared date-axis layout). `buildTickIndexSet` remains a compatibility helper and must not be copied into a consumer. `base.html` loads this module before every classic chart consumer, and module entrypoints are deferred, so the ordering is the dependency contract; `tests/python/architecture/test_shared_chart_utility_contract.py` enforces it. `formatStockPriceAxisValue` owns the project-wide stock-price precision rule. `readThemeTokens` resolves CSS custom properties, then explicit fallbacks, then `WORTHWARD_APP.theme`, then empty strings. `normalizeSafeImageUrl` permits HTTP(S) URLs and controlled local logo paths only; dynamic tooltip data is rendered through DOM properties rather than interpolated HTML. Consumers that once carried a duplicate tick-selection fallback now depend on the enforced load order instead.
 - `app/web/static/assets/js/export-image-config.js`: shared versioned export profile registry loaded before screenshot consumers. Settings previews and detached PNG exporters apply the same profile tokens and derived dimensions, while future exporters can register an isolated template profile through `window.WORTHWARD_EXPORT_IMAGE`.
 - `app/web/static/assets/js/numeric-display.js`: one numeric parser, integer/fraction part builder, escaped HTML renderer, and progressive enhancement pass shared by workspace metrics, Investment realtime transitions, Compare, and Settings token previews. Font tokens own the fractional scale; Style tokens expose the workspace alias consumed by the same CSS rule.
 - `app/web/static/assets/js/investment/realtime.js`: quote-poll lifecycle and numeric transition behavior.
@@ -1640,7 +1679,7 @@ dynamic execution.
 
 `tests/e2e/critical-flows.spec.mjs` is a thin import aggregator whose domain
 files live under `tests/e2e/critical_flows/`. The collected title order is a
-compatibility contract. `tests/test_investment_import.py` similarly preserves
+compatibility contract. `tests/python/services/test_investment_import.py` similarly preserves
 its public test classes while composing broker-focused mixins. Add new coverage
 to the owning domain file and keep both aggregators small.
 
@@ -1666,4 +1705,4 @@ Dynamic banner content exposes one direct heading and one
 direct body element; a heading-less fallback remains explicitly in row two. The
 obsolete Workspace article catalog row and demo branch are removed, without
 deleting role-governed live page containers.
-Responsive acceptance lives in tests/e2e/style-token-alignment.spec.mjs.
+Responsive acceptance lives in tests/e2e/settings/style-token-alignment.spec.mjs.

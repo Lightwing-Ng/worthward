@@ -1,6 +1,6 @@
 # Beta research laboratory
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.0.1`
 Code version: `v0.1.0`
 
 Beta is an experimental, removable workspace in the Dock immediately before
@@ -102,9 +102,9 @@ implementation does not reproduce their trained models or claimed results.
 
 ## Verification
 
-The focused contracts are `tests/test_beta.py`, `tests/test_beta_shell.py`,
-`tests/test_beta_frontend.mjs`, `tests/test_beta_notebook.mjs`, and
-`tests/e2e/beta.spec.mjs`. Python fixtures use temporary Parquet files;
+The focused contracts are `tests/python/web/test_beta.py`, `tests/python/web/test_beta_shell.py`,
+`tests/js/workspaces/test_beta_frontend.mjs`, `tests/js/workspaces/test_beta_notebook.mjs`, and
+`tests/e2e/workspaces/beta.spec.mjs`. Python fixtures use temporary Parquet files;
 browser tests use the existing isolated runtime on port 8699. Tests must
 never create research or investment records in production stores.
 
