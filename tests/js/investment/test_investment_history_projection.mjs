@@ -1,4 +1,6 @@
-/* Investment history-projection regressions. Code version: v1.3.7 */
+/* Investment history-projection regressions. Code version: v1.3.8
+ * Added: Either-side fees and preceding blank-balance settlement regressions.
+ */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -722,6 +724,43 @@ test('HSBC history ignores scalar-only legacy settlement metadata', () => {
     delete sell.source.cash_settlement_postings;
 
     assert.deepEqual(getHsbcHistorySettlementCashDeltas(sell), []);
+});
+
+test('HSBC history settles fees before or after principal to identical final cash', () => {
+    for (const feeBeforePrincipal of [true, false]) {
+        const {getHsbcHistorySettlementCashBoundary, applyHsbcHistoryPresentationProjection}
+            = createHistoryProjection();
+        const sell = makeSettlementSell({
+            balanceAfter: feeBeforePrincipal ? 1_199.99 : 1_200,
+        });
+        const feeSequence = feeBeforePrincipal ? 43 : 45;
+        sell.source.cash_settlement_postings.push({
+            ...sell.source.cash_settlement_postings[0],
+            amount_raw: '-0.01', balance_after_raw: feeBeforePrincipal ? '999.99' : '1199.99',
+            row_number: feeSequence, ledger_sequence: feeSequence, role: 'fee',
+        });
+        sell.commission_raw = '-0.01';
+        sell.normalized.commission = '-0.01';
+
+        assert.ok(getHsbcHistorySettlementCashBoundary(sell));
+        applyHsbcHistoryPresentationProjection([sell]);
+        assert.equal(sell.history_broker_cash, 1_209.99);
+    }
+});
+
+test('HSBC history does not replay a blank fee balance preceding the principal boundary', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    const sell = makeSettlementSell({balanceAfter: 1_199.99});
+    sell.source.cash_settlement_postings.push({
+        ...sell.source.cash_settlement_postings[0],
+        amount_raw: '-0.01', balance_after_raw: '',
+        row_number: 43, ledger_sequence: 43, role: 'fee',
+    });
+    sell.commission_raw = '-0.01';
+    sell.normalized.commission = '-0.01';
+
+    applyHsbcHistoryPresentationProjection([sell]);
+    assert.equal(sell.history_broker_cash, 1_209.99);
 });
 
 test('HSBC history applies trailing blank-balance fees once after a principal boundary', () => {

@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.2
+Code version: v0.1.3
+- Changed: CSV success fixtures explicitly configure their test account before import.
 """
 
 from __future__ import annotations
@@ -408,6 +409,10 @@ class HsbcStatementImportTestsMixin:
         )
         self.assertEqual(payload["ending_cash_by_currency"], {"CNH": "0.01"})
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_usd_savings_csv_calibration_validates_history_and_latest_balance(
         self,
     ) -> None:
@@ -438,6 +443,10 @@ class HsbcStatementImportTestsMixin:
             "hsbc_usd_savings_transaction_history_csv",
         )
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_usd_savings_csv_replays_same_day_rows_in_bank_chronology(
         self,
     ) -> None:

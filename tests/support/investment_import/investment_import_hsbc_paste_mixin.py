@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.5.3
+Code version: v0.5.4
+- Changed: CSV success fixtures explicitly configure their test account before import.
 - Changed: Official CSV settlement repair fixtures declare their immutable
   account identity explicitly.
 """
@@ -1804,6 +1805,10 @@ class HsbcPasteImportTestsMixin:
         self.assertEqual(hsbc_summary["ending_cash"], "21109.06")
         self.assertEqual(hsbc_summary["ending_cash_by_currency"]["HKD"], "89.24")
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_official_usd_csv_repairs_conflicting_page_balance(self) -> None:
         order_payload = {
             "broker": "hsbc",

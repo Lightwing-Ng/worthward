@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.3.1
+Code version: v0.4.0
+- Changed: Principal-only sells settle without attaching fees from another cash scope.
 - Changed: A sell cash match commits only with its complete same-scope fee row.
 """
 
@@ -83,10 +84,12 @@ class HsbcReconciliationImportTestsMixin:
             [],
         )
 
-        self.assertNotIn("cash_settlement_postings", order["source"])
+        self.assertEqual(len(order["source"]["cash_settlement_postings"]), 1)
+        self.assertEqual(order["source"]["cash_settlement_postings"][0]["role"], "principal")
         self.assertEqual(order["net_amount_raw"], "59.99")
-        self.assertNotIn("cash_flow_fee_amount_raw", order["source"])
-        self.assertNotIn("presentation_hidden", principal)
+        self.assertEqual(order["source"]["cash_flow_fee_amount_raw"], "0")
+        self.assertEqual(order["commission_raw"], "0")
+        self.assertIs(principal["presentation_hidden"], True)
         self.assertNotIn("presentation_hidden", foreign_fee)
 
     def test_hsbc_cash_matcher_rejects_ambiguous_principal_domains(self) -> None:

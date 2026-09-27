@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.157.1
+ * Code version: v2.157.2
+ * - Changed: Loads HSBC settlement consumers with either-side and optional fees.
  * - Changed: Loads canonical circular-action sizing for import height.
  * - Added: Initial Holdings loading displays four measured completed steps
  *   with the shared determinate indicator.
@@ -82,7 +83,7 @@ import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-t
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
 import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.1.0';
-import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.0';
+import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.1';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
 
 import {
@@ -106,7 +107,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.120.3';
+} from './investment/data-utils.js?v=investment-data-utils-v1.120.4';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -137,7 +138,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.40.0';
+} from './investment/stock-details.js?v=investment-stock-details-v0.40.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -186,7 +187,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.157.1',
+    entry: 'v2.157.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

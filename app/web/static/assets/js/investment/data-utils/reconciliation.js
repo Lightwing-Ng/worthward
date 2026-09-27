@@ -1,7 +1,9 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.2.3
+ * Code version: v1.2.4
+ * - Fixed: Verified sell cash accepts zero or multiple fees and fees on
+ *   either side of the principal while retaining exact identity checks.
  * - Fixed: Fee-inclusive settlement dates use the shared exact ISO-day
  *   evidence contract instead of accepting date strings with trailing data.
  * - Fixed: Fee-inclusive HSBC proceeds require exact canonical raw postings,
@@ -1454,7 +1456,6 @@ export function createInvestmentReconciliationUtils(runtime) {
             !hasConsistentStructuredAliases
             ||
             principalPostings.length !== 1
-            || feePostings.length < 1
             || postings.length !== principalPostings.length + feePostings.length
             || postings.some((posting) => !posting || typeof posting !== 'object')
             || postings.some((posting) => {
@@ -1611,7 +1612,7 @@ export function createInvestmentReconciliationUtils(runtime) {
                 seenPhysicalPostings.add(physicalKey);
                 return !hasSameDomain || identity.sequenceDirection * (
                     identity.sequenceValue - principalIdentity.sequenceValue
-                ) <= 0;
+                ) === 0;
             })
         ) {
             return null;
@@ -1646,7 +1647,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         if (
             commissions.some((commission) => (
                 commission === null
-                || commission >= -1e-9
+                || commission > 1e-9
                 || Math.abs(commission - feeTotal) > 1e-6
             ))
         ) {

@@ -1,7 +1,9 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.3.7
+ * Code version: v1.3.8
+ * - Fixed: Fees may precede or follow their principal in the verified ledger;
+ *   the final balanced posting owns the cash boundary.
  * - Fixed: A direct cash row from another source can precede same-day SEC
  *   postings when its balance exactly matches their first opening balance.
  * - Historical cash corrections remain scoped to immutable broker evidence.
@@ -1207,7 +1209,7 @@ function getHsbcHistorySettlementCashBoundary(txn) {
                 return (
                     !hasSamePostingIdentity(identity, principalIdentity)
                     || (role === 'principal' && sequenceDelta !== 0)
-                    || (role === 'fee' && sequenceDelta <= 0)
+                    || (role === 'fee' && sequenceDelta === 0)
                 );
             })) {
                 return null;

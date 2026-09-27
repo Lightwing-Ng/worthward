@@ -1,6 +1,9 @@
 """Investment import domain: hsbc cash.
 
-Code version: v0.6.1
+Code version: v0.7.0
+- Fixed: Settlement matching stages verified economics atomically, accepts scoped
+  zero or multiple fees within a shared proportional bound, and rejects invalid money.
+- Fixed: Both settlement paths reject missing or conflicting declared sell fees.
 - Fixed: HSBC stock-order settlement evidence is restricted to USD Savings,
   and a fee may precede or follow its principal in the bank chronology.
 - Fixed: Every structured settlement posting requires its own canonical,
@@ -20,6 +23,9 @@ Code version: v0.6.1
 """
 
 from __future__ import annotations
+
+import re
+from copy import deepcopy
 
 from app.services.investment.importing.support import (
     Any,
@@ -124,6 +130,57 @@ def _parse_decimal_text_or_none(value: Any) -> Decimal | None:
         return None
 
 
+def _parse_hsbc_money_or_none(value: Any) -> Decimal | None:
+    """Parse finite ledger money, rejecting malformed thousands separators."""
+    raw = _normalize_text(str(value) if value is not None else "")
+    if "," in raw and not re.fullmatch(
+        r"[+-]?[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?", raw
+    ):
+        return None
+    parsed = _parse_decimal_text_or_none(raw)
+    return parsed if parsed is not None and parsed.is_finite() else None
+
+
+def _hsbc_settlement_fee_amount_is_sane(
+    fee_amount: Decimal, principal_amount: Decimal
+) -> bool:
+    """Bound individual and total sell fees without claiming a broker fee schedule."""
+    # One percent is a conservative anomaly guard, not an HSBC fee estimate.
+    # Apply it to both each leg and the sum so splitting cannot bypass the bound.
+    return (
+        fee_amount.is_finite()
+        and principal_amount.is_finite()
+        and principal_amount > ZERO
+        and fee_amount < ZERO
+        and abs(fee_amount) <= principal_amount * Decimal("0.01")
+    )
+
+
+def _hsbc_order_declared_fee_matches_settlement(
+    order_record: dict[str, Any], fee_total: Decimal
+) -> bool:
+    """Keep verified fee evidence from erasing a contradictory declared sell fee."""
+    if _normalize_text(order_record.get("type")).lower() != "sell":
+        return True
+    source = order_record.get("source")
+    source = source if isinstance(source, dict) else {}
+    normalized = order_record.get("normalized")
+    normalized = normalized if isinstance(normalized, dict) else {}
+    for raw_fee in (
+        source.get("cash_flow_fee_amount_raw"),
+        order_record.get("commission_raw"),
+        normalized.get("commission"),
+    ):
+        if raw_fee is None or _normalize_text(str(raw_fee)) == "":
+            continue
+        parsed_fee = _parse_hsbc_money_or_none(raw_fee)
+        if parsed_fee is None or (
+            parsed_fee != ZERO and abs(parsed_fee) != abs(fee_total)
+        ):
+            return False
+    return True
+
+
 def _parse_hsbc_positive_sequence_number(value: Any) -> int | None:
     """Parse one finite, integral, positive immutable row identity."""
     if isinstance(value, bool):
@@ -208,7 +265,7 @@ def _mark_hsbc_trade_settlement_history_hidden(
         ]
         used_withdrawal_indexes: set[int] = set()
         for deposit in deposits:
-            deposit_amount = _parse_decimal_text_or_none(deposit.get("net_amount_raw"))
+            deposit_amount = _parse_hsbc_money_or_none(deposit.get("net_amount_raw"))
             if deposit_amount is None or deposit_amount <= ZERO:
                 continue
             deposit_source = (
@@ -238,7 +295,7 @@ def _mark_hsbc_trade_settlement_history_hidden(
             for withdrawal_index, withdrawal in enumerate(withdrawals):
                 if withdrawal_index in used_withdrawal_indexes:
                     continue
-                withdrawal_amount = _parse_decimal_text_or_none(
+                withdrawal_amount = _parse_hsbc_money_or_none(
                     withdrawal.get("net_amount_raw")
                 )
                 if withdrawal_amount is None or withdrawal_amount >= ZERO:
@@ -268,7 +325,7 @@ def _mark_hsbc_trade_settlement_history_hidden(
                 )
                 if withdrawal_scope != deposit_scope:
                     continue
-                withdrawal_balance = _parse_decimal_text_or_none(
+                withdrawal_balance = _parse_hsbc_money_or_none(
                     withdrawal_source.get("balance_after_raw")
                 )
                 if withdrawal_balance is None or abs(withdrawal_balance) > Decimal(
@@ -363,7 +420,7 @@ def _hsbc_settlement_postings_have_valid_sequence_order(
     expected_settlement_date = _normalize_text(
         (order_source or {}).get("cash_settlement_date")
     )
-    expected_principal_amount = _parse_decimal_text_or_none(
+    expected_principal_amount = _parse_hsbc_money_or_none(
         (order_source or {}).get("cash_settlement_amount_raw")
     )
     order_normalized = (
@@ -380,7 +437,7 @@ def _hsbc_settlement_postings_have_valid_sequence_order(
         if _normalize_text(value)
     ]
     owner_net_amounts = [
-        _parse_decimal_text_or_none(value) for value in owner_net_values
+        _parse_hsbc_money_or_none(value) for value in owner_net_values
     ]
     if order_source is not None:
         if (
@@ -461,10 +518,10 @@ def _hsbc_settlement_postings_have_valid_sequence_order(
             if statement_row_number_raw not in (None, "")
             else None
         )
-        amount = _parse_decimal_text_or_none(posting.get("amount_raw"))
+        amount = _parse_hsbc_money_or_none(posting.get("amount_raw"))
         balance_raw = posting.get("balance_after_raw")
         balance_text = _normalize_text(balance_raw)
-        balance = _parse_decimal_text_or_none(balance_text)
+        balance = _parse_hsbc_money_or_none(balance_text)
         role = _normalize_text(posting.get("role")).lower()
         if (
             not all(domain_identity[:6])
@@ -536,13 +593,22 @@ def _hsbc_settlement_postings_have_valid_sequence_order(
         return False
     if len(set(physical_posting_identities)) != len(physical_posting_identities):
         return False
+    principal = next(
+        posting for posting in participating
+        if _normalize_text(posting.get("role")).lower() == "principal"
+    )
+    principal_amount = _parse_hsbc_money_or_none(principal.get("amount_raw"))
+    fees = [
+        _parse_hsbc_money_or_none(posting.get("amount_raw"))
+        for posting in participating
+        if _normalize_text(posting.get("role")).lower() == "fee"
+    ]
+    if fees and (
+        any(not _hsbc_settlement_fee_amount_is_sane(fee, principal_amount) for fee in fees)
+        or not _hsbc_settlement_fee_amount_is_sane(sum(fees, ZERO), principal_amount)
+    ):
+        return False
     if order_source is not None:
-        principal = next(
-            posting
-            for posting in participating
-            if _normalize_text(posting.get("role")).lower() == "principal"
-        )
-        principal_amount = _parse_decimal_text_or_none(principal.get("amount_raw"))
         if (
             principal_amount != expected_principal_amount
             or (expected_order_type == "buy" and principal_amount >= ZERO)
@@ -560,7 +626,7 @@ def _build_hsbc_cash_settlement_posting(
     fallback_account: Any = "",
 ) -> dict[str, Any] | None:
     """Project one immutable HSBC cash row into settlement evidence."""
-    posting_amount = _parse_decimal_text_or_none(cash_record.get("net_amount_raw"))
+    posting_amount = _parse_hsbc_money_or_none(cash_record.get("net_amount_raw"))
     posting_date = _normalize_text(cash_record.get("date"))
     if posting_amount is None or not posting_date:
         return None
@@ -598,6 +664,10 @@ def _build_hsbc_cash_settlement_posting(
         or _ii_merge_identity._normalize_hsbc_currency_code(fallback_currency),
         "role": _normalize_text(role) or "principal",
     }
+    if _normalize_text(posting_source.get("source_file_sha256")):
+        posting["source_file_sha256"] = _normalize_text(
+            posting_source.get("source_file_sha256")
+        ).lower()
     ledger_sequence_order = _normalize_text(
         posting_source.get("ledger_sequence_order")
     ).lower()
@@ -627,8 +697,8 @@ def _hsbc_settlement_posting_cash_identity(
 ) -> tuple[Any, ...]:
     """Return the strict immutable cash identity required for provenance repair."""
     posting_date = _normalize_text(posting.get("date"))
-    posting_amount = _parse_decimal_text_or_none(posting.get("amount_raw"))
-    posting_balance = _parse_decimal_text_or_none(posting.get("balance_after_raw"))
+    posting_amount = _parse_hsbc_money_or_none(posting.get("amount_raw"))
+    posting_balance = _parse_hsbc_money_or_none(posting.get("balance_after_raw"))
     posting_reference = _normalize_whitespace(posting.get("reference"))
     posting_row_number = _parse_hsbc_positive_sequence_number(posting.get("row_number"))
     posting_sequence = _parse_hsbc_positive_sequence_number(
@@ -783,7 +853,7 @@ def _repair_hsbc_pasted_cash_settlement_posting_provenance(
             if candidate_posting.get("account_number") != order_account:
                 continue
             if role == "principal":
-                principal_amount = _parse_decimal_text_or_none(
+                principal_amount = _parse_hsbc_money_or_none(
                     order_source.get("cash_settlement_amount_raw")
                 )
                 if principal_amount is None or principal_amount != identity[1]:
@@ -802,8 +872,12 @@ def _repair_hsbc_pasted_cash_settlement_posting_provenance(
                     continue
                 normalized_fee_rows = set(parsed_fee_rows)
                 if (
-                    identity[1] >= ZERO
-                    or abs(identity[1]) > Decimal("1.00")
+                    not _hsbc_settlement_fee_amount_is_sane(
+                        identity[1],
+                        _parse_hsbc_money_or_none(
+                            order_source.get("cash_settlement_amount_raw")
+                        ) or ZERO,
+                    )
                     or identity[4] not in normalized_fee_rows
                 ):
                     continue
@@ -887,11 +961,83 @@ def _finalize_hsbc_order_settlement_balance(
     return changed
 
 
+def _apply_verified_hsbc_order_settlement(
+    order_record: dict[str, Any],
+    *,
+    principal: dict[str, Any],
+    fee_candidates: list[dict[str, Any]],
+    postings: list[dict[str, Any]],
+) -> bool:
+    """Apply one verified settlement to a caller-owned copy; never commit here."""
+    amount = _parse_hsbc_money_or_none(principal.get("amount_raw"))
+    fees = [_parse_hsbc_money_or_none(fee.get("amount_raw")) for fee in fee_candidates]
+    if amount is None or any(fee is None for fee in fees):
+        return False
+    fee_total = sum((fee for fee in fees if fee is not None), ZERO)
+    side = _normalize_text(order_record.get("type")).lower()
+    if fees and (
+        side != "sell"
+        or any(not _hsbc_settlement_fee_amount_is_sane(fee, amount) for fee in fees)
+        or not _hsbc_settlement_fee_amount_is_sane(fee_total, amount)
+    ):
+        return False
+    if not _hsbc_order_declared_fee_matches_settlement(order_record, fee_total):
+        return False
+    source = order_record.get("source")
+    if not isinstance(source, dict):
+        source = {}
+        order_record["source"] = source
+    amount_text = _decimal_to_str(amount) or "0"
+    source.update({
+        "cash_settlement_amount_raw": amount_text,
+        "cash_settlement_date": _normalize_text(principal.get("date")),
+        "cash_settlement_reference": _normalize_whitespace(principal.get("reference")),
+        "cash_settlement_postings": deepcopy(postings),
+    })
+    order_record["net_amount_raw"] = amount_text
+    normalized = order_record.get("normalized")
+    if not isinstance(normalized, dict):
+        normalized = {}
+        order_record["normalized"] = normalized
+    normalized["net_amount"] = amount_text
+    normalized["accounting_adjustment_amount"] = amount_text
+    if side == "sell":
+        commission = _decimal_to_str(fee_total) or "0"
+        order_record["commission_raw"] = commission
+        normalized["commission"] = commission
+        normalized["commission_display"] = _decimal_to_str(abs(fee_total)) or "0"
+        source["cash_flow_fee_amount_raw"] = _decimal_to_str(abs(fee_total)) or "0"
+        source["cash_flow_fee_row_numbers"] = [fee.get("row_number") for fee in fee_candidates]
+    if not _hsbc_settlement_postings_have_valid_sequence_order(
+        source["cash_settlement_postings"],
+        order_source=source,
+        order_record=order_record,
+        order_account=order_record.get("account"),
+        order_currency=order_record.get("currency"),
+    ):
+        return False
+    _finalize_hsbc_order_settlement_balance(source, order_record=order_record)
+    _reconcile_hsbc_order_execution_price_from_cash_settlement(
+        order_record,
+        settlement_amount=amount,
+        settlement_date=source["cash_settlement_date"],
+        settlement_source=principal,
+    )
+    _annotate_hsbc_order_settlement_adjustment(order_record)
+    return True
+
+
 def _match_hsbc_orders_to_cash_settlements(
     order_records: list[dict[str, Any]],
     cash_records: list[dict[str, Any]],
     warnings: list[str],
 ) -> None:
+    """Match pasted cash on copies before commit.
+
+    Unlike authoritative repair, which rejects principal differences over $0.01,
+    this paste path retains the documented closest-principal policy and warns
+    when the verified cash amount differs from Order Status by over $0.01.
+    """
     cash_candidates_by_order_id: dict[str, list[dict[str, Any]]] = {}
     for cash_record in cash_records:
         if not isinstance(cash_record, dict):
@@ -908,7 +1054,6 @@ def _match_hsbc_orders_to_cash_settlements(
         )
         if not order_reference:
             continue
-        source["matched_cash_order_reference"] = order_reference
         cash_candidates_by_order_id.setdefault(order_reference, []).append(cash_record)
 
     used_cash_record_ids: set[int] = set()
@@ -939,6 +1084,8 @@ def _match_hsbc_orders_to_cash_settlements(
 
         def cash_settlement_identity(
             cash_record: dict[str, Any],
+            *,
+            validate_posting: bool = True,
         ) -> tuple[str, str, str, str, str, str] | None:
             cash_source = (
                 cash_record.get("source")
@@ -975,6 +1122,8 @@ def _match_hsbc_orders_to_cash_settlements(
                 or identity[2] != "USD"
             ):
                 return None
+            if not validate_posting:
+                return identity
             row_number = _parse_hsbc_positive_sequence_number(
                 cash_source.get("row_number")
             )
@@ -983,7 +1132,7 @@ def _match_hsbc_orders_to_cash_settlements(
             )
             balance_raw = cash_source.get("balance_after_raw")
             balance_text = _normalize_text(balance_raw)
-            balance = _parse_decimal_text_or_none(balance_text)
+            balance = _parse_hsbc_money_or_none(balance_text)
             if (
                 row_number is None
                 or ledger_sequence is None
@@ -1007,7 +1156,7 @@ def _match_hsbc_orders_to_cash_settlements(
         ]
         if not candidates:
             continue
-        expected_amount = _parse_decimal_text_or_none(
+        expected_amount = _parse_hsbc_money_or_none(
             order_record.get("net_amount_raw")
         )
         expected_sign = (
@@ -1016,7 +1165,7 @@ def _match_hsbc_orders_to_cash_settlements(
         best_candidate: dict[str, Any] | None = None
         best_candidate_diff: Decimal | None = None
         for candidate in candidates:
-            candidate_amount = _parse_decimal_text_or_none(
+            candidate_amount = _parse_hsbc_money_or_none(
                 candidate.get("net_amount_raw")
             )
             if candidate_amount is None or candidate_amount == ZERO:
@@ -1041,7 +1190,7 @@ def _match_hsbc_orders_to_cash_settlements(
             continue
         equally_best_candidates = []
         for candidate in candidates:
-            candidate_amount = _parse_decimal_text_or_none(
+            candidate_amount = _parse_hsbc_money_or_none(
                 candidate.get("net_amount_raw")
             )
             if candidate_amount is None or candidate_amount == ZERO:
@@ -1069,7 +1218,7 @@ def _match_hsbc_orders_to_cash_settlements(
             else {}
         )
         if (
-            _parse_decimal_text_or_none(best_candidate_source.get("balance_after_raw"))
+            _parse_hsbc_money_or_none(best_candidate_source.get("balance_after_raw"))
             is None
         ):
             continue
@@ -1082,18 +1231,25 @@ def _match_hsbc_orders_to_cash_settlements(
             or 0
         )
         if expected_sign > 0:
-            for candidate in candidates:
+            fee_group_invalid = False
+            for candidate in cash_candidates_by_order_id.get(order_reference, []):
                 if id(candidate) in used_cash_record_ids:
                     continue
-                candidate_amount = _parse_decimal_text_or_none(
+                if cash_settlement_identity(
+                    candidate, validate_posting=False
+                ) != best_candidate_identity:
+                    continue
+                candidate_amount = _parse_hsbc_money_or_none(
                     candidate.get("net_amount_raw")
                 )
-                if candidate_amount is None or candidate_amount >= ZERO:
-                    continue
-                if abs(candidate_amount) > Decimal("1.00"):
+                if candidate_amount is None:
+                    fee_group_invalid = True
+                    break
+                if candidate_amount >= ZERO:
                     continue
                 if cash_settlement_identity(candidate) != best_candidate_identity:
-                    continue
+                    fee_group_invalid = True
+                    break
                 candidate_source = (
                     candidate.get("source")
                     if isinstance(candidate.get("source"), dict)
@@ -1110,8 +1266,11 @@ def _match_hsbc_orders_to_cash_settlements(
                 except (TypeError, ValueError):
                     continue
                 if candidate_sequence == principal_sequence:
-                    continue
+                    fee_group_invalid = True
+                    break
                 fee_candidates.append(candidate)
+            if fee_group_invalid:
+                continue
             fee_sequences = [
                 int(
                     (candidate.get("source") or {}).get(
@@ -1122,113 +1281,50 @@ def _match_hsbc_orders_to_cash_settlements(
                 )
                 for candidate in fee_candidates
             ]
-            if (
-                len(set(fee_sequences)) != len(fee_sequences)
-                or len(fee_candidates) != 1
-            ):
+            if len(set(fee_sequences)) != len(fee_sequences):
                 continue
-            used_cash_record_ids.add(id(best_candidate))
-            for fee_candidate in fee_candidates:
-                used_cash_record_ids.add(id(fee_candidate))
-        else:
-            used_cash_record_ids.add(id(best_candidate))
-        candidate_source = (
-            best_candidate.get("source")
-            if isinstance(best_candidate.get("source"), dict)
-            else {}
-        )
-        candidate_amount = _parse_decimal_text_or_none(
-            best_candidate.get("net_amount_raw")
-        )
-        candidate_date = _normalize_text(best_candidate.get("date"))
-        candidate_reference = _normalize_whitespace(best_candidate.get("description"))
-        candidate_balance_after = _normalize_text(
-            candidate_source.get("balance_after_raw")
-        )
-        if candidate_amount is not None:
-            candidate_amount_text = _decimal_to_str(candidate_amount) or ""
-            order_record["net_amount_raw"] = candidate_amount_text
-            normalized = (
-                order_record.get("normalized")
-                if isinstance(order_record.get("normalized"), dict)
-                else {}
-            )
-            normalized["net_amount"] = candidate_amount_text
-            normalized["accounting_adjustment_amount"] = candidate_amount_text
-            order_record["normalized"] = normalized
-            order_source["cash_settlement_amount_raw"] = candidate_amount_text
-        if candidate_date:
-            order_source["cash_settlement_date"] = candidate_date
-        order_source["cash_settlement_reference"] = candidate_reference
-        order_source["cash_settlement_balance_after_raw"] = candidate_balance_after
-        order_source["cash_settlement_source_row_number"] = int(
-            candidate_source.get("row_number", 0)
-        )
-        best_candidate["presentation_hidden"] = True
-        best_candidate["presentation_hidden_reason"] = (
-            "hsbc_order_cash_settlement_matched"
-        )
-        best_candidate["exclude_from_holdings_replay"] = True
-        total_fee_abs = sum(
-            abs(_parse_decimal_text_or_none(candidate.get("net_amount_raw")) or ZERO)
-            for candidate in fee_candidates
-        )
-        if total_fee_abs > ZERO:
-            commission_dec = -total_fee_abs
-            commission_text = _decimal_to_str(commission_dec) or "0"
-            order_record["commission_raw"] = commission_text
-            normalized = (
-                order_record.get("normalized")
-                if isinstance(order_record.get("normalized"), dict)
-                else {}
-            )
-            normalized["commission"] = commission_text
-            normalized["commission_display"] = _decimal_to_str(total_fee_abs) or "0"
-            order_record["normalized"] = normalized
-            order_source["cash_flow_fee_amount_raw"] = (
-                _decimal_to_str(total_fee_abs) or "0"
-            )
-            order_source["cash_flow_fee_row_numbers"] = [
-                int((candidate.get("source") or {}).get("row_number", 0))
-                for candidate in fee_candidates
-            ]
-            for fee_candidate in fee_candidates:
-                fee_candidate["presentation_hidden"] = True
-                fee_candidate["presentation_hidden_reason"] = (
-                    "hsbc_order_cash_settlement_fee_matched"
-                )
-                fee_candidate["exclude_from_holdings_replay"] = True
-
-        # Keep the broker-native cash legs as immutable settlement evidence.
-        # A sell can have its principal and SEC fee separated by another
-        # order's cash posting, so an order-level final balance alone cannot
-        # reproduce the statement sequence safely.
-        settlement_postings: list[dict[str, Any]] = []
-        for posting_candidate, role in [
+        candidate_amount = _parse_hsbc_money_or_none(best_candidate.get("net_amount_raw"))
+        settlement_postings = []
+        for candidate, role in [
             (best_candidate, "principal"),
-            *((fee_candidate, "fee") for fee_candidate in fee_candidates),
+            *((candidate, "fee") for candidate in fee_candidates),
         ]:
             posting = _build_hsbc_cash_settlement_posting(
-                posting_candidate,
+                candidate,
                 role=role,
                 fallback_currency=order_record.get("currency"),
                 fallback_account=order_record.get("account"),
             )
-            if posting is not None:
-                settlement_postings.append(posting)
-        if settlement_postings:
-            order_source["cash_settlement_postings"] = settlement_postings
-            _finalize_hsbc_order_settlement_balance(
-                order_source,
-                order_record=order_record,
+            if posting is None:
+                break
+            settlement_postings.append(posting)
+        if len(settlement_postings) != 1 + len(fee_candidates):
+            continue
+        principal_posting = settlement_postings[0]
+        fee_postings = settlement_postings[1:]
+        next_order_record = deepcopy(order_record)
+        if not _apply_verified_hsbc_order_settlement(
+            next_order_record,
+            principal=principal_posting,
+            fee_candidates=fee_postings,
+            postings=settlement_postings,
+        ):
+            continue
+        order_record.clear()
+        order_record.update(next_order_record)
+        for candidate, role in [
+            (best_candidate, "principal"),
+            *((candidate, "fee") for candidate in fee_candidates),
+        ]:
+            used_cash_record_ids.add(id(candidate))
+            candidate["source"]["matched_cash_order_reference"] = order_reference
+            candidate["presentation_hidden"] = True
+            candidate["presentation_hidden_reason"] = (
+                "hsbc_order_cash_settlement_fee_matched"
+                if role == "fee"
+                else "hsbc_order_cash_settlement_matched"
             )
-        _reconcile_hsbc_order_execution_price_from_cash_settlement(
-            order_record,
-            settlement_amount=candidate_amount or ZERO,
-            settlement_date=candidate_date,
-            settlement_source=candidate_source,
-        )
-        _annotate_hsbc_order_settlement_adjustment(order_record)
+            candidate["exclude_from_holdings_replay"] = True
         if expected_amount is not None and candidate_amount is not None:
             amount_diff = abs(candidate_amount - expected_amount)
             if amount_diff > Decimal("0.01"):
@@ -1376,7 +1472,7 @@ def _annotate_hsbc_available_cash_after(
         source["available_cash_after_raw"] = _decimal_to_str(available_after) or "0"
         source["available_cash_calibration_source"] = calibration_source
         record["source"] = source
-        cash_delta = _parse_decimal_text_or_none(record.get("net_amount_raw")) or ZERO
+        cash_delta = _parse_hsbc_money_or_none(record.get("net_amount_raw")) or ZERO
         available_after -= cash_delta
 
 
@@ -1434,12 +1530,12 @@ def _summarize_hsbc_pending_settlement_cash(
         and record["source"].get("cash_replay_pending_settlement") is True
     ]
     pending_cash_raw = sum(
-        _parse_decimal_text_or_none(record.get("net_amount_raw")) or ZERO
+        _parse_hsbc_money_or_none(record.get("net_amount_raw")) or ZERO
         for record in pending_records
     )
     pending_fee = sum(
         abs(
-            _parse_decimal_text_or_none(
+            _parse_hsbc_money_or_none(
                 (
                     record.get("source")
                     if isinstance(record.get("source"), dict)
@@ -1498,10 +1594,10 @@ def _calibrate_hsbc_order_prices_from_portfolio(
         snapshot = position_snapshot.get(ticker)
         if not isinstance(snapshot, dict):
             continue
-        quantity_dec = _parse_decimal_text_or_none(record.get("quantity_abs"))
-        snapshot_quantity_dec = _parse_decimal_text_or_none(snapshot.get("quantity"))
-        portfolio_price_dec = _parse_decimal_text_or_none(snapshot.get("cost_price"))
-        order_price_dec = _parse_decimal_text_or_none(record.get("price_raw"))
+        quantity_dec = _parse_hsbc_money_or_none(record.get("quantity_abs"))
+        snapshot_quantity_dec = _parse_hsbc_money_or_none(snapshot.get("quantity"))
+        portfolio_price_dec = _parse_hsbc_money_or_none(snapshot.get("cost_price"))
+        order_price_dec = _parse_hsbc_money_or_none(record.get("price_raw"))
         if (
             quantity_dec is None
             or snapshot_quantity_dec is None
@@ -1556,7 +1652,7 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
     settlement_date: str,
     settlement_source: dict[str, Any],
 ) -> bool:
-    quantity_dec = _parse_decimal_text_or_none(order_record.get("quantity_abs"))
+    quantity_dec = _parse_hsbc_money_or_none(order_record.get("quantity_abs"))
     if quantity_dec is None or quantity_dec <= ZERO or settlement_amount == ZERO:
         return False
 
@@ -1564,7 +1660,7 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
     if side not in {"buy", "sell"}:
         return False
     commission_dec = (
-        _parse_decimal_text_or_none(order_record.get("commission_raw")) or ZERO
+        _parse_hsbc_money_or_none(order_record.get("commission_raw")) or ZERO
     )
     signed_gross_dec = settlement_amount - commission_dec
     expected_sign = -1 if side == "buy" else 1
@@ -1584,7 +1680,7 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
     previous_price_raw = _normalize_text(
         source.get("execution_price_raw")
     ) or _normalize_text(order_record.get("price_raw"))
-    previous_price_dec = _parse_decimal_text_or_none(previous_price_raw)
+    previous_price_dec = _parse_hsbc_money_or_none(previous_price_raw)
     if previous_price_dec is not None:
         previous_price_quantum = Decimal(1).scaleb(
             previous_price_dec.as_tuple().exponent
@@ -1603,8 +1699,9 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
         _normalize_text(source.get("execution_price_source"))
         or "hsbc_order_status_price",
     )
-    source["execution_price_previous_calibration_status"] = _normalize_text(
-        source.get("execution_price_calibration_status")
+    source.setdefault(
+        "execution_price_previous_calibration_status",
+        _normalize_text(source.get("execution_price_calibration_status")),
     )
     final_price_raw = _decimal_to_str(final_price_dec) or ""
     settlement_amount_raw = _decimal_to_str(settlement_amount) or ""
@@ -1653,11 +1750,11 @@ def _annotate_hsbc_order_settlement_adjustment(
         order_record.get("broker") or source.get("broker")
     )
     side = _normalize_text(order_record.get("type")).lower()
-    settlement_amount = _parse_decimal_text_or_none(
+    settlement_amount = _parse_hsbc_money_or_none(
         source.get("cash_settlement_amount_raw")
     )
-    gross_amount = _parse_decimal_text_or_none(order_record.get("gross_amount_raw"))
-    commission = _parse_decimal_text_or_none(order_record.get("commission_raw"))
+    gross_amount = _parse_hsbc_money_or_none(order_record.get("gross_amount_raw"))
+    commission = _parse_hsbc_money_or_none(order_record.get("commission_raw"))
     if (
         broker != "hsbc"
         or side not in {"buy", "sell"}

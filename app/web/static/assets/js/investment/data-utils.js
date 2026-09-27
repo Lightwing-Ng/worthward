@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.120.3
+ * Code version: v1.120.4
+ * - Changed: Loads settlement consumers that allow fees on either side of
+ *   their principal and principal-only evidence with zero commission.
  * - Changed: Loads exact-date and safe-decimal HSBC cash-boundary validation.
  * - Fixed: Every HSBC cash replay, settlement, fee, and ordering consumer now
  *   shares the exact fail-closed importer evidence contract.
@@ -243,10 +245,10 @@ import {
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
 import {
     createInvestmentPositionValuationUtils,
-} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.3';
+} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.4';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.2.3';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.2.4';
 import {
     createInvestmentSummaryUtils,
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.1';
@@ -800,7 +802,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.3';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.4';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

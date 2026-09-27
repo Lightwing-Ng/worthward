@@ -1,7 +1,8 @@
 """
 Investment page regression tests.
 
-Code version: v1.8.4
+Code version: v1.8.5
+- Fixed: HSBC cash-boundary reads keep mixed-portfolio snapshot fields scoped.
 - Changed: Replaced production-derived transaction references with synthetic
   identifiers while preserving transfer-binding coverage.
 - Added: Investment transaction payloads repair an existing daily history
@@ -180,6 +181,7 @@ def test_investment_transactions_read_repairs_hsbc_current_cash_boundary(
                 "cash_ledger_balance_as_of": "2026-08-26",
                 "cash_ledger_balance_source": "hsbc_usd_savings_ledger_balance",
                 "cash_snapshot_authoritative": False,
+                "cash_snapshot_status": "stale",
                 "hsbc_ending_cash_components": {"HKD:SAVINGS": "10.00"},
                 "hsbc_cash_component_post_dates": {
                     "HKD:SAVINGS": "2026-08-31"
@@ -220,8 +222,12 @@ def test_investment_transactions_read_repairs_hsbc_current_cash_boundary(
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["summary"]["cash_snapshot_authoritative"] is True
+    assert payload["summary"]["cash_snapshot_authoritative"] is False
+    assert payload["summary"]["cash_snapshot_status"] == "stale"
+    assert payload["summary"]["cash_ledger_balance"] == "100.00"
+    assert payload["summary"]["cash_ledger_balance_as_of"] == "2026-08-26"
     assert payload["broker_summaries"]["hsbc"]["cash_snapshot_authoritative"] is True
+    assert payload["broker_summaries"]["hsbc"]["cash_snapshot_status"] == "current"
     assert payload["broker_summaries"]["hsbc"]["ending_cash"] == "100.00"
 
     cached_payload = json.loads(
@@ -241,8 +247,12 @@ def test_investment_transactions_read_repairs_hsbc_current_cash_boundary(
 
     assert cached_response.status_code == 200
     assert cached_result["investment_cache"]["status"] == "hit"
-    assert cached_result["summary"]["cash_snapshot_authoritative"] is True
+    assert cached_result["summary"]["cash_snapshot_authoritative"] is False
+    assert cached_result["summary"]["cash_snapshot_status"] == "stale"
+    assert cached_result["summary"]["cash_ledger_balance"] == "100.00"
+    assert cached_result["summary"]["cash_ledger_balance_as_of"] == "2026-08-26"
     assert cached_result["broker_summaries"]["hsbc"]["cash_snapshot_authoritative"] is True
+    assert cached_result["broker_summaries"]["hsbc"]["cash_snapshot_status"] == "current"
 
 
 def test_investment_transactions_skips_live_refresh_for_closed_tickers(tmp_path, monkeypatch) -> None:

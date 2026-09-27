@@ -1,7 +1,9 @@
 /**
  * Position lots, split adjustment, ranges, and valuation utilities.
  *
- * Code version: v1.3.3
+ * Code version: v1.3.4
+ * - Fixed: Settlement plans accept distinct fee postings on either side of
+ *   their principal within the same immutable cash-evidence domain.
  * - Fixed: Settlement owner and posting dates use the shared exact ISO-day
  *   evidence contract instead of accepting date strings with trailing data.
  * - Fixed: Settlement plans ignore legacy scalar summaries and require exact
@@ -1074,7 +1076,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
                         * (identity.sequenceValue - principalIdentity.sequenceValue);
                     return String(posting?.role || '').trim().toLowerCase() === 'principal'
                         ? sequenceDelta === 0
-                        : sequenceDelta > 0;
+                        : sequenceDelta !== 0;
                 };
                 if (rawPostings.some((posting) => !hasValidIdentityAndOrder(posting))) {
                     return;

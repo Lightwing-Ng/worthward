@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.40.0
+ * Code version: v0.40.1
+ * - Changed: Loads settlement utilities with either-side and optional fees.
  * - Changed: Stock details x-axis labels use the shared pixel-space date layout
  *   and never show a time of day.
  * - Changed: Reuses the shared live-marker primitive for the live price endpoint.
@@ -17,7 +18,7 @@ import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.120.3';
+} from './data-utils.js?v=investment-data-utils-v1.120.4';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -63,7 +64,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.39.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.40.1';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,

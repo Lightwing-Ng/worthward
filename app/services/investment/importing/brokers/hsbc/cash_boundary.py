@@ -1,6 +1,7 @@
 """Investment import domain: hsbc current cash boundary.
 
-Code version: v0.1.1
+Code version: v0.2.0
+- Fixed: Keep current cash boundaries scoped to HSBC and reject invalid money.
 - Added: HSBC posting-balance repair and authoritative current-cash boundary
   synchronization moved out of the hsbc reconciliation module to keep each
   first-party module within the repository size contract.
@@ -29,6 +30,38 @@ import app.services.investment.importing.merge.reconciliation as _ii_merge_recon
 import app.services.investment.importing.payload_summaries as _ii_payload_summaries
 
 
+def _hsbc_cash_boundary_money_text(value: Any) -> str | None:
+    """Validate raw money before a legacy helper can discard its formatting."""
+    amount = _ii_hsbc_cash._parse_hsbc_money_or_none(value)
+    return _decimal_to_str(amount) if amount is not None else None
+
+
+def _hsbc_cash_boundary_inference_records(
+    transactions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep invalid raw balances out of legacy current-cash inference."""
+    candidates = deepcopy(transactions)
+    for record in candidates:
+        source = record.get("source")
+        if not isinstance(source, dict):
+            continue
+        if "cash_settlement_balance_after_raw" in source:
+            source["cash_settlement_balance_after_raw"] = (
+                _hsbc_cash_boundary_money_text(
+                    source["cash_settlement_balance_after_raw"]
+                )
+            )
+        postings = source.get("cash_settlement_postings")
+        if not isinstance(postings, list):
+            continue
+        for posting in postings:
+            if isinstance(posting, dict) and "balance_after_raw" in posting:
+                posting["balance_after_raw"] = _hsbc_cash_boundary_money_text(
+                    posting["balance_after_raw"]
+                )
+    return candidates
+
+
 def _reconcile_hsbc_order_settlement_balances_from_postings(
     transactions: list[dict[str, Any]],
 ) -> int:
@@ -51,8 +84,23 @@ def _reconcile_hsbc_order_settlement_balances_from_postings(
 def _synchronize_hsbc_authoritative_current_cash_boundary(
     payload: dict[str, Any],
 ) -> bool:
-    """Keep the HSBC USD component aligned with the verified current cash boundary."""
+    """Align verified HSBC cash without attesting a merged portfolio snapshot."""
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    is_single_hsbc_account = (
+        _ii_basics._normalize_broker_code(payload.get("broker")) == "hsbc"
+        and _normalize_text(payload.get("account")) != "multiple"
+    )
+    # Generic merged balances describe the whole portfolio. Only explicitly
+    # HSBC-scoped compatibility fields may supplement its broker summary.
+    fallback_summary = (
+        summary
+        if is_single_hsbc_account
+        else {
+            key: value
+            for key, value in summary.items()
+            if key.startswith("hsbc_")
+        }
+    )
     broker_summaries = payload.get("broker_summaries")
     hsbc_summary = (
         broker_summaries.get("hsbc")
@@ -63,9 +111,49 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
     snapshot = (
         hsbc_summary.get("hsbc_snapshot")
         if isinstance(hsbc_summary.get("hsbc_snapshot"), dict)
-        else summary.get("hsbc_snapshot")
-        if isinstance(summary.get("hsbc_snapshot"), dict)
+        else fallback_summary.get("hsbc_snapshot")
+        if isinstance(fallback_summary.get("hsbc_snapshot"), dict)
         else {}
+    )
+    scoped_summary = {**fallback_summary, **hsbc_summary}
+    raw_components = scoped_summary.get("hsbc_ending_cash_components")
+    if isinstance(raw_components, dict):
+        scoped_summary["hsbc_ending_cash_components"] = {
+            key: amount
+            for key, raw_amount in raw_components.items()
+            if (amount := _ii_hsbc_cash._parse_hsbc_money_or_none(raw_amount))
+            is not None
+        }
+    raw_ending_balances = (
+        hsbc_summary.get("ending_cash_by_currency")
+        or (payload.get("ending_cash_by_currency") if is_single_hsbc_account else None)
+        or scoped_summary.get("ending_cash_by_currency")
+    )
+    ending_balances = (
+        {
+            currency: amount
+            for currency, raw_amount in raw_ending_balances.items()
+            if (amount := _ii_hsbc_cash._parse_hsbc_money_or_none(raw_amount))
+            is not None
+        }
+        if isinstance(raw_ending_balances, dict)
+        else {}
+    )
+    hsbc_transactions = [
+        record
+        for record in _ii_merge_reconciliation._payload_transactions(payload)
+        if _ii_basics._normalize_broker_code(record.get("broker")) == "hsbc"
+    ]
+    scoped_payload = {
+        "summary": scoped_summary,
+        "ending_cash_by_currency": ending_balances,
+        "transactions": hsbc_transactions,
+    }
+    components = _ii_payload_summaries._payload_hsbc_ending_cash_components(
+        scoped_payload
+    )
+    component_dates = _ii_payload_summaries._payload_hsbc_cash_component_post_dates(
+        scoped_payload
     )
     cash_post_date = _normalize_text(snapshot.get("cash_latest_post_date"))
     if not cash_post_date:
@@ -77,15 +165,15 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
     cash_post_date = _normalize_text(
         cash_post_date
         or hsbc_summary.get("cash_ledger_balance_as_of")
-        or summary.get("cash_ledger_balance_as_of")
+        or fallback_summary.get("cash_ledger_balance_as_of")
         or hsbc_summary.get("ending_cash_base_currency_as_of")
-        or summary.get("ending_cash_base_currency_as_of")
+        or fallback_summary.get("ending_cash_base_currency_as_of")
         or hsbc_summary.get("cash_snapshot_as_of")
-        or summary.get("cash_snapshot_as_of")
+        or fallback_summary.get("cash_snapshot_as_of")
     )[:10]
     current_cash_status = _normalize_text(
         hsbc_summary.get("ending_cash_base_currency_status")
-        or summary.get("ending_cash_base_currency_status")
+        or fallback_summary.get("ending_cash_base_currency_status")
     )
     current_cash_brokers = summary.get("authoritative_current_cash_brokers")
     has_current_cash_scope = isinstance(current_cash_brokers, list) and "hsbc" in {
@@ -102,58 +190,73 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
     ):
         return False
 
-    current_cash = _ii_hsbc_cash._parse_decimal_text_or_none(
-        hsbc_summary.get("cash_ledger_balance") or summary.get("cash_ledger_balance")
-    )
+    raw_current_cash = hsbc_summary.get("cash_ledger_balance")
+    if raw_current_cash is None or raw_current_cash == "":
+        raw_current_cash = fallback_summary.get("cash_ledger_balance")
+    current_cash = _ii_hsbc_cash._parse_hsbc_money_or_none(raw_current_cash)
     current_cash_source = _normalize_text(
         hsbc_summary.get("cash_ledger_balance_source")
-        or summary.get("cash_ledger_balance_source")
+        or fallback_summary.get("cash_ledger_balance_source")
     )
     if current_cash is not None:
         cash_post_date = _normalize_text(
             hsbc_summary.get("cash_ledger_balance_as_of")
-            or summary.get("cash_ledger_balance_as_of")
+            or fallback_summary.get("cash_ledger_balance_as_of")
             or cash_post_date
         )[:10]
     if current_cash is None:
         inferred_boundary = _ii_payload_summaries._infer_hsbc_settled_usd_cash_boundary(
-            _ii_merge_reconciliation._payload_transactions(payload),
+            _hsbc_cash_boundary_inference_records(hsbc_transactions),
             account=_normalize_text(
-                hsbc_summary.get("account") or summary.get("account")
+                hsbc_summary.get("account") or fallback_summary.get("account")
             ),
             expected_as_of=cash_post_date,
         )
         if inferred_boundary is not None:
-            current_cash, cash_post_date = inferred_boundary
+            inferred_cash, inferred_date = inferred_boundary
+            current_cash = _ii_hsbc_cash._parse_hsbc_money_or_none(inferred_cash)
+            if current_cash is not None:
+                cash_post_date = inferred_date
             current_cash_source = "hsbc_settlement_posting_balance_reconstruction"
     if current_cash is None:
         declared_boundary = (
             _ii_payload_summaries._resolve_hsbc_declared_current_cash_boundary(
-                hsbc_summary,
-                summary,
+                {
+                    **hsbc_summary,
+                    "ending_cash_base_currency": _hsbc_cash_boundary_money_text(
+                        hsbc_summary.get("ending_cash_base_currency")
+                    ),
+                },
+                {
+                    **fallback_summary,
+                    "ending_cash_base_currency": _hsbc_cash_boundary_money_text(
+                        fallback_summary.get("ending_cash_base_currency")
+                    ),
+                },
                 has_current_cash_scope=has_current_cash_scope,
             )
         )
         if declared_boundary is not None:
             declared_cash, declared_as_of, declared_source = declared_boundary
-            current_cash = declared_cash
-            cash_post_date = declared_as_of or cash_post_date
-            current_cash_source = declared_source
+            current_cash = _ii_hsbc_cash._parse_hsbc_money_or_none(declared_cash)
+            if current_cash is not None:
+                cash_post_date = declared_as_of or cash_post_date
+                current_cash_source = declared_source
+    if current_cash is None and not is_single_hsbc_account:
+        current_cash = components.get("USD:SAVINGS")
+        if current_cash is not None:
+            cash_post_date = component_dates.get("USD:SAVINGS") or cash_post_date
     if current_cash is None:
         return False
     current_cash_text = _decimal_to_str(current_cash) or "0"
     current_cash_source = current_cash_source or "hsbc_usd_savings_ledger_balance"
-    available_cash = _ii_hsbc_cash._parse_decimal_text_or_none(
-        hsbc_summary.get("hsbc_bank_available_cash")
-        or summary.get("hsbc_bank_available_cash")
-    )
+    raw_available_cash = hsbc_summary.get("hsbc_bank_available_cash")
+    if raw_available_cash is None or raw_available_cash == "":
+        raw_available_cash = fallback_summary.get("hsbc_bank_available_cash")
+    available_cash = _ii_hsbc_cash._parse_hsbc_money_or_none(raw_available_cash)
     if available_cash is None:
         available_cash = current_cash
 
-    components = _ii_payload_summaries._payload_hsbc_ending_cash_components(payload)
-    component_dates = _ii_payload_summaries._payload_hsbc_cash_component_post_dates(
-        payload
-    )
     for component_key in list(components):
         currency, _, account_type = component_key.partition(":")
         if (
@@ -178,7 +281,7 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
         ).items()
     }
     pending_summary = _ii_hsbc_cash._summarize_hsbc_pending_settlement_cash(
-        _ii_merge_reconciliation._payload_transactions(payload),
+        hsbc_transactions,
         available_cash,
         broker_cash_balance=current_cash,
     )
@@ -195,7 +298,7 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
         **cash_snapshot_updates,
         **pending_summary,
     }
-    if _ii_basics._normalize_broker_code(payload.get("broker")) == "hsbc":
+    if is_single_hsbc_account:
         summary_updates.update(
             {
                 "ending_cash_base_currency": current_cash_text,
@@ -204,8 +307,20 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
                 "ending_cash_by_currency": ending_by_currency,
             }
         )
-    summary.update(summary_updates)
-    if isinstance(broker_summaries, dict) and isinstance(hsbc_summary, dict):
+    summary.update(
+        summary_updates
+        if is_single_hsbc_account
+        else {
+            key: value
+            for key, value in summary_updates.items()
+            if key.startswith("hsbc_")
+        }
+    )
+    if not isinstance(broker_summaries, dict):
+        broker_summaries = {}
+        payload["broker_summaries"] = broker_summaries
+    broker_summaries["hsbc"] = hsbc_summary
+    if isinstance(hsbc_summary, dict):
         hsbc_summary.update(
             {
                 "ending_cash": current_cash_text,
@@ -226,7 +341,7 @@ def _synchronize_hsbc_authoritative_current_cash_boundary(
         hsbc_summary["ending_cash_base_currency_status"] = (
             "authoritative_current_cash_boundary"
         )
-    if _ii_basics._normalize_broker_code(payload.get("broker")) == "hsbc":
+    if is_single_hsbc_account:
         payload["ending_cash"] = current_cash_text
         payload["ending_cash_base_currency"] = current_cash_text
         payload["ending_cash_by_currency"] = ending_by_currency

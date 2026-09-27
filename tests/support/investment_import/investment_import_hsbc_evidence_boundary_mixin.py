@@ -1,6 +1,7 @@
 """HSBC evidence-boundary and attribution regression mixin.
 
-Code version: v0.3.2
+Code version: v0.3.3
+- Changed: CSV success fixtures explicitly configure their test account before import.
 - Added: Official CSV settlement evidence fails closed on missing or mismatched
   broker, bundle-role, and account metadata.
 - Added: Storage-backed paste evidence repairs legacy HSBC settlement postings
@@ -338,6 +339,10 @@ class HsbcEvidenceBoundaryImportTestsMixin:
         self.assertEqual(usd_event["ticker"], "")
         self.assertEqual(loader_calls, [])
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_official_csv_rejects_conflicting_equal_principal_evidence(
         self,
     ) -> None:
@@ -389,6 +394,10 @@ class HsbcEvidenceBoundaryImportTestsMixin:
             repaired["transactions"][0]["source"],
         )
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_official_csv_rejects_a_pretrade_posting(self) -> None:
         csv_text = "\n".join(
             [
@@ -503,6 +512,10 @@ class HsbcEvidenceBoundaryImportTestsMixin:
         self.assertEqual(retained_posting["account_type"], "USD Savings")
         self.assertEqual(retained_posting["balance_after_raw"], "1,000.00")
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_official_csv_settlement_evidence_is_not_reused_across_accounts(
         self,
     ) -> None:
@@ -592,6 +605,10 @@ class HsbcEvidenceBoundaryImportTestsMixin:
             )
         )
 
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
     def test_hsbc_official_csv_keeps_artifact_account_across_config_drift(
         self,
     ) -> None:
