@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 (() => {
     // Historical startup snapshots only identify untouched old browser defaults.
     // Explicit URLs, partial records, and any customized profile retain precedence.
@@ -116,7 +116,23 @@
                 "training_window": 466
             },
             "enabledFactors": ["use_close_location", "use_illiquidity_20d", "use_momentum_5d", "use_overnight_gap", "use_volatility_20d", "use_volume_at_price"],
-            "hasBenchmarks": false
+            "hasBenchmarks": false,
+            "alternates": [{
+                "parameters": {
+                    "cell_display_threshold": 1.0,
+                    "chip_window": 21,
+                    "compute_backend": "CPU",
+                    "entry_probability": 60.0,
+                    "lstm_epochs": 8,
+                    "lstm_hidden_size": 23,
+                    "lstm_learning_rate": 0.03,
+                    "lstm_lookback": 4,
+                    "lstm_seed": 42,
+                    "training_window": 252
+                },
+                "enabledFactors": ["use_intraday_return", "use_momentum_20d", "use_option_call_volume", "use_option_total_volume", "use_overnight_gap", "use_return_1d", "use_turnover", "use_volume_at_price", "use_volume_change"],
+                "hasBenchmarks": false
+            }]
         },
         "moderntcn-price-field": {
             "parameters": {
@@ -257,25 +273,27 @@
         const profile = previousPriceFieldProfiles[strategyId];
         const remembered = memory[strategyId];
         if (!profile || !remembered || typeof remembered !== "object" || Array.isArray(remembered)) return memory;
-        const factorKeys = profile.hasBenchmarks
-            ? [...previousPriceFieldFactorKeys, ...previousPriceFieldBenchmarkKeys]
-            : previousPriceFieldFactorKeys;
-        const defaults = {
-            ...profile.parameters,
-            ...Object.fromEntries(factorKeys.map((key) => [key, profile.enabledFactors.includes(key)])),
-        };
-        const keys = Object.keys(defaults);
-        if (Object.keys(remembered).length !== keys.length) return memory;
-        const matches = keys.every((key) => {
-            if (!Object.prototype.hasOwnProperty.call(remembered, key)) return false;
-            const expected = defaults[key];
-            const actual = String(remembered[key] ?? "").trim();
-            if (typeof expected === "boolean") return actual === (expected ? "1" : "0");
-            if (typeof expected === "number") {
-                const numberText = actual.replaceAll(",", "");
-                return numberText !== "" && Number.isFinite(Number(numberText)) && Number(numberText) === expected;
-            }
-            return actual === expected;
+        const matches = [profile, ...(profile.alternates || [])].some((candidate) => {
+            const factorKeys = candidate.hasBenchmarks
+                ? [...previousPriceFieldFactorKeys, ...previousPriceFieldBenchmarkKeys]
+                : previousPriceFieldFactorKeys;
+            const defaults = {
+                ...candidate.parameters,
+                ...Object.fromEntries(factorKeys.map((key) => [key, candidate.enabledFactors.includes(key)])),
+            };
+            const keys = Object.keys(defaults);
+            if (Object.keys(remembered).length !== keys.length) return false;
+            return keys.every((key) => {
+                if (!Object.prototype.hasOwnProperty.call(remembered, key)) return false;
+                const expected = defaults[key];
+                const actual = String(remembered[key] ?? "").trim();
+                if (typeof expected === "boolean") return actual === (expected ? "1" : "0");
+                if (typeof expected === "number") {
+                    const numberText = actual.replaceAll(",", "");
+                    return numberText !== "" && Number.isFinite(Number(numberText)) && Number(numberText) === expected;
+                }
+                return actual === expected;
+            });
         });
         if (!matches) return memory;
         const nextMemory = {...memory};

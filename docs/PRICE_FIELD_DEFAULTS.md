@@ -1,6 +1,6 @@
 # Price Field startup defaults
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.1.0`
 Last reviewed: `27 Sep 2026`
 
 ## Current profile contract
@@ -21,11 +21,16 @@ The source owners are:
   strength 0.01. Its cycle trading rules retain their existing defaults.
 - `strategies/algorithms/strategy_lstm_price_field.py`: LSTM factors,
   252-session training window, 21-session chip window, lookback 4, hidden size 23,
-  8 epochs, learning rate 0.03, seed 42, and CPU execution.
+  8 epochs, learning rate 0.03, seed 42, and Auto execution.
 - `strategies/price_field/neural/registry.py`: eight neural profiles, including
   Market context factors, seeds, and CPU execution. The
   [neural research contract](NEURAL_PRICE_FIELD_RESEARCH.md) lists their numeric
   parameters and enabled factors.
+
+LSTM Auto retains the NumPy CPU path for the current tiny per-origin workload,
+without importing or probing unused accelerators. Explicit CPU/GPU choices are
+preserved. The frozen study used CPU; changing its default selector to Auto does
+not change the fitted NumPy algorithm.
 
 All 11 retain the 1% presentation-only cell threshold. Existing transaction
 thresholds remain unchanged. Enabled provider factors still require historical,
@@ -35,11 +40,11 @@ with current snapshots.
 | Source owner | Code version |
 | --- | --- |
 | Bayesian strategy | `v1.35.0` |
-| LSTM strategy | `v1.13.0` |
+| LSTM strategy | `v1.14.0` |
 | Cycle strategy | `v1.1.0` |
 | Neural startup registry | `v1.2.0` |
 | Shared neural strategy adapter | `v1.6.0` |
-| Browser strategy controls | `v1.2.0` |
+| Browser strategy controls | `v1.3.0` |
 
 ## Research provenance and limits
 
@@ -70,8 +75,8 @@ establish superiority for other tickers or periods.
 
 A new Backtest form and CLI call use the current source defaults. On form load
 or strategy switch, a browser record that exactly matches the complete previous
-startup profile is retired automatically, allowing the new source defaults to
-apply. The historical snapshot in `app/strategy-controls.js` exists only to
+startup profile (including the prior LSTM NVDA CPU profile) is retired
+automatically, allowing the new source defaults to apply. The historical snapshot in `app/strategy-controls.js` exists only to
 recognize these untouched defaults; it is not another runtime default registry.
 One changed value, partial records, unknown keys, and malformed records preserve
 the entire browser profile. Explicit URL parameters and saved training cases

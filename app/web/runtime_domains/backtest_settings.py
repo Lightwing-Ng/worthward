@@ -1,9 +1,11 @@
 """Build the backtest settings web-runtime context.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 
 def build_backtest_settings_context(context: dict[str, object]) -> dict[str, object]:
@@ -206,6 +208,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
     validate_ticker_or_raise = context["validate_ticker_or_raise"]
 
     def _run_backtest_from_request():
+        training_started_at = datetime.now(timezone.utc).isoformat()
         backtest_execution_mode = load_backtest_execution_mode()
         strategy_options = list_enabled_strategies()
         is_grid_workspace = (
@@ -522,6 +525,33 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
             include_cash_dividends=not price_only,
             stop_loss_enabled=stop_loss_enabled,
         )
+        if selected_strategy_id == "lstm-price-field" and requested_interval == "1d":
+            try:
+                context["lstm_training_manager"].record_completed_backtest(
+                    validated_tickers[0],
+                    period,
+                    selected_strategy_params,
+                    interval=requested_interval,
+                    configuration={
+                        "range": range_mode,
+                        "from": exact_start,
+                        "to": exact_end,
+                        "initial_capital": backtest_initial_capital,
+                        "price_only": price_only,
+                        "reinvest_dividends": include_dividends,
+                        "stop_loss": stop_loss_enabled,
+                        "show_trade_details": parse_bool_flag(
+                            "show_trade_details",
+                            default=bool(defaults.get("backtest_show_trade_details", False)),
+                        ),
+                    },
+                    presentation=getattr(signal_result, "presentation", None),
+                    started_at=training_started_at,
+                    replayed_run_id=request.args.get("lstm_training_run"),
+                )
+            except (OSError, ValueError, RuntimeError):
+                # History persistence must not discard a successfully computed forecast.
+                context["LOGGER"].exception("Unable to record completed Backtest training")
         interval_notice = _strategy_interval_notice(strategy, requested_interval)
         if interval_notice:
             backtest_result["strategy_interval_notice"] = interval_notice

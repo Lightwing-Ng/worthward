@@ -5,7 +5,9 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.13.0
+Code version: v1.14.0
+- Changed: Default Compute backend to Auto while preserving the tiny-model
+  NumPy CPU execution policy without optional accelerator startup probes.
 - Changed: Startup defaults use the frozen NVDA 1d GA
   validation selection and its CPU execution semantics.
 - Changed: Price Field strategies now declare the shared Price Field catalog
@@ -381,7 +383,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 kind="choice",
                 group="training",
                 ui_apply_mode="training",
-                default="CPU",
+                default="Auto",
                 options=("Auto", "CPU", "GPU", "Neural Engine"),
                 help_text=(
                     "Auto uses NumPy CPU for origin-local LSTM training on unified "

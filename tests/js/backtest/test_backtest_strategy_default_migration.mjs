@@ -1,4 +1,4 @@
-/* Previous-default migration contracts. Code version: v1.0.0 */
+/* Previous-default migration contracts. Code version: v1.1.0 */
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
@@ -55,6 +55,25 @@ const previousLstm = {
     "use_volume_at_price": "1",
     "use_volume_change": "0"
 };
+const previousNvdaLstm = {
+    ...previousLstm,
+    chip_window: '21',
+    lstm_epochs: '8',
+    lstm_learning_rate: '0.03',
+    lstm_lookback: '4',
+    training_window: '252',
+    use_close_location: '0',
+    use_illiquidity_20d: '0',
+    use_intraday_return: '1',
+    use_momentum_20d: '1',
+    use_momentum_5d: '0',
+    use_option_call_volume: '1',
+    use_option_total_volume: '1',
+    use_return_1d: '1',
+    use_turnover: '1',
+    use_volatility_20d: '0',
+    use_volume_change: '1',
+};
 
 test('untouched old defaults adopt current source defaults without changing other memories', () => {
     const memory = {'lstm-price-field': {...previousLstm}, macd: {fast: '9'}};
@@ -85,4 +104,28 @@ test('partial, unknown, malformed, and extended records remain untouched', () =>
 test('equivalent formatted numeric defaults still migrate', () => {
     const memory = {'lstm-price-field': {...previousLstm, training_window: '466.00', lstm_seed: '00042'}};
     assert.equal(migrate(memory, 'lstm-price-field')['lstm-price-field'], undefined);
+});
+
+test('untouched NVDA CPU defaults adopt the current Auto profile', () => {
+    const memory = {'lstm-price-field': {...previousNvdaLstm}, macd: {fast: '9'}};
+    const next = migrate(memory, 'lstm-price-field');
+    assert.equal(next['lstm-price-field'], undefined);
+    assert.equal(next.macd, memory.macd);
+    assert.deepEqual(memory['lstm-price-field'], previousNvdaLstm);
+});
+
+test('customized and partial NVDA CPU profiles retain their selected backend', () => {
+    const partial = {...previousNvdaLstm};
+    delete partial.use_volume;
+    for (const remembered of [
+        {...previousNvdaLstm, lstm_epochs: '7'},
+        {...previousNvdaLstm, use_volume: '1'},
+        {...previousNvdaLstm, compute_backend: 'GPU'},
+        {...previousNvdaLstm, compute_backend: 'Auto'},
+        {...previousNvdaLstm, extra: '1'},
+        partial,
+    ]) {
+        const memory = {'lstm-price-field': remembered};
+        assert.equal(migrate(memory, 'lstm-price-field'), memory);
+    }
 });

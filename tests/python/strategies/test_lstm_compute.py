@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.6.1."""
+"""LSTM compute backend and causality tests. Code version: v1.6.2."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from strategies.price_field.lstm_compute import (
     _NumpyLSTM,
     _initialize_torch_lstm_biases,
     _load_optional_module,
+    backend_presentation,
     detect_lstm_capabilities,
     lagged_close_return,
     probe_neural_engine,
@@ -221,11 +222,29 @@ class LstmComputeTests(unittest.TestCase):
                 self.assertEqual(backend.fallback_reason, reason)
 
     def test_auto_reports_the_resolved_backend_not_the_request(self) -> None:
-        backend = resolve_lstm_backend("Auto")
+        with (
+            patch("strategies.price_field.lstm_compute.detect_lstm_capabilities") as detect,
+            patch("strategies.price_field.lstm_compute._load_optional_module") as load,
+        ):
+            backend = resolve_lstm_backend("Auto")
         self.assertEqual(backend.requested, "Auto")
         self.assertEqual(backend.resolved, "cpu")
         self.assertEqual(backend.engine, "numpy")
         self.assertIsNone(backend.torch_module)
+        self.assertEqual(
+            backend.capabilities["probe_skipped"],
+            "auto-origin-local-cpu-policy",
+        )
+        self.assertIsNone(backend.capabilities["torch_installed"])
+        self.assertIsNone(backend.fallback_reason)
+        presentation = backend_presentation(backend)
+        self.assertIsNone(presentation["torch_installed"])
+        self.assertEqual(
+            presentation["probe"]["skipped"],
+            "auto-origin-local-cpu-policy",
+        )
+        detect.assert_not_called()
+        load.assert_not_called()
 
     def test_gpu_uses_confirmed_mps_and_reports_that_device(self) -> None:
         capabilities = detect_lstm_capabilities()

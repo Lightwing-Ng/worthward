@@ -1,5 +1,18 @@
 # Known issues and operating constraints
 
+LSTM loading and history, 27 Sep 2026: Compute backend defaults to Auto and its
+compact trigger uses ordinary Frosted Glass without a chevron. Auto retains
+NumPy CPU for the current tiny origin-local workload while skipping irrelevant
+accelerator imports/probes. On the local Apple M1 Max, an isolated default-size
+origin benchmark measured warm medians of 11.88 ms on NumPy CPU and 34.37 ms on
+MPS across five runs; this is host/workload evidence, not a universal best-device
+claim. Explicit GPU remains available. Successful daily Backtest loading records
+its actual inline training and measured diagnostic in Training history; duplicate
+reloads reuse the same data/configuration identity, and archived records stay
+archived. Failed or zero-origin results do not produce completed records. Manual
+training retains its separate optimizer budget. No broker or market records are
+created by this history metadata path.
+
 Price Field default promotion, 27 Sep 2026: all 11 models now use their frozen
 NVDA 1d validation-selected factors and matching training parameters. Paired
 holdout completed for all 11; four selections regressed versus their old defaults.
@@ -623,7 +636,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.267.0`
+Documentation version: `v1.268.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

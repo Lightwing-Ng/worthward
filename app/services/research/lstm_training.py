@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.9.1
+Code version: v0.10.0
 
 The browser action trains exactly the submitted form state so the completed
 configuration can be observed in LSTM Price Field. Genetic search remains an
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -23,6 +24,7 @@ import secrets
 import signal
 import subprocess
 import sys
+import tempfile
 from typing import Any, Mapping
 
 from app.core.config import PERIOD_OFFSETS
@@ -194,6 +196,148 @@ class LstmTrainingManager:
                 "active": True,
             }
 
+    def record_completed_backtest(
+        self,
+        ticker: str,
+        period: str,
+        params: object,
+        *,
+        interval: str,
+        configuration: object,
+        presentation: object,
+        started_at: str | None = None,
+        replayed_run_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Publish actual inline LSTM training once per data/configuration identity."""
+        if not isinstance(presentation, Mapping):
+            return None
+        device = presentation.get("device")
+        fingerprint = str(presentation.get("fingerprint") or "")
+        data_keys = presentation.get("data_keys")
+        if (
+            presentation.get("schema") != "lstm-price-field/v1"
+            or not isinstance(device, Mapping)
+            or type(device.get("origins_trained")) is not int
+            or device["origins_trained"] <= 0
+            or not re.fullmatch(r"[a-f0-9]{64}", fingerprint)
+            or not isinstance(data_keys, list)
+            or not data_keys
+        ):
+            return None
+        try:
+            dates = [datetime.fromisoformat(value).date().isoformat() for value in data_keys]
+        except (TypeError, ValueError):
+            return None
+        if dates != sorted(set(dates)):
+            return None
+        normalized_ticker = self._normalize_ticker(ticker)
+        normalized_period = self._normalize_period(period)
+        normalized_interval = ga_runner.validate_training_interval(interval)
+        required_params = {
+            definition.key
+            for definition in ga_runner.LSTMPriceFieldStrategy().get_parameter_definitions()
+        }
+        if not isinstance(params, dict) or not required_params.issubset(params):
+            raise ValueError("Completed Backtest training requires its complete parameter configuration.")
+        selected_params = ga_runner.validate_selected_params(params)
+        settings = ga_runner.validate_training_configuration(configuration)
+        exact_settings = ga_runner.validate_training_configuration({
+            **settings, "range": "exact", "from": dates[0], "to": dates[-1],
+        })
+        spec = {
+            "schema": 1,
+            "source": "backtest",
+            "ticker": normalized_ticker,
+            "period": normalized_period,
+            "interval": normalized_interval,
+            "selected_params": selected_params,
+            "configuration": exact_settings,
+            "objective": EXACT_TRAINING_OBJECTIVE,
+            "model_version": presentation.get("model_version"),
+            "snapshot_fingerprint": fingerprint,
+        }
+        # Timing and backend probe details must not produce another row on refresh.
+        digest = hashlib.sha256(json.dumps(
+            spec, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")).hexdigest()[:24]
+        run_id = f"lstm-ga-{digest}"
+        completed_at = datetime.now(timezone.utc).isoformat()
+        if started_at is not None:
+            started = datetime.fromisoformat(started_at)
+            if started.tzinfo is None:
+                raise ValueError("Backtest training start time must include a time zone.")
+            started_at = started.astimezone(timezone.utc).isoformat()
+        diagnostics = presentation.get("diagnostics")
+        best = {
+            "params": selected_params,
+            "device": dict(device),
+            "full": dict(diagnostics) if isinstance(diagnostics, Mapping) else {},
+        }
+        artifacts = {
+            "request.json": spec,
+            "snapshot.json": {
+                "ticker": normalized_ticker, "interval": normalized_interval,
+                "start": dates[0], "end": dates[-1], "fingerprint": fingerprint,
+            },
+            "status.json": {
+                "status": "completed", "phase": "completed",
+                "started_at": started_at or completed_at,
+                "updated_at": completed_at, "completed_at": completed_at,
+                "evaluated": 1,
+            },
+            "result.json": {
+                "status": "completed", "completed_at": completed_at,
+                "evaluated": 1, "best": best,
+            },
+        }
+        workspace_root = self._workspace_root()
+        if workspace_root.is_symlink():
+            raise ValueError("Invalid LSTM training workspace.")
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        with compute_workspace_lock(workspace_root / "workspace.lock"):
+            if isinstance(replayed_run_id, str) and RUN_ID_PATTERN.fullmatch(replayed_run_id):
+                replayed_state = workspace_root / replayed_run_id
+                if (
+                    replayed_state.is_dir()
+                    and not replayed_state.is_symlink()
+                    and replayed_state.resolve().parent == workspace_root.resolve()
+                ):
+                    try:
+                        replayed = self._read_run(replayed_state)
+                    except (OSError, TypeError, ValueError):
+                        replayed = {}
+                    expected_configuration = {
+                        **exact_settings,
+                        "ticker": normalized_ticker,
+                        "period": normalized_period,
+                        "interval": normalized_interval,
+                        "strategy": "lstm-price-field",
+                        "params": selected_params,
+                    }
+                    if (
+                        replayed.get("status") == "completed"
+                        and replayed.get("configuration") == expected_configuration
+                    ):
+                        return replayed
+            state = workspace_root / run_id
+            archived = workspace_root / ".deleted"
+            if archived.is_symlink() or state.is_symlink():
+                raise ValueError("Invalid LSTM training history path.")
+            # A user's deletion remains authoritative across reloads and restarts.
+            if (archived / run_id).exists() or (archived / run_id).is_symlink():
+                return None
+            if state.exists():
+                if not state.is_dir():
+                    raise ValueError("Invalid LSTM training history path.")
+                return self._read_run(state)
+            # Readers see either no entry or all completed evidence together.
+            with tempfile.TemporaryDirectory(prefix=".lstm-backtest-", dir=workspace_root) as temporary:
+                staging = Path(temporary)
+                for name, payload in artifacts.items():
+                    self._write_json(staging / name, payload)
+                staging.rename(state)
+            return self._read_run(state)
+
     def stop(self, run_id: str) -> dict[str, Any]:
         paths = self._paths_for_run_id(run_id)
         run = self._read_run(paths.state)
@@ -343,7 +487,12 @@ class LstmTrainingManager:
         configuration, configuration_error = self._saved_configuration(request, launch, snapshot, best, effective_status, interval)
         selected_params = request.get("selected_params", launch.get("selected_params"))
         base_params = request.get("base_params", launch.get("base_params"))
-        training_mode = "exact" if isinstance(selected_params, Mapping) else "genetic"
+        source = str(request.get("source") or "")
+        training_mode = (
+            "backtest" if source == "backtest"
+            else "exact" if isinstance(selected_params, Mapping)
+            else "genetic"
+        )
         objective = str(
             request.get("objective")
             or launch.get("objective")
@@ -363,7 +512,12 @@ class LstmTrainingManager:
         accuracy_label = "Holdout direction accuracy"
         if best:
             holdout = best.get("holdout")
-            if isinstance(holdout, Mapping) and holdout.get("direction_scored_points", 0) > 0:
+            full = best.get("full")
+            if source == "backtest" and isinstance(full, Mapping):
+                accuracy_label = "Backtest direction accuracy"
+                if full.get("direction_scored_points", 0) > 0:
+                    accuracy = full.get("direction_hit_rate_pct")
+            elif isinstance(holdout, Mapping) and holdout.get("direction_scored_points", 0) > 0:
                 accuracy = holdout.get("direction_hit_rate_pct")
             elif best.get("holdout_median_hit_rate_pct") is not None:
                 accuracy = best["holdout_median_hit_rate_pct"]
@@ -381,6 +535,7 @@ class LstmTrainingManager:
             "configuration_error": configuration_error,
             "requested_range": {"from": snapshot.get("start"), "to": snapshot.get("end")},
             "training_mode": training_mode,
+            "source": source or "training",
             "objective": objective,
             "objective_label": objective_label,
             "crps_skill_pct": crps_skill,

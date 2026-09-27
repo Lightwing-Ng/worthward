@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.129.0`
+Documentation version: `v1.130.0`
 
 ## Shared loading indicator
 
@@ -311,8 +311,7 @@ Web-selected exact training allocates at least 180 seconds of completed
 optimizer work across eligible causal origins. At each origin, the same weights
 and Adam state continue beyond the requested epoch floor until that origin's
 budget is met. GPU synchronization is included; loading, progress callbacks, and
-artificial waiting are excluded. Auto retains NumPy CPU while recording any
-confirmed accelerator capability; an explicit GPU request requires PyTorch MPS or CUDA execution and
+artificial waiting are excluded. Auto retains NumPy CPU and skips optional accelerator imports and probes; an explicit GPU request requires PyTorch MPS or CUDA execution and
 fails closed on accelerator failure. Explicit CPU remains supported.
 The quick interactive Backtest backend policy is unchanged. Results report actual
 optimizer steps, compute seconds, engine, and precision. Longer training does not
@@ -327,6 +326,16 @@ crossover and mutation vary eligible hyperparameters and available factors. All
 20 horizons and every eligible forecast pair must be valid in each fold;
 holdout data remains physically absent from model inputs until selection is
 frozen. The browser start action never selects this path.
+
+A successful daily LSTM Backtest load records the actual completed inline training
+in the same compute-job history. This record contains its actual data fingerprint,
+parameters, exact visible dates, device timings, and backtest direction diagnostic;
+it is labeled as Backtest training, not a holdout or the manual 180-second job.
+No extra worker is launched. Identical data/configuration is deduplicated under the
+workspace lock, including reloads and archived records. Replaying a completed
+saved case reuses that record only when its full exact configuration matches;
+invalid or mismatched identifiers do not suppress genuine recording. Failed or
+zero-origin results create no completed entry. Only compute-job metadata is persisted.
 
 Training history is a plain heading followed by button rows, never nested native
 disclosures. One row may show monospace details. Exact-training rows use their
@@ -992,7 +1001,7 @@ of silently substituting Close.
 
 The Longbridge factor provider is read-only and process-local. Aware provider timestamps and aware request boundaries are converted through the symbol market's timezone before they become naive local-trading-day midnights; relative provider windows also end on the selected ticker's market-local date rather than a global New York date. This keeps US, HK, SH, SZ, and SG daily OHLCV, P/E, Dynamic P/E, and option observations on the same causal date axis instead of shifting Asian midnight bars to the prior UTC date. Its factor bundles use a 32-entry, expiry-pruned LRU cache; concurrent requests for the same key share one in-flight CLI load, and cached status mappings are immutable. A strategy that declares a non-default market-data source must return a non-empty dataset list with `Date`, `Close`, and a matching `market_data_source` attribute. Missing, malformed, or source-mismatched strategy data fails closed and never falls through to the generic history provider.
 
-`LSTMPriceFieldStrategy` reuses the Bayesian Longbridge factor pipeline, the executable `Open[t+1] -> Open[t+2]` target, `next_open` fills, and the shared 20-column probability-grid payload. Unavailable Longbridge factor columns are omitted rather than forcing every origin to fail closed, so the causal lag-return LSTM still emits a field when P/E or options history is missing. It trains a tiny causal LSTM at each origin on sequences that end at that origin and whose targets are already observable (`j <= origin - 2`). The NumPy LSTM uses the standard positive initialization bias on the forget-gate slice, matching the gate order used by its forward and backward passes rather than biasing the input gate. The one-step Gaussian mean and scale are converted to the same AR(1) multi-step field the renderer already understands. LSTM-only hyperparameters are namespaced (`lstm_lookback`, `lstm_hidden_size`, `lstm_epochs`, `lstm_learning_rate`, `lstm_seed`) so they cannot enter Bayesian cache keys. Compute backend `Auto` uses NumPy CPU for origin-local LSTM training. An explicit `GPU` request uses a confirmed Apple MPS or CUDA device only after a real tensor readback, then falls back to CPU. `Neural Engine` is reported only when Core ML compute-unit execution is confirmed. Torch, MLX, and coremltools are optional and are never imported at module load; a missing package falls back to CPU without crashing Backtest.
+`LSTMPriceFieldStrategy` reuses the Bayesian Longbridge factor pipeline, the executable `Open[t+1] -> Open[t+2]` target, `next_open` fills, and the shared 20-column probability-grid payload. Unavailable Longbridge factor columns are omitted rather than forcing every origin to fail closed, so the causal lag-return LSTM still emits a field when P/E or options history is missing. It trains a tiny causal LSTM at each origin on sequences that end at that origin and whose targets are already observable (`j <= origin - 2`). The NumPy LSTM uses the standard positive initialization bias on the forget-gate slice, matching the gate order used by its forward and backward passes rather than biasing the input gate. The one-step Gaussian mean and scale are converted to the same AR(1) multi-step field the renderer already understands. LSTM-only hyperparameters are namespaced (`lstm_lookback`, `lstm_hidden_size`, `lstm_epochs`, `lstm_learning_rate`, `lstm_seed`) so they cannot enter Bayesian cache keys. Compute backend defaults to `Auto`, which uses NumPy CPU for the tiny origin-local LSTM and skips unused accelerator imports and probes. Unprobed Torch availability is unknown, not absent. An explicit `GPU` request uses a confirmed Apple MPS or CUDA device only after a real tensor readback, then falls back to CPU. `Neural Engine` is reported only when Core ML compute-unit execution is confirmed. Torch, MLX, and coremltools are optional and are never imported at module load; a missing package falls back to CPU without crashing Backtest.
 
 Signal strategies may return a JSON-safe `StrategySignalResult.presentation`
 dictionary. The backtest engine validates finite numbers and requires any

@@ -1,8 +1,9 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.5."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.10.0."""
 
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from copy import deepcopy
 import json
 from pathlib import Path
 from threading import Event
@@ -738,3 +739,225 @@ def test_lstm_parameter_labels_use_sentence_case():
     assert labels["lstm_learning_rate"] == "LSTM learning rate"
     assert labels["use_broker_holding"] == "Broker holding"
     assert labels["use_option_total_open_interest"] == "Total OI"
+
+
+@pytest.fixture(scope="module")
+def completed_inline_training():
+    """Provide real CPU training evidence without loading a market-data provider."""
+    strategy = ga_runner.LSTMPriceFieldStrategy()
+    frame = ohlc_frame_for_dates(
+        "QQQ", pd.bdate_range("2025-01-02", periods=40).strftime("%Y-%m-%d").tolist()
+    )
+    params = strategy.normalize_params({
+        **{
+            definition.key: False
+            for definition in strategy.get_parameter_definitions()
+            if definition.group == "factors"
+        },
+        "compute_backend": "CPU", "training_window": 30,
+        "lstm_lookback": 4, "lstm_hidden_size": 4, "lstm_epochs": 1,
+    })
+    result = strategy.compute_signals(frame, params)
+    assert result.presentation["device"]["origins_trained"] > 0
+    return {
+        "ticker": "QQQ", "period": "1y", "params": params,
+        "interval": "1d", "configuration": {
+            "range": "period", "initial_capital": 25000,
+            "stop_loss": False, "reinvest_dividends": True,
+        },
+        "presentation": result.presentation,
+        "started_at": "2026-09-27T00:00:00+00:00",
+    }
+
+
+def test_completed_backtest_records_actual_training_with_honest_score(tmp_path, completed_inline_training):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    run = manager.record_completed_backtest(**completed_inline_training)
+
+    assert run["status"] == "completed"
+    assert run["source"] == run["training_mode"] == "backtest"
+    assert run["active"] is False
+    assert run["pid"] is None
+    assert run["duration_seconds"] is None
+    assert run["device"] == completed_inline_training["presentation"]["device"]
+    diagnostics = completed_inline_training["presentation"]["diagnostics"]
+    assert run["accuracy_pct"] == diagnostics["direction_hit_rate_pct"]
+    assert run["accuracy_label"] == "Backtest direction accuracy"
+    assert run["configuration"]["range"] == "exact"
+    assert run["configuration"]["from"] == "2025-01-02"
+    assert run["configuration"]["to"] == "2025-02-26"
+    assert run["configuration"]["initial_capital"] == 25000
+    assert run["configuration"]["stop_loss"] is False
+    assert run["configuration"]["reinvest_dividends"] is True
+    assert run["configuration"]["params"] == completed_inline_training["params"]
+    assert run["result_available"] is True
+    paths = manager._paths_for_run_id(run["id"])
+    saved = json.loads(paths.result.read_text())
+    assert saved["best"]["full"] == diagnostics
+    assert "holdout" not in saved["best"]
+    assert "minimum_training_seconds" not in json.loads(paths.request.read_text())
+    assert manager.list_runs()[0]["identifier"] == "260927(01)"
+
+
+def test_completed_backtest_deduplicates_refreshes_restarts_and_concurrent_requests(tmp_path, completed_inline_training):
+    first = lstm_training.LstmTrainingManager(tmp_path).record_completed_backtest(**completed_inline_training)
+    refreshed = deepcopy(completed_inline_training)
+    refreshed["started_at"] = "2026-09-27T00:01:00+00:00"
+    refreshed["presentation"]["device"]["train_ms"] += 3
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(
+            lambda _: lstm_training.LstmTrainingManager(tmp_path).record_completed_backtest(**refreshed),
+            range(4),
+        ))
+    assert all(run == first for run in results)
+    assert len(lstm_training.LstmTrainingManager(tmp_path).list_runs()) == 1
+
+
+@pytest.mark.parametrize("source", ["backtest", "manual"])
+def test_completed_backtest_replay_retains_only_the_matching_saved_run(tmp_path, completed_inline_training, source):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    if source == "backtest":
+        first = manager.record_completed_backtest(**completed_inline_training)
+    else:
+        paths = _completed_case(manager, tmp_path)
+        request = json.loads(paths.request.read_text())
+        request.update({
+            "ticker": "QQQ", "period": "1y", "interval": "1d",
+            "selected_params": completed_inline_training["params"],
+            "configuration": completed_inline_training["configuration"],
+        })
+        _write_json(paths.request, request)
+        _write_json(paths.snapshot, {
+            "ticker": "QQQ", "start": "2025-01-02", "end": "2025-02-26", "interval": "1d",
+        })
+        result = json.loads(paths.result.read_text())
+        result["best"]["params"] = completed_inline_training["params"]
+        _write_json(paths.result, result)
+        first = manager._read_run(paths.state)
+        assert first["training_mode"] == "exact"
+
+    payload = deepcopy(completed_inline_training)
+    # Applying an exact saved window may change the provider fingerprint.
+    payload["presentation"]["fingerprint"] = "c" * 64
+    payload["replayed_run_id"] = first["id"]
+    replayed = manager.record_completed_backtest(**payload)
+    assert replayed == first
+    assert len(manager.list_runs()) == 1
+
+
+@pytest.mark.parametrize("replayed_run_id", [
+    None, "", "../../invalid", "lstm-ga-" + "f" * 24,
+])
+def test_completed_backtest_invalid_replay_identity_does_not_hide_training(tmp_path, completed_inline_training, replayed_run_id):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    run = manager.record_completed_backtest(
+        **completed_inline_training, replayed_run_id=replayed_run_id,
+    )
+    assert run["source"] == "backtest"
+    assert run["status"] == "completed"
+    assert len(manager.list_runs()) == 1
+
+
+@pytest.mark.parametrize("change", ["configuration", "status", "symlink"])
+def test_completed_backtest_nonmatching_replay_records_the_actual_result(tmp_path, completed_inline_training, change):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    first = manager.record_completed_backtest(**completed_inline_training)
+    payload = deepcopy(completed_inline_training)
+    payload["presentation"]["fingerprint"] = "d" * 64
+    payload["replayed_run_id"] = first["id"]
+    if change == "configuration":
+        payload["configuration"]["initial_capital"] = 30000
+    elif change == "status":
+        paths = manager._paths_for_run_id(first["id"])
+        status = json.loads(paths.status.read_text())
+        status["status"] = "failed_closed"
+        _write_json(paths.status, status)
+    else:
+        alias = "lstm-ga-" + "e" * 24
+        (manager._workspace_root() / alias).symlink_to(manager._workspace_root() / first["id"], target_is_directory=True)
+        payload["replayed_run_id"] = alias
+    current = manager.record_completed_backtest(**payload)
+    assert current["id"] != first["id"]
+    assert current["source"] == "backtest"
+    assert current["status"] == "completed"
+    assert len(manager.list_runs()) == 2
+
+
+def test_completed_backtest_malformed_replay_metadata_does_not_discard_training(tmp_path, completed_inline_training):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    first = manager.record_completed_backtest(**completed_inline_training)
+    paths = manager._paths_for_run_id(first["id"])
+    result = json.loads(paths.result.read_text())
+    result["best"]["full"]["direction_scored_points"] = "invalid"
+    _write_json(paths.result, result)
+    payload = deepcopy(completed_inline_training)
+    payload["presentation"]["fingerprint"] = "d" * 64
+    current = manager.record_completed_backtest(**payload, replayed_run_id=first["id"])
+    assert current["id"] != first["id"]
+    assert current["status"] == "completed"
+    assert manager._paths_for_run_id(current["id"]).result.is_file()
+
+
+def test_completed_backtest_distinguishes_data_and_keeps_deleted_run_archived(tmp_path, completed_inline_training):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    first = manager.record_completed_backtest(**completed_inline_training)
+    changed = deepcopy(completed_inline_training)
+    changed["presentation"]["fingerprint"] = "b" * 64
+    second = manager.record_completed_backtest(**changed)
+    assert first["id"] != second["id"]
+    manager.delete(first["id"])
+    assert manager.record_completed_backtest(**completed_inline_training) is None
+    assert [run["id"] for run in manager.list_runs()] == [second["id"]]
+    assert (manager._workspace_root() / ".deleted" / first["id"] / "result.json").is_file()
+
+
+@pytest.mark.parametrize("change", [
+    {"device": {}}, {"device": {"origins_trained": 0}},
+    {"device": {"origins_trained": True}}, {"fingerprint": "missing"},
+    {"schema": "bayesian-price-field/v1"}, {"data_keys": []},
+    {"data_keys": ["invalid"]}, {"data_keys": ["2025-01-03", "2025-01-02"]},
+])
+def test_completed_backtest_never_records_missing_training_evidence(tmp_path, completed_inline_training, change):
+    payload = deepcopy(completed_inline_training)
+    payload["presentation"].update(change)
+    assert lstm_training.LstmTrainingManager(tmp_path).record_completed_backtest(**payload) is None
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_completed_backtest_publishes_all_artifacts_atomically(tmp_path, completed_inline_training, monkeypatch):
+    manager = lstm_training.LstmTrainingManager(tmp_path)
+    write = manager._write_json
+
+    def fail_during_publication(path, payload):
+        assert manager.list_runs() == []
+        if path.name == "result.json":
+            raise OSError("Simulated full isolated disk")
+        write(path, payload)
+
+    monkeypatch.setattr(manager, "_write_json", fail_during_publication)
+    with pytest.raises(OSError, match="isolated disk"):
+        manager.record_completed_backtest(**completed_inline_training)
+    assert manager.list_runs() == []
+    assert [path.name for path in manager._workspace_root().iterdir()] == ["workspace.lock"]
+
+
+def test_completed_backtest_rejects_incomplete_parameters_without_inventing_defaults(tmp_path, completed_inline_training):
+    payload = deepcopy(completed_inline_training)
+    del payload["params"]["compute_backend"]
+    with pytest.raises(ValueError, match="complete parameter configuration"):
+        lstm_training.LstmTrainingManager(tmp_path).record_completed_backtest(**payload)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_completed_backtest_rejects_symlink_workspace_without_external_writes(tmp_path, completed_inline_training):
+    manager = lstm_training.LstmTrainingManager(tmp_path / "compute")
+    external = tmp_path / "protected"
+    external.mkdir()
+    evidence = external / "keep.json"
+    evidence.write_bytes(b"unchanged protected content")
+    manager._workspace_root().parent.mkdir()
+    manager._workspace_root().symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError, match="workspace"):
+        manager.record_completed_backtest(**completed_inline_training)
+    assert evidence.read_bytes() == b"unchanged protected content"
+    assert list(external.iterdir()) == [evidence]

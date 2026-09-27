@@ -1,4 +1,4 @@
-/* Code version: v0.14.1 */
+/* Code version: v0.15.0 */
 (() => {
     const state = window.WORTHWARD_APP || {};
     const POLL_INTERVAL_MS = 5000;
@@ -346,6 +346,9 @@
         details.id = `lstm-run-details-${run.id}`;
         details.hidden = expandedRunId !== run.id;
         appendText(details, "lstm-training-history-meta", `${run.period || "Period unavailable"} · ${run.interval || "Interval not recorded"}`);
+        if (run.training_mode === "backtest") {
+            appendText(details, "lstm-training-history-meta", "Trained during Backtest loading");
+        }
         if (run.status !== "completed") appendText(details, "lstm-training-status", statusLabel(run.status));
         appendText(details, "lstm-training-history-meta", `Started ${formatDate(run.started_at)}`);
         if (run.completed_at) appendText(details, "lstm-training-history-meta", `Completed ${formatDate(run.completed_at)}`);
@@ -362,6 +365,7 @@
         if (run.device) {
             const device = run.device;
             const compute = [`Backend ${device.resolved}`];
+            if (Number.isFinite(device.origins_trained)) compute.push(`${formatNumber(device.origins_trained)} causal origins`);
             if (Number.isFinite(device.optimizer_steps)) compute.push(`${formatNumber(device.optimizer_steps)} optimizer steps`);
             if (Number.isFinite(device.train_ms) && device.train_ms >= 0) compute.push(`${formatNumber(device.train_ms / 1000, 2)} s training`);
             if (Number.isFinite(device.infer_ms) && device.infer_ms >= 0) compute.push(`${formatNumber(device.infer_ms / 1000, 2)} s inference`);

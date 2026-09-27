@@ -1,4 +1,4 @@
-/* Code version: v3.79.7 */
+/* Code version: v3.79.8 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -378,6 +378,26 @@
 .trade-strategy-param[data-strategy-param-key="compute_backend"] .trade-strategy-trigger-label {
     justify-content: center;
     transform: translateX(var(--compute-backend-trigger-label-offset));
+}
+
+/* LSTM training uses a compact, arrow-free standard Frosted Glass trigger. */
+[data-collapse="training"]:has([data-strategy-action-slot="lstm-training"]) [data-strategy-param-key="compute_backend"] .trade-strategy-trigger {
+    padding-inline: var(--sidebar-form-control-padding-inline);
+    background: var(--shared-select-trigger-material);
+    border: var(--shared-select-border) !important;
+    box-shadow: var(--shared-select-shadow);
+    backdrop-filter: var(--shared-select-blur);
+    -webkit-backdrop-filter: var(--shared-select-blur);
+}
+[data-collapse="training"]:has([data-strategy-action-slot="lstm-training"]) [data-strategy-param-key="compute_backend"] .trade-strategy-trigger:is(:hover, :focus, :focus-visible) {
+    background: var(--shared-select-trigger-material-hover);
+    box-shadow: var(--shared-select-shadow-hover);
+}
+[data-collapse="training"]:has([data-strategy-action-slot="lstm-training"]) [data-strategy-param-key="compute_backend"] .trade-strategy-trigger::after {
+    content: none;
+}
+[data-collapse="training"]:has([data-strategy-action-slot="lstm-training"]) [data-strategy-param-key="compute_backend"] .trade-strategy-trigger-label {
+    transform: none;
 }
 .trade-sidebar-card {
     padding: 12px 12px 10px;

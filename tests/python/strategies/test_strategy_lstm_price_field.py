@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.6.3."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.6.4."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
                 "lstm_learning_rate": 0.03,
                 "lstm_seed": 42,
                 "entry_probability": 60.0,
-                "compute_backend": "CPU",
+                "compute_backend": "Auto",
             },
         )
         self.assertEqual(

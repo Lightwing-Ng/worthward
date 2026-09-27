@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.23.1
+Code version: v0.23.2
 """
 
 from __future__ import annotations
@@ -250,6 +250,54 @@ class BacktestPageTests(unittest.TestCase):
         self.assertIn("LSTM Price Field", html)
         self.assertLess(html.index('id="backtest_history_metrics"'), html.index('id="backtest_history_probability"'))
         self.assertLess(html.index('id="backtest_history_probability"'), html.index('id="backtest_history_transactions"'))
+
+    def test_lstm_load_records_the_completed_result_with_applied_settings(self) -> None:
+        strategy = FakeStrategy()
+        strategy.backtest_cacheable = False
+        result = StrategySignalResult(
+            frame=market_frame("QQQ"),
+            buy_signal_column="buy_signal",
+            sell_signal_column="sell_signal",
+            presentation={"schema": "lstm-price-field/v1", "fingerprint": "actual-result"},
+        )
+        strategy.compute_signals = Mock(return_value=result)
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.instantiate_strategy", return_value=strategy),
+            patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result()),
+            patch("app.web.runtime.record_strategy_usage"),
+            patch("app.services.research.lstm_training.LstmTrainingManager.record_completed_backtest") as record,
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field"
+                "&interval=1d&capital=25000&price_only=1&stop_loss=0"
+            )
+        self.assertEqual(response.status_code, 200)
+        record.assert_called_once()
+        self.assertIs(record.call_args.kwargs["presentation"], result.presentation)
+        self.assertEqual(record.call_args.args[0], "QQQ")
+        self.assertEqual(record.call_args.kwargs["interval"], "1d")
+        config = record.call_args.kwargs["configuration"]
+        self.assertEqual(config["initial_capital"], 25000)
+        self.assertTrue(config["price_only"])
+        self.assertFalse(config["stop_loss"])
+
+    def test_failed_lstm_backtest_never_records_a_completed_training(self) -> None:
+        strategy = FakeStrategy()
+        strategy.backtest_cacheable = False
+        with (
+            patch("app.web.runtime.fetch_history", return_value=market_frame("QQQ")),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.ensure_latest_backtest_caches", return_value={}),
+            patch("app.web.runtime.instantiate_strategy", return_value=strategy),
+            patch("app.web.runtime.run_single_ticker_backtest", side_effect=ValueError("Incomplete forecast")),
+            patch("app.web.runtime.record_strategy_usage"),
+            patch("app.services.research.lstm_training.LstmTrainingManager.record_completed_backtest") as record,
+        ):
+            create_app().test_client().get("/workspaces/backtest?ticker=QQQ&strategy=lstm-price-field&interval=1d")
+        record.assert_not_called()
 
     def test_lstm_parameter_api_exposes_namespaced_model_controls(self) -> None:
         client = create_app().test_client()

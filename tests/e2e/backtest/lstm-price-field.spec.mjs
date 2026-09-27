@@ -1,6 +1,11 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.12 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.13 */
+import {readFileSync} from 'node:fs';
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
+
+const currentAppVersion = readFileSync(
+    new URL('../../../app/web/static/assets/js/app.js', import.meta.url), 'utf8',
+).match(/Code version:\s*(v[\d.]+)/)[1];
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -269,7 +274,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(desktop.renderer).toBe('probability-grid-v1');
     expect(desktop.script).toContain('backtest-probability-grid-v0.35.0');
     expect(desktop.backtestScript).toContain('backtest-v0.42.0');
-    expect(desktop.appScript).toContain('app-v0.74.10');
+    expect(desktop.appScript).toContain(`app-${currentAppVersion}`);
     expect(desktop.panelTitle).toBe('Price field detail');
     expect(desktop.hasPriceFieldTab).toBe(true);
     expect(desktop.optionCount).toBe('3');

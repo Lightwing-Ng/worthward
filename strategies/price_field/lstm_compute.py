@@ -5,7 +5,7 @@ The guaranteed path is a small NumPy LSTM. Torch MPS/CUDA, MLX, and Core ML /
 Neural Engine are optional and are selected only after a real probe succeeds.
 Missing optional packages never fail module import.
 
-Code version: v1.4.1
+Code version: v1.5.0
 """
 
 from __future__ import annotations
@@ -265,7 +265,9 @@ class TrainingWork:
 def resolve_lstm_backend(requested: str) -> LstmBackend:
     """Select a real backend. Auto never reports an accelerator without a probe."""
     normalized = requested if requested in _BACKEND_CHOICES else "Auto"
-    if normalized == "CPU":
+    if normalized in {"Auto", "CPU"}:
+        # Origin-local tiny models use NumPy directly. Importing and probing
+        # accelerators cannot change this policy and adds startup overhead.
         return LstmBackend(
             requested=normalized,
             capabilities={
@@ -274,7 +276,11 @@ def resolve_lstm_backend(requested: str) -> LstmBackend:
                 "apple_silicon": _apple_silicon(),
                 "numpy": True,
                 "torch_installed": None,
-                "probe_skipped": "cpu-request",
+                "probe_skipped": (
+                    "auto-origin-local-cpu-policy"
+                    if normalized == "Auto"
+                    else "cpu-request"
+                ),
             },
         )
     capabilities = detect_lstm_capabilities()
@@ -317,22 +323,6 @@ def resolve_lstm_backend(requested: str) -> LstmBackend:
         backend.runtime_fallback = False
         return backend
 
-    # Auto: origin-local tiny LSTM training is faster on CPU than GPU kernel
-    # launch, so a confirmed accelerator is recorded rather than selected.
-    notes: list[str] = []
-    if mps.get("confirmed") or cuda.get("confirmed"):
-        notes.append(
-            "a confirmed GPU is available via the GPU backend; Auto keeps "
-            "NumPy CPU for origin-local LSTM training"
-        )
-    mlx = dict(capabilities.get("mlx") or {})
-    if mlx.get("confirmed"):
-        notes.append(
-            "MLX probe succeeded, but LSTM training uses NumPy because no "
-            "MLX training kernel is implemented"
-        )
-    if notes:
-        backend.fallback_reason = "; ".join(notes)
     return backend
 
 
@@ -874,7 +864,7 @@ def backend_presentation(backend: LstmBackend) -> dict[str, Any]:
         "parallel_workers": 1,
         "parallel_strategy": "serial-unified-memory",
         "apple_silicon": bool(capabilities.get("apple_silicon")),
-        "torch_installed": bool(capabilities.get("torch_installed")),
+        "torch_installed": capabilities.get("torch_installed"),
         "mlx_available": bool((capabilities.get("mlx") or {}).get("confirmed")),
         "neural_engine_available": bool(neural.get("available")),
         "neural_engine_confirmed": bool(neural.get("confirmed")),
@@ -887,6 +877,7 @@ def backend_presentation(backend: LstmBackend) -> dict[str, Any]:
         "origins_trained": backend.origins_trained,
         "origins_failed_closed": backend.origins_failed_closed,
         "probe": {
+            "skipped": capabilities.get("probe_skipped"),
             "mps": capabilities.get("mps"),
             "cuda": capabilities.get("cuda"),
             "mlx": capabilities.get("mlx"),
