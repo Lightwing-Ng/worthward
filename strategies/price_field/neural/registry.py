@@ -1,4 +1,4 @@
-"""Immutable architecture identities and bounded research domains. Code version: v1.1.1."""
+"""Immutable architecture identities and bounded research domains. Code version: v1.2.0."""
 
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -15,6 +15,8 @@ class NeuralStartupProfile:
     retrain_interval: int
     weight_decay: float
     dropout: float
+    seed: int
+    compute_backend: str
     enabled_factor_parameters: frozenset[str]
 
 
@@ -35,7 +37,7 @@ class NeuralArchitectureSpec:
 def _startup_profile(
         *, chip_window: int, lookback: int, hidden_size: int, epochs: int,
         learning_rate: float, retrain_interval: int, weight_decay: float,
-        dropout: float, enabled_factors: tuple[str, ...],
+        dropout: float, enabled_factors: tuple[str, ...], seed: int = 42,
 ) -> NeuralStartupProfile:
     return NeuralStartupProfile(
         training_window=252,
@@ -47,63 +49,115 @@ def _startup_profile(
         retrain_interval=retrain_interval,
         weight_decay=weight_decay,
         dropout=dropout,
+        seed=seed,
+        compute_backend="CPU",
         enabled_factor_parameters=frozenset(f"use_{key}" for key in enabled_factors),
     )
 
 
+# Frozen NVDA 1d validation selections, promoted on 27 Sep 2026.
 NEURAL_SPECS = (
     NeuralArchitectureSpec(
         "patchtst", "patchtst-price-field", "PatchTST",
         _startup_profile(
-            chip_window=84, lookback=32, hidden_size=32, epochs=8,
-            learning_rate=0.0003, retrain_interval=20, weight_decay=0.001,
-            dropout=0.0,
-            enabled_factors=("illiquidity_20d", "close_location", "amplitude"),
+            chip_window=84, lookback=24, hidden_size=32, epochs=8,
+            learning_rate=0.0006, retrain_interval=20, weight_decay=0.0001,
+            dropout=0.0, seed=42,
+            enabled_factors=(
+                "benchmark_qqq_return",
+                "benchmark_spy_momentum20",
+                "options",
+                "overnight_gap",
+                "relative_volume_20d",
+                "volatility_20d",
+            ),
         ),
     ),
     NeuralArchitectureSpec(
         "tsmixer", "tsmixer-price-field", "TSMixer",
         _startup_profile(
-            chip_window=63, lookback=16, hidden_size=16, epochs=8,
-            learning_rate=0.0003, retrain_interval=10, weight_decay=0.001,
-            dropout=0.1,
+            chip_window=84, lookback=32, hidden_size=16, epochs=24,
+            learning_rate=0.001, retrain_interval=20, weight_decay=0.0001,
+            dropout=0.2, seed=42,
             enabled_factors=(
-                "illiquidity_20d", "momentum_20d", "relative_volume_20d",
-                "momentum_5d", "close_location", "amplitude",
-                "intraday_return", "overnight_gap", "volume_change",
+                "amplitude",
+                "benchmark_qqq_momentum20",
+                "benchmark_smh_momentum20",
+                "benchmark_spy_momentum20",
+                "benchmark_spy_return",
+                "illiquidity_20d",
+                "intraday_return",
+                "momentum_20d",
+                "momentum_5d",
+                "option_call_volume",
+                "option_put_call_volume_ratio",
+                "options",
+                "pb_ratio",
+                "volatility_20d",
+                "volume",
+                "volume_change",
             ),
         ),
     ),
     NeuralArchitectureSpec(
         "nhits", "nhits-price-field", "N-HiTS",
         _startup_profile(
-            chip_window=21, lookback=32, hidden_size=16, epochs=4,
-            learning_rate=0.0003, retrain_interval=20, weight_decay=0.001,
-            dropout=0.0,
+            chip_window=84, lookback=16, hidden_size=48, epochs=24,
+            learning_rate=0.0006, retrain_interval=20, weight_decay=0.01,
+            dropout=0.0, seed=42,
             enabled_factors=(
-                "momentum_20d", "relative_volume_20d", "momentum_5d",
-                "momentum_60d", "amplitude", "turnover",
+                "benchmark_qqq_return",
+                "benchmark_smh_return",
+                "benchmark_spy_momentum20",
+                "close_location",
+                "option_put_call_open_interest_ratio",
+                "options",
+                "overnight_gap",
+                "pb_ratio",
+                "volume_change",
             ),
         ),
     ),
     NeuralArchitectureSpec(
         "timexer", "timexer-price-field", "TimeXer",
         _startup_profile(
-            chip_window=21, lookback=32, hidden_size=16, epochs=4,
-            learning_rate=0.0003, retrain_interval=10, weight_decay=0.001,
-            dropout=0.1,
-            enabled_factors=("illiquidity_20d", "momentum_5d", "turnover", "volume"),
+            chip_window=84, lookback=48, hidden_size=16, epochs=24,
+            learning_rate=0.0003, retrain_interval=20, weight_decay=0.01,
+            dropout=0.2, seed=42,
+            enabled_factors=(
+                "benchmark_qqq_momentum20",
+                "benchmark_qqq_return",
+                "benchmark_smh_momentum20",
+                "benchmark_smh_return",
+                "benchmark_spy_momentum20",
+                "benchmark_spy_return",
+                "close_location",
+                "dividend_yield",
+                "illiquidity_20d",
+                "option_call_open_interest",
+                "option_call_volume",
+                "option_put_call_open_interest_ratio",
+                "overnight_gap",
+                "pb_ratio",
+                "volume_at_price",
+            ),
         ),
     ),
     NeuralArchitectureSpec(
         "itransformer", "itransformer-price-field", "iTransformer",
         _startup_profile(
-            chip_window=63, lookback=32, hidden_size=16, epochs=8,
-            learning_rate=0.0003, retrain_interval=10, weight_decay=0.001,
-            dropout=0.1,
+            chip_window=84, lookback=24, hidden_size=16, epochs=12,
+            learning_rate=0.003, retrain_interval=20, weight_decay=0.001,
+            dropout=0.1, seed=42,
             enabled_factors=(
-                "momentum_20d", "volatility_20d", "amplitude",
-                "intraday_return", "overnight_gap", "volume_change",
+                "benchmark_smh_momentum20",
+                "benchmark_smh_return",
+                "benchmark_spy_return",
+                "illiquidity_20d",
+                "pb_ratio",
+                "pe_ratio",
+                "relative_volume_20d",
+                "volume_change",
             ),
         ),
         hidden_maximum=32,
@@ -112,13 +166,22 @@ NEURAL_SPECS = (
     NeuralArchitectureSpec(
         "tide", "tide-price-field", "TiDE",
         _startup_profile(
-            chip_window=21, lookback=16, hidden_size=16, epochs=4,
-            learning_rate=0.001, retrain_interval=10, weight_decay=0.01,
-            dropout=0.0,
+            chip_window=21, lookback=16, hidden_size=32, epochs=12,
+            learning_rate=0.001, retrain_interval=20, weight_decay=0.001,
+            dropout=0.0, seed=42,
             enabled_factors=(
-                "illiquidity_20d", "relative_volume_20d", "volatility_20d",
-                "close_location", "amplitude", "intraday_return",
-                "overnight_gap", "turnover",
+                "amplitude",
+                "benchmark_spy_momentum20",
+                "close_location",
+                "dividend_yield",
+                "illiquidity_20d",
+                "momentum_20d",
+                "option_call_volume",
+                "option_put_call_open_interest_ratio",
+                "options",
+                "pb_ratio",
+                "pe_ratio",
+                "volatility_20d",
             ),
         ),
         hidden_maximum=32,
@@ -127,9 +190,24 @@ NEURAL_SPECS = (
     NeuralArchitectureSpec(
         "moderntcn", "moderntcn-price-field", "ModernTCN",
         _startup_profile(
-            chip_window=42, lookback=16, hidden_size=8, epochs=4,
-            learning_rate=0.0006, retrain_interval=10, weight_decay=0.01,
-            dropout=0.0, enabled_factors=("turnover",),
+            chip_window=42, lookback=24, hidden_size=8, epochs=12,
+            learning_rate=0.001, retrain_interval=20, weight_decay=0.01,
+            dropout=0.1, seed=43,
+            enabled_factors=(
+                "amplitude",
+                "benchmark_qqq_momentum20",
+                "benchmark_spy_momentum20",
+                "benchmark_spy_return",
+                "dividend_yield",
+                "illiquidity_20d",
+                "momentum_5d",
+                "option_put_call_open_interest_ratio",
+                "option_put_open_interest",
+                "option_total_volume",
+                "overnight_gap",
+                "turnover",
+                "volatility_20d",
+            ),
         ),
         hidden_maximum=32,
         search_hidden=(8, 16),
@@ -137,11 +215,15 @@ NEURAL_SPECS = (
     NeuralArchitectureSpec(
         "tft", "tft-price-field", "TFT",
         _startup_profile(
-            chip_window=42, lookback=16, hidden_size=8, epochs=4,
-            learning_rate=0.001, retrain_interval=10, weight_decay=0.001,
-            dropout=0.0,
+            chip_window=63, lookback=16, hidden_size=8, epochs=4,
+            learning_rate=0.0003, retrain_interval=10, weight_decay=0.001,
+            dropout=0.2, seed=42,
             enabled_factors=(
-                "momentum_20d", "volatility_20d", "intraday_return", "overnight_gap",
+                "amplitude",
+                "dividend_yield",
+                "option_call_open_interest",
+                "option_total_volume",
+                "volatility_20d",
             ),
         ),
         hidden_maximum=32,

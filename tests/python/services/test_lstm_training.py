@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.4."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.9.5."""
 
 from __future__ import annotations
 
@@ -34,7 +34,10 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
 
 def _completed_case(manager, tmp_path, seed=42, started="2026-09-04T00:00:00Z"):
     paths, spec = _run_paths(manager, tmp_path, seed)
-    params = ga_runner.validate_selected_params({"use_broker_holding": True, "lstm_seed": 17})
+    # A saved customization remains disabled even when the startup profile enables it.
+    params = ga_runner.validate_selected_params({
+        "use_broker_holding": True, "use_turnover": False, "lstm_seed": 17,
+    })
     spec.update({"selected_params": params, "configuration": {
         "initial_capital": 25000, "reinvest_dividends": True, "stop_loss": False,
     }})

@@ -6,9 +6,9 @@ provider. The model predicts the tradable next-open-to-next-open log return and
 exposes a compact, declarative presentation payload for the Backtest
 probability-grid renderer.
 
-Code version: v1.34.3
-- Changed: Startup defaults use the validation-selected AAPL Price Field
-  cohort profile, while the display threshold remains presentation-only.
+Code version: v1.35.0
+- Changed: Startup defaults use the frozen NVDA 1d Price Field GA
+  validation selection, while the display threshold remains presentation-only.
 - Changed: Price Field strategies now declare the shared Price Field catalog
   category used by Backtest and Settings.
 - Changed: Bayesian compute selection is now an internal Auto policy instead
@@ -217,14 +217,24 @@ _BAYESIAN_FINGERPRINT_PARAMETER_KEYS = (
 _BayesianFactorDefinition = PriceFieldFactorDefinition
 _BAYESIAN_FACTOR_DEFINITIONS = PRICE_FIELD_FACTOR_DEFINITIONS
 
-# Selected default profile from the AAPL Bayesian Price Field GA cohort. These
+# Frozen default profile from the NVDA 1d Bayesian Price Field GA selection. These
 # factors are enabled only when their historical observations are available
 # and pass the model's causal factor-selection gate.
 _BAYESIAN_DEFAULT_ON_FACTOR_KEYS = frozenset({
+    "use_amplitude",
     "use_close_location",
-    "use_intraday_return",
-    "use_volume_change",
+    "use_illiquidity_20d",
+    "use_momentum_20d",
+    "use_option_call_volume",
+    "use_option_put_call_volume_ratio",
+    "use_option_put_open_interest",
+    "use_option_total_volume",
+    "use_pe_ratio",
+    "use_relative_volume_20d",
+    "use_return_1d",
+    "use_volatility_20d",
     "use_volume_at_price",
+    "use_volume_change",
 })
 
 
@@ -1084,6 +1094,11 @@ def _frame_fingerprint(
 
 
 class BayesianPriceFieldStrategy(BaseStrategy):
+    _default_factor_keys = _BAYESIAN_DEFAULT_ON_FACTOR_KEYS
+    _default_training_window = 252
+    _default_chip_window = 232
+    _default_prior_strength = 14.16
+
     strategy_id = "bayesian-price-field"
     strategy_name = "Bayesian Price Field"
     strategy_description = (
@@ -1134,7 +1149,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                     label=definition.label,
                     kind="boolean",
                     group="factors",
-                    default=definition.parameter_key in _BAYESIAN_DEFAULT_ON_FACTOR_KEYS,
+                    default=definition.parameter_key in self._default_factor_keys,
                     help_text=definition.help_text,
                     subgroup=definition.category,
                 )
@@ -1160,7 +1175,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="training_window",
                 label="Training Window",
                 kind="integer",
-                default=434,
+                default=self._default_training_window,
                 minimum=30,
                 maximum=504,
                 step=1,
@@ -1171,7 +1186,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="chip_window",
                 label="Volume-at-price Window",
                 kind="integer",
-                default=118,
+                default=self._default_chip_window,
                 minimum=5,
                 maximum=252,
                 step=1,
@@ -1182,7 +1197,7 @@ class BayesianPriceFieldStrategy(BaseStrategy):
                 key="prior_strength",
                 label="Prior Strength",
                 kind="number",
-                default=14.16,
+                default=self._default_prior_strength,
                 minimum=0.01,
                 maximum=100.0,
                 step=0.01,

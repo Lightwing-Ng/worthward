@@ -1,6 +1,21 @@
 # Testing guide
 
-Documentation version: `v1.90.2`
+Documentation version: `v1.91.0`
+
+## Price Field startup promotion
+
+The existing Bayesian, LSTM, and shared neural strategy tests pin the frozen
+NVDA startup profiles, including factor groups, Market context switches, backend,
+and ModernTCN's exported seed. Promotion verification compares all 580 parameters
+across 11 immutable exports with startup values, catalog defaults, rendered form
+values, and actual CLI `--describe` subprocess output.
+`tests/js/backtest/test_backtest_strategy_default_migration.mjs` protects exact old
+profile retirement, one-value customizations, partial and malformed records,
+unrelated strategy memories, and equivalent numeric formatting. Existing
+`backtest-strategy-params-memory.spec.mjs` retains explicit URL precedence and
+strategy-scoped browser persistence. Isolated browser checks cannot establish
+adoption by the user-owned production service. The
+[default contract](PRICE_FIELD_DEFAULTS.md) owns provenance and research limits.
 
 ## Registry-wide Backtest CLI
 

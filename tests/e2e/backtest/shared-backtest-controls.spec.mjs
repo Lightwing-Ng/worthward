@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.3.2 */
+/* Shared Backtest control primitives. Code version: v1.3.3 */
 import {test, expect} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -72,7 +72,7 @@ for (const colorScheme of ['light', 'dark']) {
             }
             await expect(page.locator('.strategy-factor-group[open]')).toHaveCount(5);
             await expect(page.locator('[data-collapse="factors"] [data-strategy-param-key]')).toHaveCount(36);
-            await expect(page.locator('#strategy_param_use_turnover_switch')).not.toBeChecked();
+            await expect(page.locator('#strategy_param_use_turnover_switch')).toBeChecked();
             const factorOverflow = await page.locator('[data-collapse="factors"]').evaluate(el => {
                 const bounds = el.getBoundingClientRect();
                 return [...el.querySelectorAll('[data-strategy-param-key], .switch, .trade-strategy-param-label-trigger > span:first-child')]

@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.31.1."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.31.2."""
 
 from __future__ import annotations
 
@@ -230,10 +230,20 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             sorted(factor_labels, key=str.casefold),
         )
         expected_on_factors = {
+            "use_amplitude",
             "use_close_location",
-            "use_intraday_return",
-            "use_volume_change",
+            "use_illiquidity_20d",
+            "use_momentum_20d",
+            "use_option_call_volume",
+            "use_option_put_call_volume_ratio",
+            "use_option_put_open_interest",
+            "use_option_total_volume",
+            "use_pe_ratio",
+            "use_relative_volume_20d",
+            "use_return_1d",
+            "use_volatility_20d",
             "use_volume_at_price",
+            "use_volume_change",
         }
         self.assertEqual(
             {
@@ -246,8 +256,8 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             },
         )
         startup_params = strategy.get_startup_params()
-        self.assertEqual(startup_params["training_window"], 434)
-        self.assertEqual(startup_params["chip_window"], 118)
+        self.assertEqual(startup_params["training_window"], 252)
+        self.assertEqual(startup_params["chip_window"], 232)
         self.assertEqual(startup_params["prior_strength"], 14.16)
         self.assertEqual(startup_params["entry_probability"], 60.0)
         self.assertNotIn("compute_backend", startup_params)

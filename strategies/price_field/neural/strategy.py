@@ -1,4 +1,4 @@
-"""One strategy adapter for eight direct probability engines. Code version: v1.5.1."""
+"""One strategy adapter for eight direct probability engines. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -73,18 +73,19 @@ class NeuralPriceFieldStrategy(BaseStrategy):
             parameter("weight_decay", "Weight decay", kind="number", default=profile.weight_decay,
                       minimum=0.0, maximum=0.1, step=0.0001),
             parameter("dropout", "Dropout", kind="number", default=profile.dropout, minimum=0.0, maximum=0.5, step=0.01),
-            parameter("seed", "Seed", default=42, minimum=0, maximum=1_000_000, step=1, optimizable=False),
+            parameter("seed", "Seed", default=profile.seed, minimum=0, maximum=1_000_000, step=1, optimizable=False),
             parameter("entry_probability", "Entry probability (%)", kind="number", default=60.0,
                       minimum=50.0, maximum=95.0, step=0.1, optimizable=False,
                       help_text="Compatibility threshold for the Backtest transaction display; not a probability-training objective."),
-            parameter("compute_backend", "Compute backend", kind="choice", default="Auto",
+            parameter("compute_backend", "Compute backend", kind="choice", default=profile.compute_backend,
                       options=("Auto", "CPU", "GPU"), optimizable=False,
                       help_text="Auto uses verified MPS/CUDA when available, otherwise Torch CPU. GPU fails closed."),
             *(parameter(d.parameter_key, d.label, kind="boolean", group="factors", subgroup=d.category,
                         default=d.parameter_key in profile.enabled_factor_parameters, help_text=d.help_text)
               for d in PRICE_FIELD_FACTOR_DEFINITIONS),
             *(parameter(f"use_{key}", f"{symbol} {'daily return' if horizon == 1 else '20-day momentum'}",
-                        kind="boolean", default=False, group="factors", subgroup="Market context",
+                        kind="boolean", default=f"use_{key}" in profile.enabled_factor_parameters,
+                        group="factors", subgroup="Market context",
                         help_text=f"Historical {symbol} regular-session closes known at the forecast date; missing dates remain unknown.")
               for key, symbol, horizon in BENCHMARK_FACTORS),
         )

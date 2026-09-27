@@ -1,8 +1,51 @@
-/* Code version: v0.13.4 */
+/* Code version: v0.14.0 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
+
+test('Price Field adopts new defaults automatically and preserves customized profiles and URLs', async ({page}) => {
+    const url = '/workspaces/backtest?ticker=NVDA&range=1y&strategy=lstm-price-field';
+    const control = (key) => page.locator(`[data-strategy-param-input][name="${key}"]`);
+    await page.goto(url);
+    await expect(control('lstm_epochs')).toHaveValue('8');
+    const previous = await page.evaluate(() => {
+        const oldParameters = {
+            cell_display_threshold: '1', training_window: '466', chip_window: '232',
+            lstm_lookback: '16', lstm_hidden_size: '23', lstm_epochs: '19',
+            lstm_learning_rate: '0.005', lstm_seed: '42', entry_probability: '60',
+            compute_backend: 'CPU',
+        };
+        const oldFactors = new Set([
+            'use_close_location', 'use_illiquidity_20d', 'use_momentum_5d',
+            'use_overnight_gap', 'use_volatility_20d', 'use_volume_at_price',
+        ]);
+        return Object.fromEntries(Array.from(document.querySelectorAll(
+            '[data-trade-strategy-field] [data-strategy-param-input][name]',
+        )).map((element) => [element.name, element.name.startsWith('use_')
+            ? (oldFactors.has(element.name) ? '1' : '0') : oldParameters[element.name]]));
+    });
+    expect(Object.keys(previous)).toHaveLength(46);
+    const save = async (values) => page.evaluate(({key, params}) => {
+        localStorage.setItem(key, JSON.stringify({'lstm-price-field': params}));
+    }, {key: MEMORY_KEY, params: values});
+
+    await save(previous);
+    await page.goto(url);
+    await expect(control('lstm_epochs')).toHaveValue('8');
+    await expect(control('training_window')).toHaveValue('252');
+    await expect(control('use_turnover')).toHaveValue('1');
+    await expect(control('use_volatility_20d')).toHaveValue('0');
+
+    await save({...previous, lstm_seed: '17'});
+    await page.goto(url);
+    await expect(control('lstm_epochs')).toHaveValue('19');
+    await expect(control('lstm_seed')).toHaveValue('17');
+    await expect(control('use_turnover')).toHaveValue('0');
+    await page.goto(`${url}&lstm_epochs=3`);
+    await expect(control('lstm_epochs')).toHaveValue('3');
+    await expect(control('lstm_seed')).toHaveValue('17');
+});
 
 const readRememberedValue = async (page, strategyId, key) => page.evaluate(
     ({key: storageKey, strategyId: storedStrategyId, paramKey}) => {

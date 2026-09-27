@@ -1,4 +1,4 @@
-"""Isolated generic probability training contracts. Code version: v1.4.1."""
+"""Isolated generic probability training contracts. Code version: v1.4.2."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def test_each_strategy_launches_exact_configuration_and_owns_its_state(prepared_
     assert request["interval"] == "1d"
     assert request["configuration"]["from"] == "2024-09-04"
     assert request["params"] == instantiate_strategy(strategy_id).get_startup_params()
-    assert request["params"]["compute_backend"] == "Auto"
+    assert request["params"]["compute_backend"] == "CPU"
     assert "seed" in request["params"] and "lstm_seed" not in request["params"]
     assert commands[0][1]["start_new_session"] is True
     assert "price_field_train.py" in commands[0][0][2]

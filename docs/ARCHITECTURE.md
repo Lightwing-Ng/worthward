@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.128.2`
+Documentation version: `v1.129.0`
 
 ## Shared loading indicator
 
@@ -247,6 +247,17 @@ validation, explicit numeric parameter checking, and Wilder-smoothed indicators
 shared by kNN Machine Learning and Lorentzian Classification. Neither strategy
 imports the other's private helpers; both keep `_`-prefixed compatibility
 aliases because existing tests address them by those names.
+
+## Price Field startup profiles
+
+The [Price Field default contract](PRICE_FIELD_DEFAULTS.md) owns the promotion
+of all 11 frozen NVDA 1d validation selections. Strategy-owned definitions feed
+Backtest, the catalog, and CLI consistently. Eight shared neural profiles also
+own their seed and CPU backend defaults and enable selected Market context
+factors. Cycle declares a separate Bayesian-field profile rather than inheriting
+Bayesian's selected factors. The browser retires only complete records matching
+the previous source defaults; custom parameters and explicit URLs retain precedence.
+The immutable external study artifacts remain independent of product defaults.
 
 ## Direct-horizon neural Price Fields
 

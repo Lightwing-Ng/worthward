@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.37.4`
+Documentation version: `v3.38.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -21,6 +21,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Retain each Backtest strategy's tuning values in browser-local memory and restore them when returning to that strategy; explicit URL parameters remain authoritative
 - Use one strategy-owned category map in both Backtest and Settings: Baseline, Investment Automation, Technical Analysis, Machine Learning, Portfolio Rotation, and Price Field Models
 - Use Grid Trading from the Backtest strategy selector, with current, minimum, and maximum integer holding quantities, a fixed share quantity per grid execution, and asymmetric rise and fall percentages declared by `strategy_grid_trading.py`; the execution quantity defaults to initial cash divided by ten times the initial price
+- Start all 11 Price Field models with their frozen NVDA 1d GA factors and matching training parameters automatically; see the [startup default contract](docs/PRICE_FIELD_DEFAULTS.md) for provenance and browser precedence
 - Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from the shared causal Price Field pipeline and Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars; each refresh automatically selects the best available local CPU and Apple MPS or CUDA execution path, with no manual backend control and a complete CPU fallback
 - Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
 - Compare eight additional neural Price Fields: PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT. They share training controls and Market factors, predict 20 daily return distributions directly, and use verified Torch MPS/CUDA or CPU. [The research contract](docs/NEURAL_PRICE_FIELD_RESEARCH.md) explains their standardized distribution diagnostics, causal factor timing, compact architecture adaptations, and held-out evaluation.

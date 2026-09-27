@@ -1,7 +1,7 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.4.0
+ * Code version: v1.4.1
  * - Fixed: Bind allocation specimens to the production range controller.
  * - Fixed: Keep the style-token resizer's accessible range current when its
  *   preview column changes width without a drag or key press.
@@ -13,7 +13,7 @@
  */
 
 import {getNumericDisplayParts} from '../numeric-display.js?v=numeric-display-v1.3.0';
-import '../app/strategy-controls.js?v=app-strategy-controls-v1.1.0';
+import '../app/strategy-controls.js?v=app-strategy-controls-v1.2.0';
 import '../loading-indicator.js?v=loading-indicator-v1.0.0';
 
 export function createSettingsStyleTokenController({

@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.5.0`
+Documentation version: `v1.5.1`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -101,6 +101,7 @@ agent-started server must be stopped before handoff.
 - [Beta research laboratory](BETA_LAB.md): removable experiments, read-only history diagnostics, local thesis briefs, and research sources.
 
 - [LSTM probability tuning](LSTM_PROBABILITY_TUNING.md): offline tuning workflow.
+- [Price Field startup defaults](PRICE_FIELD_DEFAULTS.md): all 11 frozen NVDA profiles, validation and holdout provenance, source ownership, and browser precedence.
 - [Neural Price Field research](NEURAL_PRICE_FIELD_RESEARCH.md): eight shared neural strategies, direct horizon probability scores, Apple Silicon training, explicit research groups, and frozen validation.
 - [Classic strategy repair](CLASSIC_STRATEGY_REPAIR.md): causal indicators, mature neighbor labels, DCA validation, and rotation execution boundaries.
 - [Historical testing evidence](TESTING_HISTORY.md): dated results, not current gate status.

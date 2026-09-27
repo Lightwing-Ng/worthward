@@ -1,6 +1,6 @@
 # Neural Price Field research
 
-Documentation version: `v1.4.2`
+Documentation version: `v1.5.0`
 
 ## Scope and model evidence
 
@@ -175,33 +175,27 @@ and `price-field-training` action slot. Architecture identity is distinct from
 the shared payload version. The existing controller discovers the slot
 and uses `/api/price-field-training` with strategy-scoped history; the server
 validates the family metadata.
-Startup defaults use the validation-selected profiles from the AAPL neural
-cohort whose result and terminal status completed internally on 8 Sep 2026. It
-completed 1,104 evaluations with no failures, froze selection before holdout
-reporting, and reported three seeds for each selected and prior-default profile.
-The outer family supervisor nevertheless exited 1, so this is cohort evidence,
-not a formally completed family suite. Every selected profile improved its own
-prior-default mean holdout probability score, by 0.0295 to 0.3228 percentage
-points. All eight selected profiles nevertheless remained slightly below the
-causal random-walk reference on Brier skill, so these are AAPL-derived defaults,
-not evidence of cross-ticker superiority.
+Startup defaults now use the frozen NVDA 1d, two-year GA validation selections
+promoted on 27 Sep 2026. The [Price Field default contract](PRICE_FIELD_DEFAULTS.md)
+owns selection provenance, paired holdout evidence, all 11 models, and browser
+migration. Holdout results never reselect a profile.
 
-All eight profiles use a 252-session training window, seed 42, a 60% transaction
-entry threshold, and portable `Auto` compute selection. The cohort's final GPU
-reporting policy was not a GA gene and therefore is not a product default. The
-shared cell display threshold is 1%; it is an independent presentation-only
-default and never enters model fitting, selection, or probability scoring.
+All eight profiles use a 252-session training window, CPU execution, and a 60%
+transaction entry threshold. ModernTCN retains the exported seed 43; the other
+seven use seed 42. Their replicated validation and holdout evidence uses seeds
+42, 43, and 44. The shared cell display threshold remains 1%; it is a separate
+presentation-only default and never enters fitting or selection.
 
 | Strategy | Chip | Lookback | Hidden | Epochs | Learning rate | Refit | Weight decay | Dropout | Enabled causal factors |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| PatchTST | 84 | 32 | 32 | 8 | 0.0003 | 20 | 0.001 | 0 | `illiquidity_20d`, `close_location`, `amplitude` |
-| TSMixer | 63 | 16 | 16 | 8 | 0.0003 | 10 | 0.001 | 0.1 | `illiquidity_20d`, `momentum_20d`, `relative_volume_20d`, `momentum_5d`, `close_location`, `amplitude`, `intraday_return`, `overnight_gap`, `volume_change` |
-| N-HiTS | 21 | 32 | 16 | 4 | 0.0003 | 20 | 0.001 | 0 | `momentum_20d`, `relative_volume_20d`, `momentum_5d`, `momentum_60d`, `amplitude`, `turnover` |
-| TimeXer | 21 | 32 | 16 | 4 | 0.0003 | 10 | 0.001 | 0.1 | `illiquidity_20d`, `momentum_5d`, `turnover`, `volume` |
-| iTransformer | 63 | 32 | 16 | 8 | 0.0003 | 10 | 0.001 | 0.1 | `momentum_20d`, `volatility_20d`, `amplitude`, `intraday_return`, `overnight_gap`, `volume_change` |
-| TiDE | 21 | 16 | 16 | 4 | 0.001 | 10 | 0.01 | 0 | `illiquidity_20d`, `relative_volume_20d`, `volatility_20d`, `close_location`, `amplitude`, `intraday_return`, `overnight_gap`, `turnover` |
-| ModernTCN | 42 | 16 | 8 | 4 | 0.0006 | 10 | 0.01 | 0 | `turnover` |
-| TFT | 42 | 16 | 8 | 4 | 0.001 | 10 | 0.001 | 0 | `momentum_20d`, `volatility_20d`, `intraday_return`, `overnight_gap` |
+| PatchTST | 84 | 24 | 32 | 8 | 0.0006 | 20 | 0.0001 | 0.0 | `benchmark_qqq_return`, `benchmark_spy_momentum20`, `options`, `overnight_gap`, `relative_volume_20d`, `volatility_20d` |
+| TSMixer | 84 | 32 | 16 | 24 | 0.001 | 20 | 0.0001 | 0.2 | `amplitude`, `benchmark_qqq_momentum20`, `benchmark_smh_momentum20`, `benchmark_spy_momentum20`, `benchmark_spy_return`, `illiquidity_20d`, `intraday_return`, `momentum_20d`, `momentum_5d`, `option_call_volume`, `option_put_call_volume_ratio`, `options`, `pb_ratio`, `volatility_20d`, `volume`, `volume_change` |
+| N-HiTS | 84 | 16 | 48 | 24 | 0.0006 | 20 | 0.01 | 0.0 | `benchmark_qqq_return`, `benchmark_smh_return`, `benchmark_spy_momentum20`, `close_location`, `option_put_call_open_interest_ratio`, `options`, `overnight_gap`, `pb_ratio`, `volume_change` |
+| TimeXer | 84 | 48 | 16 | 24 | 0.0003 | 20 | 0.01 | 0.2 | `benchmark_qqq_momentum20`, `benchmark_qqq_return`, `benchmark_smh_momentum20`, `benchmark_smh_return`, `benchmark_spy_momentum20`, `benchmark_spy_return`, `close_location`, `dividend_yield`, `illiquidity_20d`, `option_call_open_interest`, `option_call_volume`, `option_put_call_open_interest_ratio`, `overnight_gap`, `pb_ratio`, `volume_at_price` |
+| iTransformer | 84 | 24 | 16 | 12 | 0.003 | 20 | 0.001 | 0.1 | `benchmark_smh_momentum20`, `benchmark_smh_return`, `benchmark_spy_return`, `illiquidity_20d`, `pb_ratio`, `pe_ratio`, `relative_volume_20d`, `volume_change` |
+| TiDE | 21 | 16 | 32 | 12 | 0.001 | 20 | 0.001 | 0.0 | `amplitude`, `benchmark_spy_momentum20`, `close_location`, `dividend_yield`, `illiquidity_20d`, `momentum_20d`, `option_call_volume`, `option_put_call_open_interest_ratio`, `options`, `pb_ratio`, `pe_ratio`, `volatility_20d` |
+| ModernTCN | 42 | 24 | 8 | 12 | 0.001 | 20 | 0.01 | 0.1 | `amplitude`, `benchmark_qqq_momentum20`, `benchmark_spy_momentum20`, `benchmark_spy_return`, `dividend_yield`, `illiquidity_20d`, `momentum_5d`, `option_put_call_open_interest_ratio`, `option_put_open_interest`, `option_total_volume`, `overnight_gap`, `turnover`, `volatility_20d` |
+| TFT | 63 | 16 | 8 | 4 | 0.0003 | 10 | 0.001 | 0.2 | `amplitude`, `dividend_yield`, `option_call_open_interest`, `option_total_volume`, `volatility_20d` |
 
 Start snapshots the selected daily ticker, range, and exact parameters. It does
 not silently mutate hyperparameters through GA. Stop is asynchronous and scoped

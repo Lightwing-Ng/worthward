@@ -8,7 +8,7 @@ and ATR thresholds. The separate Bayesian Price Field posterior confirms
 entry intent and can trigger an optional probabilistic exit; cycle stages do
 not enter that probability model.
 
-Code version: v1.0.2
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -194,6 +194,22 @@ def detect_price_action_cycle(frame: pd.DataFrame, params: dict[str, Any]) -> pd
 
 
 class CycleOfPriceActionStrategy(BayesianPriceFieldStrategy):
+    # The cycle uses its own frozen field profile, independent of Bayesian defaults.
+    _default_factor_keys = frozenset({
+        "use_close_location",
+        "use_intraday_return",
+        "use_momentum_60d",
+        "use_option_put_volume",
+        "use_pb_ratio",
+        "use_relative_volume_20d",
+        "use_return_1d",
+        "use_turnover",
+        "use_volatility_20d",
+    })
+    _default_training_window = 252
+    _default_chip_window = 42
+    _default_prior_strength = 0.01
+
     strategy_id = "cycle-of-price-action"
     strategy_name = "Cycle of Price Action"
     strategy_description = (

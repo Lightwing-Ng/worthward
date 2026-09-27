@@ -5,9 +5,9 @@ The model predicts the tradable next-open-to-following-open log return from
 the same causal Longbridge factor pipeline as Bayesian Price Field, then emits
 the shared probability-grid payload. Training never reads a future row.
 
-Code version: v1.12.3
-- Changed: Startup defaults use the robust validation-selected AAPL grid GA
-  cohort profile and its CPU execution semantics.
+Code version: v1.13.0
+- Changed: Startup defaults use the frozen NVDA 1d GA
+  validation selection and its CPU execution semantics.
 - Changed: Price Field strategies now declare the shared Price Field catalog
   category used by Backtest and Settings.
 - Fixed: Durable training preserves Auto's NumPy CPU semantics instead of forcing GPU.
@@ -254,12 +254,15 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                     group="factors",
                     ui_apply_mode="training",
                     default=definition.parameter_key in {
-                        "use_close_location",
-                        "use_illiquidity_20d",
-                        "use_momentum_5d",
+                        "use_intraday_return",
+                        "use_momentum_20d",
+                        "use_option_call_volume",
+                        "use_option_total_volume",
                         "use_overnight_gap",
-                        "use_volatility_20d",
+                        "use_return_1d",
+                        "use_turnover",
                         "use_volume_at_price",
+                        "use_volume_change",
                     },
                     help_text=definition.help_text,
                     subgroup=definition.category,
@@ -286,7 +289,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="training_window",
                 label="Training window",
                 kind="integer",
-                default=466,
+                default=252,
                 minimum=30,
                 maximum=504,
                 step=1,
@@ -301,7 +304,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="chip_window",
                 label="Volume-at-price window",
                 kind="integer",
-                default=232,
+                default=21,
                 minimum=5,
                 maximum=252,
                 step=1,
@@ -312,7 +315,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_lookback",
                 label="LSTM lookback",
                 kind="integer",
-                default=16,
+                default=4,
                 minimum=4,
                 maximum=16,
                 step=1,
@@ -333,7 +336,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_epochs",
                 label="LSTM epochs",
                 kind="integer",
-                default=19,
+                default=8,
                 minimum=1,
                 maximum=20,
                 step=1,
@@ -343,7 +346,7 @@ class LSTMPriceFieldStrategy(BaseStrategy):
                 key="lstm_learning_rate",
                 label="LSTM learning rate",
                 kind="number",
-                default=0.005,
+                default=0.03,
                 minimum=0.001,
                 maximum=0.5,
                 step=0.001,

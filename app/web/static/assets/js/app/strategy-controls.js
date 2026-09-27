@@ -1,5 +1,288 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 (() => {
+    // Historical startup snapshots only identify untouched old browser defaults.
+    // Explicit URLs, partial records, and any customized profile retain precedence.
+    const previousPriceFieldFactorKeys = [
+        "use_amplitude",
+        "use_broker_holding",
+        "use_capital_flow",
+        "use_close_location",
+        "use_dividend_yield",
+        "use_dynamic_pe_ratio",
+        "use_fund_holder_weight",
+        "use_illiquidity_20d",
+        "use_intraday_return",
+        "use_market_temperature",
+        "use_momentum_20d",
+        "use_momentum_5d",
+        "use_momentum_60d",
+        "use_option_call_open_interest",
+        "use_option_call_volume",
+        "use_option_put_call_open_interest_ratio",
+        "use_option_put_call_volume_ratio",
+        "use_option_put_open_interest",
+        "use_option_put_volume",
+        "use_option_total_open_interest",
+        "use_option_total_volume",
+        "use_options",
+        "use_overnight_gap",
+        "use_pb_ratio",
+        "use_pe_ratio",
+        "use_ps_ratio",
+        "use_relative_volume_20d",
+        "use_return_1d",
+        "use_shareholder_concentration",
+        "use_short_interest",
+        "use_short_volume",
+        "use_turnover",
+        "use_volatility_20d",
+        "use_volume",
+        "use_volume_at_price",
+        "use_volume_change",
+    ];
+    const previousPriceFieldBenchmarkKeys = [
+        "use_benchmark_qqq_momentum20",
+        "use_benchmark_qqq_return",
+        "use_benchmark_smh_momentum20",
+        "use_benchmark_smh_return",
+        "use_benchmark_spy_momentum20",
+        "use_benchmark_spy_return",
+    ];
+    const previousPriceFieldProfiles = {
+        "bayesian-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 118,
+                "entry_probability": 60.0,
+                "prior_strength": 14.16,
+                "training_window": 434
+            },
+            "enabledFactors": ["use_close_location", "use_intraday_return", "use_volume_at_price", "use_volume_change"],
+            "hasBenchmarks": false
+        },
+        "cycle-of-price-action": {
+            "parameters": {
+                "base_length": 5,
+                "base_range_atr": 3.0,
+                "cell_display_threshold": 1.0,
+                "chip_window": 118,
+                "crossback_tolerance_atr": 0.25,
+                "exhaustion_extension_atr": 3.0,
+                "exit_on_exhaustion": true,
+                "fast_ema": 10,
+                "field_confirmation": 55.0,
+                "field_exit_probability": 35.0,
+                "prior_strength": 14.16,
+                "require_reversal_extension": false,
+                "reversal_extension_atr": 2.0,
+                "setup_lookback": 20,
+                "slow_ema": 20,
+                "training_window": 434,
+                "wedge_width_atr": 1.5
+            },
+            "enabledFactors": ["use_close_location", "use_intraday_return", "use_volume_at_price", "use_volume_change"],
+            "hasBenchmarks": false
+        },
+        "itransformer-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 63,
+                "compute_backend": "Auto",
+                "dropout": 0.1,
+                "entry_probability": 60.0,
+                "epochs": 8,
+                "hidden_size": 16,
+                "learning_rate": 0.0003,
+                "lookback": 32,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_amplitude", "use_intraday_return", "use_momentum_20d", "use_overnight_gap", "use_volatility_20d", "use_volume_change"],
+            "hasBenchmarks": true
+        },
+        "lstm-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 232,
+                "compute_backend": "CPU",
+                "entry_probability": 60.0,
+                "lstm_epochs": 19,
+                "lstm_hidden_size": 23,
+                "lstm_learning_rate": 0.005,
+                "lstm_lookback": 16,
+                "lstm_seed": 42,
+                "training_window": 466
+            },
+            "enabledFactors": ["use_close_location", "use_illiquidity_20d", "use_momentum_5d", "use_overnight_gap", "use_volatility_20d", "use_volume_at_price"],
+            "hasBenchmarks": false
+        },
+        "moderntcn-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 42,
+                "compute_backend": "Auto",
+                "dropout": 0.0,
+                "entry_probability": 60.0,
+                "epochs": 4,
+                "hidden_size": 8,
+                "learning_rate": 0.0006,
+                "lookback": 16,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.01
+            },
+            "enabledFactors": ["use_turnover"],
+            "hasBenchmarks": true
+        },
+        "nhits-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 21,
+                "compute_backend": "Auto",
+                "dropout": 0.0,
+                "entry_probability": 60.0,
+                "epochs": 4,
+                "hidden_size": 16,
+                "learning_rate": 0.0003,
+                "lookback": 32,
+                "retrain_interval": 20,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_amplitude", "use_momentum_20d", "use_momentum_5d", "use_momentum_60d", "use_relative_volume_20d", "use_turnover"],
+            "hasBenchmarks": true
+        },
+        "patchtst-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 84,
+                "compute_backend": "Auto",
+                "dropout": 0.0,
+                "entry_probability": 60.0,
+                "epochs": 8,
+                "hidden_size": 32,
+                "learning_rate": 0.0003,
+                "lookback": 32,
+                "retrain_interval": 20,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_amplitude", "use_close_location", "use_illiquidity_20d"],
+            "hasBenchmarks": true
+        },
+        "tft-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 42,
+                "compute_backend": "Auto",
+                "dropout": 0.0,
+                "entry_probability": 60.0,
+                "epochs": 4,
+                "hidden_size": 8,
+                "learning_rate": 0.001,
+                "lookback": 16,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_intraday_return", "use_momentum_20d", "use_overnight_gap", "use_volatility_20d"],
+            "hasBenchmarks": true
+        },
+        "tide-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 21,
+                "compute_backend": "Auto",
+                "dropout": 0.0,
+                "entry_probability": 60.0,
+                "epochs": 4,
+                "hidden_size": 16,
+                "learning_rate": 0.001,
+                "lookback": 16,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.01
+            },
+            "enabledFactors": ["use_amplitude", "use_close_location", "use_illiquidity_20d", "use_intraday_return", "use_overnight_gap", "use_relative_volume_20d", "use_turnover", "use_volatility_20d"],
+            "hasBenchmarks": true
+        },
+        "timexer-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 21,
+                "compute_backend": "Auto",
+                "dropout": 0.1,
+                "entry_probability": 60.0,
+                "epochs": 4,
+                "hidden_size": 16,
+                "learning_rate": 0.0003,
+                "lookback": 32,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_illiquidity_20d", "use_momentum_5d", "use_turnover", "use_volume"],
+            "hasBenchmarks": true
+        },
+        "tsmixer-price-field": {
+            "parameters": {
+                "cell_display_threshold": 1.0,
+                "chip_window": 63,
+                "compute_backend": "Auto",
+                "dropout": 0.1,
+                "entry_probability": 60.0,
+                "epochs": 8,
+                "hidden_size": 16,
+                "learning_rate": 0.0003,
+                "lookback": 16,
+                "retrain_interval": 10,
+                "seed": 42,
+                "training_window": 252,
+                "weight_decay": 0.001
+            },
+            "enabledFactors": ["use_amplitude", "use_close_location", "use_illiquidity_20d", "use_intraday_return", "use_momentum_20d", "use_momentum_5d", "use_overnight_gap", "use_relative_volume_20d", "use_volume_change"],
+            "hasBenchmarks": true
+        }
+    };
+
+    const migrateBacktestStrategyParamMemory = (memory, strategyId) => {
+        const profile = previousPriceFieldProfiles[strategyId];
+        const remembered = memory[strategyId];
+        if (!profile || !remembered || typeof remembered !== "object" || Array.isArray(remembered)) return memory;
+        const factorKeys = profile.hasBenchmarks
+            ? [...previousPriceFieldFactorKeys, ...previousPriceFieldBenchmarkKeys]
+            : previousPriceFieldFactorKeys;
+        const defaults = {
+            ...profile.parameters,
+            ...Object.fromEntries(factorKeys.map((key) => [key, profile.enabledFactors.includes(key)])),
+        };
+        const keys = Object.keys(defaults);
+        if (Object.keys(remembered).length !== keys.length) return memory;
+        const matches = keys.every((key) => {
+            if (!Object.prototype.hasOwnProperty.call(remembered, key)) return false;
+            const expected = defaults[key];
+            const actual = String(remembered[key] ?? "").trim();
+            if (typeof expected === "boolean") return actual === (expected ? "1" : "0");
+            if (typeof expected === "number") {
+                const numberText = actual.replaceAll(",", "");
+                return numberText !== "" && Number.isFinite(Number(numberText)) && Number(numberText) === expected;
+            }
+            return actual === expected;
+        });
+        if (!matches) return memory;
+        const nextMemory = {...memory};
+        delete nextMemory[strategyId];
+        return nextMemory;
+    };
+
     // The catalog and Backtest share immediate input updates and measured label layout.
     const bindAllocationControls = (root, {
         readTickerName,
@@ -412,7 +695,10 @@
             if (!isBacktestView || !(root instanceof HTMLElement)) return {restored: false, requiresSubmit: false};
             const normalizedStrategyId = String(strategyId || "").trim();
             if (!normalizedStrategyId) return {restored: false, requiresSubmit: false};
-            const remembered = readBacktestStrategyParamMemory()[normalizedStrategyId];
+            const memory = readBacktestStrategyParamMemory();
+            const migrated = migrateBacktestStrategyParamMemory(memory, normalizedStrategyId);
+            if (migrated !== memory) writeBacktestStrategyParamMemory(migrated);
+            const remembered = migrated[normalizedStrategyId];
             if (!remembered || typeof remembered !== "object") return {restored: false, requiresSubmit: false};
             const explicitParams = respectExplicitUrl
                 ? new URL(window.location.href).searchParams
@@ -1631,5 +1917,5 @@
         });
     };
 
-    window.WORTHWARD_APP_STRATEGY_CONTROLS = Object.freeze({create, bindAllocationControls});
+    window.WORTHWARD_APP_STRATEGY_CONTROLS = Object.freeze({create, bindAllocationControls, migrateBacktestStrategyParamMemory});
 })();

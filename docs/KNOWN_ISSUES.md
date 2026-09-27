@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Price Field default promotion, 27 Sep 2026: all 11 models now use their frozen
+NVDA 1d validation-selected factors and matching training parameters. Paired
+holdout completed for all 11; four selections regressed versus their old defaults.
+These are NVDA-specific forecast configurations, not a cross-ticker or trading
+profit claim. Exact previous-default browser records migrate automatically;
+custom records and explicit URLs retain precedence. Source adoption by a running
+user-owned service requires its ordinary module reload. See
+[Price Field startup defaults](PRICE_FIELD_DEFAULTS.md).
+
 Circular-action size convergence, 26 Sep 2026: standard circular buttons now use
 the shared 30px desktop target and unchanged 18px glyph. The existing 900px touch
 branch retains 44px targets, including its 600px compact override. Shared rails,

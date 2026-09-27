@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.6.2."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.6.3."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def _bundle_from_frame(frame: pd.DataFrame) -> SimpleNamespace:
 
 
 class LSTMPriceFieldStrategyTests(unittest.TestCase):
-    def test_aapl_grid_ga_profile_is_the_startup_default(self) -> None:
+    def test_nvda_ga_profile_is_the_startup_default(self) -> None:
         strategy = LSTMPriceFieldStrategy()
         defaults = strategy.get_startup_params()
         factor_keys = {
@@ -118,12 +118,12 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             },
             {
                 "cell_display_threshold": 1.0,
-                "training_window": 466,
-                "chip_window": 232,
-                "lstm_lookback": 16,
+                "training_window": 252,
+                "chip_window": 21,
+                "lstm_lookback": 4,
                 "lstm_hidden_size": 23,
-                "lstm_epochs": 19,
-                "lstm_learning_rate": 0.005,
+                "lstm_epochs": 8,
+                "lstm_learning_rate": 0.03,
                 "lstm_seed": 42,
                 "entry_probability": 60.0,
                 "compute_backend": "CPU",
@@ -132,9 +132,15 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(
             factor_keys,
             {
-                "use_close_location", "use_illiquidity_20d",
-                "use_momentum_5d", "use_overnight_gap",
-                "use_volatility_20d", "use_volume_at_price",
+                "use_intraday_return",
+                "use_momentum_20d",
+                "use_option_call_volume",
+                "use_option_total_volume",
+                "use_overnight_gap",
+                "use_return_1d",
+                "use_turnover",
+                "use_volume_at_price",
+                "use_volume_change",
             },
         )
 
