@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.7.2
+Code version: v1.7.3
 """
 
 from __future__ import annotations
@@ -117,6 +117,7 @@ CSS_IMPORT_PATTERN = re.compile(
 APP_FALLBACK_MODULE_PATTERN = re.compile(
     r'\["WORTHWARD_APP_[A-Z_]+", "(?P<path>app/[^"]+\.js)", "(?P<query>[^"]+)"\]'
 )
+NUMBERED_COPY_BASENAME_PATTERN = re.compile(r"^(.*) ([0-9]+)(\.[^/]*)?$")
 
 
 def _read(path: Path) -> str:
@@ -383,6 +384,20 @@ def test_duplicate_copy_ignore_rule_is_narrow() -> None:
 
     assert ".coverage [0-9]*" in source
     assert "**/* [0-9]*" not in source
+
+
+def test_numbered_collision_copies_are_never_tracked() -> None:
+    tracked_copies = sorted(
+        str(relative_path)
+        for relative_path in _tracked_paths()
+        if NUMBERED_COPY_BASENAME_PATTERN.match(relative_path.name)
+    )
+
+    assert tracked_copies == [], (
+        "Numbered collision copies must stay out of Git; review them with "
+        "docs/STATIC_FILE_HOUSEKEEPING.md instead of committing them:\n"
+        + "\n".join(tracked_copies)
+    )
 
 
 def test_investment_runtime_entry_version_matches_source() -> None:
