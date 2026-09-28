@@ -1,4 +1,4 @@
-/* Code version: v0.49.0 */
+/* Code version: v0.49.1 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -112,9 +112,10 @@
 	--layout-global-anchor-left: calc(var(--layout-page-inset-left) + var(--layout-edge-gap));
 	--layout-global-anchor-inset: calc(var(--layout-edge-gap) * 2);
 	--layout-global-action-gap: 10px;
+	--layout-global-action-rail-gap: var(--layout-global-action-gap);
 	--layout-global-action-inline-size: calc(
 		(var(--circular-icon-button-size) * 2)
-		+ var(--layout-global-action-gap)
+		+ var(--layout-global-action-rail-gap)
 	);
 	--sidebar-overlay-inset-top: var(--layout-page-inset-top);
 	--sidebar-overlay-inset-right: var(--layout-page-inset-right);
@@ -237,7 +238,8 @@
 	--primary-button-color-disabled: color-mix(in srgb, var(--primary-button-color) 72%, transparent);
 	--primary-button-background-pending: color-mix(in srgb, var(--primary-button-background) 76%, white 24%);
 	--primary-button-font-weight: var(--font-weight-medium);
-	--circular-icon-button-size: 30px;
+	--circular-icon-button-size: 32px;
+	--circular-icon-button-hit-size: 44px;
 	--circular-icon-button-icon-size: 18px;
 	--circular-icon-button-radius: var(--radius-pill);
 	--circular-icon-button-material: var(--frosted-glass-background);

@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.4
+Code version: v0.25.5
 """
 
 from pathlib import Path
@@ -48,7 +48,7 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
     responsive = _read(ASSET_ROOT / "css/utilities/responsive.css")
 
     expected_tokens = {
-        "size": "30px",
+        "size": "32px",
         "icon-size": "18px",
         "radius": "var(--radius-pill)",
         "background": "var(--circular-icon-button-material)",
@@ -80,9 +80,19 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
         assert f"var(--circular-icon-button-{suffix})" in primitive_rule
     assert ".circular-icon-button .icon," in shell
     assert "var(--circular-icon-button-icon-size)" in shell
-    assert responsive.count("--circular-icon-button-size: 44px;") == 2
+    assert "--circular-icon-button-hit-size: 44px;" in tokens
+    assert "--circular-icon-button-size: 44px;" not in responsive
     assert "--settings-round-icon-button-size: 44px;" not in responsive
-    assert "px_token(\"--circular-icon-button-size\", 30, 1)" in _read(
+    assert "--layout-global-action-rail-gap: max(" in responsive
+    assert "calc(var(--circular-icon-button-hit-size) - var(--circular-icon-button-size))" in responsive
+    assert "width: var(--circular-icon-button-hit-size);" in responsive
+    assert "height: var(--circular-icon-button-hit-size);" in responsive
+    assert "transform: translate(-50%, -50%);" in responsive
+    assert ".page > #sidebar_toggle::before," in responsive
+    assert "#global_quick_actions > .global-quick-action-button::before," in responsive
+    assert ":is(.circular-icon-button, .settings-round-icon-button, .global-quick-action-button, .sidebar-toggle)::before" not in responsive
+    assert "--global-quick-action-gap: var(--layout-global-action-rail-gap);" in shell
+    assert "px_token(\"--circular-icon-button-size\", 32, 1)" in _read(
         PROJECT_ROOT / "app/web/presentation/style_token_rows.py"
     )
     import_runtime = _read(
@@ -93,7 +103,7 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
     assert "const buttonSize = quickActionsRect?.height || Number.parseFloat(" in import_runtime
     assert "getComputedStyle(circularOwner).getPropertyValue" in import_runtime
     assert "runtime.globalQuickActions || document.querySelector('.page') || runtime.formContainer" in import_runtime
-    assert ") || 30;" in import_runtime
+    assert ") || 32;" in import_runtime
     for independent_token in (
         "--workspace-modal-close-size: 24px;",
         "--workspace-modal-icon-size: 36px;",
@@ -116,6 +126,13 @@ def test_circular_icon_button_is_one_semantic_primitive_with_legacy_aliases() ->
     assert "padding-block-start: var(--workspace-title-rail-pad-block-start);" in settings
     assert "padding-inline-start: var(--workspace-title-rail-collapsed-pad-inline-start);" in settings
     workspace = _read(ASSET_ROOT / "css/views/workspace.css")
+    investment = _read(ASSET_ROOT / "css/views/investment.css")
+    list_toggle_offset = (
+        "calc(-1 * (var(--sidebar-width) - "
+        "var(--circular-icon-button-size) - var(--layout-edge-gap)))"
+    )
+    assert f"--timing-list-toggle-x: {list_toggle_offset};" in workspace
+    assert f"--live-trading-list-toggle-x: {list_toggle_offset};" in investment
     compact_workspace_start = workspace.index("@media (max-width: 600px) {")
     compact_workspace_toggle = workspace[
         compact_workspace_start:
@@ -192,7 +209,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         "box-shadow: var(--sidebar-shell-shadow);",
         "backdrop-filter: var(--sidebar-shell-blur);",
         "top: var(--global-quick-actions-top);",
-        "--global-quick-action-gap: var(--layout-global-action-gap);",
+        "--global-quick-action-gap: var(--layout-global-action-rail-gap);",
     ):
         assert fragment in shell
     for fragment in (
@@ -211,7 +228,7 @@ def test_shell_anchors_are_tokenized_and_redundantly_constrained() -> None:
         assert fragment in workspace
 
     for fragment in (
-        "--circular-icon-button-size: 44px;",
+        "--layout-global-action-rail-gap: max(",
         "--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));",
         "--layout-global-action-inline-size: calc(",
         "--layout-sidebar-overlay-inline-size: min(",

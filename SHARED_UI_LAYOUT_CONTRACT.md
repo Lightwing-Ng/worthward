@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.23.1`
+Documentation version: `v1.24.0`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -141,15 +141,20 @@ The Collapse specimen has no placeholder explanatory paragraph.
   Investment feedback lists use the same muted ordinary copy; explicit inline
   emphasis and success/error colors remain semantic presentation.
 - Circular icon actions use the `.circular-icon-button` primitive. Its canonical
-  `--circular-icon-button-*` token family owns the `30px` desktop target, `18px`
-  current-color glyph, pill radius, Frosted Glass material, and idle, hover, active,
-  and focus-visible states. The existing `max-width: 900px` responsive branch keeps
-  its `44px` touch target, including the existing 600px compact override. The global
+  `--circular-icon-button-*` token family owns the `32px` target at every breakpoint,
+  `18px` current-color glyph, pill radius, Frosted Glass material, and idle,
+  hover, active, and focus-visible states. A coarse pointer receives a transparent
+  `44px` hit region around the unchanged painted circle. Adjacent global actions
+  use a `12px` coarse-pointer rail gap so those hit regions meet without overlap;
+  the separate `10px` vertical Investment import gap remains unchanged. The global
   rail, title clearance, and equal top/right sidebar-button insets continue to
   derive from this token and the shared 10px edge gap; they do not introduce a new
   viewport exception. Compact global controls keep the global 20px viewport inset,
   not the sidebar's 10px outer inset. The catalog and existing single-line
   workspace-controls title rails derive their block start from these anchors.
+  Dense Investment share and Settings language-file groups keep their distinct
+  native 32px center targets because their 10px/8px spacing cannot host adjacent
+  44px hit regions without overlap; both retain keyboard operation.
   Modal dismiss controls, Process List markers, and topic
   icons retain their independent semantic dimensions.
   Product-specific class names are adapters only; the legacy
@@ -268,7 +273,7 @@ The following values are semantic tokens, not page-local overrides:
 | `C` | Control and standard dropdown maximum | `384px` |
 | `B` | Block-end physical-effect clearance | `48px` |
 | `R` | Sidebar and soft card radius | `10px` |
-| `T` | Round action size | project token; geometry is shared |
+| `T` | Round action size | `32px` at all breakpoints; `44px` transparent coarse hit region |
 | `M` | Modal and floating-notice inner pad | `12px` |
 | `D` | Modal dismiss target size | `24px` |
 | `I` | Modal dismiss top/left edge inset | `12px` |
@@ -368,8 +373,9 @@ and height within the rendered-geometry tolerance; a fractional gap must never e
 the active control as a crescent around the indicator.
 
 The acceptance tolerance for rendered geometry is `<= 1px`, after waiting for the
-intended media-query state and motion settle. Touch-sized controls may use the larger
-responsive round-action token while retaining the same anchor equations.
+intended media-query state and motion settle. Coarse-pointer hit regions may extend
+beyond painted controls while retaining the same 32px anchor equations and without
+overlapping adjacent targets.
 
 ## Responsive state matrix
 

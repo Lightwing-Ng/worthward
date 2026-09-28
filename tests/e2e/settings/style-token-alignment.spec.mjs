@@ -1,4 +1,4 @@
-/* Code version: v1.8.3 */
+/* Code version: v1.8.4 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -249,8 +249,8 @@ test('touch users can discover shared actions without hover', async ({browser}) 
         await expect(close).toHaveCSS('opacity', '1');
     }
     const circular = page.locator('[data-style-token-card="circular-icon-button"] .circular-icon-button').first();
-    await expect(circular).toHaveCSS('width', '44px');
-    await expect(circular).toHaveCSS('height', '44px');
+    await expect(circular).toHaveCSS('width', '32px');
+    await expect(circular).toHaveCSS('height', '32px');
     await circular.tap();
 
     const segmentedOption = page.locator('[data-style-token-card="segmented-control"] .segmented-control-option').nth(1);

@@ -1,4 +1,4 @@
-/* Code version: v1.81.2 */
+/* Code version: v1.81.3 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -176,7 +176,7 @@
 }
 
 .live-trading-list-shell.is-open {
-    --live-trading-list-toggle-x: calc(-1 * (var(--sidebar-width) - 44px));
+    --live-trading-list-toggle-x: calc(-1 * (var(--sidebar-width) - var(--circular-icon-button-size) - var(--layout-edge-gap)));
 }
 
 .live-trading-list-shell.is-collapsed {

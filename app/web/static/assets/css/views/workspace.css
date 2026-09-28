@@ -1,4 +1,4 @@
-/* Code version: v1.30.3 */
+/* Code version: v1.30.4 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -1228,7 +1228,7 @@
 }
 
 .timing-list-shell.is-open {
-    --timing-list-toggle-x: calc(-1 * (var(--sidebar-width) - 44px));
+    --timing-list-toggle-x: calc(-1 * (var(--sidebar-width) - var(--circular-icon-button-size) - var(--layout-edge-gap)));
 }
 
 .timing-list-shell.is-collapsed {

@@ -1,7 +1,7 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.3.1
+ * Code version: v1.3.2
  * - Changed: Import height reads the canonical responsive circular-action size.
  * - Added: Initial Holdings loading reports completed work stages and rejects
  *   stale or interrupted requests before claiming completion.
@@ -666,7 +666,7 @@ function syncInvestmentImportContainerHeight() {
         const circularOwner = runtime.globalQuickActions || document.querySelector('.page') || runtime.formContainer;
         const buttonSize = quickActionsRect?.height || Number.parseFloat(
             getComputedStyle(circularOwner).getPropertyValue('--circular-icon-button-size'),
-        ) || 30;
+        ) || 32;
         const modalTop = quickActionsTop + buttonSize + 10;
         const alignedHeight = viewportHeight - modalTop - modalTop;
         runtime.formContainer.style.setProperty(

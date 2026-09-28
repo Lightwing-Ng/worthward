@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.6.1`
+Documentation version: `v1.6.2`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -38,11 +38,15 @@ dedicated migration updates its manifest entry and tests together.
 
 ## Editing guide
 
-Standard circular icon actions use `--circular-icon-button-size`: 30px above
-900px and the existing 44px touch target at or below 900px. The 18px glyph is
-unchanged. Compatibility aliases, shared action rails, sidebar positions, and
+Standard circular icon actions use `--circular-icon-button-size: 32px` at every
+breakpoint. Coarse pointers receive a transparent 44px hit region; the global
+language/theme rail uses a 12px horizontal gap on those devices to avoid target
+overlap while the rightmost anchor and separate vertical spacing stay fixed. The
+18px glyph is unchanged. Compatibility aliases, shared action rails, sidebar positions, and
 title clearance derive from that owner; do not restore private 36px control
 dimensions or change independent modal-dismiss, topic-icon, or Process List sizes.
+The transparent hit extension is scoped to the shell actions and isolated catalog
+specimen; dense share and file-action groups retain non-overlapping native centers.
 
 The sidebar Dock retains its pill-shaped Frosted Glass surface at every breakpoint.
 Settings navigation extends behind it instead of ending above a fixed footer band.

@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.37.1
+Code version: v1.37.2
 """
 
 from __future__ import annotations
@@ -567,7 +567,7 @@ def build_style_token_rows(
             "sample_icon_shell_class": "",
             "tokens": [
                 material_reference_token("--circular-icon-button-material", "Frosted glass"),
-                px_token("--circular-icon-button-size", 30, 1),
+                px_token("--circular-icon-button-size", 32, 1),
                 px_token("--circular-icon-button-icon-size", 18, 1),
                 raw_token("--circular-icon-button-radius", "var(--radius-pill)"),
                 raw_token("--circular-icon-button-background", "var(--circular-icon-button-material)"),

@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -7,6 +7,8 @@ const viewports = [
     {width: 390, height: 844, hasTouch: true},
     {width: 1_006, height: 500, hasTouch: false},
     {width: 900, height: 791, hasTouch: false},
+    {width: 825, height: 1_325, hasTouch: false},
+    {width: 825, height: 1_325, hasTouch: true},
     {width: 901, height: 791, hasTouch: false},
     {width: 1_006, height: 791, hasTouch: true},
 ];
@@ -56,7 +58,7 @@ for (const theme of ['light', 'dark']) {
                     const modalBox = document.querySelector('#investment_form').getBoundingClientRect();
                     const canonicalSize = Number.parseFloat(getComputedStyle(document.querySelector('#global_quick_actions'))
                         .getPropertyValue('--circular-icon-button-size'));
-                    const expectedSize = innerWidth <= 900 ? 44 : 30;
+                    const expectedSize = 32;
                     const expectedTop = themeBox.bottom + 10;
                     const expectedHeight = Math.max(240, innerHeight - expectedTop * 2);
                     const heightValue = Number.parseFloat(container.style.getPropertyValue('--investment-import-modal-height'));
@@ -76,6 +78,15 @@ for (const theme of ['light', 'dark']) {
                     calculatedHeightMatchesRail: true,
                     noHorizontalOverflow: true,
                 });
+                if (width === 390) {
+                    const denseActions = page.locator('.investment-share-action-button');
+                    expect(await denseActions.count()).toBeGreaterThan(1);
+                    for (const action of await denseActions.all()) {
+                        await expect.poll(() => action.evaluate((element) => {
+                            return getComputedStyle(element, '::before').content;
+                        })).toBe('none');
+                    }
+                }
             });
         });
     }
@@ -114,7 +125,7 @@ const readShellGeometry = (page) => page.evaluate(() => {
     };
 });
 
-async function expectShellGeometry(page, expectedSize, expanded) {
+async function expectShellGeometry(page, expectedSize, expanded, expectedGap) {
     await expect.poll(async () => {
         const geometry = await readShellGeometry(page);
         return {
@@ -123,7 +134,7 @@ async function expectShellGeometry(page, expectedSize, expanded) {
             globalInsets: Math.abs(geometry.themeTop - 20) <= 1
                 && Math.abs(geometry.themeRightInset - 20) <= 1,
             toggleAligned: Math.abs(geometry.toggleTop - 20) <= 1 && geometry.verticalCenterGap <= 1,
-            languageGap: Math.abs(geometry.languageGap - 10) <= 1,
+            languageGap: Math.abs(geometry.languageGap - expectedGap) <= 1,
             sidebarInsets: expanded
                 ? Math.abs(geometry.sidebarTopInset - 10) <= 1
                     && Math.abs(geometry.sidebarRightInset - 10) <= 1
@@ -161,12 +172,12 @@ for (const theme of ['light', 'dark']) {
                     document.documentElement.dataset.themeOverride = value;
                 }, theme);
                 await page.evaluate(() => document.fonts.ready);
-                const size = width <= 900 ? 44 : 30;
+                const size = 32;
                 const catalog = page.locator('#circular-icon-button .style-token-demo .circular-icon-button');
                 const copy = page.locator('#circular-icon-button .style-token-copy-button');
                 await expect(catalog).toBeVisible();
                 await expect(page.locator('#circular-icon-button [data-style-token-name="--circular-icon-button-size"]'))
-                    .toHaveAttribute('data-style-token-value', '30');
+                    .toHaveAttribute('data-style-token-value', '32');
                 await page.locator('#circular-icon-button .style-token-title-row').hover();
                 await expect(copy).toBeVisible();
                 await expect.poll(() => copy.evaluate((element) => getComputedStyle(element).transform)).toBe('none');
@@ -182,11 +193,17 @@ for (const theme of ['light', 'dark']) {
                 }
 
                 const toggle = page.locator('#sidebar_toggle');
+                if (hasTouch) {
+                    const before = await toggle.getAttribute('aria-expanded');
+                    const box = await toggle.boundingBox();
+                    await page.touchscreen.tap(box.x + box.width / 2, box.y - 5);
+                    await expect(toggle).toHaveAttribute('aria-expanded', String(before !== 'true'));
+                }
                 for (const expanded of [false, true, false]) {
                     if (await toggle.getAttribute('aria-expanded') !== String(expanded)) await toggle.click();
                     await expect(toggle).toHaveAttribute('aria-expanded', String(expanded));
                     await settlePointer(page);
-                    await expectShellGeometry(page, size, expanded);
+                    await expectShellGeometry(page, size, expanded, hasTouch ? 12 : 10);
                 }
                 const language = page.locator('#global_language_toggle');
                 await page.locator('#global_quick_actions').hover();
@@ -200,7 +217,32 @@ for (const theme of ['light', 'dark']) {
                     const languageBox = document.querySelector('#global_language_toggle').getBoundingClientRect();
                     return themeBox.left - languageBox.right;
                 });
-                expect(Math.abs(revealedGap - 10)).toBeLessThanOrEqual(1);
+                expect(Math.abs(revealedGap - (hasTouch ? 12 : 10))).toBeLessThanOrEqual(1);
+
+                if (hasTouch) {
+                    const touchTargets = await page.evaluate(() => {
+                        const read = (selector) => {
+                            const element = document.querySelector(selector);
+                            const box = element.getBoundingClientRect();
+                            const pseudo = getComputedStyle(element, '::before');
+                            return {
+                                size: [Number.parseFloat(pseudo.width), Number.parseFloat(pseudo.height)],
+                                outerTopHits: document.elementFromPoint(
+                                    box.left + box.width / 2, box.top - 5,
+                                )?.closest(selector) === element,
+                            };
+                        };
+                        return {
+                            sidebar: read('#sidebar_toggle'),
+                            theme: read('#global_theme_toggle'),
+                            language: read('#global_language_toggle'),
+                        };
+                    });
+                    for (const target of Object.values(touchTargets)) {
+                        expect(target.size).toEqual([44, 44]);
+                        expect(target.outerTopHits).toBe(true);
+                    }
+                }
 
                 await catalog.scrollIntoViewIfNeeded();
                 await settlePointer(page);

@@ -1,4 +1,4 @@
-/* Code version: v3.37.4 */
+/* Code version: v3.37.5 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -25,14 +25,13 @@
 }
 @media (max-width: 900px) {
 	.page {
-		--circular-icon-button-size: 44px;
 		--workspace-title-rail-control-height: var(--circular-icon-button-size);
 		--workspace-title-rail-height: calc(var(--workspace-title-rail-pad-block-start) + var(--workspace-title-rail-control-height));
 		--workspace-title-rail-collapsed-pad-inline-start: calc(var(--circular-icon-button-size) + 22px);
 		--workspace-mode-result-heading-lift: calc(var(--workspace-title-rail-height) + var(--workspace-mode-result-heading-gap));
 		--layout-global-action-inline-size: calc(
 			(var(--circular-icon-button-size) * 2)
-			+ var(--layout-global-action-gap)
+			+ var(--layout-global-action-rail-gap)
 		);
 		--layout-sidebar-overlay-inline-size: min(
 			var(--sidebar-width),
@@ -190,7 +189,6 @@
 	}
 	/* Preserve the workspace panel's top rounded edge on narrow screens. */
 	.page {
-		--circular-icon-button-size: 44px;
 		--sidebar-form-control-min-height: 44px;
 		width: 100%;
 		min-height: 100dvh;
@@ -427,6 +425,29 @@
 
 /* Keep the touch target stationary while the overlay itself transitions. */
 @media (hover: none) and (pointer: coarse) {
+	.page {
+		--layout-global-action-rail-gap: max(
+			var(--layout-global-action-gap),
+			calc(var(--circular-icon-button-hit-size) - var(--circular-icon-button-size))
+		);
+		--layout-global-action-inline-size: calc(
+			(var(--circular-icon-button-size) * 2)
+			+ var(--layout-global-action-rail-gap)
+		);
+	}
+	.page > #sidebar_toggle::before,
+	#global_quick_actions > .global-quick-action-button::before,
+	#circular-icon-button .style-token-demo > .circular-icon-button::before,
+	#circular-icon-button .style-token-copy-button::before {
+		content: "";
+		position: absolute;
+		width: var(--circular-icon-button-hit-size);
+		height: var(--circular-icon-button-hit-size);
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		border-radius: var(--circular-icon-button-radius);
+	}
 	.page > .sidebar-toggle,
 	.page > .sidebar-toggle:hover,
 	.page > .sidebar-toggle:focus-visible,

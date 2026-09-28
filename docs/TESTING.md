@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.91.0`
+Documentation version: `v1.91.1`
 
 ## Price Field startup promotion
 
@@ -41,10 +41,11 @@ rather than passing with an idle cash balance.
 `tests/e2e/shared/circular-icon-button-contract.spec.mjs` measures the catalog, its copy
 action, and production sidebar/theme/language controls in Light and Dark at
 1,006 by 791 with fine and coarse pointers, 390 by 844 with touch, 1,006 by 500,
-and the 900px/901px boundary.
-It asserts a 30px desktop target, the unchanged 18px centered glyph, the existing
-44px narrow touch branch, and the 10px sidebar equal-edge gap. The wide coarse
-pointer keeps the 30px canonical size, not a separate 44px override. Expanded and collapsed
+825 by 1,325 with fine and coarse pointers, and the 900px/901px boundary.
+It asserts a 32px visible target at every width, the unchanged 18px centered glyph,
+a transparent 44px coarse hit region, and the 10px sidebar equal-edge gap. Adjacent
+global coarse-pointer targets have a 12px painted gap and no hit-region overlap.
+Expanded and collapsed
 states preserve the global centerline, 20px viewport anchors, title clearance,
 and horizontal containment. Hover and keyboard focus retain the shared accent
 color. Modal dismiss, topic icon, and Process List dimensions remain independent.

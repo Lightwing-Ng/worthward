@@ -1,4 +1,4 @@
-/* Code version: v3.33.2 */
+/* Code version: v3.33.3 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -10,6 +10,7 @@
 .settings-round-icon-button,
 .global-quick-action-button,
 .sidebar-toggle {
+	position: relative;
 	width: var(--circular-icon-button-size);
 	min-width: var(--circular-icon-button-size);
 	height: var(--circular-icon-button-size);
@@ -62,7 +63,7 @@
 	-webkit-mask-size: contain;
 }
 .global-quick-actions {
-	--global-quick-action-gap: var(--layout-global-action-gap);
+	--global-quick-action-gap: var(--layout-global-action-rail-gap);
 	--global-quick-action-step: calc(var(--circular-icon-button-size) + var(--global-quick-action-gap));
 	position: fixed;
 	top: var(--global-quick-actions-top);

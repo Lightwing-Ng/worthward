@@ -1,5 +1,17 @@
 # Known issues and operating constraints
 
+Standard circular controls, 28 Sep 2026: the 26 Sep narrow 44px painted-button
+exception below is superseded. The canonical circle is now 32px at desktop,
+overlay, and compact widths with an unchanged 18px glyph. Coarse-pointer users
+retain a transparent 44px hit region. The paired global actions use a 12px
+coarse-only horizontal rail gap to prevent hit-region overlap while the theme
+anchor, sidebar equal-edge insets, and Investment import's separate vertical
+10px gap remain unchanged. List-toggle offsets derive from the standard size
+and edge gap instead of an old 44px literal. This source update does not imply
+adoption by the user-owned 8688 service or a completed cross-project gate.
+Dense Investment share and Settings language-file action groups keep their
+distinct 32px native center targets instead of overlapping 44px pseudo-targets.
+
 LSTM loading and history, 27 Sep 2026: Compute backend defaults to Auto and its
 compact trigger uses ordinary Frosted Glass without a chevron. Auto retains
 NumPy CPU for the current tiny origin-local workload while skipping irrelevant

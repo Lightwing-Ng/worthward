@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.157.2
+ * Code version: v2.157.3
  * - Changed: Loads HSBC settlement consumers with either-side and optional fees.
  * - Changed: Loads canonical circular-action sizing for import height.
  * - Added: Initial Holdings loading displays four measured completed steps
@@ -78,7 +78,7 @@ import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
-} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.3.1';
+} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.3.2';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.0.1';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
@@ -187,7 +187,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.157.2',
+    entry: 'v2.157.3',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
