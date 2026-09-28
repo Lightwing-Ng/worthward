@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.91.1`
+Documentation version: `v1.91.2`
 
 ## Price Field startup promotion
 
@@ -399,8 +399,13 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   local source-evidence stores.
 - `tests/python/architecture/test_repository_contracts.py`: documentation links and versions,
   privacy-safe historical records, JavaScript and E2E resource versions,
-  tracked E2E assets, CSS import-manifest integrity, and retired-entrypoint or
-  unsafe-transport tombstones.
+  tracked E2E assets, CSS import-manifest integrity, reviewed numbered Git filenames,
+  and retired-entrypoint or unsafe-transport tombstones. The numbered-name check reads
+  the staged Git index, so a staged file is checked even when absent from the worktree.
+  An intentional numbered filename needs an exact relative path, staged blob ID, and
+  review reason in `REVIEWED_NUMBERED_TRACKED_PATHS`; a changed blob requires another
+  review. This tracked-file guard complements the post-generation scan in
+  [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md).
 - `tests/python/web/test_agent_optimization.py`, `tests/python/web/test_agent_optimization_browser.py`, and
   `tests/js/shared/test_agent_optimization.mjs`: manifest, schema, registration, security, unsupported-client,
   and random-port browser lifecycle contracts.

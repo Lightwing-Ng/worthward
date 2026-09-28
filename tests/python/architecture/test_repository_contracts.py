@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.7.3
+Code version: v1.8.1
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import subprocess
+from typing import Mapping, NamedTuple
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -120,6 +121,23 @@ APP_FALLBACK_MODULE_PATTERN = re.compile(
 NUMBERED_COPY_BASENAME_PATTERN = re.compile(r"^(.*) ([0-9]+)(\.[^/]*)?$")
 
 
+class TrackedIndexEntry(NamedTuple):
+    path: Path
+    mode: str
+    object_id: str
+    stage: int
+
+
+class ReviewedNumberedPath(NamedTuple):
+    object_id: str
+    reason: str
+
+
+# Pin each approved semantic filename to its exact staged blob and review reason.
+# A changed blob requires another review; no numbered paths are approved today.
+REVIEWED_NUMBERED_TRACKED_PATHS: dict[Path, ReviewedNumberedPath] = {}
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -130,18 +148,61 @@ def _code_version(path: Path) -> str:
     return match.group(1)
 
 
-def _tracked_paths() -> tuple[Path, ...]:
+def _parse_tracked_index_entries(output: bytes) -> tuple[TrackedIndexEntry, ...]:
+    entries = []
+    for raw_entry in output.split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, raw_path = raw_entry.split(b"\t", 1)
+        mode, object_id, stage = metadata.split()
+        entries.append(
+            TrackedIndexEntry(
+                Path(raw_path.decode("utf-8", errors="surrogateescape")),
+                mode.decode("ascii"),
+                object_id.decode("ascii"),
+                int(stage),
+            )
+        )
+    return tuple(entries)
+
+
+def _tracked_index_entries(root: Path = PROJECT_ROOT) -> tuple[TrackedIndexEntry, ...]:
     completed = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=PROJECT_ROOT,
+        ["git", "ls-files", "--stage", "-z"],
+        cwd=root,
         check=True,
         capture_output=True,
     )
-    return tuple(
-        Path(raw_path.decode("utf-8"))
-        for raw_path in completed.stdout.split(b"\0")
-        if raw_path
-    )
+    return _parse_tracked_index_entries(completed.stdout)
+
+
+def _tracked_paths() -> tuple[Path, ...]:
+    return tuple(entry.path for entry in _tracked_index_entries())
+
+
+def _numbered_path_review_issues(
+    entries: tuple[TrackedIndexEntry, ...],
+    reviewed: Mapping[Path, ReviewedNumberedPath],
+) -> list[str]:
+    issues = []
+    numbered_paths = set()
+    for entry in entries:
+        if not NUMBERED_COPY_BASENAME_PATTERN.match(entry.path.name):
+            continue
+        numbered_paths.add(entry.path)
+        approval = reviewed.get(entry.path)
+        if approval is None:
+            issues.append(f"{entry.path}: no review approval")
+        elif not approval.reason.strip():
+            issues.append(f"{entry.path}: review reason is empty")
+        elif entry.stage != 0 or entry.mode not in {"100644", "100755"}:
+            issues.append(f"{entry.path}: index entry is not a regular stage-zero file")
+        elif entry.object_id != approval.object_id:
+            issues.append(f"{entry.path}: staged blob differs from reviewed blob")
+
+    for path in reviewed.keys() - numbered_paths:
+        issues.append(f"{path}: approval has no tracked numbered file")
+    return sorted(issues)
 
 
 def _first_party_code_paths() -> tuple[Path, ...]:
@@ -386,18 +447,83 @@ def test_duplicate_copy_ignore_rule_is_narrow() -> None:
     assert "**/* [0-9]*" not in source
 
 
-def test_numbered_collision_copies_are_never_tracked() -> None:
-    tracked_copies = sorted(
-        str(relative_path)
-        for relative_path in _tracked_paths()
-        if NUMBERED_COPY_BASENAME_PATTERN.match(relative_path.name)
+def test_numbered_tracked_files_require_exact_review() -> None:
+    issues = _numbered_path_review_issues(
+        _tracked_index_entries(), REVIEWED_NUMBERED_TRACKED_PATHS
     )
 
-    assert tracked_copies == [], (
-        "Numbered collision copies must stay out of Git; review them with "
-        "docs/STATIC_FILE_HOUSEKEEPING.md instead of committing them:\n"
-        + "\n".join(tracked_copies)
+    assert issues == [], (
+        "Review each numbered Git path under docs/STATIC_FILE_HOUSEKEEPING.md. "
+        "Approve a legitimate filename by recording its exact path, staged blob "
+        "ID, and reason in REVIEWED_NUMBERED_TRACKED_PATHS:\n"
+        + "\n".join(issues)
     )
+
+
+def test_numbered_path_review_distinguishes_legitimate_names_from_copies() -> None:
+    report = Path("reports/report 2026.pdf")
+    screenshot = Path("assets/Pasted 2026-09-10 at 19.29.45.png")
+    entries = (
+        TrackedIndexEntry(report, "100644", "a" * 40, 0),
+        TrackedIndexEntry(screenshot, "100644", "b" * 40, 0),
+        TrackedIndexEntry(Path("main 2.py"), "100644", "c" * 40, 0),
+    )
+    reviewed = {
+        report: ReviewedNumberedPath("a" * 40, "The year identifies the report."),
+        screenshot: ReviewedNumberedPath("b" * 40, "The timestamp identifies the image."),
+    }
+
+    assert _numbered_path_review_issues(entries, reviewed) == [
+        "main 2.py: no review approval"
+    ]
+    changed_report = (
+        TrackedIndexEntry(report, "100644", "d" * 40, 0),
+        *entries[1:],
+    )
+    assert _numbered_path_review_issues(changed_report, reviewed) == [
+        "main 2.py: no review approval",
+        "reports/report 2026.pdf: staged blob differs from reviewed blob",
+    ]
+    assert _numbered_path_review_issues(entries[1:], reviewed) == [
+        "main 2.py: no review approval",
+        "reports/report 2026.pdf: approval has no tracked numbered file",
+    ]
+
+
+def test_tracked_index_includes_a_staged_file_missing_from_worktree(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(
+        ["git", "init", "-q", str(tmp_path)], check=True, capture_output=True
+    )
+    candidate = tmp_path / "main 2.py"
+    candidate.write_text("pass\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "--", candidate.name],
+        check=True,
+        capture_output=True,
+    )
+    candidate.unlink()
+
+    entries = _tracked_index_entries(tmp_path)
+    assert [entry.path for entry in entries] == [Path(candidate.name)]
+    assert _numbered_path_review_issues(entries, {}) == [
+        "main 2.py: no review approval"
+    ]
+
+
+def test_tracked_index_preserves_non_utf8_filenames() -> None:
+    raw_path = b"reports/na\xffme 2026.pdf"
+    output = b"100644 " + b"a" * 40 + b" 0\t" + raw_path + b"\0"
+
+    entries = _parse_tracked_index_entries(output)
+
+    assert entries[0].path.as_posix().encode(
+        "utf-8", errors="surrogateescape"
+    ) == raw_path
+    assert _numbered_path_review_issues(entries, {}) == [
+        f"{entries[0].path}: no review approval"
+    ]
 
 
 def test_investment_runtime_entry_version_matches_source() -> None:
