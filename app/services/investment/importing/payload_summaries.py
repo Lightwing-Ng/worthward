@@ -1,6 +1,8 @@
 """Investment import domain: payload summaries.
 
-Code version: v0.1.1
+Code version: v0.2.0
+- Changed: Schwab cash summaries follow the newest dated Positions evidence;
+  transaction-only manual workbooks cannot erase an existing cash snapshot.
 """
 
 from __future__ import annotations
@@ -89,6 +91,21 @@ def _payload_earliest_sort_key(payload: dict[str, Any]) -> tuple[str, int, str]:
 def _pick_latest_payload(
     existing_payload: dict[str, Any], incoming_payload: dict[str, Any]
 ) -> dict[str, Any]:
+    if (
+        _ii_basics._normalize_broker_code(existing_payload.get("broker"))
+        == _ii_basics._normalize_broker_code(incoming_payload.get("broker"))
+        == "schwab"
+    ):
+        existing_boundary = _schwab_payload_positions_boundary(existing_payload)
+        incoming_boundary = _schwab_payload_positions_boundary(incoming_payload)
+        if existing_boundary != incoming_boundary and (
+            existing_boundary or incoming_boundary
+        ):
+            return (
+                existing_payload
+                if existing_boundary > incoming_boundary
+                else incoming_payload
+            )
     return (
         incoming_payload
         if _payload_sort_key(incoming_payload) >= _payload_sort_key(existing_payload)
@@ -2024,12 +2041,78 @@ def _merge_broker_summaries(
                 incoming_summary,
             )
             continue
+        if broker == "schwab" and broker in merged:
+            incoming_cash = _normalize_text(
+                incoming_summary.get("ending_cash")
+                or incoming_summary.get("ending_cash_raw")
+            )
+            if not incoming_cash:
+                continue
+            existing_boundary = _schwab_positions_boundary(
+                existing_payload, merged[broker]
+            )
+            incoming_boundary = _schwab_positions_boundary(
+                incoming_payload, incoming_summary
+            )
+            if existing_boundary and (
+                not incoming_boundary or incoming_boundary < existing_boundary
+            ):
+                continue
+            merged[broker] = incoming_summary
+            continue
         if incoming_broker == broker:
             merged[broker] = incoming_summary
         elif broker not in merged:
             merged[broker] = incoming_summary
 
     return merged
+
+
+def _schwab_positions_boundary(
+    payload: dict[str, Any], summary: dict[str, Any]
+) -> str:
+    """Return the latest explicit Schwab Positions boundary for cash selection."""
+    summary_account = _normalize_text(summary.get("account"))
+    boundaries = [
+        _normalize_text(summary.get("schwab_positions_as_of_datetime")),
+        _normalize_text(summary.get("position_snapshot_as_of")),
+    ]
+    position_snapshot = summary.get("position_snapshot")
+    if isinstance(position_snapshot, dict):
+        boundaries.extend(
+            _normalize_text(position.get("as_of_timestamp") or position.get("as_of"))
+            for position in position_snapshot.values()
+            if isinstance(position, dict)
+        )
+    boundaries.extend(
+        _normalize_text(artifact.get("statement_period_end"))
+        for artifact in _ii_artifacts._normalize_source_artifacts(
+            payload.get("source_artifacts")
+        )
+        if _normalize_text(artifact.get("bundle_role")) == "positions"
+        and _ii_basics._normalize_broker_code(artifact.get("broker")) == "schwab"
+        and (
+            not summary_account
+            or _normalize_text(artifact.get("account")) == summary_account
+        )
+    )
+    return max((boundary for boundary in boundaries if boundary), default="")
+
+
+def _schwab_payload_positions_boundary(payload: dict[str, Any]) -> str:
+    raw_broker_summaries = payload.get("broker_summaries")
+    broker_summary = (
+        raw_broker_summaries.get("schwab")
+        if isinstance(raw_broker_summaries, dict)
+        else None
+    )
+    if not isinstance(broker_summary, dict):
+        broker_summary = (
+            payload.get("summary")
+            if isinstance(payload.get("summary"), dict)
+            else {}
+        )
+    return _schwab_positions_boundary(payload, broker_summary)
 
 
 def _attach_broker_summaries(payload: dict[str, Any]) -> None:

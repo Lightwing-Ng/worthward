@@ -1,10 +1,8 @@
 """Investment import domain: merge.
 
-Code version: v0.3.2
-- Changed: HSBC posting-balance and current-cash boundary helpers resolve from
-  their dedicated cash-boundary module.
-- Fixed: Re-imported HSBC pasted cash can restore missing immutable posting
-  provenance without changing existing settlement economics.
+Code version: v0.4.0
+- Added: Unique Schwab CSV sales supersede provisional thinkorswim workbook
+  sales while retaining both source artifacts.
 """
 
 from __future__ import annotations
@@ -43,6 +41,8 @@ import app.services.investment.importing.brokers.hsbc.reconciliation as _ii_hsbc
 import app.services.investment.importing.merge.identity as _ii_merge_identity
 
 import app.services.investment.importing.merge.reconciliation as _ii_merge_reconciliation
+
+import app.services.investment.importing.merge.schwab_provisional as _ii_schwab_provisional
 
 import app.services.investment.importing.payload_summaries as _ii_payload_summaries
 
@@ -133,6 +133,7 @@ def merge_investment_payloads(
             "superseded_ibkr_web_compact_aggregate_count": 0,
             "superseded_ibkr_csv_gainskeeper_stock_trade_count": 0,
             "superseded_incoming_ibkr_csv_gainskeeper_stock_trade_count": 0,
+            "superseded_schwab_provisional_trade_count": 0,
             "mixed_brokers_or_accounts": False,
             "brokers": transaction_brokers,
             "accounts": transaction_accounts,
@@ -307,6 +308,14 @@ def merge_investment_payloads(
     incoming_transactions_for_merge = _ii_merge_reconciliation._transactions_for_merge(
         normalized_incoming,
         prefer_longbridge_orders=prefer_longbridge_orders,
+    )
+    (
+        existing_transactions_for_merge,
+        incoming_transactions_for_merge,
+        superseded_schwab_provisional_trade_count,
+    ) = _ii_schwab_provisional.reconcile_schwab_provisional_sales(
+        existing_transactions_for_merge,
+        incoming_transactions_for_merge,
     )
     schwab_cleanup_signatures: set[tuple[str, str, str, str, str, str]] = set()
     if incoming_broker == "schwab":
@@ -749,6 +758,9 @@ def merge_investment_payloads(
         ),
         "superseded_ibkr_csv_gainskeeper_stock_trade_count": superseded_ibkr_csv_gainskeeper_stock_trade_count,
         "superseded_incoming_ibkr_csv_gainskeeper_stock_trade_count": superseded_incoming_ibkr_csv_gainskeeper_stock_trade_count,
+        "superseded_schwab_provisional_trade_count": (
+            superseded_schwab_provisional_trade_count
+        ),
         "enriched_hsbc_statement_settlement_posting_count": (
             hsbc_statement_settlement_enrichment["total"]
         ),

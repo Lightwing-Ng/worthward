@@ -1667,6 +1667,14 @@ class BrokerNormalizationImportTestsMixin:
                 positions_filename="Individual-Positions-2026-08-03.csv",
             )
 
+        payload = build_investment_payload_from_schwab_csv(
+            transactions_csv.encode("utf-8"),
+            positions_csv.replace("$200.00", "$269.86").encode("utf-8"),
+            transaction_filename="download.csv",
+            positions_filename="Individual-Positions-2026-08-03.csv",
+        )
+        self.assertEqual(payload["account"], "Individual ...001")
+
     def test_import_preserves_unknown_deposit_currency_and_forex_component_currency(
         self,
     ) -> None:

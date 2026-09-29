@@ -1,6 +1,8 @@
 """Investment import domain: schwab.
 
-Code version: v0.1.1
+Code version: v0.2.0
+- Added: Stock trade Amount must reconcile with quantity, price, and fees
+  before the CSV can establish authoritative net proceeds.
 """
 
 from __future__ import annotations
@@ -335,6 +337,22 @@ def _build_schwab_transaction_record(
         )
     if net_amount is None and gross_amount is not None:
         net_amount = gross_amount
+    if mapped_type in {"buy", "sell"} and net_amount is not None:
+        stated_amount_raw = (
+            norm_row.get("amount")
+            or norm_row.get("netamount")
+            or norm_row.get("proceeds")
+        )
+        if stated_amount_raw:
+            stated_amount = _parse_schwab_decimal(
+                stated_amount_raw, "amount", row_number, warnings
+            )
+            if stated_amount is None or abs(stated_amount - net_amount) > Decimal(
+                "0.005"
+            ):
+                raise ValueError(
+                    f"Schwab Transactions row {row_number}: Amount does not reconcile with quantity, price, and Fees & Comm."
+                )
 
     reinvestment_cost_basis_status = ""
     if mapped_type == "dividend_reinvestment":
@@ -670,11 +688,9 @@ def _validate_schwab_bundle_account(
         raise ValueError(
             "The Schwab Positions CSV is missing its visible account suffix."
         )
-    if not transaction_suffix:
-        raise ValueError(
-            "The Schwab Transactions CSV filename is missing its visible account suffix."
-        )
-    if transaction_suffix != positions_suffix:
+    # Newer Schwab Transactions exports are named ``download.csv`` and carry no
+    # account column, so the Positions heading is the only account evidence.
+    if transaction_suffix and transaction_suffix != positions_suffix:
         raise ValueError(
             "The Schwab Transactions and Positions CSV files have different visible account suffixes."
         )

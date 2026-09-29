@@ -648,7 +648,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.268.0`
+Documentation version: `v1.269.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
@@ -961,6 +961,29 @@ is claimed and concurrent layout work remains preserved.
   confirmation takes precedence in both persisted replay and browser replay.
   A linked dividend or withholding row displays its canonical ticker before
   the preserved broker description.
+- A Schwab sell entered from a thinkorswim page through the manual XLSX
+  workbook is provisional only when its `TOS-PAGE-...-SELL-...` reference and
+  entered timestamp agree. A later paired Schwab Transactions and Positions
+  import replaces that row only when account, ticker, side, currency, absolute
+  quantity, execution price, and the New York or entered Hong Kong trade date
+  identify one CSV sale. The CSV supplies the final fee and net proceeds;
+  the workbook and both CSV source artifacts remain available, and the CSV
+  row retains the manual reference. Ambiguous or conflicting candidates stop
+  the import for review. If the CSV omits the sale, the provisional row stays.
+  Once linked, a later CSV must retain the original sale before another sale
+  for the same account, ticker, and currency in the eligible date window can
+  be accepted. A missing original row or a revised quantity, price, date,
+  fee, or proceeds stops import for manual review instead of adding a sale.
+  A date-only CSV cannot prove whether the page's clock was New York or Hong
+  Kong time; the two-day candidate window is an explicitly inferred attribution
+  supported by a unique exact-price fill. An intraday CSV timestamp must agree
+  with one of those two interpretations.
+  A stated Schwab trade `Amount` must also reconcile with quantity, price, and
+  `Fees & Comm` before its net proceeds are accepted.
+  A transaction-only manual replay cannot clear Schwab cash. With at least one
+  listed security, an older Positions snapshot cannot roll back newer cash or
+  positions. Cash-only Positions exports still lack an empty-holdings snapshot
+  boundary and need separate reconciliation before they can clear old holdings.
 - An unbound Schwab `Security Transfer` receipt offers only imported source
   `transfer_out` legs from another broker with the same date, ticker, and
   exact quantity; selecting one saves the same manual pair binding as the
