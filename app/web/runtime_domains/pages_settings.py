@@ -1,6 +1,6 @@
 """Build the pages settings web-runtime context.
 
-Code version: v0.2.2
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
     LOGGER = context["LOGGER"]
 
     LOGOS_STORE_DIR = context["LOGOS_STORE_DIR"]
+
+    LONGBRIDGE_CONNECTION_CONNECTED = context["LONGBRIDGE_CONNECTION_CONNECTED"]
+
+    LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE = context["LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE"]
 
     Path = context["Path"]
 
@@ -64,6 +68,8 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
     build_view_path = context["build_view_path"]
 
     cast = context["cast"]
+
+    check_longbridge_cli_connection = context["check_longbridge_cli_connection"]
 
     clear_investment_store = context["clear_investment_store"]
 
@@ -1212,6 +1218,14 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
             error="" if success else message,
         )
 
+    def _broker_test_checked_at_label() -> str:
+        checked_at = datetime.now().astimezone()
+        return format_display_datetime(
+            checked_at,
+            include_seconds=True,
+            timezone_suffix=checked_at.strftime("%Z"),
+        )
+
     def broker_access_action():
         current_settings = load_broker_settings()
         selected_broker = (
@@ -1247,6 +1261,28 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
                     "broker-access",
                     error="Select Longbridge before starting browser authorization.",
                 )
+            # A valid session needs no browser round trip: the CLI would finish
+            # silently, and an unreachable service is not fixed by authorizing again.
+            existing_connection = check_longbridge_cli_connection(updated_settings)
+            if existing_connection.reason == LONGBRIDGE_CONNECTION_CONNECTED:
+                return _redirect_with_settings_feedback(
+                    "broker-access",
+                    notice=(
+                        "Longbridge is already authorized on this device and the connection works. "
+                        "You do not need to authorize again."
+                    ),
+                    broker_test_status="success",
+                    broker_test_message=existing_connection.message,
+                    broker_test_checked_at=_broker_test_checked_at_label(),
+                )
+            if existing_connection.reason == LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE:
+                return _redirect_with_settings_feedback(
+                    "broker-access",
+                    error=existing_connection.message,
+                    broker_test_status="error",
+                    broker_test_message=existing_connection.message,
+                    broker_test_checked_at=_broker_test_checked_at_label(),
+                )
             success, message = start_longbridge_cli_browser_oauth(updated_settings)
             return _redirect_with_settings_feedback(
                 "broker-access",
@@ -1256,17 +1292,11 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
             )
         if action == "test":
             success, message = test_broker_connection(updated_settings)
-            checked_at = datetime.now().astimezone()
-            checked_at_label = format_display_datetime(
-                checked_at,
-                include_seconds=True,
-                timezone_suffix=checked_at.strftime("%Z"),
-            )
             return _redirect_with_settings_feedback(
                 "broker-access",
                 broker_test_status="success" if success else "error",
                 broker_test_message=message,
-                broker_test_checked_at=checked_at_label,
+                broker_test_checked_at=_broker_test_checked_at_label(),
             )
         else:
             notice = (

@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.60.0`
+Documentation version: `v1.61.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -8,6 +8,12 @@ It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
 
+- Changed: An HSBC snapshot held in review only because the Portfolio paste has
+  no market-data update timestamp now attests tax-lot realized P&L for every
+  ticker whose complete replay matches the snapshot quantity, so Holdings no
+  longer shows those tickers as Unavailable after an in-session import. A
+  ticker the Portfolio does not reflect, and any other review reason, stay
+  unverified.
 - Fixed: Selecting a view or range pill moves the pill in the click's own task
   and renders the view, table, or chart after the pill's first frame. The pill
   is written once per selection, stays visible while it is measured, and is no

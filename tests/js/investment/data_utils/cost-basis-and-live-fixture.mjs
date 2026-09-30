@@ -1,4 +1,4 @@
-/* Code version: v1.2.3 */
+/* Code version: v1.2.4 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentFundingMetricsRuntime} from '../../../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
@@ -1311,6 +1311,106 @@ test('validated HSBC position snapshots attest open same-day tax-lot replay', ()
     );
     assert.equal(dram.realizedPnlLocal, 20);
     assert.equal(dram.realizedPnlStatus, 'complete');
+});
+
+function buildUntimestampedHsbcAttestationCase({reviewReasons, snapshotQuantity}) {
+    setDramTestWindow();
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {
+        hsbc: {
+            broker: 'hsbc',
+            account: '000-999999-999',
+            position_snapshot_authoritative: true,
+            position_snapshot_as_of: '2026-08-07',
+            position_snapshot: {
+                DRAM: {
+                    quantity: snapshotQuantity,
+                    cost_basis_status: 'known',
+                    cost_price: '50',
+                    market_value: '180',
+                    last_price: '60',
+                },
+            },
+            hsbc_snapshot: {
+                status: 'review',
+                review_reasons: reviewReasons,
+                portfolio_market_data_updated_at: {},
+                order_status_coverage: {
+                    mode: 'explicit_date_ranges',
+                    windows: [{start_date: '2026-08-01', end_date: '2026-08-07'}],
+                },
+            },
+            order_history_scope: {
+                mode: 'explicit_date_ranges',
+                windows: [{start_date: '2026-08-01', end_date: '2026-08-07'}],
+            },
+        },
+    };
+    const buy = makeScopedDramTrade({
+        broker: 'hsbc', account: '000-999999-999', type: 'buy', date: '2026-08-06',
+        quantity: 5, price: 50, fileKind: 'hsbc_order_status_text',
+    });
+    buy.source.email_datetime = '2026-08-06T21:00:00+08:00';
+    const sell = makeScopedDramTrade({
+        broker: 'hsbc', account: '000-999999-999', type: 'sell', date: '2026-08-07',
+        quantity: 2, price: 60, fileKind: 'hsbc_order_status_text',
+    });
+    sell.source.email_datetime = '2026-08-07T22:00:00+08:00';
+
+    const dram = buildTickerSummaries([sell, buy], {DRAM: 60}, 180, {})[0];
+    return {
+        dram,
+        hsbc: dram.realizedPnlAccounts.find((result) => result.broker === 'hsbc'),
+    };
+}
+
+const HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON = (
+    'Portfolio has no recognizable market-data update timestamp'
+);
+
+test('an HSBC snapshot in review only for a missing Portfolio timestamp attests a quantity-matching replay', () => {
+    const {dram, hsbc} = buildUntimestampedHsbcAttestationCase({
+        reviewReasons: [HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON],
+        snapshotQuantity: '3',
+    });
+
+    assert.equal(hsbc.status, 'complete');
+    assert.equal(hsbc.source, 'account_tax_lot_reconstruction');
+    assert.equal(hsbc.realizedPnlLocal, 20);
+    assert.equal(hsbc.taxLotHistoryVerification.verifiedThrough, '2026-08-07');
+    assert.equal(hsbc.taxLotHistoryVerification.expectedShares, 3);
+    assert.equal(dram.pnlUnavailable, false);
+    assert.equal(dram.realizedPnlLocal, 20);
+});
+
+test('an untimestamped HSBC snapshot does not attest a replay whose quantity it does not reflect', () => {
+    // A Portfolio captured before the sell still reports five shares.
+    const {dram, hsbc} = buildUntimestampedHsbcAttestationCase({
+        reviewReasons: [HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON],
+        snapshotQuantity: '5',
+    });
+
+    assert.equal(hsbc.status, 'unverified');
+    assert.equal(hsbc.taxLotHistoryVerification, null);
+    assert.equal(dram.pnlUnavailable, true);
+});
+
+test('any other HSBC snapshot review reason keeps tax-lot replay unverified', () => {
+    [
+        ['Order Status has no recognizable selected date range'],
+        [
+            HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON,
+            'Order Status has no recognizable selected date range',
+        ],
+        [],
+    ].forEach((reviewReasons) => {
+        const {dram, hsbc} = buildUntimestampedHsbcAttestationCase({
+            reviewReasons,
+            snapshotQuantity: '3',
+        });
+
+        assert.equal(hsbc.status, 'unverified', JSON.stringify(reviewReasons));
+        assert.equal(dram.pnlUnavailable, true, JSON.stringify(reviewReasons));
+    });
 });
 
 test('validated HSBC snapshots attest a fully covered flat ticker absent from open positions', () => {

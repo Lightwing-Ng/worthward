@@ -1,7 +1,10 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.2.4
+ * Code version: v1.3.0
+ * - Changed: An HSBC snapshot held in review only because the Portfolio paste
+ *   has no market-data timestamp may attest tax-lot replay for tickers whose
+ *   replayed quantity matches it. Every other review reason stays unverified.
  * - Fixed: Verified sell cash accepts zero or multiple fees and fees on
  *   either side of the principal while retaining exact identity checks.
  * - Fixed: Fee-inclusive settlement dates use the shared exact ISO-day
@@ -1240,6 +1243,28 @@ export function createInvestmentReconciliationUtils(runtime) {
         return scopes;
     }
 
+    // Mirrors the importer's review reason for a Portfolio paste that omits the
+    // index widget carrying `Updated hh:mm:ss on D Mon YYYY U.S. ET`.
+    const HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON = (
+        'Portfolio has no recognizable market-data update timestamp'
+    );
+
+    function isHsbcSnapshotEligibleForTaxLotAttestation(snapshot) {
+        if (snapshot?.status === 'validated') return true;
+        if (snapshot?.status !== 'review') return false;
+        // A missing timestamp only leaves the capture moment unbounded. The
+        // per-ticker quantity match still fails closed for any ticker the
+        // Portfolio does not reflect, so it is the one tolerated review reason.
+        const reviewReasons = Array.isArray(snapshot.review_reasons)
+            ? snapshot.review_reasons
+            : [];
+        return (
+            reviewReasons.length === 1
+            && reviewReasons[0] === HSBC_PORTFOLIO_TIMESTAMP_REVIEW_REASON
+            && !normalizeLedgerDate(snapshot.portfolio_market_data_updated_at?.date)
+        );
+    }
+
     function getDynamicallyVerifiedTaxLotHistoryScopes(lotScopeMap) {
         const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
         const scopes = new Map();
@@ -1277,7 +1302,7 @@ export function createInvestmentReconciliationUtils(runtime) {
             if (
                 !summary
                 || summary.position_snapshot_authoritative !== true
-                || snapshot?.status !== 'validated'
+                || !isHsbcSnapshotEligibleForTaxLotAttestation(snapshot)
                 || scopeState.realizedPnlStatus !== 'complete'
                 || scopeState.sellCount <= scopeState.brokerRealizedSellCount
                 || scopeState.hasPartialTaxLotHistory !== true

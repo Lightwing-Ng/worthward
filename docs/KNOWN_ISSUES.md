@@ -1,5 +1,31 @@
 # Known issues and operating constraints
 
+HSBC same-day position snapshot ranking, 30 Sep 2026: broker snapshot
+evidence is ranked by snapshot day and then by the Portfolio market-data
+timestamp. The snapshot day is the capture-side Order Status window end, while
+the timestamp is a U.S. ET moment, so a capture taken after the prior U.S. close
+carried the same snapshot day as a capture taken during the next session. When
+the in-session Portfolio paste omitted the index widget that carries
+`Updated hh:mm:ss on D Mon YYYY U.S. ET`, its empty timestamp sorted below the
+earlier capture and the pre-trade Portfolio stayed the authoritative HSBC
+position snapshot. Transaction-history Market value and Equity for that day's
+HSBC rows were then reverse-replayed from the stale positions and understated by
+the net value of that day's orders. A timestamp dated before its snapshot day
+now ranks the evidence on the timestamp's own day, so it can no longer outrank a
+same-day capture without a timestamp. Stored evidence, the ledger, and the
+as-of labels are unchanged; selection is recomputed whenever the payload is
+normalized. The same paste also left Holdings P&L `Unavailable` for every HSBC
+ticker with partial tax-lot history, because a Portfolio without the timestamp
+keeps `hsbc_snapshot.status` at `review` and the browser attested tax-lot
+realized P&L only for a `validated` snapshot. The browser now also accepts a
+snapshot whose single review reason is the missing timestamp; the per-ticker
+quantity match against the complete replay is unchanged, so a ticker the
+Portfolio does not reflect stays `Unavailable`, as does any snapshot with
+another review reason. The importer still stores the snapshot as `review` and
+still extends static tax-lot verifications only for a `validated` snapshot. One
+constraint remains: two captures on the same snapshot day that both lack a
+timestamp tie on capture order and fall through to the remaining ranking fields.
+
 Investment pill motion, 30 Sep 2026: the blue selection pill of the Investment
 view switcher and its range controls stuttered because of three independent
 causes. The shared segmented-control geometry, motion tokens, and every
@@ -674,7 +700,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.270.0`
+Documentation version: `v1.272.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

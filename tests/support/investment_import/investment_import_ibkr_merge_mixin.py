@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -1022,6 +1022,66 @@ class IbkrMergeImportTestsMixin:
         self.assertEqual(
             selected_evidence["snapshot_updated_at"], "2026-08-07 17:15:00"
         )
+
+    def test_hsbc_untimestamped_snapshot_outranks_a_prior_market_day_timestamp(
+        self,
+    ) -> None:
+        def hsbc_payload(
+            *,
+            quantity: str,
+            market_data_updated_at: dict[str, str],
+        ) -> dict[str, object]:
+            return {
+                "schema_version": "3.0.0",
+                "broker": "hsbc",
+                "account": "000-999999-999",
+                "transactions": [],
+                "position_snapshot": {
+                    "DRAM": {
+                        "asset_category": "Stock",
+                        "currency": "USD",
+                        "quantity": quantity,
+                        "cost_price": "60.715",
+                        "market": "US",
+                        "full_name": "ROUNDHILL MEMORY",
+                        "account_number": "000-999999-999",
+                    }
+                },
+                # Both captures use the same capture-side order-window end.
+                "position_snapshot_as_of": "2026-08-08",
+                "summary": {
+                    "position_snapshot_authoritative": True,
+                    "position_snapshot_source": "hsbc_portfolio_text",
+                    "hsbc_snapshot": {
+                        "portfolio_market_data_updated_at": market_data_updated_at,
+                    },
+                },
+            }
+
+        # Captured after the prior U.S. close, before the snapshot day's trading.
+        pre_trade = hsbc_payload(
+            quantity="200",
+            market_data_updated_at={"date": "2026-08-07", "time": "17:15:00"},
+        )
+        # Captured during the snapshot day's session, where the Portfolio page
+        # omitted the index widget that carries the market-data timestamp.
+        post_trade = hsbc_payload(quantity="195", market_data_updated_at={})
+
+        for existing, incoming in ((pre_trade, post_trade), (post_trade, pre_trade)):
+            with self.subTest(incoming=incoming["position_snapshot"]["DRAM"]["quantity"]):
+                merged = merge_investment_payloads(existing, incoming)
+                snapshot = merged["broker_snapshots"]["hsbc:000-999999-999"]
+                self.assertEqual(snapshot["position_snapshot"]["DRAM"]["quantity"], "195")
+                self.assertEqual(snapshot["position_snapshot_as_of"], "2026-08-08")
+
+        # A timestamp from the snapshot day itself is still the later capture.
+        same_day_timestamped = hsbc_payload(
+            quantity="190",
+            market_data_updated_at={"date": "2026-08-08", "time": "10:05:00"},
+        )
+        merged = merge_investment_payloads(post_trade, same_day_timestamped)
+        snapshot = merged["broker_snapshots"]["hsbc:000-999999-999"]
+        self.assertEqual(snapshot["position_snapshot"]["DRAM"]["quantity"], "190")
 
     def test_merge_dedupes_ibkr_csv_gainskeeper_stock_trades_with_precision_drift(
         self,

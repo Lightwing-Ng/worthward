@@ -1,6 +1,8 @@
 """Investment import domain: artifacts.
 
-Code version: v0.3.1
+Code version: v0.3.2
+- Fixed: A market-data timestamp from an earlier U.S. market day no longer
+  outranks a same-day position snapshot captured without a timestamp.
 - Fixed: Re-importing identical HSBC cash-page evidence may expand legacy
   one-day artifact metadata to the page's complete visible posting range.
 - Added: Broker snapshot evidence retains dated IBKR interest-accrual
@@ -902,6 +904,18 @@ def _broker_snapshot_evidence_sort_key(
         else snapshot_as_of
     )
     snapshot_updated_at = _normalize_text(evidence.get("snapshot_updated_at"))
+    # The update timestamp is a U.S. ET market-data moment, while the snapshot
+    # day can be the later capture-side order-window end. A timestamp from an
+    # earlier market day proves the capture predates that snapshot day's
+    # trading, so it must not outrank a same-day capture without a timestamp.
+    snapshot_rank_day = snapshot_day
+    snapshot_updated_day = snapshot_updated_at[:10]
+    if (
+        re.fullmatch(r"\d{4}-\d{2}-\d{2}", snapshot_day)
+        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", snapshot_updated_day)
+        and snapshot_updated_day < snapshot_day
+    ):
+        snapshot_rank_day = snapshot_updated_day
     snapshot_observed_at = snapshot_as_of
     if snapshot_kind == "position" and isinstance(snapshot, dict):
         observed_times = sorted(
@@ -930,7 +944,7 @@ def _broker_snapshot_evidence_sort_key(
             )
         )
     return (
-        snapshot_day,
+        snapshot_rank_day,
         snapshot_updated_at,
         1 if authoritative else 0,
         _snapshot_source_reliability(source),

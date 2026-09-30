@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.120.4
+ * Code version: v1.120.5
+ * - Changed: Loads tax-lot attestation that tolerates an HSBC snapshot whose
+ *   only review reason is a missing Portfolio market-data timestamp.
  * - Changed: Loads settlement consumers that allow fees on either side of
  *   their principal and principal-only evidence with zero commission.
  * - Changed: Loads exact-date and safe-decimal HSBC cash-boundary validation.
@@ -248,7 +250,7 @@ import {
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.4';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.2.4';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.3.0';
 import {
     createInvestmentSummaryUtils,
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.1';
@@ -802,7 +804,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.4';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.5';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

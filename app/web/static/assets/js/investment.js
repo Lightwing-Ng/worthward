@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.157.4
+ * Code version: v2.157.5
+ * - Changed: Loads HSBC tax-lot attestation for untimestamped Portfolio pastes.
  * - Changed: Loads the pill-first range-transfer v1.1.0 and stock-history-filters v1.2.0.
  * - Changed: Loads HSBC settlement consumers with either-side and optional fees.
  * - Changed: Loads canonical circular-action sizing for import height.
@@ -108,7 +109,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.120.4';
+} from './investment/data-utils.js?v=investment-data-utils-v1.120.5';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -139,7 +140,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.40.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.40.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -188,7 +189,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.157.4',
+    entry: 'v2.157.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

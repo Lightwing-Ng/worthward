@@ -1,6 +1,7 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.5.1
+Code version: v1.5.2
+- Added: Classified Longbridge connection check for the broker authorize action.
 - Added: Investment session-token handler for import dialog readiness.
 - Changed: Investment transaction cache schema v16 invalidates payloads built
   before broker snapshots exposed dated IBKR interest-accrual boundaries.
@@ -99,6 +100,9 @@ from app.infrastructure.broker_market_data import (
     test_broker_connection,
 )
 from app.infrastructure.longbridge_cli import (
+    LONGBRIDGE_CONNECTION_CONNECTED,
+    LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE,
+    check_longbridge_cli_connection,
     get_longbridge_cli_auth_status,
     start_longbridge_cli_browser_oauth,
     test_longbridge_cli_connection,
@@ -692,6 +696,7 @@ _LATE_BOUND_RUNTIME_CALLABLES = frozenset(
     {
         "build_market_cap_series_payload",
         "build_supported_periods_for_history_store",
+        "check_longbridge_cli_connection",
         "classify_daily_store_status",
         "classify_one_minute_store_status",
         "clear_investment_store",

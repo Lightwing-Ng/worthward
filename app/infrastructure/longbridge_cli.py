@@ -1,7 +1,9 @@
 """
 Longbridge CLI adapter for local OAuth-based market data access.
 
-Code version: v0.7.1
+Code version: v0.8.0
+- Added: A classified connection check so an unreachable Longbridge service is
+  reported as a network problem instead of a broken OAuth session.
 - Removed: The retired raw authorization-code login path. Browser OAuth is the
   only application-owned authentication entrypoint.
 """
@@ -29,6 +31,24 @@ DEFAULT_LONGBRIDGE_CLI_CANDIDATES = (
 )
 _BROWSER_OAUTH_LOCK = Lock()
 _BROWSER_OAUTH_PROCESS: subprocess.Popen[str] | None = None
+LONGBRIDGE_CONNECTION_CONNECTED = "connected"
+LONGBRIDGE_CONNECTION_AUTH_STATUS_FAILED = "auth_status_failed"
+LONGBRIDGE_CONNECTION_NOT_AUTHORIZED = "not_authorized"
+LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE = "network_unreachable"
+LONGBRIDGE_CONNECTION_QUOTE_FAILED = "quote_failed"
+LONGBRIDGE_CONNECTION_NO_DATA = "no_data"
+# Transport-level CLI diagnostics. They mean the service was never reached, so
+# the OAuth session itself is not in question.
+_NETWORK_FAILURE_MARKERS = (
+    "timed out",
+    "timeout",
+    "error sending request",
+    "client error (connect)",
+    "dns error",
+    "connection refused",
+    "connection reset",
+    "network is unreachable",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +56,13 @@ class LongbridgeCliResult:
     stdout: str
     stderr: str
     exit_code: int
+
+
+@dataclass(frozen=True)
+class LongbridgeCliConnectionCheck:
+    success: bool
+    message: str
+    reason: str
 
 
 def _normalize_longbridge_cli_path(candidate: str | None) -> str | None:
@@ -188,23 +215,37 @@ def start_longbridge_cli_browser_oauth(settings: BrokerSettings) -> tuple[bool, 
 
     return (
         True,
-        "Longbridge authorization opened in your browser. Complete it there, then return here and test the connection.",
+        "Longbridge authorization opened in your browser. Complete it there, then return here and test the connection. "
+        "If that browser is already signed in to Longbridge, it may finish without showing an authorization page.",
     )
 
 
-def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]:
+def _is_longbridge_network_failure(error: BaseException) -> bool:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return True
+    diagnostic = str(error).lower()
+    return any(marker in diagnostic for marker in _NETWORK_FAILURE_MARKERS)
+
+
+def check_longbridge_cli_connection(settings: BrokerSettings) -> LongbridgeCliConnectionCheck:
+    """Verify the CLI OAuth session and classify why a failed check failed."""
     try:
         auth_status = get_longbridge_cli_auth_status(settings)
     except Exception:
         LOGGER.exception("Longbridge CLI auth status check failed.")
-        return False, "Longbridge CLI auth status failed. Check the CLI path and OAuth session, then try again."
+        return LongbridgeCliConnectionCheck(
+            False,
+            "Longbridge CLI auth status failed. Check the CLI path and OAuth session, then try again.",
+            LONGBRIDGE_CONNECTION_AUTH_STATUS_FAILED,
+        )
 
     token_status = str(((auth_status.get("token") or {}).get("status") or "")).strip().lower()
     if token_status != "valid":
-        return (
+        return LongbridgeCliConnectionCheck(
             False,
             "Longbridge CLI is installed, but no valid OAuth session was found. "
             "Start browser authorization from Settings > Broker access, then try again.",
+            LONGBRIDGE_CONNECTION_NOT_AUTHORIZED,
         )
 
     try:
@@ -213,10 +254,34 @@ def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]
             ["quote", "AAPL.US", "--format", "json"],
             timeout_seconds=20,
         )
-    except Exception:
+    except Exception as error:
         LOGGER.exception("Longbridge CLI quote test failed.")
-        return False, "Longbridge CLI quote test failed. Check the CLI path and OAuth session, then try again."
+        if _is_longbridge_network_failure(error):
+            return LongbridgeCliConnectionCheck(
+                False,
+                "Longbridge is authorized, but its servers could not be reached. "
+                "Check your network or proxy, then test again. You do not need to authorize again.",
+                LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE,
+            )
+        return LongbridgeCliConnectionCheck(
+            False,
+            "Longbridge CLI quote test failed. Check the CLI path and OAuth session, then try again.",
+            LONGBRIDGE_CONNECTION_QUOTE_FAILED,
+        )
 
     if isinstance(quote_payload, list) and quote_payload:
-        return True, "Successfully connected to Longbridge via CLI OAuth."
-    return False, "Longbridge CLI OAuth is authenticated, but the quote command returned no data."
+        return LongbridgeCliConnectionCheck(
+            True,
+            "Successfully connected to Longbridge via CLI OAuth.",
+            LONGBRIDGE_CONNECTION_CONNECTED,
+        )
+    return LongbridgeCliConnectionCheck(
+        False,
+        "Longbridge CLI OAuth is authenticated, but the quote command returned no data.",
+        LONGBRIDGE_CONNECTION_NO_DATA,
+    )
+
+
+def test_longbridge_cli_connection(settings: BrokerSettings) -> tuple[bool, str]:
+    check = check_longbridge_cli_connection(settings)
+    return check.success, check.message

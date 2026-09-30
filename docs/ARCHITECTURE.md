@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.130.0`
+Documentation version: `v1.131.0`
 
 ## Shared loading indicator
 
@@ -1143,7 +1143,11 @@ snapshot.
 When a broker provides a validated current-position snapshot, explicit order
 history coverage, and a quantity-reconciling complete replay, the same engine
 may attest realized P&L for open lots; rolling or incomplete histories remain
-unverified.
+unverified. An HSBC snapshot held in `review` qualifies only when its single
+review reason is a Portfolio paste without the market-data update timestamp:
+that reason leaves the capture moment unbounded, and the per-ticker quantity
+match still withholds attestation from any ticker the Portfolio does not
+reflect. Every other review reason, alone or combined, stays unverified.
 The normalized Investment API emits one reconciliation record for every
 broker/account/ticker scope. Each record carries `coverage_status`, independent
 performance and position `as_of` boundaries, transaction-history coverage, and

@@ -1,6 +1,6 @@
 """Focused safety tests for Longbridge CLI path resolution.
 
-Code version: v1.1.1
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -185,6 +185,58 @@ class LongbridgeCliErrorRedactionTests(unittest.TestCase):
         )
         self.assertNotIn(diagnostic, message)
         log_exception.assert_called_once_with("Longbridge CLI quote test failed.")
+
+    def test_connection_quote_network_failure_is_not_reported_as_an_oauth_problem(self) -> None:
+        network_failures = (
+            RuntimeError("Error: connect timeout"),
+            RuntimeError(
+                "Error: error sending request for url "
+                "(https://openapi.longbridge.com/v1/socket/token): client error (Connect)"
+            ),
+            longbridge_cli.subprocess.TimeoutExpired(cmd="longbridge", timeout=20),
+        )
+        for failure in network_failures:
+            with (
+                self.subTest(failure=type(failure).__name__),
+                patch.object(
+                    longbridge_cli,
+                    "get_longbridge_cli_auth_status",
+                    return_value={"token": {"status": "valid"}},
+                ),
+                patch.object(longbridge_cli, "run_longbridge_cli_json", side_effect=failure),
+                patch.object(longbridge_cli.LOGGER, "exception"),
+            ):
+                check = longbridge_cli.check_longbridge_cli_connection(BrokerSettings())
+
+            self.assertFalse(check.success)
+            self.assertEqual(check.reason, longbridge_cli.LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE)
+            self.assertEqual(
+                check.message,
+                "Longbridge is authorized, but its servers could not be reached. "
+                "Check your network or proxy, then test again. You do not need to authorize again.",
+            )
+            self.assertNotIn("openapi.longbridge.com", check.message)
+
+    def test_connection_check_classifies_a_missing_session_and_a_working_one(self) -> None:
+        with patch.object(
+            longbridge_cli,
+            "get_longbridge_cli_auth_status",
+            return_value={"token": {"status": "missing"}},
+        ):
+            missing = longbridge_cli.check_longbridge_cli_connection(BrokerSettings())
+        with (
+            patch.object(
+                longbridge_cli,
+                "get_longbridge_cli_auth_status",
+                return_value={"token": {"status": "valid"}},
+            ),
+            patch.object(longbridge_cli, "run_longbridge_cli_json", return_value=[{"last": "1"}]),
+        ):
+            connected = longbridge_cli.check_longbridge_cli_connection(BrokerSettings())
+
+        self.assertEqual(missing.reason, longbridge_cli.LONGBRIDGE_CONNECTION_NOT_AUTHORIZED)
+        self.assertTrue(connected.success)
+        self.assertEqual(connected.reason, longbridge_cli.LONGBRIDGE_CONNECTION_CONNECTED)
 
 
 if __name__ == "__main__":

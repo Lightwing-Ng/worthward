@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.3.4
+Code version: v1.4.0
 """
 
 from __future__ import annotations
@@ -15,6 +15,13 @@ from app import create_app
 from app.core.preferences import broker as broker_settings, store as settings_store
 from app.core.preferences.broker import BrokerSettings, load_broker_settings
 from app.infrastructure import longbridge_cli
+
+
+NOT_AUTHORIZED_CHECK = longbridge_cli.LongbridgeCliConnectionCheck(
+    False,
+    "No valid OAuth session was found.",
+    longbridge_cli.LONGBRIDGE_CONNECTION_NOT_AUTHORIZED,
+)
 
 
 class LongbridgeBrowserOAuthTests(unittest.TestCase):
@@ -66,6 +73,7 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                 patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": broker_legacy_path}),
                 patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
                 patch.object(broker_settings, "BROKER_SETTINGS_PATH", broker_legacy_path),
+                patch("app.web.runtime.check_longbridge_cli_connection", return_value=NOT_AUTHORIZED_CHECK),
                 patch("app.web.runtime.start_longbridge_cli_browser_oauth", return_value=(True, "Browser opened.")) as authorize,
             ):
                 client = create_app().test_client()
@@ -127,6 +135,7 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                 patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
                 patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
                 patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch("app.web.runtime.check_longbridge_cli_connection", return_value=NOT_AUTHORIZED_CHECK),
                 patch(
                     "app.web.runtime.start_longbridge_cli_browser_oauth",
                     return_value=(True, "Browser opened."),
@@ -146,6 +155,78 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("data-longbridge-oauth-monitor", html)
         self.assertIn('/api/settings/longbridge-oauth/status', html)
+
+    def _authorize_with_existing_connection(
+            self,
+            check: longbridge_cli.LongbridgeCliConnectionCheck,
+    ) -> tuple[str, MagicMock]:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
+                patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
+                patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
+                patch("app.web.runtime.check_longbridge_cli_connection", return_value=check),
+                patch(
+                    "app.web.runtime.start_longbridge_cli_browser_oauth",
+                    return_value=(True, "Browser opened."),
+                ) as authorize,
+            ):
+                client = create_app().test_client()
+                with client.session_transaction() as session:
+                    session["_investment_csrf_token"] = "t" * 43
+                response = client.post(
+                    "/settings/broker-access/action",
+                    data={"selected_broker": "longbridge", "action": "authorize"},
+                    headers={"Origin": "http://localhost", "X-CSRF-Token": "t" * 43},
+                    follow_redirects=True,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        return response.get_data(as_text=True), authorize
+
+    def test_authorize_reports_an_existing_working_session_without_opening_the_browser(self) -> None:
+        html, authorize = self._authorize_with_existing_connection(
+            longbridge_cli.LongbridgeCliConnectionCheck(
+                True,
+                "Successfully connected to Longbridge via CLI OAuth.",
+                longbridge_cli.LONGBRIDGE_CONNECTION_CONNECTED,
+            )
+        )
+
+        authorize.assert_not_called()
+        self.assertIn("Longbridge is already authorized on this device and the connection works.", html)
+        self.assertIn("Successfully connected to Longbridge via CLI OAuth.", html)
+        self.assertNotIn("data-longbridge-oauth-monitor", html)
+
+    def test_authorize_reports_an_unreachable_service_without_opening_the_browser(self) -> None:
+        message = "Longbridge is authorized, but its servers could not be reached."
+        html, authorize = self._authorize_with_existing_connection(
+            longbridge_cli.LongbridgeCliConnectionCheck(
+                False,
+                message,
+                longbridge_cli.LONGBRIDGE_CONNECTION_NETWORK_UNREACHABLE,
+            )
+        )
+
+        authorize.assert_not_called()
+        self.assertIn(message, html)
+        self.assertIn('data-broker-connection-health role="img" aria-label="Healthy connection" title="Healthy connection" hidden', html)
+        self.assertNotIn("data-longbridge-oauth-monitor", html)
+
+    def test_authorize_opens_the_browser_when_the_session_itself_fails(self) -> None:
+        html, authorize = self._authorize_with_existing_connection(
+            longbridge_cli.LongbridgeCliConnectionCheck(
+                False,
+                "Longbridge CLI quote test failed.",
+                longbridge_cli.LONGBRIDGE_CONNECTION_QUOTE_FAILED,
+            )
+        )
+
+        authorize.assert_called_once()
+        self.assertIn("data-longbridge-oauth-monitor", html)
 
     def test_broker_access_marks_a_verified_connection_as_healthy(self) -> None:
         with TemporaryDirectory() as temp_dir:
