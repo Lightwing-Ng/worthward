@@ -1176,6 +1176,10 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     expect(viewOverflow).toBe('visible');
     expect(stockDetailsOverflow).toBe('auto hidden');
     expect(stockDetailsSegmentedMotherStyle.optionShape).toEqual(viewSegmentedMotherStyle.optionShape);
+    // The price chart stage is created a few frames after the panel is shown. The range pill
+    // used to hide and re-show itself around that moment, which made its ready class an
+    // accidental wait for the stage; wait for the stage itself.
+    await expect(page.locator('#stock_panel .investment-stock-details-price-chart-stage')).toBeAttached();
     const stockDetailsLayers = await readLayerGeometry(
         '#stock_panel .investment-stock-details-range-segmented',
         '#stock_panel .investment-stock-details-price-chart-stage',

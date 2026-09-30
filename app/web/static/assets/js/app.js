@@ -1,4 +1,4 @@
-/* Code version: v0.74.11 */
+/* Code version: v0.74.12 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -635,10 +635,10 @@
         ["WORTHWARD_APP_WORKSPACE_ENHANCEMENTS", "app/workspace-enhancements.js", "app-workspace-enhancements-v1.0.0"],
         ["WORTHWARD_APP_WORKSPACE_HYDRATION", "app/workspace-hydration.js", "app-workspace-hydration-v1.4.0"],
         ["WORTHWARD_APP_TICKER_CONTROLS", "app/ticker-controls.js", "app-ticker-controls-v1.1.0"],
-        ["WORTHWARD_APP_SELECT_CONTROLS", "app/select-controls.js", "app-select-controls-v1.0.2"],
+        ["WORTHWARD_APP_SELECT_CONTROLS", "app/select-controls.js", "app-select-controls-v1.1.0"],
         ["WORTHWARD_APP_DATE_CONTROLS", "app/date-controls.js", "app-date-controls-v1.1.0"],
         ["WORTHWARD_APP_RANGE_CONTROLS", "app/range-controls.js", "app-range-controls-v1.0.1"],
-        ["WORTHWARD_APP_STRATEGY_CONTROLS", "app/strategy-controls.js", "app-strategy-controls-v1.3.0"],
+        ["WORTHWARD_APP_STRATEGY_CONTROLS", "app/strategy-controls.js", "app-strategy-controls-v1.3.1"],
     ]);
     for (const [namespace, relativePath, cacheKey] of appModuleSpecs) {
         if (typeof window[namespace]?.create === "function") continue;

@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.59.0`
+Documentation version: `v1.60.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -8,6 +8,14 @@ It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
 
+- Fixed: Selecting a view or range pill moves the pill in the click's own task
+  and renders the view, table, or chart after the pill's first frame. The pill
+  is written once per selection, stays visible while it is measured, and is no
+  longer overwritten by the page-wide segmented-control sync; a control without
+  layout is never marked ready.
+- Fixed: An idle Investment page no longer rewrites the import-broker select on
+  every frame, and the sidebar control repair pass runs only for DOM changes that
+  can introduce or re-populate a bindable control.
 - Changed: Overview and Stock details x-axes use the shared pixel-space date
   layout: flush edge labels, centered interior labels, collision-free even
   spacing sized to the plot, opt-in special dates, and date-only labels on

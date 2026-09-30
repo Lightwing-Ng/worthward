@@ -1,7 +1,13 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
+ * - Fixed: A pill selection moves the pill in the click's own task and no longer hides
+ *   it while it is re-measured. Geometry is written once and only when a value changed,
+ *   so a running pill transition is not restarted, and the view, table or chart work
+ *   that follows a selection waits for the pill's first frame instead of delaying it.
+ * - Added: `runAfterInvestmentPillFrame` and `cancelInvestmentPillFrameWork` order that
+ *   follow-up work; a control marked `data-segmented-owner="adapter"` is measured only here.
  * - Fixed: The share action group aligns to the global theme anchor's
  *   centerline and the segmented control's centerline in viewport coordinates
  *   even when an ancestor becomes the containing block of fixed descendants.
@@ -132,6 +138,8 @@ function measureInvestmentSegmentedPillGeometry(control, activeLabel, {
             window.WORTHWARD_SEGMENTED_CONTROLS?.sync?.(control, {
                 activeIndex,
                 options,
+                // This function returns the pill geometry and the caller writes it once.
+                updatePill: false,
             });
             renderedControlRect = control.getBoundingClientRect();
             renderedControlWidth = renderedControlRect.width;
@@ -233,6 +241,28 @@ function measureInvestmentSegmentedPillGeometry(control, activeLabel, {
         };
     }
 
+// Writes a measured pill geometry and marks the pill visible. A custom property is only
+// rewritten when its value changed: an identical write is free, whereas any other value
+// (even one that is corrected a moment later) makes the running pill transition restart.
+function applySegmentedPillGeometry(control, pillGeometry) {
+        const nextLeft = `${pillGeometry.left}px`;
+        const nextWidth = `${pillGeometry.width}px`;
+        if (control.style.getPropertyValue('--segmented-pill-left') !== nextLeft) {
+            control.style.setProperty('--segmented-pill-left', nextLeft);
+        }
+        if (control.style.getPropertyValue('--segmented-pill-width') !== nextWidth) {
+            control.style.setProperty('--segmented-pill-width', nextWidth);
+        }
+        keepSegmentedActiveOptionVisible(control, pillGeometry);
+        control.classList.add('is-pill-ready');
+    }
+
+function isSegmentedControlMeasurable(control) {
+        if (!(control instanceof HTMLElement) || !control.isConnected) return false;
+        const rect = control.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
 function keepSegmentedActiveOptionVisible(control, pillGeometry) {
         if (!(control instanceof HTMLElement) || !pillGeometry) return;
         const activeOption = control.querySelector('input[type="radio"]:checked')?.closest('.segmented-control-option');
@@ -320,6 +350,12 @@ function syncInvestmentShareActionsClearance() {
 
 function updateInvestmentSegmentedPill() {
         if (!runtime.segmentedControl) return;
+        if (!isSegmentedControlMeasurable(runtime.segmentedControl)) {
+            // Nothing is laid out (hidden or not rendered yet): a measurement would be garbage.
+            runtime.segmentedControl.classList.remove('is-pill-ready');
+            syncInvestmentShareActionsPosition();
+            return;
+        }
         const activeLabel = runtime.segmentedControl.querySelector('input[type="radio"]:checked + span');
         if (!activeLabel) {
             runtime.segmentedControl.classList.remove('is-pill-ready');
@@ -337,16 +373,61 @@ function updateInvestmentSegmentedPill() {
             return;
         }
 
-        runtime.segmentedControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
-        runtime.segmentedControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
-        keepSegmentedActiveOptionVisible(runtime.segmentedControl, pillGeometry);
-        runtime.segmentedControl.classList.add('is-pill-ready');
+        applySegmentedPillGeometry(runtime.segmentedControl, pillGeometry);
         syncInvestmentShareActionsPosition();
+    }
+
+const deferredPillWorkTokens = new Map();
+const pendingPillWorkKeys = new Set();
+
+// Runs `work` after the frame in which a pill transition started has been rendered, so the
+// transition begins on the compositor before any long main-thread work (a table, metrics or
+// chart render) takes over. A newer request under the same key, or a call to
+// `cancelInvestmentPillFrameWork(key)`, replaces a pending one, so rapid selections apply only
+// the last. A document that is not rendering (hidden tab) never runs animation frames, so it
+// runs the work at once, and a long fallback timer covers a stalled frame loop.
+function runAfterInvestmentPillFrame(key, work) {
+        const token = (deferredPillWorkTokens.get(key) || 0) + 1;
+        deferredPillWorkTokens.set(key, token);
+        pendingPillWorkKeys.add(key);
+        let settled = false;
+        const run = () => {
+            if (settled) return;
+            settled = true;
+            if (deferredPillWorkTokens.get(key) !== token) return;
+            pendingPillWorkKeys.delete(key);
+            work();
+        };
+        if (document.hidden) {
+            window.setTimeout(run, 0);
+            return;
+        }
+        window.requestAnimationFrame(() => window.setTimeout(run, 0));
+        window.setTimeout(run, 1000);
+    }
+
+// Cancels the pending request for `key`; returns whether one was waiting.
+function cancelInvestmentPillFrameWork(key) {
+        deferredPillWorkTokens.set(key, (deferredPillWorkTokens.get(key) || 0) + 1);
+        return pendingPillWorkKeys.delete(key);
+    }
+
+// Moves the pill for a user-initiated view change in the same task as the click, so its
+// transition starts on the next frame and no longer waits behind the view's own rendering.
+// A control that cannot be measured yet (not laid out) falls back to the scheduled update.
+function updateInvestmentSegmentedPillNow() {
+        if (!isSegmentedControlMeasurable(runtime.segmentedControl)) {
+            scheduleInvestmentSegmentedPillUpdate();
+            return;
+        }
+        updateInvestmentSegmentedPill();
     }
 
 function scheduleInvestmentSegmentedPillUpdate() {
         if (!runtime.segmentedControl) return;
-        runtime.segmentedControl.classList.remove('is-pill-ready');
+        // The pill stays visible while it is re-measured: hiding it here made it fade out
+        // and back in on every view change. `updateInvestmentSegmentedPill` hides it only
+        // when the active label cannot be measured.
         runtime.clearInvestmentSegmentedMeasureRaf();
         runtime.clearInvestmentSegmentedMeasureTimer();
         runtime.state.investmentSegmentedMeasureRaf = window.requestAnimationFrame(() => {
@@ -375,10 +456,7 @@ function updateIbkrImportSegmentedPill() {
             runtime.investmentImportIbkrMode.classList.remove('is-pill-ready');
             return;
         }
-        runtime.investmentImportIbkrMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
-        runtime.investmentImportIbkrMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
-        keepSegmentedActiveOptionVisible(runtime.investmentImportIbkrMode, pillGeometry);
-        runtime.investmentImportIbkrMode.classList.add('is-pill-ready');
+        applySegmentedPillGeometry(runtime.investmentImportIbkrMode, pillGeometry);
     }
 
 function scheduleIbkrImportSegmentedPillUpdate() {
@@ -397,6 +475,10 @@ function scheduleIbkrImportSegmentedPillUpdate() {
 
 function updateHsbcImportSegmentedPill() {
         if (!(runtime.investmentImportHsbcMode instanceof HTMLElement)) return;
+        if (!isSegmentedControlMeasurable(runtime.investmentImportHsbcMode)) {
+            runtime.investmentImportHsbcMode.classList.remove('is-pill-ready');
+            return;
+        }
         const activeLabel = runtime.investmentImportHsbcMode.querySelector('input[type="radio"]:checked + span');
         if (!activeLabel) {
             runtime.investmentImportHsbcMode.classList.remove('is-pill-ready');
@@ -407,15 +489,11 @@ function updateHsbcImportSegmentedPill() {
             runtime.investmentImportHsbcMode.classList.remove('is-pill-ready');
             return;
         }
-        runtime.investmentImportHsbcMode.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
-        runtime.investmentImportHsbcMode.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
-        keepSegmentedActiveOptionVisible(runtime.investmentImportHsbcMode, pillGeometry);
-        runtime.investmentImportHsbcMode.classList.add('is-pill-ready');
+        applySegmentedPillGeometry(runtime.investmentImportHsbcMode, pillGeometry);
     }
 
 function scheduleHsbcImportSegmentedPillUpdate() {
         if (!(runtime.investmentImportHsbcMode instanceof HTMLElement)) return;
-        runtime.investmentImportHsbcMode.classList.remove('is-pill-ready');
         if (runtime.state.investmentHsbcModeMeasureRaf) {
             window.cancelAnimationFrame(runtime.state.investmentHsbcModeMeasureRaf);
             runtime.state.investmentHsbcModeMeasureRaf = 0;
@@ -1386,6 +1464,11 @@ function clearInvestmentEquityRangeControlBindings() {
 function updateInvestmentStockDetailsRangePill() {
         const rangeControl = getInvestmentStockDetailsRangeControl();
         if (!rangeControl) return;
+        if (!isSegmentedControlMeasurable(rangeControl)) {
+            // A control inside a hidden panel has no geometry; it becomes ready once shown and measured.
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
         const activeLabel = rangeControl.querySelector('input[type="radio"]:checked + span');
         if (!activeLabel) {
             rangeControl.classList.remove('is-pill-ready');
@@ -1398,16 +1481,12 @@ function updateInvestmentStockDetailsRangePill() {
             return;
         }
 
-        rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
-        rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
-        keepSegmentedActiveOptionVisible(rangeControl, pillGeometry);
-        rangeControl.classList.add('is-pill-ready');
+        applySegmentedPillGeometry(rangeControl, pillGeometry);
     }
 
 function scheduleInvestmentStockDetailsRangePillUpdate() {
         const rangeControl = getInvestmentStockDetailsRangeControl();
         if (!rangeControl) return;
-        rangeControl.classList.remove('is-pill-ready');
         if (runtime.state.investmentStockDetailsRangeMeasureRaf) {
             window.cancelAnimationFrame(runtime.state.investmentStockDetailsRangeMeasureRaf);
             runtime.state.investmentStockDetailsRangeMeasureRaf = 0;
@@ -1423,6 +1502,11 @@ function scheduleInvestmentStockDetailsRangePillUpdate() {
 function updateInvestmentEquityRangePill() {
         const rangeControl = getInvestmentEquityRangeControl();
         if (!rangeControl) return;
+        if (!isSegmentedControlMeasurable(rangeControl)) {
+            // A control inside a hidden panel has no geometry; it becomes ready once shown and measured.
+            rangeControl.classList.remove('is-pill-ready');
+            return;
+        }
         const activeLabel = rangeControl.querySelector('input[type="radio"]:checked + span');
         if (!activeLabel) {
             rangeControl.classList.remove('is-pill-ready');
@@ -1435,16 +1519,12 @@ function updateInvestmentEquityRangePill() {
             return;
         }
 
-        rangeControl.style.setProperty('--segmented-pill-left', `${pillGeometry.left}px`);
-        rangeControl.style.setProperty('--segmented-pill-width', `${pillGeometry.width}px`);
-        keepSegmentedActiveOptionVisible(rangeControl, pillGeometry);
-        rangeControl.classList.add('is-pill-ready');
+        applySegmentedPillGeometry(rangeControl, pillGeometry);
     }
 
 function scheduleInvestmentEquityRangePillUpdate() {
         const rangeControl = getInvestmentEquityRangeControl();
         if (!rangeControl) return;
-        rangeControl.classList.remove('is-pill-ready');
         if (runtime.state.investmentEquityRangeMeasureRaf) {
             window.cancelAnimationFrame(runtime.state.investmentEquityRangeMeasureRaf);
             runtime.state.investmentEquityRangeMeasureRaf = 0;
@@ -1472,6 +1552,7 @@ function renderInvestmentRangeControl({
                 <div class="segmented-control ${runtime.escapeHtml(controlClassName)}"
                      ${dataAttributeName}
                      data-segmented-pill="measured"
+                     data-segmented-owner="adapter"
                      data-active="${runtime.escapeHtml(activeRange)}"
                      data-option-count="${options.length}"
                      style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
@@ -1536,8 +1617,12 @@ function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
             rangeControl.dataset.active = nextRange;
             const nextIndex = Math.max(0, runtime.INVESTMENT_STOCK_DETAILS_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
-            scheduleInvestmentStockDetailsRangePillUpdate();
-            runtime.renderInvestmentStockDetailsPriceChart(ticker, detailRows);
+            // The pill moves now; the price chart is redrawn once its first frame is on screen.
+            updateInvestmentStockDetailsRangePill();
+            runAfterInvestmentPillFrame('stock-details-range', () => {
+                if (signal.aborted) return;
+                runtime.renderInvestmentStockDetailsPriceChart(ticker, detailRows);
+            });
         }, { signal });
         window.addEventListener('resize', scheduleInvestmentStockDetailsRangePillUpdate, { signal });
         if (window.ResizeObserver) {
@@ -1559,7 +1644,10 @@ function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
         keepSegmentedActiveOptionVisible,
         syncInvestmentShareActionsPosition,
         updateInvestmentSegmentedPill,
+        updateInvestmentSegmentedPillNow,
         scheduleInvestmentSegmentedPillUpdate,
+        runAfterInvestmentPillFrame,
+        cancelInvestmentPillFrameWork,
         updateIbkrImportSegmentedPill,
         scheduleIbkrImportSegmentedPillUpdate,
         updateHsbcImportSegmentedPill,

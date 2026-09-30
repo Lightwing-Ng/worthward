@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 (() => {
     // Historical startup snapshots only identify untouched old browser defaults.
     // Explicit URLs, partial records, and any customized profile retain precedence.
@@ -1482,7 +1482,9 @@
             positionTradeStrategyDropdown();
         }, true);
         document.addEventListener("click", (event) => {
-            const {field} = getTradeStrategyRefs();
+            // Every click on the page lands here; resolve only the one reference this
+            // handler needs instead of all seven strategy references.
+            const field = document.querySelector("[data-trade-strategy-field]");
             const eventPath = typeof event.composedPath === "function" ? event.composedPath() : [];
             const clickedInsideStrategyField = field instanceof HTMLElement
                 && (field.contains(event.target) || eventPath.includes(field));
@@ -1524,8 +1526,29 @@
             }
         });
         if (typeof MutationObserver === "function") {
-            const sidebarControlObserver = new MutationObserver(() => {
-                window.requestAnimationFrame(() => {
+            // The repair pass scans the whole document, so it must not run for every DOM
+            // change on a large page (a transaction table render would trigger it many times
+            // per second). Only a control that the pass can bind, or an option list that the
+            // trigger label mirrors, makes another pass worthwhile, and passes coalesce into
+            // one per frame.
+            const sidebarControlSelector = [
+                "select",
+                "[data-shared-select-field]",
+                "[data-trade-strategy-field]",
+                "[data-backtest-interval-shell]",
+            ].join(",");
+            const mutationAffectsSidebarControls = (record) => {
+                if (record.target instanceof HTMLSelectElement) return true;
+                return Array.from(record.addedNodes).some((node) => (
+                    node instanceof Element
+                    && (node.matches(sidebarControlSelector) || node.querySelector(sidebarControlSelector) !== null)
+                ));
+            };
+            let sidebarControlRepairFrame = 0;
+            const sidebarControlObserver = new MutationObserver((records) => {
+                if (sidebarControlRepairFrame || !records.some(mutationAffectsSidebarControls)) return;
+                sidebarControlRepairFrame = window.requestAnimationFrame(() => {
+                    sidebarControlRepairFrame = 0;
                     repairSidebarControlBindings();
                 });
             });

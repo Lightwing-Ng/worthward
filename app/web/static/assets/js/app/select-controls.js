@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.1.0 */
 (() => {
     const create = (context) => {
         const {
@@ -609,7 +609,8 @@
         const sortBrokerSelectOptions = (select) => {
             if (!(select instanceof HTMLSelectElement)) return;
             const selectedValue = String(select.value || "");
-            const options = Array.from(select.options);
+            const currentOptions = Array.from(select.options);
+            const options = [...currentOptions];
             options.sort((left, right) => {
                 const bySortKey = compareBrokerOptionSortKeys(
                     getBrokerOptionSortKey(left),
@@ -621,6 +622,10 @@
                     String(right.value || "").trim().toLowerCase(),
                 );
             });
+            // Moving every option out and back in is a childList mutation even when the order
+            // is unchanged. The document-wide repair observer answers each such mutation with
+            // another repair pass, which re-sorts, so an already sorted select must stay untouched.
+            if (options.every((option, index) => option === currentOptions[index])) return;
             const fragment = document.createDocumentFragment();
             options.forEach((option) => fragment.appendChild(option));
             select.replaceChildren(fragment);
@@ -918,10 +923,14 @@
             frame.scrollLeft = Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
             window.requestAnimationFrame(() => syncSegmentedOverflowState(frame));
         };
+        // `updatePill: false` lets a caller that measures its own pill geometry (the Investment
+        // adapters) reuse the option/overflow sync without this function first writing the
+        // whole-option pill values; that transient write restarts a running pill transition.
         const syncSegmentedControlLayout = (shell, {
             activeValue = "",
             activeIndex = -1,
             options = null,
+            updatePill = true,
         } = {}) => {
             if (!(shell instanceof HTMLElement)) return;
             const resolvedOptions = Array.isArray(options) ? options : getVisibleSegmentedOptions(shell);
@@ -946,6 +955,7 @@
                 shouldOverflow = shell.scrollWidth > shell.clientWidth + 1;
                 shell.dataset.segmentedOverflow = shouldOverflow ? "1" : "0";
             }
+            if (!updatePill) return;
             if (shouldOverflow || shell.dataset.segmentedPill === "measured") {
                 const activeOption = resolvedOptions[resolvedActiveIndex];
                 if (activeOption instanceof HTMLElement) {
@@ -967,6 +977,11 @@
         const syncAllSegmentedControlLayouts = () => {
             $$(".segmented-control, .range-mode-shell").forEach((shell) => {
                 if (!(shell instanceof HTMLElement)) return;
+                // A control marked `data-segmented-owner="adapter"` measures and re-measures its
+                // own layout and pill. Rewriting its pill here with the whole-option geometry
+                // fought that adapter: the two alternated writes to the same custom properties
+                // and every write restarted the running pill transition.
+                if (shell.dataset.segmentedOwner === "adapter") return;
                 syncSegmentedControlLayout(shell, {activeValue: shell.dataset.active || ""});
             });
         };

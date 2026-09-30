@@ -60,7 +60,7 @@
                                     {"id": "investment_view_stock_details", "value": "stock_details", "label": "Stock details"},
                                     {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
                                 ],
-                                'id="investment_view_segmented" data-active="chart" data-option-count="4" data-segmented-pill="measured" data-segmented-overflow-mode="peek"',
+                                'id="investment_view_segmented" data-active="chart" data-option-count="4" data-segmented-pill="measured" data-segmented-owner="adapter" data-segmented-overflow-mode="peek"',
                                 true,
                                 'investment-view-segmented-frame'
                             ) }}
@@ -935,5 +935,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.157.3') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.157.4') }}"></script>
 {% endblock %}

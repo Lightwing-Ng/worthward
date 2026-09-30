@@ -1,5 +1,31 @@
 # Known issues and operating constraints
 
+Investment pill motion, 30 Sep 2026: the blue selection pill of the Investment
+view switcher and its range controls stuttered because of three independent
+causes. The shared segmented-control geometry, motion tokens, and every
+accounting path are unchanged. (1) A document-wide repair pass for shared
+selects re-sorted the already sorted import-broker options on every run, and
+each rewrite fired the observer that scheduled the next pass, so an idle
+Investment page produced thousands of DOM mutation records per second and kept
+the main thread about half busy. The sort now leaves a sorted list untouched;
+the observer coalesces passes and reacts only to an added or re-populated
+select, shared-select field, strategy field, or backtest-interval shell; and the
+page-wide click handler resolves one reference instead of seven. (2) The
+page-wide segmented-control sync and the Investment adapter both wrote the
+pill's custom properties, alternating whole-option and measured values, so every
+selection restarted the running transition; the adapter also hid the pill and
+re-measured it twice. Investment pills are marked
+`data-segmented-owner="adapter"` and skipped by the page-wide sync. The adapter
+writes geometry once and only when a value changed, keeps the pill visible while
+it re-measures, and never marks a control without layout as ready. (3) A
+selection rendered the view in the click's own task (Metrics can take seconds),
+so the pill's transition could not start. The pill now moves in that task and
+the view, table, or chart follows once the pill's first frame is on screen; any
+direct view change cancels a selection still waiting. Metrics rendering itself
+still recomputes valuation for the whole ledger and is unchanged. Focused unit
+and isolated-browser regressions guard each cause, and the user-owned 8688
+service needs its ordinary restart and a browser reload to adopt the source.
+
 Standard circular controls, 28 Sep 2026: the 26 Sep narrow 44px painted-button
 exception below is superseded. The canonical circle is now 32px at desktop,
 overlay, and compact widths with an unchanged 18px glyph. Coarse-pointer users
@@ -648,7 +674,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.269.0`
+Documentation version: `v1.270.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

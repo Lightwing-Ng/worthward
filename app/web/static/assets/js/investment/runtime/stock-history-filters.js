@@ -1,7 +1,9 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Changed: A view or range selection moves its pill first and renders the view or
+ *   chart after the pill's first frame; a direct view change cancels a pending selection.
  * - Added: Shared modals explicitly select fixed loading or measured progress
  *   and restore the indicator when the modal is reused.
  * - Fixed: Revealing the share actions re-aligns them to the global anchor.
@@ -34,9 +36,13 @@ function bindInvestmentEquityRangeControls(chartPoints = []) {
             rangeControl.dataset.active = nextRange;
             const nextIndex = Math.max(0, runtime.INVESTMENT_EQUITY_RANGE_OPTIONS.findIndex((option) => option.value === nextRange));
             rangeControl.style.setProperty('--segmented-active-index', String(nextIndex));
+            // The pill moves now; the chart is redrawn once its first frame is on screen.
             runtime.updateInvestmentEquityRangePill();
-            const nextChartPoints = runtime.getInvestmentEquityChartInputPoints(chartPoints);
-            runtime.updateInvestmentEquityChartDisplay(nextChartPoints);
+            runtime.runAfterInvestmentPillFrame('equity-range', () => {
+                if (signal.aborted) return;
+                const nextChartPoints = runtime.getInvestmentEquityChartInputPoints(chartPoints);
+                runtime.updateInvestmentEquityChartDisplay(nextChartPoints);
+            });
         }, { signal });
         window.addEventListener('resize', runtime.updateInvestmentEquityRangePill, { signal });
         if (window.ResizeObserver) {
@@ -296,18 +302,49 @@ function waitForInvestmentStableElementBox(element, {
         });
     }
 
+// Selects the view's radio and moves the pill. This is the part of a view change the user
+// sees first, and it is cheap, so a click runs it before the view's own rendering.
+function syncInvestmentViewPill(normalizedNextView) {
+        if (!runtime.segmentedControl) return;
+        const activeIndex = Math.max(runtime.INVESTMENT_VIEW_ORDER.indexOf(normalizedNextView), 0);
+        const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(normalizedNextView)}"]`);
+        if (nextRadio instanceof HTMLInputElement && !nextRadio.checked) {
+            nextRadio.checked = true;
+        }
+        runtime.segmentedControl.dataset.active = normalizedNextView;
+        runtime.segmentedControl.style.setProperty('--segmented-option-count', String(runtime.INVESTMENT_VIEW_ORDER.length));
+        runtime.segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
+        runtime.updateInvestmentSegmentedPillNow();
+    }
+
+// A pill selection by the user. Rendering a view (panels, tables, metrics) can block the main
+// thread for a long time, so the pill's transition is started first and the view follows once
+// that first frame is on screen.
+function handleInvestmentViewInput(nextView) {
+        const normalizedNextView = runtime.normalizeInvestmentView(nextView);
+        syncInvestmentViewPill(normalizedNextView);
+        runtime.runAfterInvestmentPillFrame('view', () => {
+            setInvestmentView(normalizedNextView);
+        });
+    }
+
 function setInvestmentView(nextView, { syncHash = true } = {}) {
         if (!nextView) {
             return;
         }
 
         const normalizedNextView = runtime.normalizeInvestmentView(nextView);
+        // A direct call supersedes a selection that is still waiting for its first frame.
+        const supersededPendingSelection = runtime.cancelInvestmentPillFrameWork('view');
 
         if (normalizedNextView === 'stock_details') {
             runtime.ensureSelectedInvestmentStockTicker();
         }
 
         if (normalizedNextView === runtime.state.activeInvestmentView) {
+            if (supersededPendingSelection) {
+                syncInvestmentViewPill(normalizedNextView);
+            }
             if (normalizedNextView === 'metrics') {
                 runtime.ensureInvestmentMetricsBrokerScope();
             }
@@ -322,19 +359,11 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
         const isMetricsHistoryScopeChanging = previousInvestmentView === 'metrics'
             || normalizedNextView === 'metrics';
 
+        // Measure the pill while the layout is still clean, before the panels change.
+        syncInvestmentViewPill(normalizedNextView);
         lockInvestmentSurfaceHeight();
-
-        if (runtime.segmentedControl) {
-            const activeIndex = Math.max(runtime.INVESTMENT_VIEW_ORDER.indexOf(normalizedNextView), 0);
-            const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(normalizedNextView)}"]`);
-            if (nextRadio instanceof HTMLInputElement) {
-                nextRadio.checked = true;
-            }
-            runtime.segmentedControl.dataset.active = normalizedNextView;
-            runtime.segmentedControl.style.setProperty('--segmented-option-count', String(runtime.INVESTMENT_VIEW_ORDER.length));
-            runtime.segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
-            runtime.scheduleInvestmentSegmentedPillUpdate();
-        }
+        // Settling pass for a layout that keeps changing after the switch (no-op when unchanged).
+        runtime.scheduleInvestmentSegmentedPillUpdate();
         if (runtime.investmentViewSurface) {
             runtime.investmentViewSurface.dataset.activeView = normalizedNextView;
         }
@@ -391,7 +420,7 @@ function initInvestmentViewTabs() {
         radios.forEach((radio) => {
             radio.addEventListener('change', () => {
                 if (radio.checked) {
-                    setInvestmentView(radio.value);
+                    handleInvestmentViewInput(radio.value);
                 }
             });
         });
