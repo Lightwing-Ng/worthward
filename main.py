@@ -1,13 +1,11 @@
 """
 Project entrypoint.
 
-Code version: v0.6.2
-- Changed: Spawned CPU workers skip application bootstrap when importing this
-  entrypoint, preventing Flask and broker prewarm side effects in child
-  processes while preserving the normal WSGI and CLI launch paths.
+Code version: v0.7.0
+- Changed: Enable configured development reloads without an interactive browser
+  debugger, and prewarm only the serving process while preserving WSGI startup.
 """
 
-from json import JSONDecodeError
 import logging
 import os
 import sys
@@ -21,12 +19,7 @@ try:
 except RuntimeError as exc:
     raise SystemExit(str(exc)) from exc
 
-from app.core.preferences.broker import (  # noqa: E402
-    has_longbridge_credentials,
-    load_broker_settings,
-    uses_longbridge_cli_oauth,
-)
-from app.core.settings import get_settings  # noqa: E402
+from app.core.settings import CONFIG_PATH, get_settings  # noqa: E402
 from app.infrastructure.broker_market_data import prewarm_longbridge_quote_context  # noqa: E402
 from app.infrastructure.runtime_network import bootstrap_runtime_network_for_yfinance  # noqa: E402
 
@@ -40,27 +33,14 @@ def _log_startup(message: str) -> None:
     LOGGER.info(message)
 
 
-def _should_manage_longbridge_as_long_lived() -> bool:
-    try:
-        broker_settings = load_broker_settings()
-    except (OSError, JSONDecodeError):
-        return False
-    if uses_longbridge_cli_oauth(broker_settings):
-        return False
-    return (
-        broker_settings.selected_broker == "longbridge"
-        and has_longbridge_credentials(broker_settings)
-    )
-
-
-def _is_werkzeug_serving_process(debug_enabled: bool) -> bool:
-    if not debug_enabled:
+def _is_werkzeug_serving_process(use_reloader: bool) -> bool:
+    if not use_reloader:
         return True
     return os.environ.get("WERKZEUG_RUN_MAIN") == "true"
 
 
-def _prewarm_broker_context(debug_enabled: bool) -> None:
-    if not _is_werkzeug_serving_process(debug_enabled):
+def _prewarm_broker_context(use_reloader: bool) -> None:
+    if not _is_werkzeug_serving_process(use_reloader):
         _log_startup("Skipped Longbridge prewarm in the Werkzeug reloader supervisor process.")
         return
     try:
@@ -72,26 +52,34 @@ def _prewarm_broker_context(debug_enabled: bool) -> None:
 
 def _build_run_options(config: dict) -> dict:
     debug_enabled = config["app"].get("debug", DEFAULT_DEBUG)
-    use_reloader = debug_enabled
-    if use_reloader and _should_manage_longbridge_as_long_lived():
-        _log_startup("Disabled Flask reloader to keep the Longbridge quote context long-lived.")
-        use_reloader = False
+    debug_override = read_compatible_environment("WORTHWARD_DEBUG", "ANTIGRAVITY_DEBUG")
+    if debug_override:
+        value = debug_override.strip().lower()
+        if value not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
+            raise ValueError("WORTHWARD_DEBUG must be 1/true/yes/on or 0/false/no/off.")
+        debug_enabled = value in {"1", "true", "yes", "on"}
     # Note: IBKR remains an offline historical-import source; no local broker process is managed.
     return {
         "debug": debug_enabled,
         "host": read_compatible_environment("WORTHWARD_HOST", "ANTIGRAVITY_HOST") or config["server"].get("host", DEFAULT_HOST),
         "port": int(read_compatible_environment("WORTHWARD_PORT", "ANTIGRAVITY_PORT") or config["server"].get("port", DEFAULT_PORT)),
-        "use_reloader": use_reloader,
+        "use_reloader": debug_enabled,
+        # Keep automatic reloads without exposing an executable browser console.
+        "use_debugger": False,
+        "extra_files": [str(CONFIG_PATH)] if debug_enabled else [],
     }
 
 
 def _initialize_runtime():
     configure_logging()
     runtime_settings = get_settings()
-    debug_enabled = runtime_settings["app"].get("debug", DEFAULT_DEBUG)
+    use_reloader = (
+        __name__ == "__main__"
+        and _build_run_options(runtime_settings)["use_reloader"]
+    )
     network_settings = runtime_settings.get("network", {})
     bootstrap_runtime_network_for_yfinance(network_settings.get("yahoo_ca_pem"))
-    _prewarm_broker_context(debug_enabled)
+    _prewarm_broker_context(use_reloader)
     from app import create_app
     return create_app(), runtime_settings
 

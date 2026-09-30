@@ -1,9 +1,9 @@
-{# Code version: v0.1.1 #}
+{# Code version: v0.2.1 #}
 {% extends "base.html" %}
 {% from "_collapse.html" import render_collapse %}
 
 {% block head_extras %}
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/views/beta.css', v='beta-css-v0.2.0') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/views/beta.css', v='beta-css-v0.3.1') }}">
 {% endblock %}
 
 {% block application_state %}
@@ -26,8 +26,8 @@
     {% endfor %}
 </nav>
 <div class="beta-sidebar-note">
-    <span class="beta-eyebrow">Experimental · v0.1.0</span>
-    <p>A place to test better questions.</p>
+    <span class="beta-eyebrow">Experimental · {{ beta_version }}</span>
+    <p>Nine ways to ask a better question.</p>
 </div>
 {% endblock %}
 
@@ -43,24 +43,58 @@
             <div class="beta-heading-line"><span class="beta-eyebrow">Worthward / Beta</span><span class="beta-status-pill">{{ 'Local history' if beta_experiment.interactive else 'Research workspace' }}</span></div>
             <h3>{{ beta_experiment.question }}</h3>
             <p>{{ beta_experiment.description }}</p>
+            <nav class="beta-discovery" aria-label="New experiments">
+                <a href="{{ url_for('beta.page', experiment='path-remix') }}"{% if beta_experiment.id == 'path-remix' %} aria-current="page"{% endif %}>Remix a path</a>
+                <a href="{{ url_for('beta.page', experiment='recovery-clock') }}"{% if beta_experiment.id == 'recovery-clock' %} aria-current="page"{% endif %}>Measure the wait</a>
+                <a href="{{ url_for('beta.page', experiment='calibration-lab') }}"{% if beta_experiment.id == 'calibration-lab' %} aria-current="page"{% endif %}>Challenge a band</a>
+            </nav>
         </article>
         {% if beta_experiment.interactive %}
-        <article class="report-card workspace-content-card beta-panel">
-            <form class="beta-analysis-form" data-beta-analysis-form>
-                <label class="field beta-ticker-field" for="beta_ticker"><span>Cached ticker</span>
-                    <input id="beta_ticker" name="ticker" type="text" maxlength="24" required autocomplete="off" spellcheck="false" placeholder="Ticker symbol" aria-describedby="beta_data_help">
-                </label>
-                <button class="secondary-button" type="submit" data-beta-run>Run experiment</button>
-                <button class="secondary-button" type="button" data-beta-cancel hidden>Cancel</button>
-            </form>
-            <p class="beta-caption" id="beta_data_help">Uses existing daily Close history. Nothing is downloaded or refreshed.</p>
-            <p class="beta-feedback" data-beta-feedback role="status" aria-live="polite">Choose a ticker already available in your local market store.</p>
+        <article class="report-card workspace-content-card beta-panel beta-guide" aria-label="Experiment guide">
+            <ol class="process-list" role="list">
+                <li class="process-list-step" data-process-continues>
+                    <span class="process-list-marker" aria-hidden="true">1</span>
+                    <div class="process-list-content">
+                        <h3 class="process-list-heading">Start with a real history</h3>
+                        {% call render_collapse('Choose a cached ticker', 'beta-guide-start', open=true) %}
+                        <p class="beta-caption" id="beta_data_help">Use at least {{ 120 if beta_experiment.id in ['analog-explorer', 'calibration-lab'] else 80 }} daily closes already in your market store. Nothing is downloaded or refreshed.</p>
+                        <form class="beta-analysis-form" data-beta-analysis-form>
+                            <label class="field beta-ticker-field" for="beta_ticker"><span>Cached ticker</span>
+                                <input id="beta_ticker" name="ticker" type="text" maxlength="24" required autocomplete="off" spellcheck="false" placeholder="Ticker symbol" aria-describedby="beta_data_help">
+                            </label>
+                            <button class="secondary-button" type="submit" data-beta-run>Run experiment</button>
+                            <button class="secondary-button" type="button" data-beta-cancel hidden>Cancel</button>
+                        </form>
+                        <p class="beta-feedback" data-beta-feedback role="status" aria-live="polite">Choose a ticker already available in your local market store.</p>
+                        {% endcall %}
+                    </div>
+                </li>
+                <li class="process-list-step" data-process-continues>
+                    <span class="process-list-marker" aria-hidden="true">2</span>
+                    <div class="process-list-content">
+                        <h3 class="process-list-heading">Look for the surprise</h3>
+                        {% call render_collapse('What to notice', 'beta-guide-observe') %}
+                        <p>{{ beta_guide.observe }}</p>
+                        {% endcall %}
+                    </div>
+                </li>
+                <li class="process-list-step">
+                    <span class="process-list-marker" aria-hidden="true">3</span>
+                    <div class="process-list-content">
+                        <h3 class="process-list-heading">Try to prove yourself wrong</h3>
+                        {% call render_collapse('A small challenge', 'beta-guide-challenge') %}
+                        <p>{{ beta_guide.challenge }}</p>
+                        <a class="secondary-button" href="{{ url_for('beta.page', experiment=beta_next.id) }}">Explore {{ beta_next.title }}</a>
+                        {% endcall %}
+                    </div>
+                </li>
+            </ol>
         </article>
         <section data-beta-results hidden aria-label="Experiment results">
             <p class="beta-provenance" data-beta-provenance></p>
             <div class="trade-metrics-grid beta-metrics" data-beta-metrics></div>
             <article class="report-card workspace-content-card beta-panel">
-                <div class="beta-heading-line"><h3>Historical lens</h3><button type="button" class="secondary-button" data-beta-export>Export observations</button></div>
+                <div class="beta-heading-line"><h3>{{ 'Counterfactual paths' if beta_experiment.id == 'path-remix' else 'Historical lens' }}</h3><button type="button" class="secondary-button" data-beta-export>Export observations</button></div>
                 <div class="beta-chart"><canvas data-beta-chart role="img" aria-label="Historical experiment chart"></canvas></div>
                 <div class="beta-table-scroll" tabindex="0" role="region" aria-label="Observed values"><table class="events-table" data-beta-table></table></div>
             </article>
@@ -77,6 +111,11 @@
             </article>
             {% endif %}
             <ul class="beta-notes" data-beta-notes></ul>
+            <article class="report-card workspace-content-card beta-panel beta-next-step">
+                <h3>Keep the question going</h3>
+                <p class="beta-caption">Turn this observation into a testable idea. Opens an unsaved Thesis Lab draft.</p>
+                <a class="secondary-button" data-beta-develop href="{{ url_for('beta.page', experiment='thesis-lab', hypothesis=beta_guide.hypothesis) }}">Develop this observation</a>
+            </article>
         </section>
         {% elif beta_experiment.id == 'thesis-lab' %}
             {% include "_beta_thesis.html" %}
@@ -94,7 +133,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/beta.js', v='beta-v0.1.0') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/beta.js', v='beta-v0.2.0') }}"></script>
 {% if beta_experiment.id == 'thesis-lab' %}
 <script type="module" src="{{ url_for('static', filename='assets/js/beta-notebook.js', v='beta-notebook-v0.1.0') }}"></script>
 {% endif %}

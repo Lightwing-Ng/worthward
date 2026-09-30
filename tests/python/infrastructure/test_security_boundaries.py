@@ -1,12 +1,13 @@
 """Security boundary regression tests.
 
-Code version: v1.4.4
+Code version: v1.5.0
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+import runpy
 import ssl
 import tempfile
 import tomllib
@@ -183,15 +184,24 @@ class RuntimeNetworkSecurityTests(unittest.TestCase):
 
 
 class DefaultServerSecurityTests(unittest.TestCase):
-    def test_versioned_config_disables_debug_and_enables_lan_bind(self) -> None:
+    def test_versioned_config_enables_reload_without_the_interactive_debugger(self) -> None:
         config_path = Path(__file__).resolve().parents[3] / "config.toml"
         with config_path.open("rb") as handle:
             config = tomllib.load(handle)
 
-        self.assertIs(config["app"]["debug"], False)
+        self.assertIs(config["app"]["debug"], True)
         self.assertEqual(config["server"]["host"], "0.0.0.0")
         self.assertEqual(config["server"]["port"], 8688)
         self.assertEqual(config["security"]["live_trading_pin"], "")
+        build_options = runpy.run_path("main.py", run_name="__mp_main__")[
+            "_build_run_options"
+        ]
+        with patch.dict(os.environ, {}, clear=True):
+            options = build_options(config)
+
+        self.assertIs(options["debug"], True)
+        self.assertIs(options["use_reloader"], True)
+        self.assertIs(options["use_debugger"], False)
 
 
 class BaselineResponseSecurityHeaderTests(unittest.TestCase):

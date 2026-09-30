@@ -1,4 +1,4 @@
-/* Code version: v0.1.0 */
+/* Code version: v0.2.0 */
 const root = typeof document !== 'undefined' ? document.querySelector('[data-beta-root]') : null;
 
 export function shockImpact(shock, exposure) {
@@ -17,6 +17,8 @@ if (root) {
     const ticker = root.querySelector('#beta_ticker');
     const run = root.querySelector('[data-beta-run]');
     const cancel = root.querySelector('[data-beta-cancel]');
+    const develop = root.querySelector('[data-beta-develop]');
+    const thesisIdea = develop ? new URL(develop.href).searchParams.get('hypothesis') : '';
     let controller = null;
     let chart = null;
     let observation = null;
@@ -104,7 +106,16 @@ if (root) {
             body.append(row);
         });
         table.replaceChildren(head, body);
+        if (!data.rows.values.length) {
+            table.prepend(node('caption', 'No drawdown episodes were observed in this sample.'));
+        }
         root.querySelector('[data-beta-notes]').replaceChildren(...data.notes.map((text) => node('li', text)));
+        if (develop) {
+            const link = new URL(develop.href);
+            const observations = data.metrics.slice(0, 4).map(item => `${item.label}: ${item.value}`).join('; ');
+            link.searchParams.set('hypothesis', `${thesisIdea}\n\nStarting observation from ${data.ticker}, through ${data.as_of}: ${observations}.\nSource: ${data.source}. These diagnostics are a starting point, not evidence that the hypothesis is true.`.slice(0, 2000));
+            develop.href = link.href;
+        }
         results.hidden = false;
         renderChart(data.chart);
     };

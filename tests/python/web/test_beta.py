@@ -1,4 +1,4 @@
-"""Beta isolation, data validation, and causal diagnostics. Code version: v0.1.1."""
+"""Beta isolation, data validation, and causal diagnostics. Code version: v0.2.0."""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ def test_beta_pages_and_registry_use_an_independent_context(beta_app):
     for experiment in EXPERIMENTS:
         response = client.get(f"/beta/{experiment['id']}")
         assert response.status_code == 200
-        assert f"{experiment['id']}|6|beta|" in response.text
+        assert f"{experiment['id']}|{len(EXPERIMENTS)}|beta|" in response.text
         assert response.headers["Cache-Control"] == "no-store"
     assert client.get("/beta/unknown").status_code == 404
     assert client.post("/beta/api/analyze").status_code == 405
@@ -227,6 +227,24 @@ def test_bad_local_rows_are_rejected_without_repair(beta_store, defect):
     assert path.read_bytes() == before
 
 
+@pytest.mark.parametrize("experiment, minimum", [
+    ("path-remix", 80),
+    ("recovery-clock", 80),
+    ("calibration-lab", 120),
+    ("analog-explorer", 120),
+])
+def test_experiment_minimum_closes_is_enforced_at_read_boundary(beta_store, experiment, minimum):
+    directory, frame = beta_store
+    path = directory / "QQQ.parquet"
+    frame.head(minimum - 1).to_parquet(path, index=False)
+    before = path.read_bytes()
+    with pytest.raises(analysis.BetaDataError, match=f"at least {minimum}"):
+        analysis.analyze(experiment, "QQQ")
+    assert path.read_bytes() == before
+    frame.head(minimum).to_parquet(path, index=False)
+    assert analysis.analyze(experiment, "QQQ")["observations"] == minimum
+
+
 def test_tail_observation_cap_is_explicit(beta_store):
     directory, _frame = beta_store
     dates = pd.bdate_range("2010-01-01", periods=3_000).strftime("%Y-%m-%d").tolist()
@@ -292,5 +310,5 @@ def test_regime_volatility_and_trailing_drawdown_have_known_values(beta_store):
 
 
 def test_registry_only_exposes_declared_read_only_analyzers():
-    assert len(EXPERIMENT_BY_ID) == 6
+    assert len(EXPERIMENT_BY_ID) == len(EXPERIMENTS)
     assert {item["id"] for item in EXPERIMENTS if item["interactive"]} == set(analysis.ANALYZERS)

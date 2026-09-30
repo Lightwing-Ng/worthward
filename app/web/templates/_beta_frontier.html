@@ -1,5 +1,26 @@
-{# Code version: v0.1.0 #}
+{# Code version: v0.3.0 #}
 {% set frontiers = [
+    {
+        'title': 'Make uncertainty earn its width',
+        'tag': 'Adaptive uncertainty',
+        'question': 'Can an adaptive interval improve coverage without becoming unhelpfully wide, compared with a frozen rolling-quantile baseline?',
+        'idea': 'Start with a band that can be wrong. Calibration Lab reveals each later daily move only after forming its reference interval from earlier returns.',
+        'next': 'Declare the target coverage and width metric first. Compare the baseline with adaptive conformal inference, then investigate skew-adaptive intervals on a later holdout.',
+        'source': 'Adaptive Conformal Inference · 2024', 'url': 'https://arxiv.org/abs/2409.14792',
+        'extra_source': 'Skew-adaptive conformal prediction · 2026', 'extra_url': 'https://arxiv.org/abs/2605.16145',
+        'status': 'Calibration Lab runs the empirical baseline. Neither conformal method nor its coverage guarantees are implemented here.',
+        'experiment': 'calibration-lab', 'experiment_title': 'Calibration Lab'
+    },
+    {
+        'title': 'Treat the journey as part of the outcome',
+        'tag': 'Path-dependent risk',
+        'question': 'When terminal returns match, which drawdown depth and duration would still make a path unacceptable?',
+        'idea': 'Path Remix holds the daily moves fixed and changes their order. Recovery Clock adds the time spent waiting beneath a previous high.',
+        'next': 'Choose a depth limit and a patience limit. Compare reordered paths and real recovery episodes, keeping unfinished episodes separate.',
+        'source': 'Drawdown: From Practice to Theory and Back Again', 'url': 'https://arxiv.org/abs/1404.7493',
+        'status': 'The local diagnostics are runnable. They do not estimate Conditional Expected Drawdown or the likelihood of a reordered path.',
+        'experiment': 'path-remix', 'experiment_title': 'Path Remix'
+    },
     {
         'title': 'A market that knows when it is unfamiliar',
         'tag': 'Distribution shift',
@@ -55,17 +76,34 @@
         'status': 'This is a research brief direction. OHLC correlations alone do not identify causal effects.'
     }
 ] %}
-<p class="beta-caption">A curated research map, reviewed 7 Sep 2026. Each direction includes a concrete next experiment and its current implementation boundary.</p>
-{% for item in frontiers %}
-<article class="report-card workspace-content-card beta-frontier-card">
-    <span class="beta-eyebrow">{{ item.tag }}</span>
-    <h3>{{ item.title }}</h3>
-    <p>{{ item.idea }}</p>
-    <p>Next experiment: {{ item.next }}</p>
-    <p class="beta-caption">{{ item.status }}</p>
-    <div class="beta-frontier-footer">
-        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.source }} ↗</a>
-        <a class="secondary-button" href="{{ url_for('beta.page', experiment='thesis-lab', hypothesis=item.question) }}">Develop this thesis</a>
-    </div>
+<p class="beta-caption">Two new directions reviewed 30 Sep 2026; the original six retain their 7 Sep 2026 review. Start with a runnable experiment, then develop the question the data cannot yet answer.</p>
+<article class="report-card workspace-content-card beta-panel beta-guide" aria-label="Research directions">
+    <ol class="process-list" role="list">
+        {% for item in frontiers %}
+        <li class="process-list-step beta-frontier-card"{% if not loop.last %} data-process-continues{% endif %}>
+            <span class="process-list-marker" aria-hidden="true">{{ loop.index }}</span>
+            <div class="process-list-content">
+                <h3 class="process-list-heading">{{ item.title }}</h3>
+                <p>{{ item.tag }}</p>
+                <p>{{ item.idea }}</p>
+                {% call render_collapse('Next experiment', 'beta-frontier-experiment-' ~ loop.index, open=true) %}
+                <p>{{ item.next }}</p>
+                <div class="settings-form-actions">
+                    {% if item.experiment %}<a class="secondary-button" href="{{ url_for('beta.page', experiment=item.experiment) }}">Try {{ item.experiment_title }}</a>{% endif %}
+                    <a class="secondary-button" href="{{ url_for('beta.page', experiment='thesis-lab', hypothesis=item.question) }}">Develop this thesis</a>
+                </div>
+                {% endcall %}
+                {% call render_collapse('Sources & boundaries', 'beta-frontier-sources-' ~ loop.index) %}
+                <p>{{ item.status }}</p>
+                <p>{{ item.source }}</p>
+                <a class="secondary-button" href="{{ item.url }}" target="_blank" rel="noopener noreferrer" aria-label="Read source: {{ item.source }}">Read source</a>
+                {% if item.extra_source %}
+                <p>{{ item.extra_source }}</p>
+                <a class="secondary-button" href="{{ item.extra_url }}" target="_blank" rel="noopener noreferrer" aria-label="Read source: {{ item.extra_source }}">Read source</a>
+                {% endif %}
+                {% endcall %}
+            </div>
+        </li>
+        {% endfor %}
+    </ol>
 </article>
-{% endfor %}

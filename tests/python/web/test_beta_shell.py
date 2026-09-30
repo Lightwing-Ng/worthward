@@ -1,6 +1,20 @@
-"""Render the real Beta shell without market or strategy execution. Code version: v0.2.1."""
+"""Render the real Beta shell without market or strategy execution. Code version: v0.3.0."""
+
+import pytest
+from bs4 import BeautifulSoup
 
 from app.beta.registry import EXPERIMENTS
+
+
+INTERACTIVE_EXPERIMENTS = (
+    "regime-radar",
+    "analog-explorer",
+    "stress-lab",
+    "robustness-lab",
+    "path-remix",
+    "recovery-clock",
+    "calibration-lab",
+)
 
 
 def test_real_beta_pages_reuse_shell_with_scoped_assets(client):
@@ -19,6 +33,39 @@ def test_real_beta_pages_reuse_shell_with_scoped_assets(client):
         assert 'id="global_language_toggle" disabled' in html
         assert '"currentView": "beta"' in html
         assert response.headers['Cache-Control'] == 'no-store'
+        soup = BeautifulSoup(html, "html.parser")
+        navigation = soup.select_one('nav[aria-label="Beta experiments"]')
+        assert {link["href"] for link in navigation.select("a")} == {
+            f"/beta/{identifier}"
+            for identifier in (*INTERACTIVE_EXPERIMENTS, "thesis-lab", "research-frontier")
+        }
+
+
+@pytest.mark.parametrize("experiment", INTERACTIVE_EXPERIMENTS)
+def test_interactive_beta_pages_offer_native_guided_steps(client, experiment):
+    response = client.get(f"/beta/{experiment}")
+    assert response.status_code == 200
+    soup = BeautifulSoup(response.data, "html.parser")
+    guide = soup.select_one(".beta-guide")
+    assert guide is not None
+    assert guide.select_one('ol.process-list[role="list"]') is not None
+    steps = guide.select("ol.process-list > li.process-list-step")
+    assert len(steps) == 3
+    assert [step.has_attr("data-process-continues") for step in steps] == [True, True, False]
+    for step in steps:
+        assert step.select_one('.process-list-marker[aria-hidden="true"]') is not None
+        disclosure = step.select_one("details.ui-collapse")
+        assert disclosure is not None
+        assert disclosure.find("summary", recursive=False).get_text(strip=True)
+        assert disclosure.select_one(":scope > .ui-collapse-body").get_text(strip=True)
+    first_disclosure = steps[0].select_one("details.ui-collapse")
+    assert first_disclosure.has_attr("open")
+    assert first_disclosure.select_one("[data-beta-analysis-form] [data-beta-run]") is not None
+    assert first_disclosure.select_one("#beta_ticker[required]") is not None
+    results = soup.select_one("[data-beta-results]")
+    assert results.has_attr("hidden")
+    assert results.select_one("[data-beta-chart]") is not None
+    assert results.select_one("[data-beta-develop]") is not None
 
 
 def test_settings_remain_outside_beta_asset_lifecycle(client):

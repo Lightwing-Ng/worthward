@@ -1,9 +1,12 @@
-/* Code version: v0.1.1 */
+/* Code version: v0.2.0 */
 import {expect, test as base} from '@playwright/test';
 
 const THESIS_KEY = 'worthward:beta:v1:thesis';
 const API_PATH = '/beta/api/analyze';
-const EXPERIMENTS = ['regime-radar', 'analog-explorer', 'stress-lab', 'robustness-lab'];
+const EXPERIMENTS = [
+    'regime-radar', 'analog-explorer', 'stress-lab', 'robustness-lab',
+    'path-remix', 'recovery-clock', 'calibration-lab',
+];
 const ALL_PAGES = [...EXPERIMENTS, 'thesis-lab', 'research-frontier'];
 const prohibitedApi = /\/(?:api\/)?(?:investment|live-trading|live-orders?|orders?|price-field-training|lstm-training|broker)(?:[/?-]|$)/;
 const isProhibitedApi = path => !path.startsWith('/static/') && prohibitedApi.test(path);
@@ -99,6 +102,18 @@ const coreStorageSnapshot = page => page.evaluate(() => {
     return {local: snapshot(localStorage), session: snapshot(sessionStorage)};
 });
 
+const expectBounded = async page => expect.poll(() => page.evaluate(() => {
+    const root = document.querySelector('[data-beta-root]');
+    const bounds = root.getBoundingClientRect();
+    const scrollport = document.querySelector('.beta-content');
+    return {
+        documentBounded: document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1,
+        contentBounded: scrollport.scrollWidth - scrollport.clientWidth <= 1,
+        rightBounded: bounds.right <= innerWidth + 1,
+        visibleWidth: bounds.width > 0 && bounds.left >= -1,
+    };
+})).toEqual({documentBounded: true, contentBounded: true, rightBounded: true, visibleWidth: true});
+
 test('Beta precedes Settings and leaves Settings navigation and assets isolated', async ({page, isolationAudit}) => {
     await page.goto('/settings/about');
     await page.evaluate(() => {
@@ -117,7 +132,7 @@ test('Beta precedes Settings and leaves Settings navigation and assets isolated'
     const coreBefore = await coreStorageSnapshot(page);
     await page.locator('[data-dock-group="beta"]').click();
     await expect(page).toHaveURL(/\/beta(?:\/regime-radar)?$/);
-    await expect(page.getByRole('navigation', {name: 'Beta experiments'}).locator('a')).toHaveCount(6);
+    await expect(page.getByRole('navigation', {name: 'Beta experiments'}).locator('a')).toHaveCount(9);
     await expect(page.locator('[data-dock-group="beta"]')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('#global_language_toggle')).toBeDisabled();
     await expect(page.locator('html')).toHaveAttribute('data-theme-override', 'light');
@@ -141,8 +156,8 @@ test('Beta precedes Settings and leaves Settings navigation and assets isolated'
     await expect(page.locator('script[src*="/beta.js"], script[src*="/beta-notebook.js"], link[href*="/beta.css"]')).toHaveCount(0);
 });
 
-test('four experiments render nonempty observations from the seeded local QQQ history', async ({page, isolationAudit}) => {
-    test.setTimeout(60_000);
+test('seven Beta experiments render local observations and Path Remix preserves the terminal return', async ({page, isolationAudit}) => {
+    test.setTimeout(90_000);
     let finalPayload;
     for (const experiment of EXPERIMENTS) {
         await openBeta(page, experiment);
@@ -152,7 +167,17 @@ test('four experiments render nonempty observations from the seeded local QQQ hi
         expect(payload.as_of).toBe('14 Jul 2026');
         expect(payload.observations).toBeGreaterThan(1_000);
         expect(payload.metrics.length).toBeGreaterThan(0);
-        expect(payload.rows.values.length).toBeGreaterThan(0);
+        if (experiment === 'recovery-clock' && payload.rows.values.length === 0) {
+            expect(payload.metrics.find(metric => metric.label === 'Recovered episodes').value).toBe('0');
+            expect(payload.notes).toContain('No strict drawdown episodes were observed in this sample.');
+            await expect(page.locator('[data-beta-notes]')).toContainText('No strict drawdown episodes were observed');
+            await expect(page.locator('[data-beta-table] caption')).toHaveText('No drawdown episodes were observed in this sample.');
+            const method = page.locator('.beta-method details');
+            await method.locator(':scope > summary').press('Enter');
+            await expect(method.locator(':scope > .ui-collapse-body')).toContainText('An unfinished drawdown has an unknown recovery time.');
+        } else {
+            expect(payload.rows.values.length).toBeGreaterThan(0);
+        }
         expect(payload.chart.labels.length).toBeGreaterThan(0);
         expect(payload.chart.series.length).toBeGreaterThan(0);
         expect(payload.chart.series.every(series => series.values.some(Number.isFinite))).toBe(true);
@@ -171,18 +196,90 @@ test('four experiments render nonempty observations from the seeded local QQQ hi
             await expect(page.locator('[data-beta-shock-result]')).toContainText('-10.00%');
             await expect(page.locator('[data-beta-shock-result]')).toContainText('11.11%');
         }
+        if (experiment === 'path-remix') {
+            const paths = payload.chart.series.map(series => series.values);
+            expect(paths.length).toBeGreaterThan(1);
+            for (const path of paths) {
+                expect(path[0]).toBeCloseTo(0, 6);
+                expect(path.at(-1)).toBeCloseTo(paths[0].at(-1), 6);
+            }
+            expect(new Set(paths.map(path => JSON.stringify(path))).size).toBeGreaterThan(1);
+        }
+        const thesisLink = page.locator('[data-beta-develop]');
+        await expect(thesisLink).toBeVisible();
+        const thesisUrl = new URL(await thesisLink.getAttribute('href'), page.url());
+        expect(thesisUrl.pathname).toBe('/beta/thesis-lab');
+        expect(thesisUrl.searchParams.get('hypothesis')).toContain('QQQ');
         finalPayload = payload;
     }
     const downloadPromise = page.waitForEvent('download');
     await page.locator('[data-beta-export]').click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe('worthward-beta-robustness-lab-QQQ.json');
+    expect(download.suggestedFilename()).toBe('worthward-beta-calibration-lab-QQQ.json');
     const exported = JSON.parse(await downloadText(download));
     expect(exported.schema).toBe('worthward-beta/v0.1.0');
     expect(exported.metrics).toEqual(finalPayload.metrics);
     const apiRequests = isolationAudit.filter(request => request.path.includes('/api/'));
-    expect(apiRequests).toHaveLength(4);
+    expect(apiRequests).toHaveLength(7);
     expect(apiRequests.every(request => request.path === API_PATH && request.method === 'GET')).toBe(true);
+});
+
+test('Beta guide disclosures keep the experiment reachable by keyboard and hide collapsed actions', async ({page, isolationAudit}) => {
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await openBeta(page, 'path-remix');
+    await setSidebar(page, false);
+    const guide = page.locator('.beta-guide');
+    const steps = guide.locator('ol.process-list > li.process-list-step');
+    await expect(steps).toHaveCount(3);
+    const disclosure = steps.first().locator('details.ui-collapse');
+    const summary = disclosure.locator(':scope > summary');
+    await expect(disclosure).toHaveAttribute('open', '');
+    await summary.focus();
+    await summary.press('Enter');
+    await expect(disclosure).not.toHaveAttribute('open');
+    await expect(page.locator('[data-beta-run]')).toBeHidden();
+    await summary.press('Tab');
+    await expect(page.locator('#beta_ticker')).not.toBeFocused();
+    await expect(page.locator('[data-beta-run]')).not.toBeFocused();
+    await summary.focus();
+    await summary.press('Space');
+    await expect(disclosure).toHaveAttribute('open', '');
+    await summary.press('Tab');
+    await expect(page.locator('#beta_ticker')).toBeFocused();
+    await page.keyboard.type('QQQ');
+    await page.keyboard.press('Tab');
+    await expect(page.locator('[data-beta-run]')).toBeFocused();
+    const response = page.waitForResponse(item => new URL(item.url()).pathname === API_PATH);
+    await page.keyboard.press('Enter');
+    expect((await response).status()).toBe(200);
+    await expect(page.locator('[data-beta-results]')).toBeVisible();
+    for (const step of await steps.all()) {
+        const details = step.locator('details.ui-collapse');
+        const toggle = details.locator(':scope > summary');
+        if (await details.getAttribute('open') === null) await toggle.press('Enter');
+        await expect(details.locator(':scope > .ui-collapse-body')).toBeVisible();
+    }
+    expect(isolationAudit.filter(request => request.path === API_PATH)).toHaveLength(1);
+});
+
+test('Beta observations seed an unsaved thesis without replacing a saved research draft', async ({page}) => {
+    await openBeta(page, 'thesis-lab');
+    const fields = await fillThesis(page);
+    await page.locator('[data-thesis-action="save"]').click();
+    await expect(page.locator('[data-thesis-draft-status]')).toHaveAttribute('data-state', 'saved');
+    const saved = await page.evaluate(key => localStorage.getItem(key), THESIS_KEY);
+    await openBeta(page, 'calibration-lab');
+    await runLocal(page);
+    const link = page.locator('[data-beta-develop]');
+    const hypothesis = new URL(await link.getAttribute('href'), page.url()).searchParams.get('hypothesis');
+    await link.click();
+    await expect(page.locator('[data-thesis-field="hypothesis"]')).toHaveValue(hypothesis);
+    await expect(page.locator('[data-thesis-field="supportingEvidence"]')).toHaveValue('');
+    await expect(page.locator('[data-thesis-draft-status]')).toHaveAttribute('data-state', 'unsaved');
+    expect(await page.evaluate(key => localStorage.getItem(key), THESIS_KEY)).toBe(saved);
+    await openBeta(page, 'thesis-lab');
+    await expect(page.locator('[data-thesis-field="hypothesis"]')).toHaveValue(fields.hypothesis);
+    expect(await page.evaluate(key => localStorage.getItem(key), THESIS_KEY)).toBe(saved);
 });
 
 test('pending reads cancel cleanly, edits invalidate results, and missing caches report an error', async ({page}) => {
@@ -267,7 +364,7 @@ test('Research Frontier opens a separate unsaved hypothesis without overwriting 
     await expect(page.locator('[data-thesis-draft-status]')).toHaveAttribute('data-state', 'saved');
     const saved = await page.evaluate(key => localStorage.getItem(key), THESIS_KEY);
     await openBeta(page, 'research-frontier');
-    await expect(page.locator('.beta-frontier-card')).toHaveCount(6);
+    await expect(page.locator('.beta-frontier-card')).toHaveCount(8);
     await page.screenshot({path: testInfo.outputPath('beta-research-frontier.png'), fullPage: true});
     const link = page.getByRole('link', {name: 'Develop this thesis'}).first();
     const hypothesis = new URL(await link.getAttribute('href'), page.url()).searchParams.get('hypothesis');
@@ -348,17 +445,7 @@ for (const width of [1024, 390]) {
                     await page.locator('[data-thesis-action="build"]').click();
                     await expect(page.locator('[data-thesis-brief]')).toBeVisible();
                 }
-                await expect.poll(() => page.evaluate(() => {
-                    const root = document.querySelector('[data-beta-root]');
-                    const bounds = root.getBoundingClientRect();
-                    const scrollport = document.querySelector('.beta-content');
-                    return {
-                        documentBounded: document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1,
-                        contentBounded: scrollport.scrollWidth - scrollport.clientWidth <= 1,
-                        rightBounded: bounds.right <= innerWidth + 1,
-                        visibleWidth: bounds.width > 0 && bounds.left >= -1,
-                    };
-                })).toEqual({documentBounded: true, contentBounded: true, rightBounded: true, visibleWidth: true});
+                await expectBounded(page);
                 expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toContain(colorScheme);
                 if (experiment === 'regime-radar'
                     && ((width === 1024 && colorScheme === 'light') || (width === 390 && colorScheme === 'dark'))) {
@@ -372,3 +459,32 @@ for (const width of [1024, 390]) {
         });
     }
 }
+
+test.describe('Beta guide on a short touch viewport', () => {
+    test.use({hasTouch: true, viewport: {width: 390, height: 664}});
+    for (const colorScheme of ['light', 'dark']) {
+        test(`Beta guide and observations remain usable with touch in ${colorScheme}`, async ({page}, testInfo) => {
+            await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+            await openBeta(page, 'path-remix');
+            await setSidebar(page, false);
+            const guide = page.locator('.beta-guide');
+            const details = guide.locator('details.ui-collapse').first();
+            const summary = details.locator(':scope > summary');
+            await summary.tap();
+            await expect(page.locator('[data-beta-run]')).toBeHidden();
+            await summary.tap();
+            await expect(page.locator('[data-beta-run]')).toBeVisible();
+            await runLocal(page);
+            await expectBounded(page);
+            await page.locator('[data-beta-develop]').scrollIntoViewIfNeeded();
+            await expect(page.locator('[data-beta-develop]')).toBeInViewport();
+            expect(await page.locator('[data-beta-develop]').evaluate(link => {
+                const rect = link.getBoundingClientRect();
+                return link.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+            })).toBe(true);
+            expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toContain(colorScheme);
+            await guide.scrollIntoViewIfNeeded();
+            await page.screenshot({path: testInfo.outputPath(`beta-guide-touch-${colorScheme}.png`), fullPage: true});
+        });
+    }
+});

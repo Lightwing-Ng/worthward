@@ -1,4 +1,4 @@
-"""Removable Beta blueprint; no market or strategy lifecycle hooks. Code version: v0.1.0."""
+"""Removable Beta blueprint; no market or strategy lifecycle hooks. Code version: v0.2.0."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from flask import Blueprint, Flask, abort, jsonify, render_template, request, ur
 
 from app.core.settings import get_settings
 
-from .registry import EXPERIMENT_BY_ID, EXPERIMENTS
+from .registry import EXPERIMENT_BY_ID, EXPERIMENTS, GUIDES
 
-CODE_VERSION = "v0.1.0"
+CODE_VERSION = "v0.2.0"
 
 
 def build_page_context(experiment: dict[str, object]) -> dict[str, object]:
@@ -52,6 +52,8 @@ def build_page_context(experiment: dict[str, object]) -> dict[str, object]:
         "beta_version": CODE_VERSION,
         "beta_experiments": EXPERIMENTS,
         "beta_experiment": experiment,
+        "beta_guide": GUIDES.get(experiment["id"]),
+        "beta_next": EXPERIMENT_BY_ID.get(GUIDES.get(experiment["id"], {}).get("next")),
         "beta_state": state,
     }
 

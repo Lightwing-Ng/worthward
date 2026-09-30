@@ -1,7 +1,7 @@
 [app]
 name = "worthward"
 version = "v2.60.0"
-debug = false
+debug = true
 updated_on = "2 Sep 2026"
 
 [server]

@@ -1,4 +1,4 @@
-"""Opt-in research experiments with no strategy registration. Code version: v0.1.0."""
+"""Opt-in research experiments with no strategy registration. Code version: v0.2.0."""
 
 EXPERIMENTS = (
     {
@@ -42,6 +42,36 @@ EXPERIMENTS = (
         "interactive": True,
     },
     {
+        "id": "path-remix",
+        "title": "Path Remix",
+        "icon": "icon-settings-style-tokens",
+        "description": "Keep every daily move. Change the order. See a different journey.",
+        "question": "Same returns. Same destination. Would you survive every path?",
+        "method": "Reorder up to 252 cached daily returns into original, reversed, losses-first, and gains-first paths.",
+        "limitation": "Reordered paths are counterfactual illustrations, not possible-world probabilities or tradable strategies.",
+        "interactive": True,
+    },
+    {
+        "id": "recovery-clock",
+        "title": "Recovery Clock",
+        "icon": "icon-settings-strategies",
+        "description": "Measure the wait beneath an old high, not just the depth of a fall.",
+        "question": "How much patience did recovery actually require?",
+        "method": "Track observed peaks, troughs, and first recoveries across the bounded local history.",
+        "limitation": "An unfinished drawdown has an unknown recovery time. Past recoveries do not set a deadline for the next one.",
+        "interactive": True,
+    },
+    {
+        "id": "calibration-lab",
+        "title": "Calibration Lab",
+        "icon": "icon-settings-network",
+        "description": "Give an uncertainty band a daily reality check.",
+        "question": "Does an 80% reference band actually contain 80% of later moves?",
+        "method": "At each historical step, use only the preceding 60 returns to form a 10th–90th percentile band, then reveal the next return.",
+        "limitation": "Rolling empirical quantiles have no guaranteed future coverage. This baseline does not implement conformal prediction.",
+        "interactive": True,
+    },
+    {
         "id": "thesis-lab",
         "title": "Thesis Lab",
         "icon": "icon-settings-strategies",
@@ -64,3 +94,49 @@ EXPERIMENTS = (
 )
 
 EXPERIMENT_BY_ID = {experiment["id"]: experiment for experiment in EXPERIMENTS}
+
+# Product-owned copy; the guide consumes the shared Process List and Collapse.
+GUIDES = {
+    "regime-radar": {
+        "observe": "Compare the trend label with volatility and drawdown. Two rising indicators can still sit inside a difficult recovery.",
+        "challenge": "Before running, guess which lens will disagree with your first impression. Then inspect that disagreement in Recovery Clock.",
+        "hypothesis": "A rising trend can coexist with a long unfinished drawdown. Compare the trend label with the recovery clock before choosing a research window.",
+        "next": "recovery-clock",
+    },
+    "analog-explorer": {
+        "observe": "Follow each line past session 0. Similar beginnings can lead to very different endings; compare the worst continuation with the median.",
+        "challenge": "Pick the most convincing resemblance, then name one difference the distance metric cannot see. Use Path Remix to challenge how much order matters.",
+        "hypothesis": "Similar 20-close shapes can have divergent continuations. Test whether a volatility-matched baseline improves on shape-only retrieval using a chronological holdout.",
+        "next": "path-remix",
+    },
+    "stress-lab": {
+        "observe": "Compare a single bad week with a longer drawdown. Then change the hypothetical exposure and see how the recovery hurdle changes.",
+        "challenge": "Write down both a loss limit and a patience limit. Recovery Clock can show why the second limit matters even after prices stop falling.",
+        "hypothesis": "A tolerable one-session loss can still create an intolerable recovery wait. Predeclare separate drawdown and time-underwater limits before testing a strategy.",
+        "next": "recovery-clock",
+    },
+    "robustness-lab": {
+        "observe": "Compare the best and worst starting dates before reading the median. Overlapping windows share many of the same daily moves.",
+        "challenge": "Choose a holding horizon before seeing its best window. Next, inspect whether a simple uncertainty band stays calibrated as the market changes.",
+        "hypothesis": "A strong median holding return can hide poor entry-date robustness. Freeze a holding horizon and evaluate its distribution on a later chronological holdout.",
+        "next": "calibration-lab",
+    },
+    "path-remix": {
+        "observe": "The four lines end together because compounding uses the same returns. Their maximum drawdowns and time below a high can differ. Click legend labels to show or hide paths.",
+        "challenge": "Before running, choose the path you think would be hardest to hold. Compare the depth and duration columns, then ask whether your answer changed.",
+        "hypothesis": "Equal terminal returns can hide very different drawdown experiences. Predeclare a depth limit and a time-underwater limit, then compare original and reordered returns.",
+        "next": "recovery-clock",
+    },
+    "recovery-clock": {
+        "observe": "Read the peak, trough, and recovery as separate moments. An unfinished episode remains open; it does not count as a fast or slow completed recovery.",
+        "challenge": "Find the deepest episode and the longest completed recovery. Are they the same? Compare that experience with the worst short shock in Stress Lab.",
+        "hypothesis": "The deepest drawdown need not be the longest recovery. Compare depth and duration while keeping unfinished episodes separate from completed recoveries.",
+        "next": "stress-lab",
+    },
+    "calibration-lab": {
+        "observe": "Compare realized coverage with the nominal 80% reference and check band width. Each band was formed before its observed next-day return.",
+        "challenge": "A wider band can catch more outcomes while becoming less useful. Define an acceptable width before researching adaptive conformal methods in Research Frontier.",
+        "hypothesis": "An adaptive uncertainty method should improve the coverage-width tradeoff against a frozen 60-return empirical baseline. Evaluate chronologically and report misses during distribution shifts.",
+        "next": "research-frontier",
+    },
+}

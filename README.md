@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.38.0`
+Documentation version: `v3.38.2`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -11,7 +11,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 
 ## What the app does
 
-- Explore the isolated [Beta research laboratory](docs/BETA_LAB.md): market regimes, historical analogs, stress and start-date sensitivity, local research briefs, and sourced frontier ideas. Beta appears before Settings in the Dock and can be removed with `WORTHWARD_BETA_ENABLED=0`.
+- Explore the isolated [Beta research laboratory](docs/BETA_LAB.md): nine guided experiments covering market regimes, historical analogs, stress, start-date sensitivity, reordered return paths, recovery duration, interval calibration, local research briefs, and sourced frontier ideas. Beta appears before Settings in the Dock and can be removed with `WORTHWARD_BETA_ENABLED=0`.
 
 - Compare up to 5 tickers over the same window on a normalized return basis
 - Use `Ticker comparison` to compare original price scales for up to 5 tickers or historical market-cap series for up to 10 tickers. Price mode can overlay an OHLCV-derived estimated cost distribution on the right side of each price canvas; hovering a price cross-section updates every profile to the cumulative estimate from the selected range start through the shared vertical guide. This remains a historical volume-profile estimate, not shareholder-level holding data. Market-cap series use same-date daily FX closes for non-USD listings while retaining USD and New York wall time; direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it. The unified Market cap canvas keeps absolute USD values and uses a logarithmic Y axis only when positive values span at least a 6:1 ratio; narrower peer groups stay linear, and nonpositive unknown-history placeholders render as gaps rather than false zero market caps.
@@ -83,6 +83,17 @@ Run the app from the project root with the selected interpreter:
 The launcher invokes Python `3.13` or newer. Direct `python3 main.py` is
 supported when `python3 --version` reports 3.13 or newer; otherwise the
 entrypoint exits with an explicit version error.
+
+The local launcher uses `debug = true` from `config.toml`: Python source and
+configuration edits automatically restart the serving process. Template edits
+are reloaded on the next request; refresh the browser to load changed HTML,
+CSS, or JavaScript. This is server reload, not browser hot module replacement.
+The interactive browser debugger stays disabled. Broker prewarm runs only in
+the serving child, and a reload replaces process-local sessions and jobs.
+Use `WORTHWARD_DEBUG=0 ./scripts/run_app.sh` when a stable, non-reloading process
+is needed. The isolated E2E launcher always sets this override to `0`.
+An already-running process started with debug disabled needs one manual restart
+before automatic reload can take effect.
 
 On Windows PowerShell, install dependencies and launch with the Python
 Launcher for Windows:
