@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tune any Backtest registry entry without writing production stores. Code version: v1.2.1."""
+"""Tune any Backtest registry entry without writing production stores. Code version: v1.3.0."""
 # ruff: noqa: E402
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ import argparse
 from dataclasses import asdict
 import json
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -18,7 +19,12 @@ if str(PROJECT_ROOT) not in sys.path:
 import pandas as pd
 
 from app.core.config import PERIOD_OFFSETS
-from app.services.research.strategy_tuning import ResearchRequest, ResearchSession
+from app.infrastructure.connectivity import REMOTE_MARKET_ACCESS_ENV
+from app.services.research.strategy_tuning import (
+    DISTRIBUTION_RENDERER,
+    ResearchRequest,
+    ResearchSession,
+)
 from strategies.loader import (
     get_strategy_definition,
     instantiate_strategy,
@@ -27,7 +33,31 @@ from strategies.loader import (
 from strategies.tuning import optimize, search_space
 
 
-CODE_VERSION = "v1.2.1"
+CODE_VERSION = "v1.3.0"
+# CLI objective -> (ResearchSession objective, result.json description).
+OBJECTIVES = {
+    "risk-adjusted-return": (
+        "risk_adjusted_return",
+        "mean validation return pct minus 0.5 times max drawdown pct",
+    ),
+    "net-return": ("net_return_pct", "mean validation net return pct"),
+    "crps-skill": (
+        "crps_skill",
+        "mean validation CRPS skill pct vs causal zero-drift volatility baseline, "
+        "20 horizons, complete pairs",
+    ),
+}
+DISTRIBUTION_OBJECTIVES = frozenset({"crps-skill"})
+
+
+def supported_objectives(entry):
+    """Only daily probability-grid strategies publish a Backtest CRPS headline."""
+    distribution = entry.get("presentation_renderer") == DISTRIBUTION_RENDERER
+    return [
+        objective
+        for objective in OBJECTIVES
+        if distribution or objective not in DISTRIBUTION_OBJECTIVES
+    ]
 
 
 def strategy_contract(entry, *, include_parameters=False):
@@ -44,12 +74,30 @@ def strategy_contract(entry, *, include_parameters=False):
             for interval in strategy.get_supported_intervals()
         },
         "search_space": [asdict(dimension) for dimension in search_space(strategy)],
+        "objectives": supported_objectives(entry),
     }
     if include_parameters:
         contract["parameters"] = [
             asdict(definition) for definition in strategy.get_parameter_definitions()
         ]
     return contract
+
+
+def _is_within(output, root):
+    """Compare by path and by filesystem identity, so a case-variant spelling on a
+    case-insensitive volume cannot reach a protected store."""
+    root = root.resolve()
+    if output == root or root in output.parents:
+        return True
+    if not root.exists():
+        return False
+    for candidate in (output, *output.parents):
+        try:
+            if candidate.exists() and os.path.samefile(candidate, root):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def read_json_object(value, label):
@@ -110,9 +158,17 @@ def main(argv=None):
     )
     parser.add_argument(
         "--objective",
-        choices=("risk-adjusted-return", "net-return"),
+        choices=tuple(OBJECTIVES),
         default="risk-adjusted-return",
-        help="Rank validation folds by risk-adjusted return or net return percentage.",
+        help=(
+            "Rank validation folds by risk-adjusted return, net return percentage, "
+            "or (Price Field strategies, 1d) the Backtest CRPS skill percentage."
+        ),
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Disable remote market access and read only the existing local market store.",
     )
     parser.add_argument("--trials", type=int, default=16)
     parser.add_argument(
@@ -136,6 +192,9 @@ def main(argv=None):
         help="New output directory, never an existing directory or production store.",
     )
     args = parser.parse_args(argv)
+    if args.offline:
+        # Set before any provider access; loaders read this at call time.
+        os.environ[REMOTE_MARKET_ACCESS_ENV] = "disabled"
     if args.catalog:
         print(
             json.dumps(
@@ -163,12 +222,16 @@ def main(argv=None):
     if bool(args.start) != bool(args.end):
         parser.error("Supply both --from and --to for an exact window.")
     output = Path(args.output).expanduser().resolve()
-    from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
+    from app.core.config import BASE_DIR, MARKET_STORE_DIR, SETTINGS_STORE_DIR
 
-    if any(
-        output == root.resolve() or root.resolve() in output.parents
-        for root in (MARKET_STORE_DIR, SETTINGS_STORE_DIR)
-    ):
+    # Redirected store variables never unprotect the repository's own stores.
+    protected = (
+        MARKET_STORE_DIR,
+        SETTINGS_STORE_DIR,
+        BASE_DIR / "market_store",
+        BASE_DIR / "settings_store",
+    )
+    if any(_is_within(output, root) for root in protected):
         parser.error(
             "Research output cannot be inside production market or settings stores."
         )
@@ -185,6 +248,16 @@ def main(argv=None):
         bounds = (
             read_json_object(args.bounds, "Bounds") if args.bounds is not None else None
         )
+        if args.objective in DISTRIBUTION_OBJECTIVES:
+            if args.objective not in supported_objectives(
+                get_strategy_definition(args.strategy)
+            ):
+                raise ValueError(
+                    f"--objective {args.objective} requires a Price Field strategy "
+                    "with a probability-grid presentation."
+                )
+            if args.interval != "1d":
+                raise ValueError(f"--objective {args.objective} requires --interval 1d.")
         end = (
             pd.Timestamp(args.end)
             if args.end
@@ -207,11 +280,7 @@ def main(argv=None):
             reinvest_cash_dividends=args.reinvest_dividends and not args.price_only,
             stop_loss_enabled=not args.no_stop_loss,
             params=fixed,
-            objective=(
-                "net_return_pct"
-                if args.objective == "net-return"
-                else "risk_adjusted_return"
-            ),
+            objective=OBJECTIVES[args.objective][0],
         )
         session = ResearchSession(request, bounds=bounds)
         output.mkdir(parents=True, exist_ok=False)
@@ -242,11 +311,7 @@ def main(argv=None):
                 "period": args.period,
                 "data_fingerprint": session.data_fingerprint,
                 "sources": session.provenance,
-                "objective": (
-                    "mean validation net return pct"
-                    if args.objective == "net-return"
-                    else "mean validation return pct minus 0.5 times max drawdown pct"
-                ),
+                "objective": OBJECTIVES[args.objective][1],
                 "holdout_used_for_selection": False,
             }
         )
@@ -256,6 +321,23 @@ def main(argv=None):
             except (ValueError, RuntimeError, ArithmeticError) as exc:
                 result["holdout"] = {"status": "failed_closed", "error": str(exc)}
                 result["status"] = "failed_closed"
+            if args.objective in DISTRIBUTION_OBJECTIVES:
+                # The exact-range Backtest headline KPI for the best params,
+                # reloaded as the Backtest loads them; it overlaps selection
+                # windows, so it is reported only and never ranks candidates.
+                reporting = {"reporting_only": True, "overlaps_selection_windows": True}
+                try:
+                    result["full_window"] = {
+                        **session.evaluate_full_window(result["best"]["params"]),
+                        **reporting,
+                    }
+                except (ValueError, RuntimeError, ArithmeticError, OSError) as exc:
+                    result["full_window"] = {
+                        "status": "failed_closed",
+                        "error": str(exc),
+                        **reporting,
+                    }
+                    result["status"] = "failed_closed"
         with (output / "result.json").open("x", encoding="utf-8") as handle:
             json.dump(result, handle, indent=2, allow_nan=False)
         print(str(output / "result.json"))

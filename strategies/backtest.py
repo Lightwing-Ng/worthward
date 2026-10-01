@@ -1,7 +1,7 @@
 """
 Long-only backtest engines.
 
-Code version: v0.18.1
+Code version: v0.19.0
 """
 
 from __future__ import annotations
@@ -103,6 +103,22 @@ def _has_complete_distribution_skill_evidence(
         rel_tol=0.0,
         abs_tol=1e-12,
     )
+
+
+def complete_distribution_skill(diagnostics: object) -> float | None:
+    """Return the unrounded headline CRPS skill only under the headline gate.
+
+    Research ranking reuses this exact Backtest evidence contract instead of
+    copying it, so a candidate is never ranked on skill the Backtest would hide.
+    """
+    if not isinstance(diagnostics, dict):
+        return None
+    distribution = _distribution_diagnostics(diagnostics)
+    if distribution is None or not _has_complete_distribution_skill_evidence(
+            distribution
+    ):
+        return None
+    return float(distribution["crps_skill_score"])
 
 
 def _attach_distribution_summary(

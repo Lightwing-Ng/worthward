@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.38.2`
+Documentation version: `v3.39.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -21,10 +21,11 @@ read-compatible interfaces; the application writes only the Worthward names.
 - Retain each Backtest strategy's tuning values in browser-local memory and restore them when returning to that strategy; explicit URL parameters remain authoritative
 - Use one strategy-owned category map in both Backtest and Settings: Baseline, Investment Automation, Technical Analysis, Machine Learning, Portfolio Rotation, and Price Field Models
 - Use Grid Trading from the Backtest strategy selector, with current, minimum, and maximum integer holding quantities, a fixed share quantity per grid execution, and asymmetric rise and fall percentages declared by `strategy_grid_trading.py`; the execution quantity defaults to initial cash divided by ten times the initial price
-- Start all 11 Price Field models with their frozen NVDA 1d GA factors and matching training parameters automatically; see the [startup default contract](docs/PRICE_FIELD_DEFAULTS.md) for provenance and browser precedence
+- Start all 15 Price Field models with frozen startup profiles automatically: the 11 original models use their NVDA 1d GA factors and matching training parameters, and the four econometric models use research specifications selected on a 16-ticker panel; see the [startup default contract](docs/PRICE_FIELD_DEFAULTS.md) for provenance and browser precedence
 - Use Bayesian Price Field, whose default research ticker is `NVDA`, to run a daily walk-forward probability forecast from the shared causal Price Field pipeline and Longbridge CLI factors and, when a local intraday store exists, execute its causal daily signals on real `1m` bars; each refresh automatically selects the best available local CPU and Apple MPS or CUDA execution path, with no manual backend control and a complete CPU fallback
 - Use LSTM Price Field through the same model-neutral factor, target, state, diagnostic, and probability-grid pipeline, with independent namespaced LSTM training hyperparameters and Apple Silicon backend detection that falls back to NumPy CPU when MPS, MLX, or Neural Engine are unavailable
 - Compare eight additional neural Price Fields: PatchTST, TSMixer, N-HiTS, TimeXer, iTransformer, TiDE, ModernTCN, and TFT. They share training controls and Market factors, predict 20 daily return distributions directly, and use verified Torch MPS/CUDA or CPU. [The research contract](docs/NEURAL_PRICE_FIELD_RESEARCH.md) explains their standardized distribution diagnostics, causal factor timing, compact architecture adaptations, and held-out evaluation.
+- Compare four econometric Price Fields: HAR Range, Score-Driven, Rough Volatility, and CRPS Learning. They forecast 20 daily Gaussian return marginals around a shared Bayesian Sharpe-ratio drift from daily OHLCV only, need no training, and run on NumPy CPU. [The econometric research contract](docs/ECONOMETRIC_PRICE_FIELD_RESEARCH.md) documents their formulas, frozen panel selection, dated evidence, and limitations, including that most of their NVDA skill comes from a positive drift that scores worse than a zero drift in bear markets.
 - Start or stop exact-configuration LSTM training using the selected ticker, relative or exact range, `1d` interval, and the currently selected private controls. Compute backend appears at the head of LSTM training. Market-factor switches and the backend are staged without recalculating the current chart; each factor subgroup shows its enabled count. The browser action passes the complete state through `--selected-params`, bypasses crossover and mutation, performs at least 180 seconds of optimizer work, and makes the completed configuration available for recalculating LSTM Price Field. History shows measured accuracy, stable date codes, and recoverable deletion. Compute-job state stays outside market and investment stores.
 - Run `scripts/lstm_ga_tune.py` independently from the CLI for genetic mutation tuning. Its default scheduling budget is 36,000 seconds and its default validation-only objective is the same strict, equal-horizon 1–20 day `CRPS skill vs baseline` contract shown in Backtest; incomplete horizon or forecast-pair coverage fails closed, and the final holdout is reported only after selection is frozen. CLI GA results written to the standard compute workspace remain readable in training history and can provide a seed-42 representative configuration, but the browser training action never starts the genetic search.
 - Configure a primary/leveraged pair such as QQQ/TQQQ or DRAM/RAM, allocate Initial capital across both assets and cash with integer shares, enter the leveraged asset after a primary decline over a selectable single-day, one-week, one-month, or three-month return window, and rotate back after the leveraged asset gains a configured percentage from the actual entry open
@@ -123,7 +124,7 @@ non-browser API clients.
 
 ### Backtest research CLI
 
-`scripts/strategy_tune.py` v1.2.1 discovers the same enabled strategy registry as
+`scripts/strategy_tune.py` v1.3.0 discovers the same enabled strategy registry as
 the Backtest dropdown, including new strategy modules without a CLI allowlist.
 It supports genetic search and a
 random-forest regression surrogate, reuses each strategy's production execution
@@ -133,6 +134,7 @@ once as a baseline. Research results are not recommendations or promised returns
 The default objective subtracts half the maximum drawdown percentage from net
 return; `--objective net-return` instead ranks candidates by mean validation net
 return while continuing to disclose drawdown and keeping holdout out of selection.
+Price Field strategies also accept `--objective crps-skill`, described below.
 
 ```bash
 python3 scripts/strategy_tune.py --catalog
@@ -148,7 +150,13 @@ python3 scripts/strategy_tune.py --strategy cycle-of-price-action --ticker DRAM 
   --output /tmp/worthward-cycle-research
 ```
 
-Use a new output directory for every run. Change `--method` to `random-forest`
+Use a new output directory for every run; an existing directory is refused
+with exit code 1. An output directory equal to or inside the configured market
+or settings store, or the repository's own `market_store/` or `settings_store/`,
+is refused with exit code 2 before provider access, even when
+`WORTHWARD_MARKET_STORE_DIR` or `WORTHWARD_SETTINGS_STORE_DIR` redirects the
+stores or the path uses a different letter case on a case-insensitive volume.
+Change `--method` to `random-forest`
 for surrogate search; repeat `--ticker` in the strategy's required order for
 rotation strategies. `--params` fixes JSON values; `--bounds` explicitly chooses
 the searched dimensions. The default 600-second budget stops scheduling new
@@ -192,6 +200,59 @@ warmup history cannot consume its only entry signal.
 Cycle of Price Action uses the same CLI path. Its `result.json` records stage
 counts, latest state, and buy/sell intent counts for each scored window under
 `model_evidence.price_action_cycle`; these counts exclude warmup observations.
+
+`--objective crps-skill` evaluates any Price Field strategy (a
+`probability-grid-v1` presentation on `--interval 1d`) headlessly with the
+Backtest's own CRPS skill: the unrounded headline skill percentage against the
+causal zero-drift volatility baseline (the equal mean of all 20 horizon skills,
+with every in-window origin and horizon pair scored). Incomplete evidence fails
+the candidate closed. Every scored window needs at least 21 sessions, so request
+about 140 or more trading dates. Other strategies and `--interval 1m` exit with
+code 1 before provider access; `--describe` lists each strategy's supported
+`objectives`.
+
+The validation and holdout windows share the search session's frozen,
+warmup-inclusive inputs: one provider load from `--from` minus the strategy's
+warmup, sized with every searched numeric parameter at its upper bound and every
+searched switch on. For each window the model receives only that window's rows
+plus that history clipped at the window's last date, identically for every
+candidate. These entries carry `history_basis`
+`session-bundle-clipped-at-fold-end` and no `backtest_headline_pct`; they rank
+candidates on equal inputs but are not reproducible as a Backtest of the fold
+dates.
+
+After the holdout, a `crps-skill` run also records `full_window`, the
+recommended KPI. It reloads the provider with the best parameters for the exact
+requested range, as the Backtest loads it, in a separate session, so in every
+mode, whether a fixed configuration, a `--bounds` search, or the default search,
+it reproduces the headline of a Backtest whose From and To are the typed
+`--from` and `--to`. Parity needs the typed dates rather than `full_window.from`
+(the first trading date), because the warmup is sized from the typed start.
+`--bounds '{}'` is therefore not needed for parity; it only fixes the evaluated
+configuration. `full_window` carries `backtest_headline_pct` (the rounded
+Backtest value), `history_basis` `exact-range-backtest-load`, and its own
+`data_fingerprint` and `sources`; the top-level `data_fingerprint` and
+`sources` describe the search session's load. It is flagged `reporting_only`
+and `overlaps_selection_windows` because it contains the validation and holdout
+windows, so tune parameters on an earlier range before treating it as
+out-of-sample evidence. The reload is a second provider load, and a second fetch
+when online. A failed reload, including an I/O error or changed trading dates,
+marks `full_window` and the run `failed_closed`, still writes `result.json`, and
+exits with code 1. Every scored window reports `crps_skill_pct`, `coverage_pct`,
+`valid_pairs`, `eligible_pairs`, the 1-, 5-, 10-, and 20-day `horizon_profile`,
+and `interval_80_coverage_pct`.
+`--offline` sets `WORTHWARD_REMOTE_MARKET_ACCESS=disabled` before any provider
+access, so Price Field inputs come only from the local daily store without
+valuation, option, or benchmark factors; compare it with a Backtest that uses the
+same connectivity. Use exact `--from`/`--to` dates, because `--period` ends on the
+current UTC date. Replace the strategy with any Price Field id and fix tuned
+values with `--params`:
+
+```bash
+python3 scripts/strategy_tune.py --offline --strategy bayesian-price-field \
+  --ticker NVDA --from 2023-10-01 --to 2026-09-30 --objective crps-skill \
+  --bounds '{}' --trials 1 --output /tmp/worthward-bayesian-crps-kpi
+```
 
 ### Runtime structure
 
@@ -720,7 +781,7 @@ app/web/static/assets/js/app/   -> Shared workspace browser factories
 app/web/static/assets/js/investment/runtime/ -> Investment workspace browser factories
 app/web/static/                 -> Versioned CSS, JavaScript, and image assets
 strategies/                     -> Strategy framework, loader, backtest engine, and algorithms
-strategies/price_field/         -> Shared Price Field pipeline and neural implementation packages
+strategies/price_field/         -> Shared Price Field pipeline, direct-horizon plumbing, and neural and econometric packages
 tests/python/                  -> Python tests grouped by architectural layer and domain
 tests/support/                 -> Shared source readers and broker-import test mixins
 tests/js/                      -> Node unit tests grouped by feature

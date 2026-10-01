@@ -1,9 +1,142 @@
 # Historical testing evidence
 
-Documentation version: `v1.0.0`
+Documentation version: `v1.1.0`
 
 These dated observations are historical evidence, not the current gate status.
 Use [Testing](TESTING.md) for commands and isolation contracts.
+
+## Econometric Price Field CRPS KPI on 1 Oct 2026
+
+Each run used a scratch copy of the local NVDA daily store, whose last bar is
+21 Sep 2026, with `WORTHWARD_MARKET_STORE_DIR`, `WORTHWARD_SETTINGS_STORE_DIR`,
+and `WORTHWARD_COMPUTE_ROOT` pointing at scratch directories and
+`WORTHWARD_REMOTE_MARKET_ACCESS=disabled` and
+`WORTHWARD_LONGBRIDGE_CLI_ACCESS=disabled` set. The command, with a new output
+directory each time, was:
+
+```bash
+python3 -B scripts/strategy_tune.py --offline --strategy <id> --ticker NVDA \
+  --from 2023-10-01 --to 2026-09-30 --objective crps-skill --bounds '{}' \
+  --trials 1 --output <new scratch directory>
+```
+
+### Final runs at 07:21 CST
+
+After three later changes, each econometric strategy ran again with
+`--from 2023-10-01` and with `--from 2023-10-02`: the warmup request became
+`base + ceil(0.08 * base) + 60` bars with
+`base = max(fit window + refit interval + 42, drift window + 252)` (2,287 by
+default, 1,693 for Score-Driven), replacing
+`max(fit window, drift window + 252) + 160`; the `Refit interval` help text and
+unit hint changed to weekdays; and the `--output` guard also compares filesystem
+identity. The scratch store copy's
+SHA-256 prefix was `309623bf2cf0cb1a`, unchanged. Every run completed and scored
+the full window 2 Oct 2023 through 21 Sep 2026 with 14,690 of 14,690 pairs and
+`full_window.history_basis: exact-range-backtest-load`:
+
+| Strategy ID | `full_window.crps_skill_pct` | With `--from 2023-10-02` | Headline | h1 | h5 | h10 | h20 | 80% interval coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `har-range-price-field` | 3.1167 | 3.1167 | 3.12 | 1.45 | 2.14 | 3.07 | 4.65 | 82.89 |
+| `score-driven-price-field` | 2.6402 | 2.6402 | 2.64 | 1.34 | 2.04 | 2.51 | 3.92 | 84.91 |
+| `rough-volatility-price-field` | 3.3149 | 3.3156 | 3.31 | 1.49 | 2.09 | 3.14 | 5.24 | 81.45 |
+| `crps-learning-price-field` | 3.1961 | 3.1978 | 3.20 | 1.57 | 2.21 | 3.06 | 4.82 | 83.13 |
+
+The headline, horizon, and coverage columns are from the `--from 2023-10-01`
+runs. With `--from 2023-10-02`, HAR Range and Score-Driven returned identical
+results; Rough Volatility returned headline 3.32, h5 2.08, coverage 81.42, and
+holdout 1.104; and CRPS Learning returned headline 3.20, h10 3.07, coverage
+83.12, and holdout 0.846, with the other columns unchanged. No run took a
+position in any scored window at the default 60% entry probability. The
+session-basis windows of the `--from 2023-10-01` runs were:
+
+| Strategy ID | Validation 2025-03-27 to 2025-09-05 | Validation 2025-09-08 to 2026-02-17 | Holdout 2026-02-18 to 2026-09-21 |
+| --- | ---: | ---: | ---: |
+| `har-range-price-field` | 13.192 | −4.153 | 0.274 |
+| `score-driven-price-field` | 12.728 | −6.826 | −0.240 |
+| `rough-volatility-price-field` | 12.551 | −1.527 | 1.099 |
+| `crps-learning-price-field` | 12.870 | −3.568 | 0.840 |
+
+Measured wall times were 2.5 s (HAR Range), 4.1 s (Score-Driven), 2.8 s (Rough
+Volatility), and 7.3 s (CRPS Learning). HAR Range and Score-Driven match the
+06:08 CST runs below. Rough Volatility and CRPS Learning changed only because the
+larger warmup changes Rough Volatility's expanding log-variance mean and the
+CRPS Learning learning state, both warmup-dependent by design. On the holdout,
+LSTM (2.33), PatchTST (2.16), and Bayesian (1.81) still beat the best new model,
+Rough Volatility (1.099).
+
+### Superseded post-fix runs at 06:08 CST
+
+These runs preceded the three changes above; their Rough Volatility and CRPS
+Learning values are superseded by the final runs. After the date-anchored refit
+schedule, positive-proxy floors, bad-bar handling, Score-Driven warmup-fit
+skipping, factor-status semantics, HAR insanity filter, and the exact-range
+`full_window` reload, each econometric strategy ran with
+`--from 2023-10-01` and again with `--from 2023-10-02`. Every run completed with
+CLI v1.3.0 and scored the full window 2 Oct 2023 through 21 Sep 2026 with 14,690
+of 14,690 pairs and `full_window.history_basis: exact-range-backtest-load`:
+
+| Strategy ID | `full_window.crps_skill_pct` | With `--from 2023-10-02` | Headline | h1 | h5 | h10 | h20 | 80% interval coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `har-range-price-field` | 3.1167 | 3.1167 | 3.12 | 1.45 | 2.14 | 3.07 | 4.65 | 82.89 |
+| `score-driven-price-field` | 2.6402 | 2.6402 | 2.64 | 1.34 | 2.04 | 2.51 | 3.92 | 84.91 |
+| `rough-volatility-price-field` | 3.2985 | 3.2993 | 3.30 | 1.48 | 2.09 | 3.12 | 5.19 | 81.75 |
+| `crps-learning-price-field` | 3.1819 | 3.1831 | 3.18 | 1.57 | 2.21 | 3.05 | 4.79 | 83.21 |
+
+The horizon and coverage columns are from the `--from 2023-10-01` runs. The
+`--from 2023-10-01` runs loaded 2,841 daily rows (2,371 for Score-Driven) and
+the `--from 2023-10-02` runs one row fewer. No run took a position in any scored
+window at the default 60% entry probability. The session-basis validation
+(2025-03-27 to 2025-09-05 and 2025-09-08 to 2026-02-17) and holdout (2026-02-18
+to 2026-09-21) scores are recorded in each run's `result.json` and summarized in
+[Econometric Price Field research](ECONOMETRIC_PRICE_FIELD_RESEARCH.md). The
+production `market_store/historical/NVDA.parquet` SHA-256 was `309623bf…` before
+the pre-fix runs and again at 06:19 CST after the post-fix runs.
+
+### Superseded pre-fix runs, 04:24 to 05:14 CST
+
+The same command, before those fixes, returned the following values for the
+four econometric strategies. They are superseded by the final table above and
+remain here only as the record of that run.
+
+| Strategy ID | `full_window.crps_skill_pct` | Headline | h1 | h5 | h10 | h20 | 80% interval coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `har-range-price-field` | 3.1151 | 3.12 | 1.45 | 2.14 | 3.07 | 4.65 | 82.90 |
+| `score-driven-price-field` | 2.6653 | 2.67 | 1.35 | 2.05 | 2.56 | 3.92 | 84.98 |
+| `rough-volatility-price-field` | 3.3320 | 3.33 | 1.51 | 2.17 | 3.16 | 5.19 | 81.88 |
+| `crps-learning-price-field` | 3.1911 | 3.19 | 1.58 | 2.23 | 3.06 | 4.80 | 83.26 |
+
+The same pre-fix session ran the 11 existing Price Field strategies with their
+startup defaults; with `--bounds '{}'` the fixes do not change those
+`full_window` values. `bayesian-price-field` scored 1.8302 (headline 1.83; h1
+−1.23, h5 0.63, h10 1.64, h20 4.19; 80% interval coverage 84.47), and LSTM Price
+Field was the best existing strategy at 1.98. On the holdout, LSTM (2.33),
+PatchTST (2.16), and Bayesian (1.81) scored above every post-fix econometric
+strategy at 06:08 CST (best: Rough Volatility, 1.07) and every final
+strategy at 07:21 CST (best: Rough Volatility, 1.099).
+
+### Complete gate and focused tests
+
+- Earlier the same day, before the fixes,
+  `./scripts/test.sh -q -p no:cacheprovider tests/python/strategies/test_econometric_price_field_models.py tests/python/strategies/test_econometric_price_field_strategy.py`
+  reported 69 passed, and
+  `./scripts/test.sh -p no:cacheprovider tests/python/tooling/test_strategy_tune_crps.py tests/python/services/test_strategy_tuning_crps.py`
+  reported 23 passed in 33.10 seconds, covering all 15 Price Field strategies
+  through the registry plus the offline subprocess. Both exited 0.
+- At 06:07 CST, after the fixes,
+  `./scripts/test.sh -p no:cacheprovider tests/python/strategies tests/python/tooling tests/python/services/test_strategy_tuning.py tests/python/services/test_strategy_tuning_crps.py tests/python/services/test_strategy_research_boundaries.py tests/python/web/test_backtest_page.py tests/python/architecture`
+  reported 1,024 passed and 107 subtests passed in 204.80 seconds.
+- From 06:36 to 07:10 CST, before the three changes that preceded the final KPI
+  runs, the complete gate passed Ruff and JavaScript syntax, reported 2,434
+  Python tests passed, 0 failed, and 6 skipped with 372 subtests at 76.96%
+  coverage, and passed all 508 JavaScript unit tests. Playwright E2E reported
+  519 passed and 31 failed, so the gate was not green. All 31 failures also
+  fail identically on a clean copy of HEAD `403ced29`; they are pre-existing
+  touch-target size, frosted-glass token, and HSBC replay expectations that
+  this change does not touch.
+- Between 07:10 and 07:20 CST, after those three changes,
+  `tests/python/strategies/test_econometric_price_field_strategy.py` and
+  `tests/python/tooling/test_strategy_tune_options.py` reported 127 passed. No
+  complete gate after those changes is recorded.
 
 ## CI environment isolation on 6 Sep 2026
 

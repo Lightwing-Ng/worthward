@@ -1,10 +1,8 @@
-"""Shared causal inputs for direct-horizon neural models. Code version: v1.0.1."""
+"""Shared causal inputs for direct-horizon neural models. Code version: v1.0.2."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import fields, is_dataclass
-from datetime import date, datetime
 from typing import Any
 
 import numpy as np
@@ -15,6 +13,7 @@ from strategies.price_field.pipeline import (
     build_price_field_factor_columns,
     merge_price_field_bundle_observations,
     normalize_price_field_ohlcv,
+    plain_market_bundle,
 )
 
 AVAILABILITY_POLICY = "next-observed-session/v1"
@@ -24,21 +23,6 @@ BENCHMARK_FACTORS = tuple(
     for symbol in BENCHMARK_SYMBOLS
     for kind, horizon in (("return", 1), ("momentum20", 20))
 )
-
-
-def plain_market_bundle(value: Any) -> Any:
-    """Convert provider records without deepcopying immutable MappingProxy values."""
-    if is_dataclass(value) and not isinstance(value, type):
-        return {field.name: plain_market_bundle(getattr(value, field.name)) for field in fields(value)}
-    if isinstance(value, Mapping):
-        return {str(key): plain_market_bundle(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [plain_market_bundle(item) for item in value]
-    if isinstance(value, (date, datetime, pd.Timestamp)):
-        return value.isoformat()
-    if isinstance(value, np.generic):
-        return value.item()
-    return value
 
 
 def causal_neural_market_bundle(bundle: object | None, dates: pd.Series) -> dict[str, Any]:

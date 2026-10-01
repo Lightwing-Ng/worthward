@@ -1,7 +1,7 @@
 """
 Tests for backtest metrics.
 
-Code version: v0.8.2
+Code version: v0.9.0
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from strategies.backtest import (
     _crps_skill_percentage,
     _has_complete_distribution_skill_evidence,
     _percentage,
+    complete_distribution_skill,
     run_single_ticker_backtest,
 )
 from strategies.base import StrategySignalResult
@@ -212,6 +213,39 @@ class BacktestMetricTests(unittest.TestCase):
         self.assertFalse(
             _has_complete_distribution_skill_evidence(boolean_horizon)
         )
+
+    def test_complete_distribution_skill_exposes_only_the_gated_raw_headline(
+            self,
+    ) -> None:
+        distribution = {
+            "crps_skill_score": 0.012345678,
+            "crps_skill_aggregation": "equal-mean-of-all-20-horizon-skills",
+            "horizon_count": 20,
+            "eligible_pairs": 200,
+            "valid_pairs": 200,
+            "crps_skill_valid_horizon_count": 20,
+            "crps_skill_required_horizon_count": 20,
+            "crps_skill_requires_complete_pair_coverage": True,
+            "crps_skill_has_complete_pair_coverage": True,
+            "horizons": {
+                str(horizon): {
+                    "crps_skill_score": 0.012345678,
+                    "valid_pairs": 10,
+                    "eligible_pairs": 10,
+                }
+                for horizon in range(1, 21)
+            },
+        }
+        # Direct neural diagnostics and grid-wrapped Gaussian diagnostics.
+        self.assertEqual(complete_distribution_skill(distribution), 0.012345678)
+        self.assertEqual(
+            complete_distribution_skill({"grid": distribution}), 0.012345678
+        )
+        self.assertIsNone(
+            complete_distribution_skill({**distribution, "valid_pairs": 199})
+        )
+        self.assertIsNone(complete_distribution_skill({"brier_score": 0.2}))
+        self.assertIsNone(complete_distribution_skill(None))
 
     def test_backtest_withholds_distribution_skill_without_explicit_complete_evidence(
             self,

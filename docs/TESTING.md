@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.91.2`
+Documentation version: `v1.92.0`
 
 ## Price Field startup promotion
 
@@ -31,10 +31,138 @@ loading. `tests/python/services/test_strategy_research_boundaries.py` verifies t
 actually enters in each scored window, including market-local intraday boundaries,
 rather than passing with an idle cash balance.
 
+`tests/python/tooling/test_strategy_tune_crps.py` runs `--objective crps-skill` for every
+enabled strategy whose presentation renderer is `probability-grid-v1`, so a new Price
+Field strategy is covered automatically. On 300 deterministic oscillating factory bars
+with a plain provider bundle and minimum model sizes, it requires two provider loads per
+run (the search session, then the full window's exact-range reload), finite per-window
+skill, complete pair coverage (`valid_pairs == eligible_pairs == 20 * sessions - 210`),
+and a score equal to the validation mean. Validation and holdout entries must record
+`history_basis` `session-bundle-clipped-at-fold-end` and no `backtest_headline_pct`;
+`full_window` must record `exact-range-backtest-load` and a headline identical to an
+independent exact-range `compute_signals` plus `run_single_ticker_backtest`. Corrupting
+bundle bars after a fold leaves that fold's score unchanged while the model sees a bundle
+clipped at the fold. A search-mode parity test covers all three provider loader
+families with six strategies (Bayesian, N-HiTS, HAR Range, Rough Volatility,
+Score-Driven, and CRPS Learning): a non-empty `--bounds` search with `--trials 1` on
+2,000 factory bars, through a stub of
+`price_field_market_factors.build_local_price_field_factor_bundle` that honors the
+requested start, must load an earlier start and more rows for the search session than
+for the reload, and `full_window.crps_skill_pct` must exactly equal an independent
+exact-range Backtest of the best parameters. Two fail-closed cases, a reload `OSError`
+and a reload whose trading dates changed, must exit 1 with `result.json` status
+`failed_closed` and the exact `full_window` failure record while keeping the best
+configuration, both validation windows, and the holdout. A real `--offline` subprocess
+for Bayesian Price Field reads a temporary Parquet store and verifies that the only files
+written are the output directory's and the reader's lock file; empty store
+subdirectories may be created.
+`tests/python/services/test_strategy_tuning_crps.py` pins the session boundaries:
+rejection before provider access; the 21-session minimum, where 139 requested dates
+(windows of 21, 21, and 28 sessions) give a finite score with 210 valid pairs per
+validation window and 138 dates are rejected; fold-only visible rows with the session
+history basis; bundle restoration after failures; `evaluate_full_window()` reloading
+the chosen parameters for the requested range in a separate strategy instance while the
+session's strategy and bundle stay untouched, and rejecting return objectives; and
+unchanged return objectives.
+`tests/python/tooling/test_strategy_tune_options.py` also checks the CRPS preflight,
+`--offline`, and the repository-store output guard: under conftest's redirected stores,
+an `--output` at the repository's `market_store/`, inside it, or inside
+`settings_store/`, given as an absolute path or relative to the repository root, exits
+2 with no filesystem change and no provider access.
+`test_case_variant_output_cannot_reach_a_protected_store` points the market store at a
+temporary directory and requires an `--output` under an upper-case spelling of it to exit
+2 before provider access and leave the store empty; it skips on a case-sensitive
+filesystem, where that spelling names a different directory.
+
 ```bash
 ./scripts/test.sh tests/python/services/test_strategy_tuning.py tests/python/tooling/test_strategy_tune_cli.py \
-  tests/python/tooling/test_strategy_tune_options.py tests/python/services/test_strategy_research_boundaries.py
+  tests/python/tooling/test_strategy_tune_options.py tests/python/services/test_strategy_research_boundaries.py \
+  tests/python/tooling/test_strategy_tune_crps.py tests/python/services/test_strategy_tuning_crps.py
 ```
+
+## Econometric Price Field strategies
+
+`tests/python/strategies/test_econometric_price_field_models.py` checks the numpy
+models directly. Every model, with intraday range measures on and off, must leave
+each forecast row unchanged when bars after its origin change, and must stay
+finite and positive from its documented first origin on a 160-bar history with
+zero-range bars and missing opens. Independent references pin the hand-computed
+Sharpe posterior, naive ridge least squares for HAR Range (also with a zero close
+inside the fit window) and its ordinary least squares, a naive Beta-t-EGARCH
+filter and score loop, the noisy Matérn kriging system, rolling measures, and
+proxy fallbacks on unusable bars. BOA must concentrate on the calibrated expert
+and must not use targets that mature after an origin; HAR keeps identically zero
+regressors at their prior; and batched Score-Driven fits must match one batch.
+The robustness cases require that:
+
+- one zero, missing, or infinite close leaves every model's means finite, its
+  scales finite and positive from the first origin, and the median ratio of its
+  last 100 rows' scales to the clean series within 0.8 to 1.25, in both modes;
+- on a synthetic series with 55% halted sessions (`illiquid_ohlc_random_walk` in
+  `tests/factories/market.py`), every model's median 1-day scale stays within 0.5
+  and 2 times the realized volatility, and the HAR floor never falls to its
+  absolute minimum once the series trades; without zero proxies the positive-proxy
+  floor equals the plain rolling-median floor;
+- the HAR insanity filter bounds a +50% price jump inside a 63-session fit window
+  and changes nothing on ordinary data (`test_har_insanity_filter_*`);
+- date-anchored refit origins follow the session dates rather than the first
+  loaded row, including across removed holidays, explicit index-grid origins
+  reproduce the default grid exactly, and Score-Driven's `start` skips only fits
+  that serve earlier origins.
+
+`tests/python/strategies/test_econometric_price_field_strategy.py` checks the
+adapters through the registry: the four IDs follow `tft-price-field` in the
+Price Field category without a training slot; startup defaults equal the frozen
+specification; loading requests OHLCV only with the documented warmup
+(`base + ceil(0.08 * base) + 60` bars with
+`base = max(fit window + refit interval + 42, drift window + 252)`);
+warmup-bundle forecast scales equal whole-history scales on the visible rows; the
+presentation is built-in JSON that satisfies the direct-horizon browser contract
+with horizon mapping `direct-estimated-1-through-20`; Backtest reports a
+complete distribution headline; a short history without warmup forecasts from
+row 60; both factor switches change the forecasts as documented;
+the Score-Driven multiplier maps onto its close-only fallback; CRPS Learning
+parameters reach the combiner; and importing the modules loads neither the web
+application, Torch, nor `strategies.price_field.neural.inputs`, whose
+`plain_market_bundle` must be the pipeline's own object. Prepending 1 to 19
+leading sessions must leave HAR Range and Score-Driven forecasts unchanged
+(Score-Driven scales bit-identical, HAR Range within `1e-10` relative) with the
+`session-date-blocks` schedule, while Rough Volatility and CRPS Learning must stay
+within 5% and report their start-dependent state. Twenty parameter-bound cases
+(no prior, shortest, upper, lower, and longest settings for each strategy) run with
+warnings as errors and must give finite means and positive scales from the
+documented first origin with a built-in JSON presentation. Factor status must be `insufficient` for the drift at 21 sessions and
+`active` at 22, `insufficient` for the range without opens, highs, and lows, and
+`disabled` when switched off. Standalone Score-Driven with warmup must produce a
+frame and presentation, apart from the econometric diagnostics, identical to
+computing every refit, with fewer refits and a first forecast origin equal to the
+first visible origin. The CRPS CLI tests above cover the four
+strategies automatically through the registry.
+
+```bash
+./scripts/test.sh -q -p no:cacheprovider tests/python/strategies/test_econometric_price_field_models.py \
+  tests/python/strategies/test_econometric_price_field_strategy.py
+```
+
+On 1 Oct 2026 at 06:07 CST, the focused run
+`./scripts/test.sh -p no:cacheprovider tests/python/strategies tests/python/tooling tests/python/services/test_strategy_tuning.py tests/python/services/test_strategy_tuning_crps.py tests/python/services/test_strategy_research_boundaries.py tests/python/web/test_backtest_page.py tests/python/architecture`
+reported 1,024 passed and 107 subtests passed in 204.80 seconds.
+
+The complete gate on 1 Oct 2026 from 06:36 to 07:10 CST, before the final
+warmup-sizing, `Refit interval` wording, and case-variant output-guard changes,
+passed Ruff and JavaScript syntax, reported 2,434 Python tests passed, 0 failed,
+and 6 skipped with 372 subtests at 76.96% coverage, and passed all 508
+JavaScript unit tests. Playwright E2E reported 519 passed and 31 failed. All 31
+failures also fail identically on a clean copy of HEAD `403ced29` (touch-target
+size, frosted-glass token, and HSBC replay expectations that this change does
+not touch), so they are pre-existing, but this is not a green complete gate.
+After the three later changes, the focused run
+`tests/python/strategies/test_econometric_price_field_strategy.py` plus
+`tests/python/tooling/test_strategy_tune_options.py` reported 127 passed. The
+[historical testing evidence](TESTING_HISTORY.md) records both runs.
+
+The [econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) gives the
+isolated offline command that reproduces each strategy's headline KPI.
 
 ## Standard circular icon button geometry
 

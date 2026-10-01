@@ -1,4 +1,4 @@
-"""Frozen-input neural probability research coordinator. Code version: v1.1.2.
+"""Frozen-input neural probability research coordinator. Code version: v1.1.3.
 
 Search, replicated validation selection, and reporting have separate data
 boundaries. This process never fetches data or updates production settings.
@@ -40,6 +40,8 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402 - Numerical runtimes must see worker thread limits first.
 import pandas as pd  # noqa: E402
 
+from strategies.price_field.pipeline import clip_price_field_bundle  # noqa: E402
+
 PROTOCOL_VERSION = "neural-probability-research/v1.1.0"
 ROBUST_SEEDS = (42, 101, 202)
 WARMUP = 128
@@ -77,18 +79,7 @@ def _signal_stop(_signum: int, _frame: Any) -> None:
 
 def clip_bundle(bundle: dict[str, Any], cutoff: pd.Timestamp) -> dict[str, Any]:
     """Physically remove every dated observation after the training boundary."""
-    result = deepcopy(bundle)
-    for key, value in result.items():
-        if isinstance(value, list):
-            result[key] = [row for row in value if not isinstance(row, dict) or "observed_at" not in row
-                           or pd.Timestamp(row["observed_at"]).date() <= cutoff.date()]
-        elif key == "benchmarks" and isinstance(value, dict):
-            result[key] = {
-                symbol: [row for row in rows if pd.Timestamp(row["observed_at"]).date() <= cutoff.date()]
-                for symbol, rows in value.items()
-            }
-    result["end"] = cutoff.isoformat()
-    return result
+    return clip_price_field_bundle(bundle, cutoff)
 
 
 def validation_folds(count: int, *, smoke: bool = False) -> tuple[int, list[tuple[int, int]]]:

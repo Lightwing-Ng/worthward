@@ -1,5 +1,101 @@
 # Known issues and operating constraints
 
+Econometric Price Fields and CRPS research objective, 1 Oct 2026: four daily
+Price Field strategies, `har-range-price-field`, `score-driven-price-field`,
+`rough-volatility-price-field`, and `crps-learning-price-field`, now follow TFT
+in Price Field Models, so Backtest and Settings list 15 Price Field strategies
+and 23 enabled strategies. They forecast Gaussian 1–20 day log-return marginals
+from daily OHLCV only around a shared Bayesian Sharpe-ratio drift, need no
+training, and start from frozen specifications selected on a 16-ticker panel
+pre-window rather than by the NVDA GA. Most of their NVDA skill comes from that
+positive drift, which scores worse than a zero drift in bear markets, and at
+the defaults they request 2,287 bars of warmup (1,693 for Score-Driven); see
+[Econometric Price Field research](ECONOMETRIC_PRICE_FIELD_RESEARCH.md). Their
+next-session trading intents are a compatibility display: at the default 60%
+entry probability they took no position in the dated NVDA KPI runs.
+`scripts/strategy_tune.py` v1.3.0 adds `--objective crps-skill` for daily Price
+Field strategies, which ranks candidates by the mean of the Backtest's own
+complete-evidence CRPS headline over the validation windows; `--offline`, which
+disables remote market access before any provider access; and a reporting-only
+`full_window` that overlaps the selection windows. Validation and holdout
+windows are scored on the search session's single warmup-inclusive load, sized
+with every searched numeric parameter at its upper bound and every searched
+switch on, and clipped at each window's end
+(`history_basis` `session-bundle-clipped-at-fold-end`), so their values depend
+on the search bounds and are not Backtest values for the fold dates.
+`full_window` instead reloads the provider with the best parameters for the
+exact requested range (`history_basis` `exact-range-backtest-load`), so it
+reproduces the Backtest headline in every search mode for a Backtest whose From
+and To are the typed `--from` and `--to`; a failed reload fails the run closed
+with exit code 1. `--output` inside the repository's own `market_store/` or
+`settings_store/` is refused with exit code 2 even when the store variables are
+redirected, and, because the guard also compares filesystem identity, when the
+path differs from a store only in letter case on a case-insensitive volume.
+`--describe` and `--catalog` list each strategy's supported
+objectives, and the return objectives are unchanged.
+`complete_distribution_skill()` in `strategies/backtest.py` and
+`clip_price_field_bundle()` in `strategies/price_field/pipeline.py` serve that
+path; `scripts/price_field_research.py` delegates its bundle clipping to the
+latter without a behavior change. The shared neural adapter v1.6.1 moved its
+prediction columns, signals, scoring, and presentation into
+`strategies/price_field/direct_horizon.py`, and its output was byte-identical
+before and after the move. `plain_market_bundle()` now lives in
+`strategies/price_field/pipeline.py`, from which the research adapter imports
+it; `strategies/price_field/neural/inputs.py` v1.0.2 re-exports it. An offline CLI run writes no market rows, but the
+market reader leaves `historical/<TICKER>.parquet.lock` and may create empty
+`logos/`, `profiles/`, and settings `search/` directories in whichever stores the
+process uses, so run KPI commands against a scratch store copy. A previously
+running user-owned 8688 service keeps its already imported modules until its
+ordinary restart.
+
+The econometric models refit at date-anchored business-day blocks of the session
+dates, not every refit interval from the first loaded bar, so the
+`Refit interval` parameter counts weekdays, exchange holidays only shorten a
+block, and HAR Range and Score-Driven forecasts do not depend on where the
+loaded history starts once their fit windows lie inside it. The warmup request is now
+`base + ceil(0.08 * base) + 60` bars with
+`base = max(fit window + refit interval + 42, drift window + 252)`, replacing
+`max(fit window, drift window + 252) + 160`: the 42-bar lookback loads the fit
+input of the refit block that holds the first visible origin, so HAR Range
+forecasts on the first visible rows do not depend on the typed start date, and
+the 8% allowance covers holiday-dense calendars such as Hong Kong. Rough
+Volatility and CRPS Learning still depend slightly on the loaded start by
+design, because the frozen expanding log-variance mean and learner weights
+accumulate from the first loaded bar: the final offline NVDA KPI moved from
+3.3149 to 3.3156 (headline 3.31 to 3.32) and from 3.1961 to 3.1978 when
+`--from 2023-10-01` became `--from 2023-10-02`, while HAR Range and Score-Driven
+agreed within `1e-13`. Standalone Score-Driven skips fits that serve only hidden warmup
+rows without changing visible outputs. HAR Range and Score-Driven variance
+floors now ignore zero proxies; one zero or non-finite close removes only the
+HAR Range regression rows whose windows touch it instead of degrading every later
+forecast; and a HAR Range insanity filter clips each fitted log rate to its fit
+window's matured-target range widened by `ln 10`, which binds in degenerate
+short windows but did not bind at the defaults on any of the 16 panel tickers.
+A factor switch is `insufficient` when
+the forecasts never use its input rather than below a fixed observation count.
+After these fixes the final 1 Oct 2026 offline NVDA KPIs (07:21 CST) are 3.12
+(HAR Range), 2.64 (Score-Driven), 3.31 (Rough Volatility), and 3.20 (CRPS
+Learning). They supersede the 06:08 CST values of 3.30 and 3.18 for the two
+start-dependent models, which only the larger warmup changed, and the pre-fix
+3.12, 2.67, 3.33, and 3.19; the best existing strategy on the same full window
+is LSTM at 1.98. On the short holdout slice, LSTM (2.33), PatchTST (2.16), and
+Bayesian (1.81) beat every new model (best: Rough Volatility, 1.10), so the
+full-window lead is not out-of-sample evidence.
+
+Complete gate for the econometric change, 1 Oct 2026, 06:36 to 07:10 CST, run
+before the warmup-sizing, `Refit interval` wording, and case-variant output-guard
+changes above: Ruff and JavaScript syntax passed; pytest reported 2,434 passed,
+0 failed, and 6 skipped with 372 subtests at 76.96% coverage; and all 508
+JavaScript unit tests passed. Playwright E2E reported 519 passed and 31 failed,
+so this is not a green complete gate. All 31 failures also fail identically on a
+clean copy of HEAD `403ced29`: they are pre-existing touch-target size,
+frosted-glass token, and HSBC replay expectations that this change does not
+touch, and they remain open. After the three later changes, a focused run of
+`tests/python/strategies/test_econometric_price_field_strategy.py` and
+`tests/python/tooling/test_strategy_tune_options.py` reported 127 passed; no
+complete gate after those changes is recorded. See
+[Historical testing evidence](TESTING_HISTORY.md).
+
 HSBC same-day position snapshot ranking, 30 Sep 2026: broker snapshot
 evidence is ranked by snapshot day and then by the Portfolio market-data
 timestamp. The snapshot day is the capture-side Order Status window end, while
@@ -700,7 +796,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.272.0`
+Documentation version: `v1.273.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.131.0`
+Documentation version: `v1.132.0`
 
 ## Shared loading indicator
 
@@ -40,8 +40,9 @@ abstraction or a runtime plugin loader.
 | `app/services/investment/importing/merge/` | Merge operations, identity, and reconciliation |
 | `app/web/runtime_domains/` | Explicit context factories; investment and workspace subpackages own their flows |
 | `app/web/presentation/` | Token registries, style-token rows, table columns, and strategy forms |
-| `strategies/price_field/` | Reusable Price Field contracts, pipelines, scoring, and compute |
+| `strategies/price_field/` | Reusable Price Field contracts, pipelines, scoring, direct-horizon plumbing, and compute |
 | `strategies/price_field/neural/` | Neural input, model, runtime, registry, and scoring implementations |
+| `strategies/price_field/econometric/` | Econometric location, scale, and CRPS Learning models and their strategy adapter |
 
 New package initializers are dependency-light and do not eagerly re-export their
 children. Static imports follow the existing inward dependency direction.
@@ -223,6 +224,44 @@ daily-to-minute bridge. Prediction eligibility is checked on the scored dates
 before bridging, and model provenance survives the bridge. Predictions that exist
 only in warmup cannot make an otherwise unavailable validation/holdout eligible.
 
+Research adapter v1.5.0 adds the `crps_skill` objective, which the CLI exposes as
+`--objective crps-skill`. It accepts only a strategy whose presentation renderer
+is `probability-grid-v1` with daily model and execution intervals, rejects any
+other request before provider access, and requires at least 21 sessions in each
+scored window. Validation and holdout windows are scored on the session's
+frozen, warmup-inclusive inputs, loaded once with every searched numeric
+dimension at its upper bound and every searched boolean on, identically for
+every candidate: the model receives only that window's rows, while a strategy
+that holds a warmup bundle receives a plain copy (`plain_market_bundle()`)
+clipped by `clip_price_field_bundle()` at the window's last date, both from
+`strategies/price_field/pipeline.py`, and the original bundle is restored
+afterward, including after a failure. These entries record `history_basis`
+`session-bundle-clipped-at-fold-end` (`SESSION_HISTORY_BASIS`) and no
+`backtest_headline_pct`, because they are not an exact-range Backtest of the
+fold dates. The score is `complete_distribution_skill()` from
+`strategies/backtest.py`, the unrounded headline CRPS skill returned only under
+the Backtest's complete-horizon and complete-pair gate; missing evidence fails
+the candidate closed.
+
+After the holdout, the CLI calls `ResearchSession.evaluate_full_window()` for
+the best parameters. It builds a separate session with those parameters and
+`bounds={}`, so the provider loads the requested `--from`..`--to` range exactly
+as the Backtest does; the search session and its strategy state are never
+touched. A reload whose trading dates differ from the session's raises
+`ValueError`. The resulting `full_window` reproduces the exact-range Backtest
+headline in every search mode and records `backtest_headline_pct`,
+`history_basis` `exact-range-backtest-load` (`BACKTEST_HISTORY_BASIS`), and the
+reload's own `data_fingerprint` and `sources`; it is flagged `reporting_only`
+and `overlaps_selection_windows`. A failed reload, including an `OSError`, marks
+`full_window` and the run `failed_closed` while keeping the selection and
+holdout evidence. `--offline` sets `WORTHWARD_REMOTE_MARKET_ACCESS=disabled`
+before any provider access, and `--output` inside the configured stores or the
+repository's own `market_store/` or `settings_store/` is rejected even when the
+store variables are redirected. The guard compares resolved paths and also
+filesystem identity (`os.path.samefile()` against the output path and each of its
+existing ancestors), so a case-variant spelling on a case-insensitive volume cannot reach a protected
+store. The return objectives keep their existing window contract.
+
 ## Shared Price Field evaluation orchestration
 
 `strategies/price_field/scoring.py` owns `evaluate_gaussian_price_field()`, the
@@ -239,8 +278,9 @@ column names through `PriceFieldPredictionColumns`. Bayesian posterior
 inference, LSTM training, factor selection, and backend scheduling stay
 strategy-owned, and the distribution definition is a caller-declared string so a
 different forecasting distribution cannot be absorbed silently. The eight neural
-adapters keep their own direct-horizon scoring path through
-`NeuralPriceFieldStrategy`; they are not folded into this contract.
+adapters and the four econometric adapters use a separate direct-horizon path in
+`strategies/price_field/direct_horizon.py`; they are not folded into this
+contract.
 
 `strategies/neighbor_indicators.py` is the neutral owner of the observed-bar
 validation, explicit numeric parameter checking, and Wilder-smoothed indicators
@@ -251,7 +291,9 @@ aliases because existing tests address them by those names.
 ## Price Field startup profiles
 
 The [Price Field default contract](PRICE_FIELD_DEFAULTS.md) owns the promotion
-of all 11 frozen NVDA 1d validation selections. Strategy-owned definitions feed
+of all 11 frozen NVDA 1d validation selections and the provenance of the four
+econometric profiles, which were selected on a 16-ticker panel pre-window rather
+than by the NVDA GA. Strategy-owned definitions feed
 Backtest, the catalog, and CLI consistently. Eight shared neural profiles also
 own their seed and CPU backend defaults and enable selected Market context
 factors. Cycle declares a separate Bayesian-field profile rather than inheriting
@@ -281,6 +323,69 @@ select its strategy group. The coordinator defaults to the original four and can
 run CPU-only search, replicated validation, and reporting without creating a GPU
 worker. It scales its final-evaluation reserve to the group, backend, and worker
 count. Existing frozen experiments retain their own source and protocol version.
+
+`strategies/price_field/direct_horizon.py` owns the plumbing shared by every
+direct-horizon Price Field: the `pf_mean_hNN` and `pf_std_hNN` prediction
+columns, next-session probability threshold intents from the horizon-1 marginal,
+visible-window scoring through `score_neural_price_field()`, direct-horizon
+geometry metadata, and the probability-grid presentation. The neural adapter was
+refactored onto it in v1.6.1 with byte-identical output.
+
+## Direct-horizon econometric Price Fields
+
+HAR Range, Score-Driven, Rough Volatility, and CRPS Learning are discovered
+strategies built on one `EconometricPriceFieldStrategy` in
+`strategies/price_field/econometric/strategy.py`. They forecast Gaussian
+marginals of `log(Close[t+h] / Close[t])` for `h = 1..20` with numpy-only models:
+a shared Bayesian Sharpe-ratio drift (`location.py`), three scale models
+(`har.py`, `score_driven.py`, `rough.py`), and a Bernstein Online Aggregation
+combiner (`crps_learning.py`), composed in `forecasts.py`. Every row uses bars up
+to its own origin only.
+
+The adapter requests the warmup-inclusive Longbridge CLI bundle with every
+provider factor switched off, so the only input is daily OHLCV, and sizes the
+warmup as `base + ceil(0.08 * base) + 60` bars with
+`base = max(fit window + refit interval + 42, drift window + 252)`: 2,287 by
+default (1,693 for Score-Driven). The 42-bar lookback covers the fit of the
+refit block that holds the first visible origin, so HAR Range forecasts on the
+first visible rows do not depend on the typed start date; the 8% allowance
+covers exchange holidays, which the bundle loader's 7/5 calendar-day conversion
+does not count, in holiday-dense calendars such as Hong Kong. It takes the shared
+`plain_market_bundle()` helper from the model-neutral
+`strategies/price_field/pipeline.py`; `strategies/price_field/neural/inputs.py`
+re-exports it for existing callers, and importing the econometric adapter does
+not load that neural input module. There is no training slot, capability family,
+or compute job; every fit is a deterministic causal re-estimation inside
+`compute_signals`, and Backtest does not cache the result.
+
+`compute_signals` passes the session dates with the prices (`PriceArrays.dates`),
+so every scale model refits at date-anchored business-day blocks
+(`measures.session_refit_origins()`, counted from a fixed 2000-01-03 epoch)
+rather than every refit interval from the first loaded row. The `Refit interval`
+parameter therefore counts weekdays, and exchange holidays only shorten a block;
+pure-array callers
+without dates keep the research index grid. HAR Range and Score-Driven forecasts
+therefore do not depend on where the loaded history starts once their fit
+windows lie inside it, while the frozen Rough Volatility expanding log-variance
+mean and CRPS Learning weights still depend slightly on it. The standalone
+Score-Driven model passes the first visible origin as
+`EconometricSettings.first_origin` and skips fits that serve only hidden warmup
+rows, leaving every visible output unchanged. The diagnostics report
+`econometric.refit_schedule`, `econometric.first_visible_origin`, and, for the
+two start-dependent models, `scale.log_variance_mean` or `scale.learning_state`.
+
+Two factor switches, `use_drift` and `use_intraday_range`, change the model
+inputs and appear in the presentation's factor list, where an enabled switch is
+`active` when the forecasts use its input at least once and `insufficient`
+otherwise. Rows without a complete,
+positive 20-horizon forecast are masked, so the Backtest headline gate withholds
+skill rather than scoring a partial model. The presentation reuses the
+direct-horizon distribution kind with horizon mapping
+`direct-estimated-1-through-20`, and the browser keys its direct-horizon
+behavior on the distribution kind, so these models render through the same
+direct-horizon path as the neural models. The
+[econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) owns the
+formulas, selection protocol, evidence, and limitations.
 
 ## Exact-configuration Web training and CLI-only LSTM GA
 

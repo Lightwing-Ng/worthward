@@ -1,11 +1,13 @@
-"""CLI discovery, reusable configuration, and preflight guards. Code version: v1.0.1."""
+"""CLI discovery, reusable configuration, and preflight guards. Code version: v1.1.0."""
 
 from dataclasses import asdict
 import json
+import os
 
 import pandas as pd
 import pytest
 
+from app.core.config import BASE_DIR, MARKET_STORE_DIR, SETTINGS_STORE_DIR
 from app.services.research.strategy_tuning import ResearchSession
 from scripts import strategy_tune
 from strategies.loader import instantiate_strategy, list_enabled_strategies
@@ -38,6 +40,10 @@ def test_describe_exposes_all_parameters_without_loading_market_data(
         }
         for interval in strategy.get_supported_intervals()
     }
+    assert result["objectives"][:2] == ["risk-adjusted-return", "net-return"]
+    assert ("crps-skill" in result["objectives"]) == (
+        entry["presentation_renderer"] == "probability-grid-v1"
+    )
 
 
 def test_describe_unknown_strategy_returns_actionable_error(capsys):
@@ -113,6 +119,54 @@ def test_invalid_search_controls_fail_before_provider_access(
     assert not output.exists()
 
 
+@pytest.mark.parametrize(
+    ("strategy", "options", "message"),
+    [
+        ("macd", [], "requires a Price Field strategy"),
+        ("buy-and-hold", [], "requires a Price Field strategy"),
+        ("bayesian-price-field", ["--interval", "1m"], "requires --interval 1d"),
+        ("missing-strategy", [], "Unknown strategy: missing-strategy"),
+    ],
+)
+def test_crps_skill_rejects_unsupported_requests_before_provider_access(
+    strategy, options, message, tmp_path, monkeypatch, capsys
+):
+    def unexpected_session(*_args, **_kwargs):
+        pytest.fail("An unsupported CRPS request must fail before provider access.")
+
+    monkeypatch.setattr(strategy_tune, "ResearchSession", unexpected_session)
+    output = tmp_path / "run"
+    arguments = [
+        "--strategy", strategy, "--ticker", "NVDA", "--objective", "crps-skill",
+        "--output", str(output), *options,
+    ]
+    assert strategy_tune.main(arguments) == 1
+    error = capsys.readouterr().err
+    assert error.startswith("strategy_tune failed:")
+    assert message in error
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("offline", [True, False])
+def test_offline_disables_remote_market_access_before_provider_access(
+    offline, tmp_path, monkeypatch, capsys
+):
+    observed = []
+
+    def inspect_session(*_args, **_kwargs):
+        observed.append(os.environ.get("WORTHWARD_REMOTE_MARKET_ACCESS"))
+        raise ValueError("stop after the provider boundary")
+
+    monkeypatch.setenv("WORTHWARD_REMOTE_MARKET_ACCESS", "enabled")
+    monkeypatch.setattr(strategy_tune, "ResearchSession", inspect_session)
+    output = tmp_path / "run"
+    arguments = ["--strategy", "macd", "--ticker", "NVDA", "--output", str(output)]
+    assert strategy_tune.main([*arguments, *(["--offline"] if offline else [])]) == 1
+    assert "stop after the provider boundary" in capsys.readouterr().err
+    assert observed == ["disabled" if offline else "enabled"]
+    assert not output.exists()
+
+
 def test_existing_output_is_preserved_without_provider_access(tmp_path, monkeypatch):
     def unexpected_session(*_args, **_kwargs):
         pytest.fail("An existing output must be rejected before provider access.")
@@ -134,6 +188,65 @@ def test_existing_output_is_preserved_without_provider_access(tmp_path, monkeypa
         == 1
     )
     assert sentinel.read_text(encoding="utf-8") == "prior evidence"
+
+
+@pytest.mark.parametrize(
+    "relative_output",
+    [
+        "market_store",
+        "market_store/strategy-tune-guard-probe",
+        "settings_store/strategy-tune-guard-probe/run",
+    ],
+)
+@pytest.mark.parametrize("from_repository_root", [False, True])
+def test_repository_stores_stay_protected_when_store_variables_are_redirected(
+    relative_output, from_repository_root, monkeypatch, capsys
+):
+    # conftest redirects both stores, so only the new default-root guard applies.
+    assert MARKET_STORE_DIR.resolve() != (BASE_DIR / "market_store").resolve()
+    assert SETTINGS_STORE_DIR.resolve() != (BASE_DIR / "settings_store").resolve()
+    output = BASE_DIR / relative_output
+    existed = output.exists()
+
+    def unexpected_session(*_args, **_kwargs):
+        pytest.fail("A protected output must be rejected before provider access.")
+
+    monkeypatch.setattr(strategy_tune, "ResearchSession", unexpected_session)
+    if from_repository_root:
+        monkeypatch.chdir(BASE_DIR)
+    arguments = [
+        "--strategy", "macd", "--ticker", "NVDA", "--trials", "1",
+        "--output", relative_output if from_repository_root else str(output),
+    ]
+    with pytest.raises(SystemExit) as stopped:
+        strategy_tune.main(arguments)
+    assert stopped.value.code == 2
+    assert "cannot be inside production market or settings stores" in (
+        capsys.readouterr().err
+    )
+    assert output.exists() == existed
+
+
+def test_case_variant_output_cannot_reach_a_protected_store(tmp_path, monkeypatch, capsys):
+    store = tmp_path / "store"
+    store.mkdir()
+    variant = tmp_path / "STORE"
+    if not variant.exists():
+        pytest.skip("Case-variant spellings name a different directory on this filesystem.")
+    monkeypatch.setattr("app.core.config.MARKET_STORE_DIR", store)
+
+    def unexpected_session(*_args, **_kwargs):
+        pytest.fail("A protected output must be rejected before provider access.")
+
+    monkeypatch.setattr(strategy_tune, "ResearchSession", unexpected_session)
+    with pytest.raises(SystemExit) as stopped:
+        strategy_tune.main([
+            "--strategy", "macd", "--ticker", "NVDA", "--trials", "1",
+            "--output", str(variant / "case-probe"),
+        ])
+    assert stopped.value.code == 2
+    assert "cannot be inside production market or settings stores" in capsys.readouterr().err
+    assert list(store.iterdir()) == []
 
 
 def test_json_files_match_inline_configuration_and_remain_unchanged(

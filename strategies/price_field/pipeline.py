@@ -6,13 +6,14 @@ AR(1) return state, diagnostics, and signal/presentation support. Model
 training, posterior inference, factor selection, and backend scheduling remain
 strategy-owned.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import timedelta
+from copy import deepcopy
+from dataclasses import dataclass, fields, is_dataclass
+from datetime import date, datetime, timedelta
 import math
 from typing import Any, Mapping, Sequence
 
@@ -1209,6 +1210,55 @@ def is_remote_market_access_disabled() -> bool:
     from app.infrastructure.connectivity import is_remote_market_access_disabled as disabled
 
     return disabled()
+
+
+def plain_market_bundle(value: Any) -> Any:
+    """Convert provider records without deepcopying immutable MappingProxy values.
+
+    Dataclasses and mappings become dicts, sequences become lists, dates become ISO
+    strings and numpy scalars become Python numbers, so any Price Field model can hold
+    or clip a plain bundle.
+    """
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: plain_market_bundle(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, Mapping):
+        return {str(key): plain_market_bundle(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [plain_market_bundle(item) for item in value]
+    if isinstance(value, (date, datetime, pd.Timestamp)):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def clip_price_field_bundle(
+        bundle: dict[str, Any],
+        cutoff: pd.Timestamp,
+) -> dict[str, Any]:
+    """Return a copy of a plain bundle without any observation dated after cutoff.
+
+    Every dated list and benchmark series is physically clipped, so a research
+    boundary cannot leak later bars or factor measurements into a model.
+    """
+    result = deepcopy(bundle)
+    for key, value in result.items():
+        if isinstance(value, list):
+            result[key] = [
+                row for row in value
+                if not isinstance(row, dict) or "observed_at" not in row
+                or pd.Timestamp(row["observed_at"]).date() <= cutoff.date()
+            ]
+        elif key == "benchmarks" and isinstance(value, dict):
+            result[key] = {
+                symbol: [
+                    row for row in rows
+                    if pd.Timestamp(row["observed_at"]).date() <= cutoff.date()
+                ]
+                for symbol, rows in value.items()
+            }
+    result["end"] = cutoff.isoformat()
+    return result
 
 
 def _json_number_list(values: Sequence[float]) -> list[float | None]:

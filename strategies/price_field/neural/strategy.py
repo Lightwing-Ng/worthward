@@ -1,4 +1,4 @@
-"""One strategy adapter for eight direct probability engines. Code version: v1.6.0."""
+"""One strategy adapter for eight direct probability engines. Code version: v1.6.1."""
 
 from __future__ import annotations
 
@@ -15,17 +15,14 @@ from strategies.price_field.neural.inputs import (
     AVAILABILITY_POLICY, BENCHMARK_FACTORS, BENCHMARK_SYMBOLS,
     factor_values_for_neural, plain_market_bundle, prepare_neural_price_field_inputs,
 )
-from strategies.price_field.neural.scoring import score_neural_price_field
-from strategies.price_field.scoring import visible_scoring_bounds
 from strategies.price_field.neural.registry import neural_architecture_spec
-from strategies.price_field.contract import (
-    build_probability_grid_presentation,
-    probability_grid_render_shape_fields,
+from strategies.price_field.direct_horizon import (
+    attach_direct_signals, build_direct_presentation, direct_horizon_series,
+    direct_prediction_columns, score_direct_forecasts,
 )
 from strategies.price_field.pipeline import (
     PRICE_FIELD_FACTOR_DEFINITIONS, build_price_field_factor_status,
-    bundle_to_price_field_ohlcv, json_number_list, load_price_field_market_bundle,
-    normal_probability_above_zero, normalize_price_field_ohlcv, probability_threshold_signals,
+    bundle_to_price_field_ohlcv, load_price_field_market_bundle, normalize_price_field_ohlcv,
 )
 
 
@@ -136,57 +133,19 @@ class NeuralPriceFieldStrategy(BaseStrategy):
             params=normalized, feature_names=names, progress=self.training_progress,
             min_training_seconds=self.training_min_seconds, cancel=self.training_cancel,
         )
-        predictions = {"Date": prepared["Date"]}
-        for horizon in range(20):
-            predictions[f"pf_mean_h{horizon + 1:02d}"] = forecast.means[:, horizon]
-            predictions[f"pf_std_h{horizon + 1:02d}"] = forecast.stds[:, horizon]
+        predictions = direct_prediction_columns(prepared["Date"], forecast.means, forecast.stds)
         predictions["pf_training_end"] = forecast.origin_training_end
         prediction_frame = pd.DataFrame(predictions)
-        output = visible.merge(
-            prediction_frame,
-            on="Date",
-            how="left",
-            validate="one_to_one",
+        output, means, stds, probabilities = attach_direct_signals(
+            visible, prediction_frame, normalized["entry_probability"],
         )
-        means = output[[f"pf_mean_h{h:02d}" for h in range(1, 21)]].to_numpy(dtype=float)
-        stds = output[[f"pf_std_h{h:02d}" for h in range(1, 21)]].to_numpy(dtype=float)
-        probabilities = np.asarray([normal_probability_above_zero(mean, std) if np.isfinite(mean) and np.isfinite(std)
-                                    and std > 0 else np.nan for mean, std in zip(means[:, 0], stds[:, 0])])
-        output["pf_probability_up"] = probabilities
-        buy, sell = probability_threshold_signals(pd.Series(probabilities), normalized["entry_probability"] / 100)
-        output["buy_signal"] = np.asarray(buy, dtype=bool)
-        output["sell_signal"] = np.asarray(sell, dtype=bool)
         scoring_frame = prepared.merge(
             prediction_frame,
             on="Date",
             how="left",
             validate="one_to_one",
         )
-        score_start, score_end = visible_scoring_bounds(
-            scoring_frame["Date"],
-            visible["Date"],
-        )
-        diagnostics = score_neural_price_field(
-            scoring_frame,
-            score_start,
-            score_end,
-        )
-        next_day = diagnostics.get("next_day") or {}
-        diagnostics.update(
-            direction_hit_rate_pct=next_day.get("direction_hit_rate_pct"),
-            scored_points=diagnostics.get("valid_pairs", 0),
-            metric_kind="direct-close-standardized-1-20d-brier",
-            distribution_metric_kind=(
-                "close-anchored-standardized-1-20d-crps-skill"
-            ),
-            target_interval="signal-close-to-future-close",
-            proper_probability_rule="one-minus-half-multiclass-brier", causal=True,
-            warmup_excluded_points=score_start,
-            warmup_history_points=score_start,
-            distribution_warmup_history_points=score_start,
-            distribution_visible_origin_points=score_end - score_start,
-            evaluation_scope="visible-backtest-range-with-causal-prior-history",
-        )
+        diagnostics = score_direct_forecasts(scoring_frame, visible["Date"])
         selected = [name for name in forecast.selected_features if name != "close_return"]
         selection = {"origin_index": max(0, len(output) - 1), "eligible": selected, "selected": selected,
                      "method": "causal-training-availability", "selection_status": {
@@ -207,49 +166,15 @@ class NeuralPriceFieldStrategy(BaseStrategy):
                                "params": {k: v for k, v in normalized.items() if k != "cell_display_threshold"}}, sort_keys=True)
         fingerprint = hashlib.sha256(identity.encode() + pd.util.hash_pandas_object(prepared, index=False).values.tobytes()
                                      + np.asarray(features, dtype=np.float64).tobytes()).hexdigest()
-        presentation = build_probability_grid_presentation(
+        presentation = build_direct_presentation(
             schema=f"{self.strategy_id}/v1", model_version=model_version,
-            cell_display_threshold_pct=normalized["cell_display_threshold"], distribution_kind="direct-normal-horizon",
-            predictive_mean=json_number_list(means[:, 0]), predictive_scale=json_number_list(stds[:, 0]),
-            probability_up=json_number_list(probabilities), return_autoregression=[0.0] * len(output),
-            return_long_run_mean=[0.0] * len(output), return_innovation_scale=json_number_list(stds[:, 0]),
-            data_keys=[pd.Timestamp(value).isoformat() for value in output["Date"]], diagnostics=diagnostics,
+            cell_display_threshold_pct=normalized["cell_display_threshold"], dates=output["Date"],
+            means=means, stds=stds, probabilities=probabilities, diagnostics=diagnostics,
             factors=factors, factor_selection=selection, device=forecast.device,
             source={"market_data": "longbridge-cli", "commands": causal_bundle.get("source_commands", []),
                     "availability_policy": AVAILABILITY_POLICY}, fingerprint=fingerprint,
-            geometry_metadata={"target_interval": "signal-close-to-future-close", "price_anchor_kind": "signal-close",
-                               "multi_step_kind": "direct-horizon", "metric_geometry": {
-                                   "diagnostic_outcome": {
-                                       "horizons": list(range(1, 21)), "horizon_unit": "close-to-future-close-session",
-                                       "proper_probability_rule": "one-minus-half-multiclass-brier",
-                                       "bands": 20, "tail_bins": 2, "horizon_weighting": "equal",
-                                   },
-                                   "distribution_diagnostic": {
-                                       "target": "log(close[t+h]/close[t])",
-                                       "horizons": list(range(1, 21)),
-                                       "horizon_unit": "close-to-future-close-session",
-                                       "proper_probability_rule": "crps-skill-vs-causal-baseline",
-                                       "reference": "zero-drift-causal-volatility",
-                                       "horizon_weighting": "equal",
-                                       "skill_aggregation": "equal-mean-of-all-20-horizon-skills",
-                                       "skill_requires_complete_horizon_set": True,
-                                       "skill_requires_complete_pair_coverage": True,
-                                       "interval_aggregation": "valid-pair-weighted",
-                                       "continuous_denominator": "valid-forecast-pairs",
-                                       "coverage_companion": "eligible-pair-coverage",
-                                       "pair_independence": "overlapping-origins-and-horizons",
-                                   },
-                                   "render_lattice": {
-                                       **probability_grid_render_shape_fields(),
-                                       "horizon_unit": "close-to-future-close-session",
-                                       "horizon_mapping": "direct-learned-1-through-20",
-                                       "spatial_mapping": "viewport-quantized-display-only", "max_horizon": 20,
-                                       "detail_horizons": list(range(1, 21)), "beyond_max_horizon": "unavailable",
-                                   },
-                               }},
             extra={"training_label": f"{self.strategy_name} training", "training_family": self.strategy_training_family,
-                   "max_horizon": 20, "horizon_predictive_mean": [json_number_list(row) for row in means],
-                   "horizon_predictive_std": [json_number_list(row) for row in stds],
+                   **direct_horizon_series(means, stds),
                    "training_diagnostics": forecast.training_diagnostics,
                    "neural": {"architecture": self.architecture, "feature_names": list(names),
                               "trained_horizons": list(range(1, 21)), "distribution": "Gaussian log-return marginals"}},

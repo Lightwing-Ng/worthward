@@ -1,7 +1,8 @@
-"""Factories for test market data and results. Code version: v1.3.0."""
+"""Factories for test market data and results. Code version: v1.4.0."""
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from app.models.schemas import QuoteProfile
@@ -171,3 +172,145 @@ def backtest_result(*, intraday: bool = False) -> dict[str, object]:
         "trades": [],
         "interval": "1m" if intraday else "1d",
     }
+
+
+def oscillating_ohlc_frame_for_dates(ticker: str, dates: list[str]) -> pd.DataFrame:
+    """Return deterministic OHLCV bars whose daily log returns change sign.
+
+    Two incommensurate cycles give probability models a non-degenerate return
+    distribution to forecast without random numbers; the linear frame's
+    constant returns cannot exercise a volatility-relative CRPS baseline.
+    """
+    index = np.arange(len(dates), dtype=float)
+    log_close = (
+        0.0004 * index
+        + 0.06 * np.sin(2 * np.pi * index / 23)
+        + 0.025 * np.sin(2 * np.pi * index / 7.3)
+    )
+    close = ticker_base_price(ticker) * np.exp(log_close)
+    previous = np.concatenate((close[:1], close[:-1]))
+    open_ = previous * np.exp(0.004 * np.sin(2 * np.pi * index / 5.1))
+    spread = 0.006 + 0.003 * (1 + np.sin(2 * np.pi * index / 13))
+    return pd.DataFrame({
+        "Date": pd.to_datetime(dates),
+        "Open": open_,
+        "High": np.maximum(open_, close) * (1 + spread),
+        "Low": np.minimum(open_, close) * (1 - spread),
+        "Close": close,
+        "Volume": 1_000_000.0 + 250_000.0 * (1 + np.sin(2 * np.pi * index / 11)),
+    })
+
+
+def price_field_bundle_for_frame(ticker: str, frame: pd.DataFrame) -> dict[str, object]:
+    """Return a plain Price Field provider bundle holding only the frame's bars.
+
+    Factor histories are empty, matching an offline local-store bundle, so no
+    valuation, option, or research observation is invented.
+    """
+    volume = frame["Volume"] if "Volume" in frame else pd.Series(0.0, index=frame.index)
+    return {
+        "symbol": f"{str(ticker).strip().upper()}.US",
+        "ohlcv": [
+            {
+                "observed_at": pd.Timestamp(date).isoformat(),
+                "open": float(open_),
+                "high": float(high),
+                "low": float(low),
+                "close": float(close),
+                "volume": float(bar_volume),
+                "turnover": float(bar_volume * close),
+            }
+            for date, open_, high, low, close, bar_volume in zip(
+                frame["Date"], frame["Open"], frame["High"], frame["Low"],
+                frame["Close"], volume, strict=True,
+            )
+        ],
+        "pe_history": [],
+        "dynamic_pe_history": [],
+        "option_history": [],
+        "research_history": [],
+        "factor_status": {},
+        "fingerprint": f"factory-{str(ticker).strip().lower()}-{len(frame)}",
+        "source_commands": [],
+    }
+
+
+def clustered_ohlc_random_walk(
+    count: int,
+    *,
+    seed: int = 20160104,
+    start: str = "2016-01-04",
+    base_price: float = 100.0,
+    daily_vol: float = 0.02,
+    alpha: float = 0.08,
+    beta: float = 0.9,
+    zero_range_rows: tuple[int, ...] = (),
+    missing_open_rows: tuple[int, ...] = (),
+) -> pd.DataFrame:
+    """Return deterministic daily OHLCV bars from a GARCH(1,1) random walk with overnight gaps.
+
+    The fixed seed makes every call identical. Each session opens with an overnight
+    gap (0.35 of the current volatility), moves from open to close (0.9 of it) and
+    trades a range around both, so volatility clusters with persistence
+    ``alpha + beta``; ``alpha = beta = 0`` gives a constant close-to-close standard
+    deviation of ``daily_vol * sqrt(0.35**2 + 0.9**2)``. ``zero_range_rows`` become
+    halted sessions (all four prices equal the previous close) and
+    ``missing_open_rows`` lose their open, high and low.
+    """
+    rng = np.random.default_rng(seed)
+    shocks = rng.standard_normal(count)
+    gaps = rng.standard_normal(count)
+    wicks = np.abs(rng.standard_normal((count, 2)))
+    omega = daily_vol ** 2 * max(1.0 - alpha - beta, 0.0)
+    variance = daily_vol ** 2
+    previous = float(base_price)
+    rows = np.empty((count, 4))
+    for index in range(count):
+        sigma = variance ** 0.5
+        open_ = previous * np.exp(0.35 * sigma * gaps[index])
+        close = open_ * np.exp(0.0003 + 0.9 * sigma * shocks[index])
+        high = max(open_, close) * np.exp(0.4 * sigma * wicks[index, 0])
+        low = min(open_, close) * np.exp(-0.4 * sigma * wicks[index, 1])
+        rows[index] = (open_, high, low, close)
+        change = np.log(close / previous)
+        variance = omega + alpha * change * change + beta * variance
+        previous = close
+    frame = pd.DataFrame({
+        "Date": pd.bdate_range(start, periods=count),
+        "Open": rows[:, 0],
+        "High": rows[:, 1],
+        "Low": rows[:, 2],
+        "Close": rows[:, 3],
+        "Volume": 1_000_000.0 * (1.0 + 0.5 * np.abs(shocks)),
+    })
+    for index in zero_range_rows:
+        halted = frame.loc[index - 1, "Close"] if index > 0 else frame.loc[index, "Open"]
+        frame.loc[index, ["Open", "High", "Low", "Close"]] = halted
+    for index in missing_open_rows:
+        frame.loc[index, ["Open", "High", "Low"]] = np.nan
+    return frame
+
+
+def illiquid_ohlc_random_walk(
+    count: int,
+    *,
+    halted_share: float,
+    halt_seed: int = 4,
+    tick: float | None = None,
+    **walk: object,
+) -> pd.DataFrame:
+    """Return ``clustered_ohlc_random_walk`` bars of a thinly traded, tick-bound stock.
+
+    A seeded random ``halted_share`` of sessions (never the first) has no trade:
+    open, high, low and close equal the previous close, so the session has zero
+    range, zero gap and a zero return, and the missed move arrives as the next
+    traded session's gap. ``tick`` rounds every price to that grid (at least one
+    tick). The other keywords go to ``clustered_ohlc_random_walk``.
+    """
+    rng = np.random.default_rng(halt_seed)
+    halted = tuple(int(row) for row in np.flatnonzero(rng.random(count) < halted_share) if row > 0)
+    frame = clustered_ohlc_random_walk(count, zero_range_rows=halted, **walk)
+    if tick:
+        columns = ["Open", "High", "Low", "Close"]
+        frame[columns] = np.maximum(np.round(frame[columns].to_numpy() / tick), 1.0) * tick
+    return frame

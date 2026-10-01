@@ -1,7 +1,7 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.23.2
+Code version: v0.23.3
 """
 
 from __future__ import annotations
@@ -1229,6 +1229,14 @@ class BacktestPageTests(unittest.TestCase):
                     "strategies.price_field.neural.strategy.load_price_field_market_bundle",
                     side_effect=AssertionError("Page defaults must not load real market data"),
                 ) as real_neural_loader,
+                patch(
+                    "strategies.price_field.econometric.strategy.EconometricPriceFieldStrategy.load_market_datasets",
+                    return_value=[bayesian_dataset],
+                ),
+                patch(
+                    "strategies.price_field.econometric.strategy.load_price_field_market_bundle",
+                    side_effect=AssertionError("Page defaults must not load real market data"),
+                ) as real_econometric_loader,
             ):
                 response = client.get(
                     f"/workspaces/backtest?period=6mo&strategy={strategy_id}"
@@ -1236,6 +1244,7 @@ class BacktestPageTests(unittest.TestCase):
 
                 real_lstm_loader.assert_not_called()
                 real_neural_loader.assert_not_called()
+                real_econometric_loader.assert_not_called()
                 html = response.get_data(as_text=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="backtest_view_surface"', html)
