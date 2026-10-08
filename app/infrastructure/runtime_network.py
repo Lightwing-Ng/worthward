@@ -1,7 +1,7 @@
 """
 Runtime network bootstrap helpers.
 
-Code version: v0.7.1
+Code version: v0.7.2
 """
 
 from __future__ import annotations
@@ -31,7 +31,11 @@ _TLS_ERROR_MARKERS = (
     "certificateverifyerror",
     "certificate verify failed",
     "curl (60)",
+    "curl: (60)",
     "ssl certificate problem",
+    # curl_cffi 0.16 reports an untrusted issuer as "SSL certificate OpenSSL
+    # verify result: ..." instead of "SSL certificate problem: ...".
+    "openssl verify result",
 )
 _NETWORK_URL_USERINFO_PATTERN = re.compile(r"(?i)(https?://)[^/@\s]+@")
 _NETWORK_SECRET_QUERY_PATTERN = re.compile(

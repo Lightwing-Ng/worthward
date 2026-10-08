@@ -1,6 +1,6 @@
 """Runtime network certificate discovery tests.
 
-Code version: v1.1.1
+Code version: v1.1.2
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ import logging
 from pathlib import Path
 import subprocess
 from unittest.mock import call, Mock
+
+import pytest
 
 from app.infrastructure import runtime_network
 
@@ -142,4 +144,27 @@ def test_macos_tls_hint_mentions_user_keychain_fallback(monkeypatch) -> None:
 
     assert "the system keychain was checked automatically" in hint
     assert "corporate CA is in a user keychain" in hint
+    assert runtime_network.YAHOO_CA_PEM_ENV in hint
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        # curl_cffi 0.15 wording for an untrusted issuer.
+        "Failed to perform, curl: (60) SSL certificate problem: "
+        "unable to get local issuer certificate.",
+        # curl_cffi 0.16 wording for the same failure (no class name, no
+        # "certificate problem").
+        "Failed to perform, curl: (60) SSL certificate OpenSSL verify result: "
+        "unable to get local issuer certificate (20).",
+    ],
+)
+def test_real_curl_cffi_certificate_failures_offer_the_enterprise_ca_hint(
+        monkeypatch, diagnostic: str
+) -> None:
+    monkeypatch.setattr(runtime_network, "_YFINANCE_ENTERPRISE_CA_PATH", None)
+
+    hint = runtime_network.add_yahoo_tls_configuration_hint(diagnostic)
+
+    assert hint != diagnostic
     assert runtime_network.YAHOO_CA_PEM_ENV in hint
