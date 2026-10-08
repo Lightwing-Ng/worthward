@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.40.0`
+Documentation version: `v3.40.1`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -802,6 +802,7 @@ docs/COMPATIBILITY.md           -> Canonical routes, aliases, retired renderers,
 docs/HANDOFF_TEMPLATE.md        -> Required agent handoff evidence structure
 docs/INVESTMENT_FRONTEND_CHANGELOG.md -> Historical Investment frontend changes
 requirements.txt                -> Python runtime, test, coverage, and static-check dependency pins
+ruff.toml                       -> Ruff lint rule selection pinned to the quality-gate baseline
 scripts/setup_python.sh         -> Supported host-Python dependency installer
 scripts/run_app.sh              -> Supported host-Python app launcher
 scripts/test.sh                 -> Supported host-Python pytest wrapper

@@ -1,0 +1,7 @@
+# Ruff lint policy. Code version: v1.0.0
+#
+# Ruff 0.16 widened its default rule set (59 -> 413 rules). Pin the selection
+# that the quality gate has always enforced so the Ruff upgrade stays
+# behavior-preserving; widen it deliberately in a separate change.
+[lint]
+select = ["E4", "E7", "E9", "F"]
