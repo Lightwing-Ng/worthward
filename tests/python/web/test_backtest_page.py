@@ -1,7 +1,9 @@
 """
 Tests for backtest page defaults and rendering.
 
-Code version: v0.23.3
+Code version: v0.23.4
+- Fixed: Pin the 1m lookback start so fixed-date intraday fixtures do not age out
+  of the six-month window as the calendar advances.
 """
 
 from __future__ import annotations
@@ -58,6 +60,10 @@ def _input_attributes_by_id(html: str, element_id: str) -> dict[str, str | None]
     if parser.attributes is None:
         raise AssertionError(f"Input #{element_id} was not rendered.")
     return parser.attributes
+
+
+# Fixed-date intraday fixtures (2026-04-02) must stay inside the 1m lookback window.
+FIXTURE_ONE_MINUTE_LOOKBACK_START = pd.Timestamp("2026-01-01", tz="UTC")
 
 
 class BacktestPageTests(unittest.TestCase):
@@ -766,6 +772,7 @@ class BacktestPageTests(unittest.TestCase):
             patch("app.web.runtime.instantiate_strategy", return_value=FakeStrategy()),
             patch("app.web.runtime.run_single_ticker_backtest", return_value=backtest_result(intraday=True)),
             patch("app.web.runtime.record_strategy_usage"),
+            patch("app.web.runtime.one_minute_lookback_start", return_value=FIXTURE_ONE_MINUTE_LOOKBACK_START),
         ):
             client = create_app().test_client()
             response = client.get("/workspaces/backtest?ticker=QQQ&interval=1m")
@@ -917,6 +924,10 @@ class BacktestPageTests(unittest.TestCase):
             patch(
                 "app.web.runtime.build_supported_periods_for_history_store",
                 return_value=["1d"],
+            ),
+            patch(
+                "app.web.runtime.one_minute_lookback_start",
+                return_value=FIXTURE_ONE_MINUTE_LOOKBACK_START,
             ),
         ):
             client = create_app().test_client()
