@@ -1,4 +1,4 @@
-"""Bounded, read-only Close diagnostics for Beta. Code version: v0.2.0."""
+"""Bounded, read-only local history diagnostics for Beta. Code version: v0.3.0."""
 
 from __future__ import annotations
 
@@ -42,7 +42,10 @@ def validate_ticker(raw: str) -> str:
     return normalize_ticker(ticker)
 
 
-def load_closes(raw_ticker: str, minimum: int = 80) -> tuple[str, pd.DataFrame]:
+def load_history(
+        raw_ticker: str, minimum: int = 80, *,
+        include_ohlcv: bool = False, maximum: int = MAX_OBSERVATIONS,
+) -> tuple[str, pd.DataFrame]:
     """Read only the selected daily file; never refresh, migrate, or create a cache."""
     ticker = validate_ticker(raw_ticker)
     root = Path(HISTORICAL_STORE_DIR).resolve()
@@ -69,15 +72,19 @@ def load_closes(raw_ticker: str, minimum: int = 80) -> tuple[str, pd.DataFrame]:
                 raise BetaDataError("This daily cache exceeds Beta's 100,000-row source limit.")
             if not {"Date", "Close"}.issubset(reader.schema_arrow.names):
                 raise BetaDataError("The local daily cache must contain Date and Close columns.")
+            columns = ["Date", "Close"]
+            if include_ohlcv:
+                columns.extend(column for column in ("Open", "High", "Low", "Volume")
+                               if column in reader.schema_arrow.names)
             groups: list[int] = []
             count = 0
             for group in range(reader.num_row_groups - 1, -1, -1):
                 groups.append(group)
                 count += reader.metadata.row_group(group).num_rows
-                if count >= MAX_OBSERVATIONS:
+                if count >= maximum:
                     break
-            table = reader.read_row_groups(sorted(groups), columns=["Date", "Close"], use_threads=False)
-            frame = table.slice(max(0, len(table) - MAX_OBSERVATIONS)).to_pandas()
+            table = reader.read_row_groups(sorted(groups), columns=columns, use_threads=False)
+            frame = table.slice(max(0, len(table) - maximum)).to_pandas()
     except BetaDataError:
         raise
     except (OSError, ValueError, TypeError) as exc:
@@ -94,8 +101,17 @@ def load_closes(raw_ticker: str, minimum: int = 80) -> tuple[str, pd.DataFrame]:
     if not np.isfinite(closes.to_numpy(dtype=float)).all() or (closes <= 0).any():
         raise BetaDataError("Daily closes must be finite and positive; invalid rows were not dropped or bridged.")
     result = pd.DataFrame({"Date": dates, "Close": closes.astype(float)}).reset_index(drop=True)
+    if include_ohlcv:
+        for column in ("Open", "High", "Low", "Volume"):
+            if column in frame:
+                result[column] = pd.to_numeric(frame[column], errors="coerce").to_numpy()
     result.attrs["source_ticker"] = source_ticker
     return ticker, result
+
+
+def load_closes(raw_ticker: str, minimum: int = 80) -> tuple[str, pd.DataFrame]:
+    """Retain the Close-only contract used by the seven history experiments."""
+    return load_history(raw_ticker, minimum)
 
 
 def display_date(value: object) -> str:

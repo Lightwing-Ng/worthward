@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.39.0`
+Documentation version: `v3.40.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -124,7 +124,7 @@ non-browser API clients.
 
 ### Backtest research CLI
 
-`scripts/strategy_tune.py` v1.3.0 discovers the same enabled strategy registry as
+`scripts/strategy_tune.py` v1.3.1 discovers the same enabled strategy registry as
 the Backtest dropdown, including new strategy modules without a CLI allowlist.
 It supports genetic search and a
 random-forest regression surrogate, reuses each strategy's production execution
@@ -253,6 +253,47 @@ python3 scripts/strategy_tune.py --offline --strategy bayesian-price-field \
   --ticker NVDA --from 2023-10-01 --to 2026-09-30 --objective crps-skill \
   --bounds '{}' --trials 1 --output /tmp/worthward-bayesian-crps-kpi
 ```
+
+v1.3.1 moved the store guard into `app/services/research/output_guard.py`,
+which the provenance CLI below shares, without changing any CLI behavior.
+
+### Econometric Price Field provenance CLI
+
+`scripts/econometric_price_field_research.py` v1.0.0 reproduces the active prior
+constants and current default panel scores of the four econometric Price Field
+strategies offline under their frozen protocol: the 16-ticker panel, priors read
+only from bars before 2016-10-01, the
+2016-10-01 to 2023-09-30 selection window, and the KPI window from 2023-10-01.
+`--describe` prints the protocol, defaults, stored prior constants, and module
+code versions and hashes without loading prices. It labels historical selection
+as reported and candidate-generation independence as unverified; it does not
+reproduce historical candidate grids or selection decisions. `priors` re-estimates
+every active Rough Volatility and Score-Driven prior constant from local history
+truncated before the cutoff and compares it with the stored value at its stored
+precision, writing `priors.json`; stored constants are never changed. `panel`
+scores the four strategies' default forecasts on every panel ticker with the
+official CRPS scorer, writing `manifest.json`; `--refit-schedule row-index-grid`
+reproduces the research harness's refit grid instead of the strategies'
+date-anchored blocks. The CLI disables remote market access before any data
+access, reads only the local daily store, requires a new `--output` directory,
+and refuses an output inside the market or settings stores with the same guard
+as `strategy_tune.py`. Exit codes are 0 (reproduced or complete), 1 (failure),
+2 (usage error), and 3 (a value did not reproduce or a window is incomplete;
+the output is still written). Run it against scratch copies of the panel
+parquets, prepared under `$SCRATCH` as the research contract shows:
+
+```bash
+WORTHWARD_MARKET_STORE_DIR="$SCRATCH/market" \
+WORTHWARD_SETTINGS_STORE_DIR="$SCRATCH/settings" \
+WORTHWARD_COMPUTE_ROOT="$SCRATCH/compute" \
+WORTHWARD_REMOTE_MARKET_ACCESS=disabled WORTHWARD_LONGBRIDGE_CLI_ACCESS=disabled \
+python3 -B scripts/econometric_price_field_research.py priors --output "$SCRATCH/priors"
+```
+
+The [econometric research contract](docs/ECONOMETRIC_PRICE_FIELD_RESEARCH.md#provenance-cli)
+gives the complete commands, the dated 1 Oct 2026 results (all 66 stored prior
+values reproduced, and the research-harness panel reproduced on the row-index
+grid), and the disclosures that matter for auditing them.
 
 ### Runtime structure
 

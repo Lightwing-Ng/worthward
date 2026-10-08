@@ -1,7 +1,7 @@
 # Beta research laboratory
 
-Documentation version: `v1.1.1`
-Code version: `v0.2.0`
+Documentation version: `v1.2.0`
+Code version: `v0.3.0`
 
 Beta is an experimental, removable workspace in the Dock immediately before
 Settings. It extends the existing shell, navigation, disclosures, controls,
@@ -18,6 +18,7 @@ and chart library. It does not register strategies or join training jobs.
 | `/beta/path-remix` | Separate the destination from the journey | Original, reversed, ascending, and descending orders of up to 252 observed daily returns |
 | `/beta/recovery-clock` | Measure the time spent below a previous peak | Peak, trough, and recovery episodes across the bounded history, with unfinished recoveries identified separately |
 | `/beta/calibration-lab` | Check whether a past-only interval covers the next observation | Prior-60-return 10th/90th quantile bands evaluated against the next daily return |
+| `/beta/buy-analysis` | Evaluate a buy thesis with three research votes | Trend, Momentum, and exactly one existing Price Field forecast, with explicit abstentions |
 | `/beta/thesis-lab` | Turn a hypothesis into a falsifiable protocol | Browser-local notes and a Proponent/Skeptic/Experimenter Markdown research brief |
 | `/beta/research-frontier` | Develop a sourced research direction | Curated primary sources, proposed experiments, and links that seed an unsaved thesis |
 
@@ -25,7 +26,7 @@ and chart library. It does not register strategies or join training jobs.
 `app/beta/registry.py`; the route whitelist is derived from that registry.
 Unknown experiment routes return 404.
 
-The nine experiments include seven history diagnostics. Each history page
+The ten experiments include seven history diagnostics. Each history page
 uses the shared Process List and native Collapse components to guide the
 user through running an experiment, reading its mechanism, and challenging
 its conclusion. The first step opens with the cached-ticker form. The guide
@@ -76,6 +77,61 @@ Pending requests have visible progress and cancellation. Editing the ticker
 invalidates old results. A generation token prevents late responses from
 repopulating a canceled or superseded result. Leaving the page aborts its
 request and destroys its chart.
+
+## Buy Analysis committee
+
+Buy Analysis remains entirely inside Beta. Its three-step Process List, native
+Collapse sections, model selector, form controls, buttons, metrics, and result
+table reuse existing project components. An explicit Run action requests
+`GET /beta/api/buy-analysis?ticker=<symbol>&model=<id>&horizon=<1..20>&threshold=<percent>`.
+No calculation starts merely by visiting the page. Changing any input invalidates
+the displayed result; cancellation and late-response guards match the other Beta
+experiments. The new route and assets disappear when Beta is disabled.
+
+The committee has exactly three equally weighted members:
+
+- Trend compares the latest Close with its trailing 60-close mean.
+- Momentum measures the observed 20-session close return.
+- Price Field evaluates the selected model's probability of a positive future
+  log return at one requested horizon. Changing models replaces this member's
+  evidence; it never creates another seat.
+
+Trend and Momentum reuse Regime Radar's calculations and vote by the sign of
+their respective comparisons. Price Field approves at or above the chosen
+threshold, opposes at or below its complement, and otherwise remains neutral.
+The default thresholds are 60% and 40%. The threshold must exceed 50% and cannot
+exceed 100%. A complete committee with at least two approvals supports the buy
+thesis; two oppositions challenge it; other complete combinations are neutral.
+Any abstention makes the result incomplete even when the other two votes agree.
+These dependent research votes do not establish a calibrated success probability
+or an order instruction.
+
+The initial model selector exposes existing HAR Range, Score-Driven, Rough
+Volatility, and CRPS Learning Price Fields. It reuses their frozen Backtest
+startup profiles and original signal computation without changing strategy
+registration, parameters, Backtest behavior, or training lifecycle. The pure
+evidence adapter also understands existing autoregressive open-to-open Price
+Field presentations, but those neural/Bayesian models are not exposed by this
+local-computation page.
+
+The cache loader uses the same protected read-only validation as the history
+diagnostics, with a maximum of 3,000 observations. A forecast requires observed
+daily Open, High, Low, Close, and Volume; missing or invalid OHLCV is not repaired.
+The original model's warmup limit bounds its in-memory history. In particular,
+CRPS Learning can depend on the loaded history's starting point; this bounded
+snapshot is not a claim of equality with every possible Backtest window.
+The latest forecast must match the exact final cache date. Older valid forecasts
+never substitute for missing latest evidence. A malformed distribution or
+unavailable forecast abstains. The response retains model ID, model version,
+forecast target interval, horizon, origin, and model fingerprint.
+
+The four initial models forecast signal-close-to-future-close returns. Their
+model-implied probability excludes dividends, fees, and slippage and is not an
+average of committee votes. Data may be stale; the page displays the last cached
+date and local observation count. The request starts no provider refresh,
+broker request, neural training job, background worker, order, or persistence.
+Model calculations and parameter estimation run only in memory. The committee
+does not save form inputs or results to browser storage.
 
 Thesis Lab writes only `worthward:beta:v1:thesis` in browser localStorage after
 an explicit Save draft action. The ticker preference uses
@@ -157,8 +213,10 @@ The following directions were reviewed on 30 Sep 2026:
 ## Verification
 
 The focused contracts are `tests/python/web/test_beta.py`, `tests/python/web/test_beta_shell.py`,
+`tests/python/web/test_beta_buy_analysis.py`,
 `tests/js/workspaces/test_beta_frontend.mjs`, `tests/js/workspaces/test_beta_notebook.mjs`, and
-`tests/e2e/workspaces/beta.spec.mjs`. Python fixtures use temporary Parquet files;
+`tests/e2e/workspaces/beta.spec.mjs`, and
+`tests/e2e/workspaces/beta-buy-analysis.spec.mjs`. Python fixtures use temporary Parquet files;
 browser tests use the existing isolated runtime on port 8699. Tests must
 never create research or investment records in production stores.
 

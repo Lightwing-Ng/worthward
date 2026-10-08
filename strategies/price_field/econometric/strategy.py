@@ -1,4 +1,4 @@
-"""Shared adapter for the econometric direct-horizon Price Field strategies. Code version: v1.0.0.
+"""Shared adapter for the econometric direct-horizon Price Field strategies. Code version: v1.0.1.
 
 Each model forecasts Gaussian marginals of ``log(Close[t+h] / Close[t])`` for
 h = 1..20 at every origin from daily OHLC up to that origin. The adapter owns
@@ -41,7 +41,7 @@ from strategies.price_field.econometric.forecasts import (
     score_driven_forecast,
 )
 from strategies.price_field.econometric.location import DRIFT_DEFAULTS, drift_components, drift_in_use
-from strategies.price_field.econometric.measures import usable_range_mask
+from strategies.price_field.econometric.measures import MEDIAN_WINDOW, usable_range_mask
 from strategies.price_field.pipeline import (
     PRICE_FIELD_FACTOR_DEFINITIONS,
     bundle_to_price_field_ohlcv,
@@ -59,9 +59,10 @@ HORIZON_MAPPING = "direct-estimated-1-through-20"
 # the fixed margin covers the 22-session aggregates and the 20-session targets.
 WARMUP_HOLIDAY_ALLOWANCE = 0.08
 WARMUP_MARGIN_BARS = 60
-# A fit reaches back over its window, the longest target (20) and the monthly aggregate (22)
-# from the start of the refit block that holds the first visible origin.
-FIT_LOOKBACK_BARS = 42
+# A fit reaches back over its window, the longest target (20), the monthly aggregate (22) and
+# the rolling-median variance floor under every proxy (MEDIAN_WINDOW) from the start of the
+# refit block that holds the first visible origin.
+FIT_LOOKBACK_BARS = 42 + MEDIAN_WINDOW
 FACTOR_SWITCHES = (
     ("use_drift", "drift", "Long-run drift"),
     ("use_intraday_range", "intraday_range", "Intraday range measures"),
@@ -130,7 +131,7 @@ class EconometricPriceFieldStrategy(BaseStrategy):
             parameter("retrain_interval", "Refit interval", default=20, minimum=1, maximum=63, step=1,
                       unit_hint="weekdays",
                       help_text=("Weekdays per re-estimation block; blocks are fixed business-day ranges counted "
-                                 "from 3 Jan 2000, so exchange holidays only shorten a block and forecasts do not "
+                                 "from 3 Jan 2000, so exchange holidays only shorten a block and refit dates do not "
                                  "depend on where the loaded history starts. Intervening forecasts reuse the "
                                  "block's fit.")),
             parameter("scale_multiplier", "CRPS scale multiplier", kind="number",
@@ -240,7 +241,7 @@ class EconometricPriceFieldStrategy(BaseStrategy):
         normalized = self.normalize_params(params)
         visible = normalize_price_field_ohlcv(dataset)
         full = bundle_to_price_field_ohlcv(self._warmup_bundle) if self._warmup_bundle is not None else visible
-        # Session dates anchor every refit schedule, so a date's forecast does not follow the loaded start.
+        # Session dates anchor every refit schedule independently of the loaded start.
         prices = PriceArrays(*(full[column].to_numpy(dtype=float) for column in ("Open", "High", "Low", "Close")),
                              dates=full["Date"].to_numpy(dtype="datetime64[ns]"))
         first_visible, _ = visible_scoring_bounds(full["Date"], visible["Date"])

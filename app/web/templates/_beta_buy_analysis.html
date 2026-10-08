@@ -1,0 +1,83 @@
+{# Code version: v0.1.0 #}
+<article class="report-card workspace-content-card beta-panel beta-guide" data-beta-committee data-endpoint="{{ beta_committee_url }}" aria-label="Buy-analysis committee">
+    <ol class="process-list" role="list">
+        <li class="process-list-step" data-process-continues>
+            <span class="process-list-marker" aria-hidden="true">1</span>
+            <div class="process-list-content">
+                <h3 class="process-list-heading">Give the committee a question</h3>
+                {% call render_collapse('Choose history & voting rules', 'beta-committee-inputs', open=true) %}
+                <p id="beta_committee_help" class="beta-caption">Use cached observed daily OHLCV: open, high, low, close, and volume. Price Field contributes exactly one vote alongside the trend and momentum members.</p>
+                <form class="settings-stack-form beta-committee-form" data-beta-committee-form>
+                    <div class="beta-input-grid">
+                        <label class="field" for="beta_committee_ticker">
+                            <span>Cached ticker</span>
+                            <input id="beta_committee_ticker" name="ticker" type="text" maxlength="24" required autocomplete="off" spellcheck="false" placeholder="Ticker symbol" aria-describedby="beta_committee_help">
+                        </label>
+                        <div class="field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="beta-price-field-model">
+                            <label for="beta_committee_model">Price Field model</label>
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <select id="beta_committee_model" name="model" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                                    {% for model in beta_price_field_models %}
+                                    <option value="{{ model.id }}"{% if loop.first %} selected{% endif %}>{{ model.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="trade-strategy-combobox backtest-shared-select-combobox">
+                                    <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false" aria-controls="beta_committee_model_dropdown">
+                                        <span class="trade-strategy-trigger-label" data-shared-select-trigger-label></span>
+                                    </button>
+                                </div>
+                                <div id="beta_committee_model_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" aria-label="Price Field model" hidden></div>
+                            </div>
+                        </div>
+                        <label class="field" for="beta_committee_horizon">
+                            <span>Forecast horizon (sessions)</span>
+                            <input id="beta_committee_horizon" name="horizon" type="number" min="1" max="20" step="1" value="1" required aria-describedby="beta_committee_horizon_help">
+                        </label>
+                        <label class="field" for="beta_committee_threshold">
+                            <span>Price Field voting threshold (%)</span>
+                            <input id="beta_committee_threshold" name="threshold" type="number" min="51" max="100" step="1" value="60" required aria-describedby="beta_committee_threshold_help">
+                        </label>
+                    </div>
+                    <p id="beta_committee_horizon_help" class="beta-caption">The forecast starts at the latest cached close and covers 1 to 20 trading sessions.</p>
+                    <p id="beta_committee_threshold_help" class="beta-caption">At 60%, Price Field approves at an upward probability of at least 60%, opposes at 40% or less, and stays neutral between them. Unavailable forecasts abstain.</p>
+                    <div class="settings-form-actions">
+                        <button class="secondary-button" type="submit" data-beta-committee-run>Run buy analysis</button>
+                        <button class="secondary-button" type="button" data-beta-committee-cancel hidden>Cancel</button>
+                    </div>
+                </form>
+                <p class="beta-feedback" data-beta-committee-feedback role="status" aria-live="polite">Choose a cached ticker, then run the committee.</p>
+                {% endcall %}
+            </div>
+        </li>
+        <li class="process-list-step" data-process-continues>
+            <span class="process-list-marker" aria-hidden="true">2</span>
+            <div class="process-list-content">
+                <h3 class="process-list-heading">Read each member's vote</h3>
+                {% call render_collapse('Committee votes & evidence', 'beta-committee-votes', open=true) %}
+                <p class="beta-caption">Any abstention makes the committee incomplete. With three available votes, the committee supports a buy only when at least two members approve. Its verdict is a research signal; individual votes and unavailable evidence remain visible.</p>
+                <section data-beta-committee-results hidden aria-label="Buy-analysis results">
+                    <p class="beta-provenance" data-beta-committee-provenance></p>
+                    <div class="trade-metrics-grid beta-metrics" data-beta-committee-metrics></div>
+                    <div class="beta-table-scroll" tabindex="0" role="region" aria-label="Committee member votes">
+                        <table class="events-table" data-beta-committee-table></table>
+                    </div>
+                    <ul class="beta-notes" data-beta-committee-notes></ul>
+                </section>
+                {% endcall %}
+            </div>
+        </li>
+        <li class="process-list-step">
+            <span class="process-list-marker" aria-hidden="true">3</span>
+            <div class="process-list-content">
+                <h3 class="process-list-heading">Challenge the agreement</h3>
+                {% call render_collapse('What the votes mean', 'beta-committee-boundaries') %}
+                <p>Price Field uses the same future probability models as Backtest. Trend and momentum examine the same cached history, so the members are correlated and their agreement is not a calibrated probability of success.</p>
+                <p>The committee displays the Price Field probability separately. It does not average member probabilities or treat a forecast without evidence as a neutral vote.</p>
+                <div class="settings-form-actions">
+                    <a class="secondary-button" href="{{ url_for('beta.page', experiment='thesis-lab') }}">Develop a thesis</a>
+                </div>
+                {% endcall %}
+            </div>
+        </li>
+    </ol>
+</article>

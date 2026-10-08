@@ -1,5 +1,67 @@
 # Known issues and operating constraints
 
+Econometric Price Field audit follow-up, 1 Oct 2026: an independent Codex
+audit of the four econometric Price Field strategies rated a warmup gap medium
+and a BOA test gap low; both are now fixed. The warmup request did not cover the
+rolling 252-session variance floor under the earliest fitted row, so where
+floors bind, on zero-range or illiquid bars and routinely in close-only mode,
+where squared returns fall below 5% of their median, HAR Range and Score-Driven
+forecasts could still depend on older history. `FIT_LOOKBACK_BARS` is now
+`42 + MEDIAN_WINDOW` (strategy adapter v1.0.1), so the request is
+`base + ceil(0.08 * base) + 60` bars with
+`base = max(fit window + refit interval + 42 + 252, drift window + 252)`: 2,560
+bars by default for HAR Range, Rough Volatility, and CRPS Learning, replacing
+2,287, and 1,693 for Score-Driven, unchanged. The BOA tests now include an
+independent oracle that scores every matured pair with the weights issued at its
+origin. Rough Volatility v1.1.0 fits the variogram by exact constrained least
+squares (`a >= 0`, `b >= 1e-6`) instead of flooring a negative slope without
+refitting the intercept, which changed no NVDA or panel value at the defaults,
+and drops the unused, non-reproducible `park` prior set and proxy option.
+`scripts/econometric_price_field_research.py` v1.0.0 is a new offline,
+read-only provenance CLI (`--describe`, `priors`, and `panel`; exit codes 0, 1,
+2, and 3). Its 14:10 to 14:13 CST runs reproduced all 66 stored prior values at
+their stored precision and, on the research row-index grid, every per-ticker
+research-harness panel value; its date-anchored panel pre-window means are
+3.0883, 3.1460, 3.0761, and 3.2166 for HAR Range, Score-Driven, Rough
+Volatility, and CRPS Learning. Its Score-Driven standard-deviation reproduction
+depends on the research range-proxy formula at the `1e-10` level, the stored
+`omega` center is an unused placeholder, the stored spreads pool tickers and
+dates, AVGO has only 1,802 pre-cutoff bars, and the panel's KPI end dates differ
+by ticker. `scripts/strategy_tune.py` v1.3.1 moves its unchanged store guard
+into the shared `app/services/research/output_guard.py`.
+
+The final offline NVDA KPIs (13:43 CST) are 3.1167 (headline 3.12, HAR Range),
+2.6402 (2.64, Score-Driven), 3.3227 (3.32, Rough Volatility), and 3.2044 (3.20,
+CRPS Learning); from `--from 2023-10-02` Rough Volatility returned 3.3231 and
+CRPS Learning 3.2051 (headline 3.21). They supersede the 07:21 CST values in the
+entry below (Rough Volatility 3.3149 and CRPS Learning 3.1961), which only the
+larger warmup changed, because both models accumulate state from the first
+loaded bar by design. On the holdout, LSTM (2.33), PatchTST (2.16), and Bayesian
+(1.81) still beat the best new model, Rough Volatility (1.092). The research
+contract now corrects the round-3 CRPS Learning panel pre-window mean to 3.21
+(3.2146), not 3.22, and qualifies the selection claim: the archived final
+ranking used the panel pre-window and the priors only pre-2016-10-01
+data, but exploratory research rounds displayed NVDA three-year results next to
+the candidates, so the KPI window is not a pristine holdout. The audit found
+no concrete evidence that a shipped default was chosen by maximizing the NVDA
+KPI; candidate-generation independence remains unverified. The provenance CLI
+reproduces the final priors and scores, not historical candidate grids or
+selection decisions.
+The acceptance follow-up on 2 Oct 2026 reconfirmed that drift dominates the KPI:
+with `use_drift` off the four NVDA KPIs are 0.0854, −0.3269, 0.3079, and 0.1991,
+and in its 2022 bear window all 32 default model-ticker combinations on eight
+tickers were negative, each improved by disabling the drift. It also fixed the
+provenance CLI's incomplete-horizon false success: fewer than 21 scored sessions
+now fail the canonical Backtest evidence gate. The finalized source passed
+2,469 Python tests with 6 skipped and 507 JavaScript checks with 1 optional
+sibling check skipped. Playwright reported 518 passed and 32 failed, compared
+with 520 passed and 30 failed on `403ced29`; all 30 shared failures matched,
+and both additional failures reproduced identically in baseline repeats.
+No new failure was found in the frozen Price Field rework, but the complete
+gate remains red. Concurrent Beta work was outside this acceptance scope. See
+[Econometric Price Field research](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) and
+[Historical testing evidence](TESTING_HISTORY.md).
+
 Econometric Price Fields and CRPS research objective, 1 Oct 2026: four daily
 Price Field strategies, `har-range-price-field`, `score-driven-price-field`,
 `rough-volatility-price-field`, and `crps-learning-price-field`, now follow TFT
@@ -796,7 +858,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.273.0`
+Documentation version: `v1.274.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.4.0 */
 .beta-workspace { min-width: 0; }
 .beta-content { width: min(100%, var(--layout-content-width)); display: flex; flex-direction: column; gap: var(--layout-edge-gap); padding-bottom: var(--layout-edge-gap); }
 .beta-content > *, .beta-content [data-beta-results] > * { flex-shrink: 0; }
@@ -57,9 +57,15 @@
 .beta-content [data-beta-thesis] .beta-thesis-status { font-size: var(--font-size-3); color: var(--muted); }
 .beta-content [data-beta-thesis] .beta-thesis-status[data-state="error"] { color: var(--theme-error); }
 .beta-content [data-beta-thesis] .settings-form-actions { flex-wrap: wrap; }
+.beta-content [data-beta-committee-results] { display: grid; gap: 12px; min-width: 0; }
+.beta-content [data-beta-committee] .beta-committee-form { display: grid; gap: 12px; min-width: 0; }
+.beta-content [data-beta-committee] .settings-form-actions { flex-wrap: wrap; }
+.beta-content #beta_committee_ticker { text-transform: uppercase; }
+.beta-content [data-beta-committee-table] .beta-vote-reason { white-space: normal; min-width: 180px; overflow-wrap: anywhere; }
 @media (max-width: 767px) {
     .beta-intro, .beta-panel { padding: 12px; }
     .beta-intro h3 { font-size: var(--font-size-5); }
     .beta-content [data-beta-thesis] .beta-thesis-grid { grid-template-columns: minmax(0, 1fr); }
+    .beta-content [data-beta-committee] .beta-input-grid { grid-template-columns: minmax(0, 1fr); }
     .beta-chart { height: 230px; }
 }

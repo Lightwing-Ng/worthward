@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.132.0`
+Documentation version: `v1.133.0`
 
 ## Shared loading indicator
 
@@ -262,6 +262,14 @@ filesystem identity (`os.path.samefile()` against the output path and each of it
 existing ancestors), so a case-variant spelling on a case-insensitive volume cannot reach a protected
 store. The return objectives keep their existing window contract.
 
+The guard lives in `app/services/research/output_guard.py` (v1.0.0):
+`is_protected_output()` resolves the output path and checks it with
+`is_within()` against `protected_store_roots()`, which reads the configured
+market and settings stores and the repository's own `market_store/` and
+`settings_store/` from `app.core.config` at call time. `scripts/strategy_tune.py`
+v1.3.1 and `scripts/econometric_price_field_research.py` both call it before any
+data access; the v1.3.1 extraction preserved the CLI's behavior.
+
 ## Shared Price Field evaluation orchestration
 
 `strategies/price_field/scoring.py` owns `evaluate_gaussian_price_field()`, the
@@ -345,10 +353,16 @@ to its own origin only.
 The adapter requests the warmup-inclusive Longbridge CLI bundle with every
 provider factor switched off, so the only input is daily OHLCV, and sizes the
 warmup as `base + ceil(0.08 * base) + 60` bars with
-`base = max(fit window + refit interval + 42, drift window + 252)`: 2,287 by
-default (1,693 for Score-Driven). The 42-bar lookback covers the fit of the
-refit block that holds the first visible origin, so HAR Range forecasts on the
-first visible rows do not depend on the typed start date; the 8% allowance
+`base = max(fit window + refit interval + FIT_LOOKBACK_BARS, drift window + 252)`
+and `FIT_LOOKBACK_BARS = 42 + MEDIAN_WINDOW` (294): 2,560 by default (1,693 for
+Score-Driven, whose drift inputs set its base). The lookback covers the longest
+target (20), the monthly aggregate (22), and the rolling 252-session variance
+floor under the earliest fitted row of the refit block that holds the first
+visible origin, so HAR Range and Score-Driven forecasts on the first visible rows
+do not depend on the typed start date even where a floor binds, as on zero-range
+or illiquid bars and routinely in close-only mode. Adapter v1.0.1 added the
+252-bar floor term after the 1 Oct 2026 audit found the earlier 42-bar lookback
+(2,287 bars by default) did not cover it; the 8% allowance
 covers exchange holidays, which the bundle loader's 7/5 calendar-day conversion
 does not count, in holiday-dense calendars such as Hong Kong. It takes the shared
 `plain_market_bundle()` helper from the model-neutral
@@ -386,6 +400,25 @@ behavior on the distribution kind, so these models render through the same
 direct-horizon path as the neural models. The
 [econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) owns the
 formulas, selection protocol, evidence, and limitations.
+
+`rough.py` v1.1.0 fits the variogram intercept and slope by exact constrained
+least squares (`a >= 0`, `b >= rough.MIN_SLOPE`) and keeps only the `yz` and
+`r2` proxies and priors that the registered strategies use.
+
+`scripts/econometric_price_field_research.py` (v1.0.0) is the offline
+provenance CLI for these models. It imports the registered strategies, the
+model modules, and the official `score_neural_price_field` scorer rather than
+copies of them, and reads prices only through the research loader
+`load_research_history()` after setting `WORTHWARD_REMOTE_MARKET_ACCESS=disabled`.
+`--describe` emits the frozen protocol without loading prices; `priors`
+re-estimates the stored Rough Volatility and Score-Driven prior constants from
+bars before 2016-10-01 and compares them at stored precision without changing
+them; `panel` scores the default forecasts on the 16-ticker panel with either
+the strategies' date-anchored refit blocks or the research row-index grid,
+optionally across spawned worker processes. It writes one JSON file into a new
+output directory checked by `output_guard.py` and records the code version and
+SHA-256 of every module it used. Neither the web application nor the Backtest
+imports it.
 
 ## Exact-configuration Web training and CLI-only LSTM GA
 

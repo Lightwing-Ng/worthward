@@ -1,4 +1,4 @@
-"""Econometric Price Field model contracts. Code version: v1.0.0."""
+"""Econometric Price Field model contracts. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -190,6 +190,29 @@ def test_beta_t_egarch_filter_and_score_match_a_naive_loop():
         assert gradient[0, index] == pytest.approx((upper - lower) / 2e-6, rel=1e-4, abs=1e-4)
 
 
+def test_variogram_fit_is_the_exact_constrained_least_squares_solution():
+    rng = np.random.default_rng(11)
+    f = 1.0 - rough.matern_rho(np.arange(1, 31), 0.1, 0.01)
+    grid_a = np.linspace(0.0, 6.0, 1201)
+    grid_b = np.concatenate([[rough.MIN_SLOPE], np.linspace(rough.MIN_SLOPE, 6.0, 1201)])
+    rows = np.array([a0 + b0 * f + rng.normal(0.0, 0.3, f.size)
+                     for a0, b0 in rng.normal(0.0, 1.5, (60, 2))])
+    a, b, err = rough._constrained_variogram_fit(rows, f)
+    assert (a >= 0.0).all() and (b >= rough.MIN_SLOPE).all()
+    for row, best in zip(rows, err):
+        brute = ((row[None, None, :] - grid_a[:, None, None] - grid_b[None, :, None] * f) ** 2).sum(-1)
+        assert best <= brute.min() + 1e-12
+    np.testing.assert_allclose(err, ((rows - a[:, None] - b[:, None] * f) ** 2).sum(1), rtol=1e-12)
+    # A negative slope with a positive intercept refits the intercept on the slope bound.
+    flat = (2.0 - 0.5 * f)[None, :]
+    a, b, _ = rough._constrained_variogram_fit(flat, f)
+    assert b[0] == rough.MIN_SLOPE and a[0] == pytest.approx(float(np.mean(flat - rough.MIN_SLOPE * f)))
+    # The grid search uses this exact fit: a falling variogram lands on the slope bound with the mean intercept.
+    lags = np.unique(np.round(np.geomspace(1, 250, 30)).astype(int))
+    intercept, slope, _, _ = rough.fit_matern_variogram(np.linspace(4.0, 1.0, len(lags))[None, :], lags)
+    assert slope[0] == rough.MIN_SLOPE and intercept[0] == pytest.approx(2.5, abs=1e-5)
+
+
 def test_kriging_weights_solve_the_noisy_matern_system():
     H, lam, s2, e2, K = 0.1, 0.01, 1.2, 0.3, 40
     weights, variances = rough.kriging_weights(H, lam, s2, e2, K)
@@ -237,6 +260,71 @@ def test_boa_weights_at_an_origin_ignore_targets_that_mature_later():
     for key in ("weights", "loc_weights"):
         np.testing.assert_array_equal(first[key][:cut + 1], second[key][:cut + 1])
         assert not np.allclose(first[key][cut + 2:], second[key][cut + 2:])
+
+
+def _naive_boa(closes, scales, means, *, eta, rho, loc_eta, loc_rho, start, loc_prior):
+    """Scalar decoupled BOA that stores every issued weight vector by (origin, horizon) and scores a
+    matured pair with exactly the weights issued at its origin."""
+    count, horizons, _ = scales.shape
+    log_close = np.log(closes)
+    returns = np.diff(log_close, prepend=np.nan)
+    regret_scale = np.zeros((horizons, scales.shape[2]))
+    regret_location = np.zeros((horizons, means.shape[2]))
+    location_log_prior = np.log(np.asarray(loc_prior) / np.sum(loc_prior))
+    issued_scale = np.full(scales.shape, np.nan)
+    issued_location = np.full(means.shape, np.nan)
+
+    def softmax(values):
+        values = values - values.max()
+        weights = np.exp(values)
+        return weights / weights.sum()
+
+    for t in range(count):
+        for horizon in range(1, horizons + 1):
+            s, column = t - horizon, horizon - 1
+            if s < start:
+                continue
+            window = returns[s - 59:s + 1]
+            if s < 60 or not np.all(np.isfinite(window)):
+                continue
+            reference = max(0.005, float(np.std(window, ddof=1))) * math.sqrt(horizon)
+            observed = log_close[s + horizon] - log_close[s]
+            w_scale, w_location = issued_scale[s, column], issued_location[s, column]
+            center = float(w_location @ means[s, column])
+            spread = float(w_scale @ scales[s, column])
+            z = (observed - center) / spread
+            cdf = float(crps_learning._normal_cdf(np.array([z]))[0])   # same CDF approximation as the library
+            density = math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+            gradient = (2.0 * density - 1.0 / math.sqrt(math.pi)) / reference * scales[s, column]
+            loss = gradient - w_scale @ gradient
+            regret_scale[column] = rho * regret_scale[column] + loss + eta * loss ** 2
+            gradient = -(2.0 * cdf - 1.0) / reference * means[s, column]
+            loss = gradient - w_location @ gradient
+            regret_location[column] = loc_rho * regret_location[column] + loss + loc_eta * loss ** 2
+        for column in range(horizons):
+            issued_scale[t, column] = softmax(-eta * regret_scale[column])
+            issued_location[t, column] = softmax(-loc_eta * regret_location[column] + location_log_prior)
+    return issued_scale, issued_location
+
+
+def test_boa_scores_each_matured_pair_with_the_weights_issued_at_its_origin():
+    closes = clustered_ohlc_random_walk(260)["Close"].to_numpy()
+    base = crps_learning.reference_scale_forecast(closes)
+    zero = np.zeros_like(base)
+    drift = np.tile(0.002 * np.arange(1, 21), (len(closes), 1))
+    experts = {"narrow": (zero, 0.6 * base), "wide": (zero, 1.6 * base), "middle": (zero, base)}
+    settings = dict(eta=2.0, rho=0.99, loc_eta=4.0, loc_rho=0.99, start=60, loc_prior=(0.7, 0.3))
+    _, _, diagnostics = crps_learning.crps_learning_combine(
+        closes, experts, location_experts={"drift": drift, "zero": zero}, alpha=0.0, lam_loss=0.0,
+        lam_weight=0.0, loc_alpha=0.0, loc_lam_loss=0.0, norm="ref", **settings)
+    scales = np.stack([value[1] for value in experts.values()], 2)
+    means = np.stack([drift, zero], 2)
+    rows = slice(61, None)
+    issued_scale, issued_location = _naive_boa(closes, np.nan_to_num(scales), means, **settings)
+    np.testing.assert_allclose(diagnostics["weights"][rows], issued_scale[rows], rtol=0.0, atol=1e-10)
+    np.testing.assert_allclose(diagnostics["loc_weights"][rows], issued_location[rows], rtol=0.0, atol=1e-10)
+    # The weights move enough that scoring with current instead of issued weights would show.
+    assert np.ptp(issued_scale[rows, 19, 0]) > 0.05 and np.ptp(issued_location[rows, 19, 0]) > 0.05
 
 
 def test_rolling_measures_match_naive_windows():

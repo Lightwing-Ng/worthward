@@ -1,9 +1,9 @@
-{# Code version: v0.2.1 #}
+{# Code version: v0.3.0 #}
 {% extends "base.html" %}
 {% from "_collapse.html" import render_collapse %}
 
 {% block head_extras %}
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/views/beta.css', v='beta-css-v0.3.1') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/views/beta.css', v='beta-css-v0.4.0') }}">
 {% endblock %}
 
 {% block application_state %}
@@ -27,7 +27,7 @@
 </nav>
 <div class="beta-sidebar-note">
     <span class="beta-eyebrow">Experimental · {{ beta_version }}</span>
-    <p>Nine ways to ask a better question.</p>
+    <p>{{ beta_experiments|length }} ways to ask a better question.</p>
 </div>
 {% endblock %}
 
@@ -117,6 +117,8 @@
                 <a class="secondary-button" data-beta-develop href="{{ url_for('beta.page', experiment='thesis-lab', hypothesis=beta_guide.hypothesis) }}">Develop this observation</a>
             </article>
         </section>
+        {% elif beta_experiment.id == 'buy-analysis' %}
+            {% include "_beta_buy_analysis.html" %}
         {% elif beta_experiment.id == 'thesis-lab' %}
             {% include "_beta_thesis.html" %}
         {% elif beta_experiment.id == 'research-frontier' %}
@@ -136,5 +138,7 @@
 <script type="module" src="{{ url_for('static', filename='assets/js/beta.js', v='beta-v0.2.0') }}"></script>
 {% if beta_experiment.id == 'thesis-lab' %}
 <script type="module" src="{{ url_for('static', filename='assets/js/beta-notebook.js', v='beta-notebook-v0.1.0') }}"></script>
+{% elif beta_experiment.id == 'buy-analysis' %}
+<script type="module" src="{{ url_for('static', filename='assets/js/beta-buy-analysis.js', v='beta-buy-analysis-v0.1.0') }}"></script>
 {% endif %}
 {% endblock %}

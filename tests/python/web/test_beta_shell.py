@@ -1,4 +1,4 @@
-"""Render the real Beta shell without market or strategy execution. Code version: v0.3.0."""
+"""Render the real Beta shell without market or strategy execution. Code version: v0.3.1."""
 
 import pytest
 from bs4 import BeautifulSoup
@@ -29,6 +29,7 @@ def test_real_beta_pages_reuse_shell_with_scoped_assets(client):
         assert 'assets/js/beta.js' in html
         assert 'assets/css/views/beta.css' in html
         assert ('assets/js/beta-notebook.js' in html) == (experiment['id'] == 'thesis-lab')
+        assert ('assets/js/beta-buy-analysis.js' in html) == (experiment['id'] == 'buy-analysis')
         assert 'assets/js/lstm-training.js' not in html
         assert 'id="global_language_toggle" disabled' in html
         assert '"currentView": "beta"' in html
@@ -37,7 +38,7 @@ def test_real_beta_pages_reuse_shell_with_scoped_assets(client):
         navigation = soup.select_one('nav[aria-label="Beta experiments"]')
         assert {link["href"] for link in navigation.select("a")} == {
             f"/beta/{identifier}"
-            for identifier in (*INTERACTIVE_EXPERIMENTS, "thesis-lab", "research-frontier")
+            for identifier in (*INTERACTIVE_EXPERIMENTS, "buy-analysis", "thesis-lab", "research-frontier")
         }
 
 

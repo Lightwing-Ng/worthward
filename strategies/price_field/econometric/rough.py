@@ -1,6 +1,6 @@
 """Rough Volatility scale model: noise-aware Matern (Gamma-kernel BSS) kriging of log variance.
 
-Code version: v1.0.0
+Code version: v1.1.0
 
 Frozen round-2 specification (``rough_sigma`` defaults):
 
@@ -16,8 +16,10 @@ Frozen round-2 specification (``rough_sigma`` defaults):
 3. At every refit origin (the index grid ``0, refit, 2 refit, ...`` by default, or the
    date-anchored business-day blocks passed as ``refit_origins``) fit the variogram
    ``m2(k) = a + b (1 - rho(k))`` (a = 2 e2, b = 2 s2) on the trailing ``window`` bars over
-   30 log-spaced lags in [1, 250]: (H, lam) on a grid, (a >= 0, b > 0) in closed form; the
-   empirical variogram is blended with the panel prior through 100 pseudo-pairs per lag.
+   30 log-spaced lags in [1, 250]: (H, lam) on a grid, (a >= 0, b >= 1e-6) by exact
+   constrained least squares (the research code floored a negative slope without refitting
+   the intercept; the exact solution differs only where that bound binds); the empirical
+   variogram is blended with the panel prior through 100 pseudo-pairs per lag.
 4. Simple kriging of the latent log variance from the last K = 250 observations:
    ``E[L_{t+D}] = mu_t + w_D'(L - mu_t)``, ``w_D = (R + (e2 / s2) I)^{-1} r_D`` and
    ``v_D = s2 (1 - r_D' w_D)``, with mu_t the expanding mean of L.
@@ -26,12 +28,14 @@ Frozen round-2 specification (``rough_sigma`` defaults):
    prior pseudo-pairs: ``rho_h = (sum Y^2 + 750 rho0_h V_h(t)) / (sum V_h(s) + 750 V_h(t))``.
 7. ``SIG = k * sqrt(rho_h * V_h)``, k = 0.94.
 
-The ``yz`` and ``park`` priors were estimated by the research from panel data up to
+The ``yz`` priors were estimated by the research from panel data up to
 2016-09-30 only. The close-only ``r2`` proxy (``X_t = r_t^2``, used when intraday range
 measures are disabled) is an extension: its priors were estimated with the same procedure
-(research script ``priors2.py``: 16-ticker panel, last 2000 bars before 2016-10-01, median
-variogram fitted with this module's grid; median matured proxy-to-close ratio with no
-pseudo-pairs), so they are out of sample for the selection and KPI windows too.
+(16-ticker panel, last 2000 bars before 2016-10-01, median variogram fitted with this
+module's grid; median matured proxy-to-close ratio with no pseudo-pairs), so they are out of
+sample for the selection and KPI windows too. ``scripts/econometric_price_field_research.py
+priors`` re-estimates both proxies' priors from local history and checks them against
+``PRIORS``.
 Defaults: proxy "yz", window 2000, lag_max 250, n_lags 30, K 250, refit 20, expanding
 mean, cal_window 2000, prior_pairs 100, cal_prior_pairs 750, k 0.94. Output is finite and
 positive from bar 0; full quality needs about 2000 bars of history.
@@ -68,9 +72,6 @@ PRIORS: dict[str, dict[str, Any]] = {
     "yz": {"a": 0.184, "b": 2.224, "H": 0.065, "lam": 0.0005,
            "rho": np.array([1.210, 1.153, 1.113, 1.089, 1.046, 1.003, 0.977, 0.955, 0.933, 0.908,
                             0.899, 0.890, 0.886, 0.885, 0.878, 0.863, 0.855, 0.853, 0.851, 0.847])},
-    "park": {"a": 0.264, "b": 2.033, "H": 0.065, "lam": 0.001,
-             "rho": np.array([1.255, 1.182, 1.142, 1.116, 1.072, 1.026, 1.000, 0.973, 0.944, 0.922,
-                              0.917, 0.908, 0.898, 0.894, 0.887, 0.881, 0.874, 0.872, 0.868, 0.864])},
     "r2": {"a": 5.513, "b": 1.136, "H": 0.2, "lam": 0.005,
            "rho": np.array([2.799, 2.729, 2.646, 2.606, 2.597, 2.549, 2.476, 2.394, 2.32, 2.254,
                             2.229, 2.205, 2.194, 2.192, 2.189, 2.19, 2.19, 2.203, 2.206, 2.204])},
@@ -118,7 +119,7 @@ def log_variance_proxy(
         floor: float = 0.05, med_window: int = 252,
 ) -> np.ndarray:
     """L_t = ln max(X_t, floor * rolling median X); invalid bars are replaced by the causal median."""
-    if proxy in ("yz", "park"):
+    if proxy == "yz":
         raw = open_anchored_variance(open_, high, low, close, kind=proxy)
     elif proxy == "r2":
         returns = log_returns(close)
@@ -146,8 +147,36 @@ def _variogram(L: np.ndarray, tf: np.ndarray, lags: np.ndarray, window: int):
     return ss, cnt
 
 
+MIN_SLOPE = 1e-6
+
+
+def _constrained_variogram_fit(m2: np.ndarray, f: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Exact least squares of each row of m2 on a + b f subject to a >= 0 and b >= MIN_SLOPE.
+
+    The problem is a convex quadratic in two variables, so its optimum is the unconstrained solution
+    when feasible and otherwise the better of the two edge solutions (b on its bound with a refitted,
+    or a = 0 with b refitted); the corner is covered by clipping on either edge.
+    """
+    fm, mm = f.mean(), m2.mean(1)
+    slope = ((m2 - mm[:, None]) @ (f - fm)) / np.sum((f - fm) ** 2)
+    intercept = mm - slope * fm
+    candidates = [
+        (np.maximum(mm - MIN_SLOPE * fm, 0.0), np.full_like(mm, MIN_SLOPE)),
+        (np.zeros_like(mm), np.maximum((m2 @ f) / np.sum(f * f), MIN_SLOPE)),
+    ]
+    feasible = (intercept >= 0.0) & (slope >= MIN_SLOPE)
+    best_a, best_b = np.where(feasible, intercept, np.nan), np.where(feasible, slope, np.nan)
+    best_err = np.where(feasible, np.sum((m2 - intercept[:, None] - slope[:, None] * f[None, :]) ** 2, 1), np.inf)
+    for a, b in candidates:
+        err = np.sum((m2 - a[:, None] - b[:, None] * f[None, :]) ** 2, 1)
+        better = err < best_err
+        best_a, best_b, best_err = np.where(better, a, best_a), np.where(better, b, best_b), np.where(
+            better, err, best_err)
+    return best_a, best_b, best_err
+
+
 def fit_matern_variogram(m2: np.ndarray, lags: np.ndarray):
-    """m2 ~ a + b (1 - rho_{H,lam}(k)); grid over (H, lam), closed-form LS for (a >= 0, b > 0)."""
+    """m2 ~ a + b (1 - rho_{H,lam}(k)); grid over (H, lam), exact constrained LS for (a >= 0, b > 0)."""
     n = m2.shape[0]
     best = np.full(n, np.inf)
     A, B, Hs, Ls = np.zeros(n), np.zeros(n), np.zeros(n), np.zeros(n)
@@ -155,14 +184,7 @@ def fit_matern_variogram(m2: np.ndarray, lags: np.ndarray):
     for H in GRID_H:
         for lam in GRID_LAM:
             f = 1.0 - _rho_table(H, lam, kmax)[lags]
-            fm, mm = f.mean(), m2.mean(1)
-            b = ((m2 - mm[:, None]) @ (f - fm)) / np.sum((f - fm) ** 2)
-            a = mm - b * fm
-            b0 = (m2 @ f) / np.sum(f * f)                 # a clipped at 0
-            negative = a < 0
-            a = np.where(negative, 0.0, a)
-            b = np.maximum(np.where(negative, b0, b), 1e-6)
-            err = np.sum((m2 - a[:, None] - b[:, None] * f[None, :]) ** 2, 1)
+            a, b, err = _constrained_variogram_fit(m2, f)
             better = err < best
             best[better], A[better], B[better], Hs[better], Ls[better] = err[better], a[better], b[better], H, lam
     return A, B, Hs, Ls

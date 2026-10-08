@@ -1,6 +1,6 @@
 # Price Field startup defaults
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.2.1`
 Last reviewed: `1 Oct 2026`
 
 ## Current profile contract
@@ -60,7 +60,9 @@ provider factors.
 | Neural startup registry | `v1.2.0` |
 | Shared neural strategy adapter | `v1.6.1` |
 | Shared direct-horizon module | `v1.0.0` |
-| Econometric strategy adapter and models | `v1.0.0` |
+| Econometric strategy adapter | `v1.0.1` |
+| Rough Volatility model | `v1.1.0` |
+| Other econometric models | `v1.0.0` |
 | Four econometric strategy modules | `v1.0.0` |
 | Browser strategy controls | `v1.3.1` |
 
@@ -93,15 +95,22 @@ establish superiority for other tickers or periods.
 
 The four econometric profiles are the frozen round-2 and round-3 research
 specifications documented in the
-[econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md). Every
-hyperparameter was selected by the mean CRPS skill of a 16-ticker panel (NVDA,
+[econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md). The
+reported historical protocol ranks candidates by mean CRPS skill of a 16-ticker panel (NVDA,
 QQQ, SMH, SPY, AAPL, MSFT, MU, AVGO, TSM, ORCL, QCOM, GOOGL, JPM, IBM, VZ, and C)
 over the pre-window 2016-10-01 through 2023-09-30. Model priors were estimated
 only on data before 2016-10-01. The NVDA three-year KPI window from 2023-10-01
-was reported and never used to select, and no GA or holdout promotion step was
-applied. These are therefore not NVDA-tuned defaults; the research contract
-records the evidence, the one documented tie-break, and the limitations,
-including the drift's dependence on bull-market regimes.
+was reported, the archived final ranking uses the panel pre-window, and
+no GA or holdout promotion step was applied. The KPI window is not a pristine
+holdout, because exploratory research rounds displayed NVDA three-year results
+next to the candidates. The independent audit of 1 Oct 2026 found no concrete
+evidence of a shipped default chosen by maximizing the NVDA KPI; it could not
+establish candidate-generation independence. The provenance CLI reproduces
+the final priors and scores, not the historical candidate grids or decisions.
+The research contract records the
+evidence, the one documented tie-break, the provenance CLI that re-estimates the
+stored priors and panel scores, and the limitations, including the drift's
+dependence on bull-market regimes.
 
 ## Browser precedence
 

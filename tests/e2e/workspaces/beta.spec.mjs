@@ -1,4 +1,4 @@
-/* Code version: v0.2.0 */
+/* Code version: v0.2.1 */
 import {expect, test as base} from '@playwright/test';
 
 const THESIS_KEY = 'worthward:beta:v1:thesis';
@@ -7,7 +7,7 @@ const EXPERIMENTS = [
     'regime-radar', 'analog-explorer', 'stress-lab', 'robustness-lab',
     'path-remix', 'recovery-clock', 'calibration-lab',
 ];
-const ALL_PAGES = [...EXPERIMENTS, 'thesis-lab', 'research-frontier'];
+const ALL_PAGES = [...EXPERIMENTS, 'buy-analysis', 'thesis-lab', 'research-frontier'];
 const prohibitedApi = /\/(?:api\/)?(?:investment|live-trading|live-orders?|orders?|price-field-training|lstm-training|broker)(?:[/?-]|$)/;
 const isProhibitedApi = path => !path.startsWith('/static/') && prohibitedApi.test(path);
 
@@ -127,12 +127,12 @@ test('Beta precedes Settings and leaves Settings navigation and assets isolated'
     );
     expect(groups.indexOf('beta')).toBeGreaterThanOrEqual(0);
     expect(groups[groups.indexOf('beta') + 1]).toBe('settings');
-    await expect(page.locator('script[src*="/beta.js"], script[src*="/beta-notebook.js"], link[href*="/beta.css"]')).toHaveCount(0);
-    expect(isolationAudit.filter(request => /\/(?:beta|beta-notebook)\.(?:js|css)$/.test(request.path))).toEqual([]);
+    await expect(page.locator('script[src*="/beta.js"], script[src*="/beta-notebook.js"], script[src*="/beta-buy-analysis.js"], link[href*="/beta.css"]')).toHaveCount(0);
+    expect(isolationAudit.filter(request => /\/(?:beta|beta-notebook|beta-buy-analysis)\.(?:js|css)$/.test(request.path))).toEqual([]);
     const coreBefore = await coreStorageSnapshot(page);
     await page.locator('[data-dock-group="beta"]').click();
     await expect(page).toHaveURL(/\/beta(?:\/regime-radar)?$/);
-    await expect(page.getByRole('navigation', {name: 'Beta experiments'}).locator('a')).toHaveCount(9);
+    await expect(page.getByRole('navigation', {name: 'Beta experiments'}).locator('a')).toHaveCount(ALL_PAGES.length);
     await expect(page.locator('[data-dock-group="beta"]')).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('#global_language_toggle')).toBeDisabled();
     await expect(page.locator('html')).toHaveAttribute('data-theme-override', 'light');
@@ -153,7 +153,7 @@ test('Beta precedes Settings and leaves Settings navigation and assets isolated'
     await page.locator('.settings-nav a[href="/settings/general"]').click();
     await expect(page).toHaveURL(/\/settings\/general$/);
     await expect(page.locator('[data-settings-section="general"]')).toBeVisible();
-    await expect(page.locator('script[src*="/beta.js"], script[src*="/beta-notebook.js"], link[href*="/beta.css"]')).toHaveCount(0);
+    await expect(page.locator('script[src*="/beta.js"], script[src*="/beta-notebook.js"], script[src*="/beta-buy-analysis.js"], link[href*="/beta.css"]')).toHaveCount(0);
 });
 
 test('seven Beta experiments render local observations and Path Remix preserves the terminal return', async ({page, isolationAudit}) => {

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.92.0`
+Documentation version: `v1.93.0`
 
 ## Price Field startup promotion
 
@@ -72,7 +72,8 @@ an `--output` at the repository's `market_store/`, inside it, or inside
 `test_case_variant_output_cannot_reach_a_protected_store` points the market store at a
 temporary directory and requires an `--output` under an upper-case spelling of it to exit
 2 before provider access and leave the store empty; it skips on a case-sensitive
-filesystem, where that spelling names a different directory.
+filesystem, where that spelling names a different directory. Since `strategy_tune.py`
+v1.3.1 these guard tests exercise the shared `app/services/research/output_guard.py`.
 
 ```bash
 ./scripts/test.sh tests/python/services/test_strategy_tuning.py tests/python/tooling/test_strategy_tune_cli.py \
@@ -90,9 +91,20 @@ zero-range bars and missing opens. Independent references pin the hand-computed
 Sharpe posterior, naive ridge least squares for HAR Range (also with a zero close
 inside the fit window) and its ordinary least squares, a naive Beta-t-EGARCH
 filter and score loop, the noisy Matérn kriging system, rolling measures, and
-proxy fallbacks on unusable bars. BOA must concentrate on the calibrated expert
-and must not use targets that mature after an origin; HAR keeps identically zero
-regressors at their prior; and batched Score-Driven fits must match one batch.
+proxy fallbacks on unusable bars.
+`test_variogram_fit_is_the_exact_constrained_least_squares_solution` requires
+the Rough Volatility `(a, b)` fit to respect `a >= 0` and `b >= rough.MIN_SLOPE`
+and to be no worse than a brute-force grid on 60 random rows, and requires a
+negative slope with a positive intercept to refit the intercept on the slope
+bound, which the research fit did not do. BOA must concentrate on the calibrated
+expert and must not use targets that mature after an origin, and
+`test_boa_scores_each_matured_pair_with_the_weights_issued_at_its_origin`
+compares the combiner's scale and location weights with an independent scalar
+oracle that stores the weights issued at every origin and horizon and scores
+each matured pair with them (`atol 1e-10`); it fails when the combiner scores
+with the current instead of the issued weights, which the earlier BOA tests did
+not catch. HAR keeps identically zero regressors at their prior, and batched
+Score-Driven fits must match one batch.
 The robustness cases require that:
 
 - one zero, missing, or infinite close leaves every model's means finite, its
@@ -115,7 +127,7 @@ adapters through the registry: the four IDs follow `tft-price-field` in the
 Price Field category without a training slot; startup defaults equal the frozen
 specification; loading requests OHLCV only with the documented warmup
 (`base + ceil(0.08 * base) + 60` bars with
-`base = max(fit window + refit interval + 42, drift window + 252)`);
+`base = max(fit window + refit interval + 42 + 252, drift window + 252)`);
 warmup-bundle forecast scales equal whole-history scales on the visible rows; the
 presentation is built-in JSON that satisfies the direct-horizon browser contract
 with horizon mapping `direct-estimated-1-through-20`; Backtest reports a
@@ -128,7 +140,15 @@ application, Torch, nor `strategies.price_field.neural.inputs`, whose
 leading sessions must leave HAR Range and Score-Driven forecasts unchanged
 (Score-Driven scales bit-identical, HAR Range within `1e-10` relative) with the
 `session-date-blocks` schedule, while Rough Volatility and CRPS Learning must stay
-within 5% and report their start-dependent state. Twenty parameter-bound cases
+within 5% and report their start-dependent state.
+`test_requested_warmup_covers_the_variance_floor_history` loads exactly the
+requested warmup for HAR Range and Score-Driven, with intraday range measures on
+and off, and requires 40 older bars at a different volatility level, which move
+the 252-session variance floors of rows before the earliest fit, to leave every
+visible mean and standard deviation unchanged (`1e-12` and `1e-10` relative). Its
+fit window of 300 outgrows the drift inputs, so the fit lookback alone sizes the
+warmup; the earlier `fit window + refit interval + 42` formula fails three of
+its four cases. Twenty parameter-bound cases
 (no prior, shortest, upper, lower, and longest settings for each strategy) run with
 warnings as errors and must give finite means and positive scales from the
 documented first origin with a built-in JSON presentation. Factor status must be `insufficient` for the drift at 21 sessions and
@@ -139,9 +159,27 @@ computing every refit, with fewer refits and a first forecast origin equal to th
 first visible origin. The CRPS CLI tests above cover the four
 strategies automatically through the registry.
 
+`tests/python/tooling/test_econometric_price_field_research.py` covers the
+offline provenance CLI `scripts/econometric_price_field_research.py` with
+factory GARCH random walks in temporary Parquet stores: `--describe` loads no
+prices, forces remote market access off, and matches the registered startup
+parameters, the stored prior constants (only `yz` and `r2` for Rough
+Volatility), and the module code versions; usage errors exit 2 before data
+access; an `--output` in any of the four protected stores, or under a
+case-variant spelling of a store, exits 2 and creates nothing; an existing output
+directory, duplicate tickers, and missing local history exit 1 without
+creating output. `priors` must count all 66 quantities, read only pre-cutoff
+bars (mutating every later bar changes no estimate), and give identical output
+for identical input, exiting 3 because factory data cannot reproduce the stored
+constants. `panel` must score every window completely, a HAR Range cell must
+equal an independent recomputation through the repository forecast and the
+official scorer, and worker processes must reproduce the in-process scores
+exactly.
+
 ```bash
 ./scripts/test.sh -q -p no:cacheprovider tests/python/strategies/test_econometric_price_field_models.py \
-  tests/python/strategies/test_econometric_price_field_strategy.py
+  tests/python/strategies/test_econometric_price_field_strategy.py \
+  tests/python/tooling/test_econometric_price_field_research.py
 ```
 
 On 1 Oct 2026 at 06:07 CST, the focused run
@@ -161,8 +199,27 @@ After the three later changes, the focused run
 `tests/python/tooling/test_strategy_tune_options.py` reported 127 passed. The
 [historical testing evidence](TESTING_HISTORY.md) records both runs.
 
+The independent audit of 1 Oct 2026 reported its own complete-gate run on the
+code it audited: 2,439 Python tests passed and 6 skipped, and Playwright E2E
+reported 519 passed and 31 failed, all 31 pre-existing on the frozen baseline.
+The [historical testing evidence](TESTING_HISTORY.md) records the audit
+follow-up's dated KPI and provenance runs.
+
+The finalized Price Field rework ran `./scripts/check.sh` again on 2 Oct 2026
+from 03:09 to 03:51 CST. Ruff and JavaScript syntax passed; Python reported
+2,469 passed, 6 skipped, and 372 subtests passed at 76.99% coverage, and
+JavaScript reported 507 passed with 1 optional sibling check skipped.
+Chromium reported 518 passed and 32 failed, while the clean `403ced29` baseline
+reported 520 passed and 30 failed. All 30 shared errors matched; both additional
+failure identities reproduced with matching errors in baseline repeats. The
+complete gate therefore remains red, with no new failure found in the frozen
+rework. Concurrent Beta edits were preserved and were outside this frozen
+source scope. Exact comparison commands and repeat counts are in the
+[2 Oct acceptance record](TESTING_HISTORY.md#independent-econometric-acceptance-follow-up-on-2-oct-2026).
+
 The [econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) gives the
-isolated offline command that reproduces each strategy's headline KPI.
+isolated offline commands that reproduce each strategy's headline KPI and the
+research provenance.
 
 ## Standard circular icon button geometry
 

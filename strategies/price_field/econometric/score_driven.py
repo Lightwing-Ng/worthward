@@ -20,7 +20,9 @@ solved for all refits at once by Levenberg-Marquardt with analytic score
 recursions, BHHH curvature and box projection. The Gaussian prior on
 (phi, kappa, kappa*, 1/nu, delta) is centered on panel medians of unpenalized
 fits made before 2016-10-01; its standard deviations are ``prior_scale`` times
-their cross-sectional spread (omega has no prior).
+their pooled spread across tickers and refit dates (population standard deviation;
+omega has no prior). ``scripts/econometric_price_field_research.py priors`` re-estimates
+the centers and spreads from local history and checks them.
 
 h-step scale in closed form: E_t exp(2 lambda_{t+k}) = exp(2 mu + 2 phi^{k-1}
 (lambda_{t+1} - mu)) * prod_{i<k-1} M(2 phi^i), with the in-window empirical
@@ -59,7 +61,7 @@ PARAMETER_NAMES = ("omega", "phi", "kappa", "kappa_star", "inverse_nu", "delta")
 LOWER = np.array([-9.0, 0.50, 0.0, -0.20, 0.01, 0.0])
 UPPER = np.array([0.0, 0.9990, 0.30, 0.20, 0.34, 0.60])
 
-# Prior centers / cross-sectional sd of unpenalized fits on data before 2016-10-01.
+# Prior centers / pooled sd (across tickers and refit dates) of unpenalized fits on data before 2016-10-01.
 RANGE_PRIOR_CENTER = np.array([-4.0, 0.9557884954, 0.0003041885, 0.0321972348, 0.1468865433, 0.1054895984])
 RANGE_PRIOR_SD = np.array([np.inf, 0.0481771553, 0.0167054818, 0.0212191338, 0.0531705924, 0.0911336171])
 BETAT_PRIOR_CENTER = np.array([-4.0, 0.9802460216, 0.0349485765, 0.0278442259, 0.1620423303, 0.0])

@@ -1,4 +1,4 @@
-"""Opt-in research experiments with no strategy registration. Code version: v0.2.0."""
+"""Opt-in research experiments with no strategy registration. Code version: v0.3.0."""
 
 EXPERIMENTS = (
     {
@@ -70,6 +70,16 @@ EXPERIMENTS = (
         "method": "At each historical step, use only the preceding 60 returns to form a 10th–90th percentile band, then reveal the next return.",
         "limitation": "Rolling empirical quantiles have no guaranteed future coverage. This baseline does not implement conformal prediction.",
         "interactive": True,
+    },
+    {
+        "id": "buy-analysis",
+        "title": "Buy Analysis",
+        "icon": "icon-settings-strategies",
+        "description": "Bring historical indicators and a future probability forecast to one research table.",
+        "question": "Do the committee's three members support the same buy thesis?",
+        "method": "Compare the latest close with its 60-close mean and 20-session return, then count one selected Price Field forecast as one equally weighted vote.",
+        "limitation": "Votes share the same price history and are dependent. A majority is a research summary, not a calibrated probability or an order.",
+        "interactive": False,
     },
     {
         "id": "thesis-lab",

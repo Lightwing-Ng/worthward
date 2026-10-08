@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tune any Backtest registry entry without writing production stores. Code version: v1.3.0."""
+"""Tune any Backtest registry entry without writing production stores. Code version: v1.3.1."""
 # ruff: noqa: E402
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import pandas as pd
 
 from app.core.config import PERIOD_OFFSETS
 from app.infrastructure.connectivity import REMOTE_MARKET_ACCESS_ENV
+from app.services.research.output_guard import is_protected_output
 from app.services.research.strategy_tuning import (
     DISTRIBUTION_RENDERER,
     ResearchRequest,
@@ -33,7 +34,7 @@ from strategies.loader import (
 from strategies.tuning import optimize, search_space
 
 
-CODE_VERSION = "v1.3.0"
+CODE_VERSION = "v1.3.1"
 # CLI objective -> (ResearchSession objective, result.json description).
 OBJECTIVES = {
     "risk-adjusted-return": (
@@ -81,23 +82,6 @@ def strategy_contract(entry, *, include_parameters=False):
             asdict(definition) for definition in strategy.get_parameter_definitions()
         ]
     return contract
-
-
-def _is_within(output, root):
-    """Compare by path and by filesystem identity, so a case-variant spelling on a
-    case-insensitive volume cannot reach a protected store."""
-    root = root.resolve()
-    if output == root or root in output.parents:
-        return True
-    if not root.exists():
-        return False
-    for candidate in (output, *output.parents):
-        try:
-            if candidate.exists() and os.path.samefile(candidate, root):
-                return True
-        except OSError:
-            continue
-    return False
 
 
 def read_json_object(value, label):
@@ -222,16 +206,8 @@ def main(argv=None):
     if bool(args.start) != bool(args.end):
         parser.error("Supply both --from and --to for an exact window.")
     output = Path(args.output).expanduser().resolve()
-    from app.core.config import BASE_DIR, MARKET_STORE_DIR, SETTINGS_STORE_DIR
-
     # Redirected store variables never unprotect the repository's own stores.
-    protected = (
-        MARKET_STORE_DIR,
-        SETTINGS_STORE_DIR,
-        BASE_DIR / "market_store",
-        BASE_DIR / "settings_store",
-    )
-    if any(_is_within(output, root) for root in protected):
+    if is_protected_output(output):
         parser.error(
             "Research output cannot be inside production market or settings stores."
         )

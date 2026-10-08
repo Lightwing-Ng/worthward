@@ -1,4 +1,4 @@
-"""Econometric Price Field strategy adapters. Code version: v1.0.0."""
+"""Econometric Price Field strategy adapters. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -108,13 +108,14 @@ def test_startup_defaults_are_the_frozen_specification(strategy_id):
     assert "narrower scale" in definitions["scale_multiplier"].help_text
 
 
-# Requested bars = base + ceil(0.08 * base) + 60, with base = max(fit window + refit interval + 42,
-# drift window + 252): the refit block before the first visible origin and a holiday allowance.
+# Requested bars = base + ceil(0.08 * base) + 60, with base = max(fit window + refit interval + 42 + 252,
+# drift window + 252): the refit block before the first visible origin, the targets and aggregates, the
+# 252-session variance floor under the earliest fitted row, and a holiday allowance.
 @pytest.mark.parametrize(("params", "requested"), [
     ({}, None),
-    ({"training_window": 2520, "drift_window": 100}, 2849),
+    ({"training_window": 2520, "drift_window": 100}, 3121),
     ({"training_window": 63, "drift_window": 2520}, 3054),
-    ({"training_window": 2000, "retrain_interval": 63, "drift_window": 100}, 2334),
+    ({"training_window": 2000, "retrain_interval": 63, "drift_window": 100}, 2606),
 ])
 @pytest.mark.parametrize("strategy_id", IDS)
 def test_load_requests_ohlcv_warmup_for_the_fit_and_drift_windows(strategy_id, params, requested, monkeypatch):
@@ -131,7 +132,7 @@ def test_load_requests_ohlcv_warmup_for_the_fit_and_drift_windows(strategy_id, p
                                            params=params)
 
     fit_window = EXPECTED[strategy_id][2]
-    base = max(fit_window + 20 + 42, 1260 + 252)
+    base = max(fit_window + 20 + 42 + 252, 1260 + 252)
     expected = requested if requested is not None else base + math.ceil(0.08 * base) + 60
     (tickers, interval, start, end, load_params), = calls
     assert (tickers, interval, start, end) == (("NVDA",), "1d", "2016-03-01", "2016-04-22")
@@ -316,6 +317,35 @@ def test_session_forecasts_do_not_depend_on_where_the_loaded_history_starts(stra
         else:
             np.testing.assert_allclose(earlier_stds, stds, rtol=1e-10, atol=0.0)
         np.testing.assert_allclose(earlier_means, means, rtol=1e-12, atol=1e-18)
+
+
+@pytest.mark.parametrize("use_intraday_range", (True, False), ids=("range", "close-only"))
+@pytest.mark.parametrize("strategy_id", ("har-range-price-field", "score-driven-price-field"))
+def test_requested_warmup_covers_the_variance_floor_history(strategy_id, use_intraday_range):
+    """Exactly the requested warmup already fixes every visible forecast: extra older bars, which move
+    the 252-session variance floors of rows before the earliest fit, change nothing. Close-only squared
+    returns sit below 5% of their median on many sessions, so the floor binds there."""
+    strategy = instantiate_strategy(strategy_id)
+    # A fit window that outgrows the drift inputs, so the fit lookback alone sizes the warmup.
+    params = {**strategy.get_startup_params(), "training_window": 300, "drift_window": 21,
+              "use_intraday_range": use_intraday_range}
+    warmup = strategy.warmup_bars(strategy.normalize_params(params))
+    extra, visible_rows = 40, 30
+    full = _history(extra + warmup + visible_rows)
+    # Older bars with a different volatility level, so their floors differ from the later ones.
+    full.loc[:extra - 1, ["Open", "High", "Low", "Close"]] *= np.exp(
+        np.linspace(0.0, 0.3, extra))[:, None]
+    visible = full.iloc[extra + warmup:].reset_index(drop=True)
+    runs = []
+    for first_row in (extra, 0):
+        strategy = instantiate_strategy(strategy_id)
+        strategy._warmup_bundle = price_field_bundle_for_frame("NVDA", full.iloc[first_row:].reset_index(drop=True))
+        result = strategy.compute_signals(visible, params)
+        runs.append((result.frame[MEAN_COLUMNS].to_numpy(), result.frame[STD_COLUMNS].to_numpy()))
+    (means, stds), (earlier_means, earlier_stds) = runs
+    assert np.isfinite(stds).all()
+    np.testing.assert_allclose(earlier_stds, stds, rtol=1e-10, atol=0.0)
+    np.testing.assert_allclose(earlier_means, means, rtol=1e-12, atol=1e-18)
 
 
 @pytest.mark.parametrize("strategy_id", ("rough-volatility-price-field", "crps-learning-price-field"))

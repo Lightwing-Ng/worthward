@@ -1,6 +1,6 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.6.0`
+Documentation version: `v1.6.1`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
@@ -103,7 +103,7 @@ agent-started server must be stopped before handoff.
 - [LSTM probability tuning](LSTM_PROBABILITY_TUNING.md): offline tuning workflow.
 - [Price Field startup defaults](PRICE_FIELD_DEFAULTS.md): all 15 startup profiles (11 frozen NVDA GA selections and four panel-selected econometric specifications), validation and holdout provenance, source ownership, and browser precedence.
 - [Neural Price Field research](NEURAL_PRICE_FIELD_RESEARCH.md): eight shared neural strategies, direct horizon probability scores, Apple Silicon training, explicit research groups, and frozen validation.
-- [Econometric Price Field research](ECONOMETRIC_PRICE_FIELD_RESEARCH.md): HAR Range, Score-Driven, Rough Volatility, and CRPS Learning models, the shared Bayesian Sharpe drift, the frozen panel selection protocol, dated research and CLI evidence, and limitations.
+- [Econometric Price Field research](ECONOMETRIC_PRICE_FIELD_RESEARCH.md): HAR Range, Score-Driven, Rough Volatility, and CRPS Learning models, the shared Bayesian Sharpe drift, the frozen panel selection protocol, the offline provenance CLI, dated research and CLI evidence, and limitations.
 - [Classic strategy repair](CLASSIC_STRATEGY_REPAIR.md): causal indicators, mature neighbor labels, DCA validation, and rotation execution boundaries.
 - [Historical testing evidence](TESTING_HISTORY.md): dated results, not current gate status.
 - [Style token alignment validation](STYLE_TOKEN_ALIGNMENT_VALIDATION.md): dated UI evidence.
