@@ -1,4 +1,4 @@
-/* Code version: v1.3.6 */
+/* Code version: v1.3.7 */
 import {expect, test} from '@playwright/test';
 
 const paginationSelector = '#style_token_pagination_demo';
@@ -176,11 +176,11 @@ test('reuses the shared Frosted glass material for modal dialog and banner messa
             'position: fixed',
             'inline-size: 1px',
             'block-size: 1px',
-            'background: var(--frosted-glass-background)',
-            'border: var(--frosted-glass-border)',
-            'box-shadow: var(--frosted-glass-shadow)',
-            'backdrop-filter: var(--frosted-glass-blur)',
-            '-webkit-backdrop-filter: var(--frosted-glass-blur)',
+            'background: var(--frosted-glass-notice-background)',
+            'border: var(--frosted-glass-notice-border)',
+            'box-shadow: var(--frosted-glass-notice-shadow)',
+            'backdrop-filter: var(--frosted-glass-notice-blur)',
+            '-webkit-backdrop-filter: var(--frosted-glass-notice-blur)',
         ].join(';');
         document.body.append(probe);
         const expectedStyle = getComputedStyle(probe);

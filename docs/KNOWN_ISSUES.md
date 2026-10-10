@@ -1,5 +1,26 @@
 # Known issues and operating constraints
 
+Overlay backdrop hover lift and stale E2E expectations, 10 Oct 2026: the
+sidebar backdrop and the Backtest/Prices controls backdrop are full-viewport
+`button` dismissal targets, so they inherited the generic `button:hover`
+`translateY(-1px)` lift. While hovered, each backdrop left an uncovered 1px strip
+at the bottom of the viewport; the existing iPad overlay regression caught this
+intermittently because hover depended on pointer timing. Both backdrops now pin
+`transform: none` in every state (`responsive.css` v3.37.6, `workspace.css`
+v1.30.5, `app.css` v0.104.9). The same change realigned E2E expectations that
+predated documented contracts: the 32px circular target with its 44px coarse
+hit region and the resulting 276px compact sidebar overlay (28 Sep), the
+notification Frosted Glass variant for modals and banners (26 Sep), the
+transparent Dark pressed tuning action (24 Sep), and the HSBC pending marker
+that appears only on the order reference (22 Sep). Two measurement races now
+wait for the settled theme transition and the redrawn Stock details chart.
+Still open: the Dark pressed tuning glyph measures about 2.96:1 against the page
+background, below the 4.5:1 its regression requires, pending a design decision;
+and eight HSBC replay regressions use settlement or direct-cash fixtures without
+the evidence that the 21 Sep evidence contract requires. Their expected ledger
+values remain unchanged until the fixtures carry that evidence. No production
+store was read or written, and the user-owned 8688 service was not restarted.
+
 Econometric Price Field audit follow-up, 1 Oct 2026: an independent Codex
 audit of the four econometric Price Field strategies rated a warmup gap medium
 and a BOA test gap low; both are now fixed. The warmup request did not cover the
@@ -858,7 +879,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.274.0`
+Documentation version: `v1.275.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

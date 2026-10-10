@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {expect, test} from '@playwright/test';
 
 const cases = [
@@ -309,6 +309,7 @@ test('system dark and manual Light resolve the production notification material 
     await page.evaluate(() => {
         document.documentElement.dataset.themeOverride = 'light';
     });
+    await waiting.evaluate((node) => Promise.all(node.getAnimations().map((animation) => animation.finished)));
     expectApprovedMaterial(await measureSurface(waiting), 'light');
     await context.close();
 });

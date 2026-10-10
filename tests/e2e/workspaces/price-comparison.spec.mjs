@@ -1,4 +1,4 @@
-/* Code version: v0.3.1 */
+/* Code version: v0.3.2 */
 import {expect, test} from '@playwright/test';
 
 test('reuses the Backtest controls-overlay contract for the second Prices sidebar', async ({page}) => {
@@ -57,8 +57,8 @@ test('reuses the Backtest controls-overlay contract for the second Prices sideba
     expect(Math.abs(collapsedGeometry.main.right - collapsedGeometry.layout.right)).toBeLessThanOrEqual(1);
     expect(collapsedGeometry.panel.position).toBe('fixed');
     expect(collapsedGeometry.panel.right).toBeLessThanOrEqual(0);
-    expect(collapsedGeometry.toggle.width).toBe(44);
-    expect(collapsedGeometry.toggle.height).toBe(44);
+    expect(collapsedGeometry.toggle.width).toBe(32);
+    expect(collapsedGeometry.toggle.height).toBe(32);
     expect(collapsedGeometry.titleLeft).toBeGreaterThanOrEqual(collapsedGeometry.toggle.right + 8);
     expect(collapsedGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
 

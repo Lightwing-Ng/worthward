@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 import {
     expect,
     test,
@@ -407,8 +407,8 @@ test('copies every Style token name from a right-aligned round button with feedb
     expect(geometry.themeRightDelta).toBeLessThanOrEqual(1);
     expect(geometry.titleRowInset).toBeGreaterThanOrEqual(9);
     expect(geometry.titleRowInset).toBeLessThanOrEqual(11);
-    expect(geometry.width).toBe(36);
-    expect(geometry.height).toBe(36);
+    expect(geometry.width).toBe(32);
+    expect(geometry.height).toBe(32);
     expect(geometry.radius).toBe('999px');
 
     await copyButton.click();

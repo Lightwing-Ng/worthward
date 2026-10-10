@@ -1,10 +1,12 @@
-/* Code version: v0.14.0 */
+/* Code version: v0.14.1 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
 
 test('Price Field adopts new defaults automatically and preserves customized profiles and URLs', async ({page}) => {
+    // Five LSTM Price Field page loads each run a small training pass; slow CI runners exceed 30s.
+    test.setTimeout(90_000);
     const url = '/workspaces/backtest?ticker=NVDA&range=1y&strategy=lstm-price-field';
     const control = (key) => page.locator(`[data-strategy-param-input][name="${key}"]`);
     await page.goto(url);
@@ -206,12 +208,12 @@ test('Backtest parameters become a non-consuming overlay at iPad widths', async 
     expect(Math.abs(collapsedGeometry.main.right - collapsedGeometry.layout.right)).toBeLessThanOrEqual(1);
     expect(collapsedGeometry.panel.position).toBe('fixed');
     expect(collapsedGeometry.panel.right).toBeLessThanOrEqual(0);
-    expect(collapsedGeometry.toggle).toEqual({width: 44, height: 44});
+    expect(collapsedGeometry.toggle).toEqual({width: 32, height: 32});
     expect(Math.abs(
         collapsedGeometry.globalToggle.left - collapsedGeometry.globalToggle.top,
     )).toBeLessThanOrEqual(1);
-    expect(collapsedGeometry.globalToggle.width).toBe(44);
-    expect(collapsedGeometry.globalToggle.height).toBe(44);
+    expect(collapsedGeometry.globalToggle.width).toBe(32);
+    expect(collapsedGeometry.globalToggle.height).toBe(32);
     expect(collapsedGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
 
     await globalToggle.click();

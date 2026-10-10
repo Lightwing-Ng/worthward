@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.93.0`
+Documentation version: `v1.94.0`
 
 ## Price Field startup promotion
 
@@ -216,6 +216,21 @@ complete gate therefore remains red, with no new failure found in the frozen
 rework. Concurrent Beta edits were preserved and were outside this frozen
 source scope. Exact comparison commands and repeat counts are in the
 [2 Oct acceptance record](TESTING_HISTORY.md#independent-econometric-acceptance-follow-up-on-2-oct-2026).
+
+The stale-expectation realignment and overlay-backdrop fix ran
+`WORTHWARD_PYTHON=/opt/homebrew/bin/python3 ./scripts/check.sh` on 10 Oct 2026
+from 09:54 to 10:33 CST, on `origin/main` `a90746c2` plus that change. Ruff and
+JavaScript syntax passed; Python reported 2,605 passed, 6 skipped, and 372
+subtests passed at 77.06% coverage; and JavaScript reported 507 passed with 1
+optional sibling check skipped. Chromium reported 551 passed and 9 failed, compared
+with 527 passed and 33 failed in the 8 Oct CI run of `a90746c2`. The remaining
+failures are the Dark pressed tuning-glyph contrast in
+`keeps Backtest pending glass fixed over exact graphics and values` and eight HSBC
+replay regressions whose fixtures lack the evidence that the 21 Sep contract requires
+(`investment-stock-details.mjs` lines 1139, 1233, 1329, and 1568;
+`investment-snapshots.mjs` lines 99, 226, and 906; `investment-transfer-replay.mjs`
+line 996). The complete gate therefore remains red. See the 10 Oct 2026 entry in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 The [econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) gives the
 isolated offline commands that reproduce each strategy's headline KPI and the

@@ -1,4 +1,4 @@
-/* Shared Backtest control primitives. Code version: v1.3.3 */
+/* Shared Backtest control primitives. Code version: v1.3.4 */
 import {test, expect} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -110,7 +110,7 @@ for (const colorScheme of ['light', 'dark']) {
             await expect(page.locator('#collapse .ui-collapse > summary')).toHaveCSS('padding-left', '0px');
             const modalMaterial = await page.locator('.workspace-modal-dialog.style-token-modal-demo').evaluate(node => {
                 const probe = document.createElement('div');
-                probe.style.cssText = 'background:var(--frosted-glass-background);backdrop-filter:var(--frosted-glass-blur)';
+                probe.style.cssText = 'background:var(--frosted-glass-notice-background);backdrop-filter:var(--frosted-glass-notice-blur)';
                 node.append(probe);
                 const result = {
                     background: getComputedStyle(node).background,
