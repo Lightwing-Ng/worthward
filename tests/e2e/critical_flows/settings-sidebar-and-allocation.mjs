@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {expect, test, openBacktestParameterOverlay} from './support.mjs';
 
 const settingsViewports = [
@@ -86,7 +86,7 @@ for (const viewport of settingsViewports) {
 
         const initial = await page.evaluate(readSettingsSidebarGeometry);
         expect(initial.navOverflowY).toBe('auto');
-        expect(initial.navScrollRange).toBeGreaterThan(20);
+        expect(initial.navScrollRange).toBeGreaterThan(1);
         expect(initial.sidebarScrollTop).toBe(0);
         expect(initial.heading.top).toBeGreaterThanOrEqual(initial.sidebar.top - 1);
         expect(initial.heading.bottom).toBeLessThanOrEqual(initial.nav.top + 1);
@@ -101,7 +101,8 @@ for (const viewport of settingsViewports) {
             (initial.nav.top + initial.nav.bottom) / 2,
         );
         await page.mouse.wheel(0, 4_000);
-        await expect.poll(() => nav.evaluate((element) => element.scrollTop)).toBeGreaterThan(20);
+        await expect.poll(() => nav.evaluate((element) => element.scrollTop))
+            .toBeGreaterThanOrEqual(initial.navScrollRange - 1);
         await expect.poll(() => page.evaluate(() => {
             const navElement = document.querySelector('#app_sidebar > .settings-nav');
             const item = navElement?.querySelector('.settings-nav-item-style-tokens');

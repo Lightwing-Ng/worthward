@@ -1,4 +1,4 @@
-/* Code version: v1.4.4 */
+/* Code version: v1.4.5 */
 import {
     expect,
     test,
@@ -377,16 +377,28 @@ test('keeps Backtest pending glass fixed over exact graphics and values', async 
             });
             return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
         };
+        const probe = document.createElement('i');
+        probe.style.cssText = 'color:var(--strategy-tune-button-active-color);background-color:var(--theme-background)';
+        button.append(probe);
+        const probeStyle = getComputedStyle(probe);
+        const activeColor = probeStyle.color;
+        const backdropColor = probeStyle.backgroundColor;
+        probe.remove();
         const style = getComputedStyle(button);
         const foreground = luminance(style.color);
-        const background = luminance(style.backgroundColor);
+        const backdrop = luminance(backdropColor);
         return {
             backgroundColor: style.backgroundColor,
-            contrast: (Math.max(foreground, background) + 0.05)
-                / (Math.min(foreground, background) + 0.05),
+            color: style.color,
+            activeColor,
+            contrast: (Math.max(foreground, backdrop) + 0.05)
+                / (Math.min(foreground, backdrop) + 0.05),
         };
     });
-    expect(tuneColors.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    // Dark mode lets the pressed action follow the surrounding surface, so its primary-blue
+    // glyph must stay legible against the page background it now shows through.
+    expect(tuneColors.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(tuneColors.color).toBe(tuneColors.activeColor);
     expect(tuneColors.contrast).toBeGreaterThanOrEqual(4.5);
 
     await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.applyWorkspacePendingState());

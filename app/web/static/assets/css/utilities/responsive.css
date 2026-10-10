@@ -1,4 +1,4 @@
-/* Code version: v3.37.5 */
+/* Code version: v3.37.6 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -12,6 +12,11 @@
 	box-shadow: none;
 	appearance: none;
 	-webkit-appearance: none;
+}
+/* The full-viewport dismissal target must not inherit the generic button hover lift. */
+.sidebar-backdrop,
+.sidebar-backdrop:hover {
+	transform: none;
 }
 @media (max-width: 980px) {
 	.portfolio-summary { align-items: flex-start; }

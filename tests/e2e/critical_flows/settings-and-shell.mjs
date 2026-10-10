@@ -1,4 +1,4 @@
-/* Code version: v1.1.3 */
+/* Code version: v1.1.4 */
 import {
     expect,
     test,
@@ -903,18 +903,25 @@ test('keeps the backtest sidebar toggle touch-safe on a larger iPad viewport', a
         const toggleMotion = await toggle.evaluate((element) => {
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);
+            const hitRegion = getComputedStyle(element, '::before');
             const hit = document.elementFromPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+            const outerHit = document.elementFromPoint(rect.left + (rect.width / 2), rect.top - 5);
             return {
                 pointerCoarse: window.matchMedia('(pointer: coarse)').matches,
                 width: rect.width,
                 height: rect.height,
+                hitRegion: [Number.parseFloat(hitRegion.width), Number.parseFloat(hitRegion.height)],
                 transitionProperty: style.transitionProperty,
                 hitToggle: Boolean(hit?.closest('#sidebar_toggle')),
+                outerHitToggle: Boolean(outerHit?.closest('#sidebar_toggle')),
             };
         });
         expect(toggleMotion.pointerCoarse).toBe(true);
-        expect(toggleMotion.width).toBeGreaterThanOrEqual(44);
-        expect(toggleMotion.height).toBeGreaterThanOrEqual(44);
+        // The painted circle stays 32px while the coarse pointer receives a 44px hit region.
+        expect(toggleMotion.width).toBe(32);
+        expect(toggleMotion.height).toBe(32);
+        expect(toggleMotion.hitRegion).toEqual([44, 44]);
+        expect(toggleMotion.outerHitToggle).toBe(true);
         expect(toggleMotion.transitionProperty.split(',').map((value) => value.trim())).not.toContain('transform');
         expect(toggleMotion.hitToggle).toBe(true);
 

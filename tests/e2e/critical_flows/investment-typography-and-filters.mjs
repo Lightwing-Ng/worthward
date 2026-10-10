@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -223,6 +223,9 @@ test('uses Longbridge extended-hours quotes for the Stock details live position 
     const metricGrid = page.locator('.investment-stock-details-metrics');
     await expect(metricGrid).not.toHaveClass(/is-investment-realtime-pulse/);
     await expect(metricGrid.locator('.investment-stock-details-metric-card').first()).toHaveCSS('animation-name', 'none');
+    await expect.poll(() => page.evaluate(() => Boolean(
+        window.Chart?.getChart?.(document.querySelector('.investment-stock-details-price-chart-canvas')),
+    ))).toBe(true);
     const longbridgeGeometry = await marker.evaluate((element) => {
         const canvas = document.querySelector('.investment-stock-details-price-chart-canvas');
         const chart = window.Chart.getChart(canvas);

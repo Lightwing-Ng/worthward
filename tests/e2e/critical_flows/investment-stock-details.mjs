@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.2 */
 import {
     expect,
     test,
@@ -49,6 +49,8 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
     const currentPaginationVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/pagination.js');
+    const currentRealtimeVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/realtime.js');
+    const currentNumericDisplayVersion = await currentModuleVersion('../../../app/web/static/assets/js/numeric-display.js');
     const currentStockDetailsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/stock-details.js');
     const currentTransactionTableVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/transaction-table.js');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
@@ -58,8 +60,8 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         importFeedback: 'v1.10.0',
         layout: 'v1.5.1',
         pagination: currentPaginationVersion,
-        realtime: 'v1.3.3',
-        numericDisplay: 'v1.1.0',
+        realtime: currentRealtimeVersion,
+        numericDisplay: currentNumericDisplayVersion,
         stockDetails: currentStockDetailsVersion,
         transactionFilters: 'v1.3.0',
         transactionTable: currentTransactionTableVersion,

@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -382,7 +382,8 @@ test('keeps the HSBC pending-settlement marker separate from FX conversion', asy
     const totalEquity = page.locator(
         '#investment_holdings_panel [data-investment-live-field="summary_total_equity"]',
     );
-    await expect(cash).toHaveAttribute('data-investment-live-display', '*24,350.22');
+    // The pending marker belongs to the order reference, not the cash total (22 Sep 2026).
+    await expect(cash).toHaveAttribute('data-investment-live-display', '24,350.22');
     expect(Number(await cash.getAttribute('data-investment-live-number'))).toBeCloseTo(
         23_387.94 + (89.24 / 7.842899799346924) + 950.49 + 0.41,
         8,
@@ -403,7 +404,7 @@ test('keeps the HSBC pending-settlement marker separate from FX conversion', asy
     );
     await expect(metricsCash).toHaveAttribute(
         'data-investment-live-display',
-        '*23,399.32',
+        '23,399.32',
     );
     expect(Number(await metricsCash.getAttribute('data-investment-live-number'))).toBeCloseTo(
         23_387.94 + (89.24 / 7.842899799346924),
@@ -860,14 +861,19 @@ test('keeps HSBC pending-sell cash source-bounded in history and equity', async 
     const dramSellRow = page.locator('#investment_history_row_4');
     await expect(euvSellRow.locator('td').nth(8)).toContainText('13,370.00');
     await expect(dramSellRow.locator('td').nth(8)).toContainText('13,040.00');
-    await expect(euvSellRow.locator('td').nth(9)).toContainText('*20,598.45');
-    await expect(dramSellRow.locator('td').nth(9)).toContainText('*20,926.17');
-    await expect(euvSellRow.locator('td').nth(10)).toContainText('*33,968.45');
-    await expect(dramSellRow.locator('td').nth(10)).toContainText('*33,966.17');
+    // Pending Cash and Equity keep their values without repeating the order-reference marker.
+    await expect(euvSellRow.locator('td').nth(9)).toContainText('20,598.45');
+    await expect(dramSellRow.locator('td').nth(9)).toContainText('20,926.17');
+    await expect(euvSellRow.locator('td').nth(10)).toContainText('33,968.45');
+    await expect(dramSellRow.locator('td').nth(10)).toContainText('33,966.17');
+    for (const row of [euvSellRow, dramSellRow]) {
+        await expect(row.locator('td').nth(9)).not.toContainText('*');
+        await expect(row.locator('td').nth(10)).not.toContainText('*');
+    }
     const cnhWithdrawalRow = page.locator('#investment_history_row_5');
     await expect(cnhWithdrawalRow.locator('td').nth(8)).not.toContainText('*');
-    await expect(cnhWithdrawalRow.locator('td').nth(9)).toContainText(/^\*/);
-    await expect(cnhWithdrawalRow.locator('td').nth(10)).toContainText(/^\*/);
+    await expect(cnhWithdrawalRow.locator('td').nth(9)).not.toContainText('*');
+    await expect(cnhWithdrawalRow.locator('td').nth(10)).not.toContainText('*');
     const exportButton = page.locator('#export_transactions_button');
     const downloadPromise = page.waitForEvent('download');
     await exportButton.click();
@@ -932,8 +938,10 @@ test('keeps pending HSBC history cash independent of earlier settlement correcti
         const row = page.locator('[id^="investment_history_row_"]').filter({hasText: 'S-900002'});
         await expect(row).toHaveCount(1);
         await expect(row.locator('td').nth(8)).toContainText('5,700.00');
-        await expect(row.locator('td').nth(9)).toContainText('*20,300.00');
-        await expect(row.locator('td').nth(10)).toContainText('*26,000.00');
+        await expect(row.locator('td').nth(9)).toContainText('20,300.00');
+        await expect(row.locator('td').nth(10)).toContainText('26,000.00');
+        await expect(row.locator('td').nth(9)).not.toContainText('*');
+        await expect(row.locator('td').nth(10)).not.toContainText('*');
         const settled = page.locator('[id^="investment_history_row_"]').filter({hasText: 'Buy'});
         await expect(settled.locator('td').nth(9)).toContainText('20,000.00');
         await expect(settled.locator('td').nth(9)).not.toContainText('*');

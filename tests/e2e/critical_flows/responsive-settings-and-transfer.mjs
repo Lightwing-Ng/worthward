@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -75,8 +75,9 @@ for (const viewport of responsiveViewports) {
         expect(layout.dockLabels.every((label) => label.text.length > 0)).toBe(true);
         expect(layout.dockLabels.every((label) => !label.visible)).toBe(true);
         if (viewport.overlaySidebar) {
-            expect(layout.toggle.width).toBeGreaterThanOrEqual(44);
-            expect(layout.toggle.height).toBeGreaterThanOrEqual(44);
+            // The painted circle stays 32px; coarse pointers add a transparent 44px hit region.
+            expect(layout.toggle.width).toBe(32);
+            expect(layout.toggle.height).toBe(32);
         } else if (viewport.width >= 768) {
             expect(layout.titleCenterDelta).toBeLessThanOrEqual(1);
             expect(layout.sidebarCenterDelta).toBeLessThanOrEqual(1);
