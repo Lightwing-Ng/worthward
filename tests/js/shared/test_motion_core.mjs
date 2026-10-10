@@ -1,4 +1,4 @@
-/* Motion Core scheduler contract tests. Code version: v1.0.1 */
+/* Motion Core scheduler contract tests. Code version: v1.0.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,4 +100,49 @@ test('Motion Core exposes shared spring parameters with stable endpoints', () =>
     assert.equal(spring(1), 1);
     assert.deepEqual(Object.keys(harness.motion.springPresets).sort(), ['bouncy', 'emphasized', 'standard']);
     assert.ok(Number.isFinite(spring(0.5)));
+});
+
+test('underdamped springs honor the declared initial velocity for every preset', () => {
+    const {motion} = createMotionHarness();
+    const elapsedSeconds = 1e-7;
+    for (const preset of Object.values(motion.springPresets)) {
+        for (const initialVelocity of [0, -2, 3]) {
+            const parameters = {...preset, initialVelocity};
+            const progress = elapsedSeconds / (preset.duration / 1000);
+            const observedVelocity = motion.easing.spring(progress, parameters) / elapsedSeconds;
+            assert.ok(Math.abs(observedVelocity - initialVelocity) < 0.00005,
+                `Expected initial velocity ${initialVelocity}, got ${observedVelocity}`);
+        }
+    }
+});
+
+test('zero-velocity bouncy and emphasized springs have their physical peak overshoot', () => {
+    const {motion} = createMotionHarness();
+    for (const [name, expectedPeak] of [
+        ['bouncy', 1.0583277405097767],
+        ['emphasized', 1.0038548206555529],
+    ]) {
+        const preset = motion.springPresets[name];
+        const decay = preset.damping / (2 * preset.mass);
+        const oscillation = Math.sqrt(preset.stiffness / preset.mass - decay * decay);
+        const peakProgress = (Math.PI / oscillation) / (preset.duration / 1000);
+        assert.ok(peakProgress < 1);
+        const actualPeak = motion.easing.spring(peakProgress, preset);
+        assert.ok(Math.abs(actualPeak - expectedPeak) < 1e-9,
+            `${name} peak was ${actualPeak}`);
+        assert.ok(motion.easing.spring(peakProgress - 0.001, preset) < actualPeak);
+        assert.ok(motion.easing.spring(peakProgress + 0.001, preset) < actualPeak);
+    }
+});
+
+test('the nearly critically damped standard spring approaches its endpoint without early overshoot', () => {
+    const {motion} = createMotionHarness();
+    const preset = motion.springPresets.standard;
+    let previous = 0;
+    for (let index = 1; index < 100; index += 1) {
+        const current = motion.easing.spring(index / 100, preset);
+        assert.ok(current > previous && current < 1);
+        previous = current;
+    }
+    assert.equal(motion.easing.spring(1, preset), 1);
 });

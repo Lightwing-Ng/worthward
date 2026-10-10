@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 (() => {
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const clamp = (value, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
@@ -38,7 +38,7 @@
             if (dampingRatio < 1) {
                 const dampedFrequency = angularFrequency * Math.sqrt(1 - (dampingRatio * dampingRatio));
                 const displacement = -1;
-                const velocity = (initialVelocity + (dampingRatio * angularFrequency)) / dampedFrequency;
+                const velocity = (initialVelocity - (dampingRatio * angularFrequency)) / dampedFrequency;
                 const envelope = Math.exp(-dampingRatio * angularFrequency * time);
                 return clamp(1 + (envelope * (
                     (displacement * Math.cos(dampedFrequency * time))
