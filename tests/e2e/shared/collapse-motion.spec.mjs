@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {expect, test} from '@playwright/test';
 
 async function disclosureRotation(summary) {
@@ -33,7 +33,14 @@ for (const width of [1137, 390]) {
                     return {height: el.getBoundingClientRect().height,
                         summaryHeight: el.querySelector('summary').getBoundingClientRect().height};
                 };
-                const start = read(0), middle = read(0.05), overshoot = read(0.2), end = read(1);
+                const start = read(0), middle = read(0.05);
+                // Find the spring's peak instead of assuming where its overshoot occurs.
+                let overshoot = middle;
+                for (let step = 6; step < 100; step += 1) {
+                    const sample = read(step / 100);
+                    if (sample.height > overshoot.height) overshoot = sample;
+                }
+                const end = read(1);
                 animation.finish();
                 return {start, middle, overshoot, end};
             });
