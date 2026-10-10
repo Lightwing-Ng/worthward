@@ -1,5 +1,62 @@
 # Known issues and operating constraints
 
+HSBC multicurrency dated cash, 10 Oct 2026: Transaction History Cash and
+Equity for HSBC rows from the USD Savings ledger date onward fell by the USD
+value of the HKD and CNH balances plus one settlement correction, then
+rebounded to the correct value on the latest row. Holdings Cash, market value,
+holdings, and the Overview curve were correct. Four defects combined:
+
+- The broker summary's `ending_cash_base_currency` is the native USD Savings
+  balance, but the dated cash projection treated it as total cash, so anchored
+  rows omitted HKD and CNH cash. It also anchored every currency on the USD
+  component date although the HKD and CNH components were dated later.
+- Transaction History computed the matching settlement correction against the
+  replay USD balance and then added it to Cash that the dated snapshot had
+  already replaced, deducting it twice.
+- The latest row correctly received the complete current cash snapshot, which
+  exposed both errors as a rebound.
+- Pasted USD Savings rows carrying the legacy CSV `chronological` marker failed
+  the direct-cash contract. Their balances became unscoped deltas, settlement
+  evidence on their dates failed closed, and a global pre-pass marked every
+  earlier USD Savings row provisional.
+
+Fixes: `core-cash.js` v1.3.0 resolves an explicit per-currency balance map as
+native anchors, each dated by its own components (for HSBC, the latest
+component post date; an undated, malformed, or non-summing component leaves
+that currency on its replay balance), and projects Cash as the converted sum of
+the projected balances. A scalar-only snapshot keeps its total-in-base meaning.
+`workspace-controls.js` v1.5.0 applies the anchors and publishes each row's
+active anchors to Transaction History. The new `history-cash-anchors.js`
+v1.0.0, loaded by `history-projection.js` v1.4.0, retires same-currency
+settlement corrections on anchored rows and keeps a row provisional when a
+settlement posting is dated after its anchor. `history-evidence.js` v1.1.0
+accepts the legacy marker only on a pasted USD Savings row whose row and ledger
+sequence are identical; settlement postings stay strict in the importer and the
+browser, and `history-cash-corroboration.js` v1.0.1 drops its now-redundant
+marker exception. The current Holdings snapshot, its pending-settlement
+projection, and the latest-row override are unchanged.
+
+A read-only replay of the captured production payload through the real browser
+modules reproduced the defect first and then produced the expected Cash and
+Equity on every affected row, with pending settlement applied once. Holdings
+Cash, market value, holdings, and every daily Overview point were identical
+before and after, and no other broker's Transaction History value changed.
+Accepting the legacy rows also anchors USD Savings to their bank balances,
+which closes several earlier pre-existing Cash gaps and removes the provisional
+flag that the pre-pass had applied retroactively. Three limitations remain:
+Transaction History applies each settlement boundary's posted balance in trade
+execution order, so when HSBC posts a day's settlements in another order a row
+between them can omit later-posted proceeds (this affected earlier days and is
+now also visible on one row whose day previously failed closed; an
+amount-based accrual like the Overview replay is the planned fix); an
+unresolved order row still projects the posted USD Savings balance plus
+pending settlement, as documented, and so omits foreign-currency cash; and the
+Overview's final point can still step when brokers outside the current-cash
+scope keep residual replay cash, as described in the 22 Sep 2026 entry below.
+The production ledger, caches, and evidence were not rewritten, and the
+user-owned 8688 process was not restarted, so it adopts this change at its next
+manual restart.
+
 Overlay backdrop hover lift and stale E2E expectations, 10 Oct 2026: the
 sidebar backdrop and the Backtest/Prices controls backdrop are full-viewport
 `button` dismissal targets, so they inherited the generic `button:hover`
@@ -894,7 +951,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.275.1`
+Documentation version: `v1.276.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,7 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.157.5
+ * Code version: v2.157.6
+ * - Changed: Loads dated HSBC cash that keeps native foreign balances on their
+ *   own component dates and retires same-currency settlement corrections.
  * - Changed: Loads HSBC tax-lot attestation for untimestamped Portfolio pastes.
  * - Changed: Loads the pill-first range-transfer v1.1.0 and stock-history-filters v1.2.0.
  * - Changed: Loads HSBC settlement consumers with either-side and optional fees.
@@ -85,8 +87,8 @@ import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-t
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
 import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.2.0';
-import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.1';
-import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.4.1';
+import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.2';
+import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.0';
 
 import {
     INVESTMENT_CHART_ORBIT_MODULE_VERSION,
@@ -109,7 +111,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.120.5';
+} from './investment/data-utils.js?v=investment-data-utils-v1.121.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -140,7 +142,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.40.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.40.3';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -189,7 +191,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.157.5',
+    entry: 'v2.157.6',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

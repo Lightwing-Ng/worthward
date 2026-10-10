@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.5.1
+ * Code version: v1.5.2
+ * - Changed: Loads the history projection whose dated native-currency
+ *   anchors retire same-currency settlement corrections.
  * - Changed: Loads history settlement boundaries with fees on either side
  *   of the principal's ledger sequence.
  * - Added: Loading observes completed historical lookups and replay rendering
@@ -32,7 +34,7 @@
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.3.8';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.4.0';
 
 export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
     const numericValue = Number(value);

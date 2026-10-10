@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.7.0-agent-contract.0`
+Policy version: `v1.8.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -59,6 +59,12 @@ discovery. This file remains the canonical guide.
   broker balance, so its base is the exact scoped balance plus that currency's
   unscoped replay delta when the scope is the only one in that currency; with
   several same-currency scopes the boundary fails closed.
+- A base-currency cash scalar beside an explicit per-currency balance map is
+  that currency's native balance, never total cash. Dated cash anchors each
+  native currency on its own component as-of date and converts foreign cash
+  once; an anchored row already holds its currency's settled balance, so a
+  settlement correction must not be added to it again. See the Investment
+  equity replay contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 - `statement_pdf_source_sha256` and `statement_pdf_source_row_number` are
   aliases of a cash row's own immutable sequence identity, not free-form
   corroboration. A CSV or pasted-text row that a statement PDF only

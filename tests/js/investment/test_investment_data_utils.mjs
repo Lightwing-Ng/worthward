@@ -1,7 +1,8 @@
-/* Code version: v1.48.6
- * Added: Loads isolated HSBC settlement-consumer regressions.
+/* Code version: v1.49.0
+ * Added: Loads dated native-currency cash anchor regressions.
  */
 import './data_utils/core-and-cash.mjs';
+import './data_utils/dated-cash-anchors.mjs';
 import './data_utils/hsbc-settlement-consumers.mjs';
 import './data_utils/formatting-and-fx.mjs';
 import './data_utils/income-and-replay.mjs';

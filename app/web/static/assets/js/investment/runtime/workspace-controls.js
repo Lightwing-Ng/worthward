@@ -1,7 +1,10 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.4.1
+ * Code version: v1.5.0
+ * - Fixed: Explicit per-currency ending balances anchor dated history as
+ *   native balances on their own component dates, so a native USD balance is
+ *   never treated as total cash and foreign cash is converted exactly once.
  * - Fixed: Conflicting HSBC direct-cash identities cannot clear a dated cash
  *   snapshot adjustment during workspace projection.
  * - Fixed: Transfer constraints move only their required predecessor ahead of
@@ -969,6 +972,64 @@ function reorderInvestmentTransactionsForBoundTransfers(
         return reordered.length === transactions.length ? reordered : transactions;
     }
 
+function getInvestmentDatedCashBoundaryCurrencies(txn) {
+        if (txn?.cash_balance_evidence_conflict === true) return [];
+        const boundary = runtime.getInvestmentCashBalanceBoundary(txn);
+        return boundary?.currency ? [boundary.currency] : [];
+    }
+
+function applyDatedNativeCashAnchors(brokerRows, anchors, fxTransactions) {
+        if (!anchors.length) return false;
+        const baseCurrency = runtime.getInvestmentBaseCurrency();
+        const fxTimeline = runtime.buildInvestmentFxRateTimeline(fxTransactions, baseCurrency);
+        const projection = runtime.buildDatedCashBalanceProjection(brokerRows, {
+            anchors,
+            getRowDateTime: (txn) => txn?.datetime,
+            getBoundaryCurrencies: getInvestmentDatedCashBoundaryCurrencies,
+            convertBalancesToBaseCash: (balances, txn) => runtime.sumCashLedgerInBaseCurrency(
+                balances,
+                runtime.normalizeLedgerDate(txn?.date),
+                fxTimeline,
+                baseCurrency,
+            ),
+        });
+        if (!projection.applied) return false;
+        projection.projections.forEach(({index, runningCash, balances, anchors: rowAnchors}) => {
+            const txn = brokerRows[index];
+            if (!txn) return;
+            // Only movement after a currency's own boundary rolls its current
+            // snapshot forward; an explicit zero anchor still counts.
+            const laterAnchors = Object.entries(rowAnchors).filter(([, anchor]) => anchor.afterSnapshot);
+            txn.broker_post_snapshot_cash_delta = laterAnchors.length
+                ? laterAnchors.reduce((delta, [currency, anchor]) => {
+                    const change = (Number(balances[currency]) || 0) - anchor.balance;
+                    if (Math.abs(change) > 1e-9) delta[currency] = change;
+                    return delta;
+                }, {})
+                : null;
+            if (runtime.shouldPreserveSequentialBrokerBuyHistory(txn)) return;
+            if (Number.isFinite(runningCash)) txn.broker_running_cash = runningCash;
+            txn.broker_cash_by_currency = {...balances};
+            const brokerMarketValue = runtime.getOptionalInvestmentNumber(txn.broker_market_value);
+            txn.broker_display_cash = Number(txn.broker_running_cash)
+                + (Number(txn.broker_pending_settlement_cash) || 0);
+            txn.broker_total_equity = Number.isFinite(brokerMarketValue)
+                ? txn.broker_display_cash + brokerMarketValue
+                : null;
+            txn.broker_cash_balance_source = 'dated_authoritative_cash_snapshot_projection';
+            // History corrections must use the same basis as this cash.
+            Object.defineProperty(txn, 'broker_dated_cash_anchors', {
+                configurable: true,
+                enumerable: false,
+                writable: true,
+                value: Object.fromEntries(
+                    Object.entries(rowAnchors).filter(([, anchor]) => anchor.active),
+                ),
+            });
+        });
+        return true;
+    }
+
 function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) {
         const transactions = Array.isArray(processedTransactions) ? processedTransactions : [];
         if (!transactions.length) return;
@@ -984,69 +1045,51 @@ function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) 
             const authoritativeEndingCash = runtime.getInvestmentBrokerEndingCash(brokerCode);
             const authoritativeEndingCashBalances = runtime.getInvestmentBrokerEndingCashBalances(brokerCode);
             if (authoritativeEndingCash === null && authoritativeEndingCashBalances === null) return;
-            const endingCashAsOf = runtime.getInvestmentBrokerEndingCashAsOf(brokerCode);
-            const endingCashAsOfDateTime = runtime.getInvestmentBrokerEndingCashAsOfDateTime(brokerCode);
-            if (!endingCashAsOf) return;
             const brokerSummary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[brokerCode];
             if (brokerSummary?.cash_snapshot_authoritative === false) return;
-            const hasAuthoritativeBalances = authoritativeEndingCashBalances !== null;
             const brokerRows = transactions.filter(
                 (txn) => runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === brokerCode
             );
-            const lastBrokerTxn = brokerRows[brokerRows.length - 1];
-            if (!lastBrokerTxn) return;
-            const lastBrokerLedgerDate = runtime.normalizeLedgerDate(lastBrokerTxn?.date);
-            if (endingCashAsOf && lastBrokerLedgerDate && lastBrokerLedgerDate < endingCashAsOf) {
+            if (!brokerRows.length) return;
+            // An explicit per-currency map holds native balances: a base-
+            // currency scalar beside it is that currency's own balance, not
+            // total cash. Each balance anchors its own currency on its own
+            // date, and missing evidence leaves that currency on the replay.
+            const datedCashAnchors = runtime.getInvestmentBrokerDatedCashAnchors(brokerCode);
+            if (datedCashAnchors) {
+                const rawTransactions = runtime.state.investmentRawTransactionsCache;
+                if (applyDatedNativeCashAnchors(
+                    brokerRows,
+                    datedCashAnchors.anchors,
+                    Array.isArray(rawTransactions) && rawTransactions.length ? rawTransactions : transactions,
+                )) {
+                    authoritativeCashEligibleBrokers.add(brokerCode);
+                }
+                return;
+            }
+            const endingCashAsOf = runtime.getInvestmentBrokerEndingCashAsOf(brokerCode);
+            const endingCashAsOfDateTime = runtime.getInvestmentBrokerEndingCashAsOfDateTime(brokerCode);
+            if (!endingCashAsOf) return;
+            const lastBrokerLedgerDate = runtime.normalizeLedgerDate(brokerRows[brokerRows.length - 1]?.date);
+            if (lastBrokerLedgerDate && lastBrokerLedgerDate < endingCashAsOf) {
                 // The imported ending balance belongs to a later statement
                 // boundary.  Do not pin it onto an older historical row.
                 return;
             }
-            const hasForeignCurrencyBalances = hasAuthoritativeBalances && Object.keys(
-                authoritativeEndingCashBalances || {},
-            ).some((currency) => String(currency || '').trim().toUpperCase() !== runtime.getInvestmentBaseCurrency());
-            const brokerFxTimeline = hasForeignCurrencyBalances
-                ? runtime.buildInvestmentFxRateTimeline(
-                    Array.isArray(runtime.state.investmentRawTransactionsCache) && runtime.state.investmentRawTransactionsCache.length
-                        ? runtime.state.investmentRawTransactionsCache
-                        : transactions,
-                    runtime.getInvestmentBaseCurrency(),
-                )
-                : null;
-            const convertedHsbcEndingCash = brokerCode === 'hsbc' && hasForeignCurrencyBalances
-                ? runtime.sumCashLedgerInBaseCurrency(
-                    authoritativeEndingCashBalances,
-                    endingCashAsOf,
-                    brokerFxTimeline,
-                    runtime.getInvestmentBaseCurrency(),
-                )
-                : null;
-            // Prefer an explicitly supplied base-currency cash snapshot.  A
-            // broker summary may also preserve foreign-currency balances for
-            // display; converting and adding those balances would double
-            // count them when the summary already provides the authoritative
-            // USD boundary.
+            // A scalar-only snapshot is total cash valued in the base currency.
             const authoritativeBaseCashSnapshot = runtime.getInvestmentBrokerEndingCashInBaseCurrency(brokerCode);
-            const authoritativeEndingCashInBaseCurrency = Number.isFinite(Number(authoritativeBaseCashSnapshot))
+            const endingCashCandidate = Number.isFinite(Number(authoritativeBaseCashSnapshot))
                 ? Number(authoritativeBaseCashSnapshot)
-                : convertedHsbcEndingCash;
-            const endingCashCandidate = authoritativeEndingCashInBaseCurrency
-                ?? authoritativeEndingCash
-                ?? authoritativeEndingCashBalances?.[runtime.getInvestmentBaseCurrency()];
+                : authoritativeEndingCash ?? authoritativeEndingCashBalances?.[runtime.getInvestmentBaseCurrency()];
             const numericEndingCash = Number(endingCashCandidate);
             const projection = runtime.buildDatedCashSnapshotProjection(brokerRows, {
                 asOf: endingCashAsOf,
                 asOfDateTime: endingCashAsOfDateTime,
                 authoritativeBaseCash: Number.isFinite(numericEndingCash) ? numericEndingCash : null,
-                authoritativeBalances: hasAuthoritativeBalances
-                    ? authoritativeEndingCashBalances
-                    : null,
+                authoritativeBalances: authoritativeEndingCashBalances,
                 baseCurrency: runtime.getInvestmentBaseCurrency(),
                 getRowDateTime: (txn) => txn?.datetime,
-                getBoundaryCurrencies: (txn) => {
-                    if (txn?.cash_balance_evidence_conflict === true) return [];
-                    const boundary = runtime.getInvestmentCashBalanceBoundary(txn);
-                    return boundary?.currency ? [boundary.currency] : [];
-                },
+                getBoundaryCurrencies: getInvestmentDatedCashBoundaryCurrencies,
             });
             if (!projection.applied) return;
             authoritativeCashEligibleBrokers.add(brokerCode);
@@ -1056,7 +1099,7 @@ function applyAuthoritativeBrokerEndingCashBalances(processedTransactions = []) 
                 txn.broker_post_snapshot_cash_delta = afterSnapshot
                     ? runtime.buildInvestmentPostSnapshotCashDelta(
                         balances,
-                        hasAuthoritativeBalances
+                        authoritativeEndingCashBalances !== null
                             ? authoritativeEndingCashBalances
                             : runtime.createCashLedger(numericEndingCash, runtime.getInvestmentBaseCurrency()),
                     )

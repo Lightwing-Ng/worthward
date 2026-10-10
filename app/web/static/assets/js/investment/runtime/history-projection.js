@@ -1,20 +1,24 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.3.8
+ * Code version: v1.4.0
+ * - Fixed: A dated native-currency cash anchor retires same-currency
+ *   settlement corrections instead of deducting them from anchored cash.
  * - Fixed: Fees may precede or follow their principal in the verified ledger;
  *   the final balanced posting owns the cash boundary.
  * - Fixed: A direct cash row from another source can precede same-day SEC
  *   postings when its balance exactly matches their first opening balance.
- * - Historical cash corrections remain scoped to immutable broker evidence.
  */
 
 import {
     createHsbcHistoryEvidenceUtils,
-} from './history-evidence.js?v=investment-history-evidence-v1.0.3';
+} from './history-evidence.js?v=investment-history-evidence-v1.1.0';
 import {
     createHsbcOpeningCashCorroborationMatcher,
-} from './history-cash-corroboration.js?v=investment-history-cash-corroboration-v1.0.0';
+} from './history-cash-corroboration.js?v=investment-history-cash-corroboration-v1.0.1';
+import {
+    retireAnchoredHsbcSettlementCorrections,
+} from './history-cash-anchors.js?v=investment-history-cash-anchors-v1.0.0';
 
 export function createInvestmentHistoryProjectionRuntime(runtime, context) {
 const {
@@ -1418,6 +1422,7 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
             const settlementBoundariesByCashScope = new Map();
             const pendingScopes = new Set();
             const ambiguousCashScopes = new Set();
+            const conflictingAnchorKeys = new Set();
             const rememberSettlementBoundary = (boundary) => {
                 const cashScopeKey = String(boundary?.cashScopeKey || '').trim();
                 const nextDate = runtime.normalizeLedgerDate(boundary?.settlementDate);
@@ -1841,6 +1846,13 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
                         }
                     }
                 }
+                // Dated cash already holds its currency's settled balance.
+                const anchorConflictReason = retireAnchoredHsbcSettlementCorrections(txn, {
+                    corrections: historyCorrectionsByCashScope,
+                    settlementBoundaries: settlementBoundariesByCashScope,
+                    ambiguousCashScopes,
+                    conflictingAnchorKeys,
+                });
                 const pendingCashBoundary = runtime.isHsbcSettlementActuallyPending(source)
                     ? runtime.getInvestmentBrokerEndingCashInBaseCurrency(brokerCode)
                     : null;
@@ -1860,7 +1872,8 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
                 const hasAmbiguousCashSequence = ambiguousCashScopes.has(cashScopeKey);
                 const isProvisional = pendingScopes.has(scopeKey)
                     || hasAmbiguousCashSequence
-                    || hasInconsistentCashEvidence;
+                    || hasInconsistentCashEvidence
+                    || Boolean(anchorConflictReason);
                 txn.history_broker_cash = historyCash;
                 txn.history_broker_equity = historyCash + brokerMarketValue;
                 txn.history_cash_is_provisional = isProvisional;
@@ -1869,9 +1882,9 @@ function applyHsbcHistoryPresentationProjection(processedTransactions) {
                     ? 'This HSBC cash row has incomplete or inconsistent immutable source-sequence evidence. Cash and Equity use the direct bank balance and remain provisional for that cash subaccount.'
                     : (hasAmbiguousCashSequence
                     ? 'A same-day HSBC cash row and settlement boundary do not share comparable source-sequence evidence. Cash and Equity use the direct cash row and remain provisional for that cash subaccount.'
-                    : (isProvisional
+                    : (anchorConflictReason || (isProvisional
                         ? 'An earlier or current HSBC order in this account has not reached a matched SEC cash settlement. Cash and Equity are provisional until HSBC posts every settlement leg.'
-                        : ''));
+                        : '')));
             });
         }
 
