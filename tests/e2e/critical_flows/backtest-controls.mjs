@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -966,6 +966,10 @@ test('keeps strategy parameters below Strategy and scrolls the Backtest sidebar'
     const controlsSurface = page.locator('[data-backtest-parameter-panel]');
     await expect(tuneButton).toHaveAttribute('aria-expanded', 'true');
     await expect(paramsPanel).toBeVisible();
+    // Measure after the strategy disclosures finish their spring expansion.
+    await controlsSurface.evaluate((surface) => Promise.all(
+        surface.getAnimations({subtree: true}).map((animation) => animation.finished),
+    ));
 
     const geometry = await paramsPanel.evaluate((panel) => {
         const panelRect = panel.getBoundingClientRect();
