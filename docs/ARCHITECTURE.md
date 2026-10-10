@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.133.0`
+Documentation version: `v1.134.0`
 
 ## Shared loading indicator
 
@@ -1397,6 +1397,15 @@ second broker balance ledger. Its accounting boundaries are explicit:
   corroborates a CSV or pasted-text cash row, the merge keeps the PDF filename,
   period, and balance fields but records the PDF digest as
   `statement_pdf_corroboration_sha256`, outside the alias set.
+- A pasted HSBC page numbers its rows in ascending ledger order, so a direct
+  cash row's `row_number` equals its `ledger_sequence`. A legacy pasted USD
+  Savings row (`hsbc_usd_account_text`) may also carry the CSV
+  `ledger_sequence_order: chronological` marker; the marker restates that same
+  order and is accepted only when the row and ledger sequence are identical.
+  Any other non-CSV kind, a divergent sequence, a direction override, or
+  another marker value still fails the direct-cash contract. Settlement
+  postings from non-CSV sources must omit the marker in both the Python
+  importer and the browser.
 - USD Savings CSV rows written before the chronological provenance contract
   lack `source_sequence_sha256` and `ledger_sequence_order`. Merging the
   current CSV through the import commit pipeline, with the configured HSBC
@@ -1426,10 +1435,30 @@ second broker balance ledger. Its accounting boundaries are explicit:
   the current Holdings endpoint. If a current cash-equivalent quote is valid,
   both surfaces use that quote; the historical money-market anchor is only a
   fallback when no usable live price exists.
+- An explicit per-currency ending balance map (`ending_cash_by_currency`)
+  holds native balances, including authoritative zeros. A base-currency scalar
+  beside it, such as HSBC `ending_cash_base_currency`, is that currency's own
+  balance, never total cash. Each native balance anchors only its own currency,
+  from its own as-of boundary: HSBC uses the latest post date of that
+  currency's `hsbc_cash_component_post_dates`, and a currency with an undated,
+  malformed, or non-summing component stays on its replay balance. Other
+  brokers use their shared snapshot as-of date and time. Anchored Cash is the
+  sum of the projected native balances, each converted once at the row date,
+  and a later direct balance in a currency retires only that currency's
+  anchor. A declared map whose entries are malformed or conflicting stays on
+  the replay instead of falling back to the scalar. A scalar-only snapshot
+  remains total cash valued in the base currency.
 - A current broker cash snapshot may project onto the latest broker row for
   Holdings, but HSBC settlement-boundary corrections must use that row's
   pre-projection broker ledger. Current presentation state must never enter the
   historical aggregate correction base or cancel earlier settled proceeds.
+- A dated native-currency anchor already holds its currency's settled balance.
+  Transaction History therefore retires every settlement correction in that
+  currency on an anchored row instead of adding it to the anchored Cash again.
+  A settlement posting dated after the anchor cannot be ordered against it, so
+  its correction is retired as well and every row that uses the anchor is
+  provisional. The Overview replay corrects the unanchored replay basis and is
+  unaffected.
 - Broker-reported accrued interest is a separate NAV component:
   `broker_total_equity = broker_cash + broker_market_value +
   broker_interest_accrual`, and aggregate equity adds each broker's accrual

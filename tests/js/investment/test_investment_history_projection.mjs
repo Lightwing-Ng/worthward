@@ -1,5 +1,6 @@
-/* Investment history-projection regressions. Code version: v1.3.8
- * Added: Either-side fees and preceding blank-balance settlement regressions.
+/* Investment history-projection regressions. Code version: v1.4.0
+ * Added: Dated native-currency anchors retire same-currency settlement
+ *   corrections, and pasted USD Savings rows may restate chronological order.
  */
 
 import test from 'node:test';
@@ -556,7 +557,16 @@ test('HSBC history requires a complete immutable direct cash identity', () => {
         'CSV without chronological marker': (cashRow) => {
             cashRow.source.file_kind = 'hsbc_usd_savings_csv';
         },
-        'non-CSV chronological marker': (cashRow) => {
+        'chronological marker beside a divergent ledger sequence': (cashRow) => {
+            cashRow.source.ledger_sequence_order = 'chronological';
+            cashRow.source.ledger_sequence = 45;
+        },
+        'unknown sequence-order marker': (cashRow) => {
+            cashRow.source.ledger_sequence_order = 'reverse';
+        },
+        'multi-currency kind with a chronological marker': (cashRow) => {
+            cashRow.source.file_kind = 'hsbc_multi_currency_cash_account_text';
+            cashRow.source.cash_balance_authoritative = false;
             cashRow.source.ledger_sequence_order = 'chronological';
         },
         'non-CSV divergent ledger sequence': (cashRow) => {
@@ -1254,4 +1264,187 @@ test('same-day CSV replay follows the importer chronological sequence', () => {
         'hsbc_cash_settlement_boundary',
         'later cash',
     ]);
+});
+
+test('HSBC history accepts a pasted USD Savings row that restates chronological order', () => {
+    const {applyHsbcHistoryPresentationProjection, isAuthoritativeHsbcCashTransaction} = (
+        createHistoryProjection()
+    );
+    const cashRow = makeCashRow({
+        date: '2026-09-18', balanceAfter: 1_200, brokerRunningCash: 1_200,
+        rowNumber: 44, ledgerSequence: 44,
+        sourceSequenceSha256: HSBC_SEQUENCE_SHA_A,
+    });
+    cashRow.source.ledger_sequence_order = 'chronological';
+
+    applyHsbcHistoryPresentationProjection([cashRow]);
+
+    assert.equal(isAuthoritativeHsbcCashTransaction(cashRow), true);
+    assert.equal(cashRow.history_broker_cash, 1_200);
+    assert.equal(cashRow.history_cash_is_provisional, false);
+    assert.equal(cashRow.history_balance_provisional_reason, '');
+});
+
+function makeAnchoredRow({
+    date = '2026-09-18',
+    displayCash,
+    marketValue = 500,
+    anchors,
+    currency = 'HKD',
+    calculatedBalances = {USD: 1_000, HKD: 100},
+    cashScopeLedger = makeScopeLedger({
+        [USD_SAVINGS_SCOPE]: 1_000,
+        [HKD_SAVINGS_SCOPE]: 100,
+    }),
+}) {
+    const row = {
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date,
+        type: 'deposit',
+        currency,
+        net_amount_raw: '10',
+        normalized: {net_amount: '10'},
+        broker_running_cash: displayCash,
+        broker_display_cash: displayCash,
+        broker_pending_settlement_cash: 0,
+        broker_market_value: marketValue,
+        calculated_broker_cash_by_currency: calculatedBalances,
+        calculated_broker_cash_scope_ledger: cashScopeLedger,
+        broker_cash_balance_source: 'dated_authoritative_cash_snapshot_projection',
+        source: {file_kind: 'test_fixture'},
+    };
+    // The dated projection publishes active anchors without exporting them.
+    Object.defineProperty(row, 'broker_dated_cash_anchors', {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: anchors,
+    });
+    return row;
+}
+
+test('a dated native-currency anchor retires the same-currency settlement correction', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    // Replay USD is 1,000; the posting settles USD Savings at 1,200 on 18 Sep.
+    const sell = makeSettlementSell({brokerRunningCash: 1_010});
+    const beforeAnchor = makeAnchoredRow({
+        date: '2026-09-18',
+        displayCash: 1_010,
+        anchors: {},
+    });
+    // The 18 Sep USD snapshot already includes the posting; 1,200 + HKD 100 / 10.
+    const anchored = makeAnchoredRow({
+        date: '2026-09-18',
+        displayCash: 1_210,
+        anchors: {USD: {asOf: '2026-09-18', balance: 1_200, adjustment: 200, active: true}},
+    });
+    const laterAnchored = makeAnchoredRow({
+        date: '2026-09-19',
+        displayCash: 1_220,
+        calculatedBalances: {USD: 1_000, HKD: 200},
+        anchors: {USD: {asOf: '2026-09-18', balance: 1_200, adjustment: 200, active: true}},
+    });
+
+    applyHsbcHistoryPresentationProjection([sell, beforeAnchor, anchored, laterAnchored]);
+
+    assert.equal(sell.history_broker_cash, 1_210);
+    assert.equal(beforeAnchor.history_broker_cash, 1_210);
+    assert.equal(anchored.history_broker_cash, 1_210);
+    assert.equal(anchored.history_broker_equity, 1_710);
+    assert.equal(laterAnchored.history_broker_cash, 1_220);
+    assert.equal(anchored.history_cash_is_provisional, false);
+    assert.equal(laterAnchored.history_cash_is_provisional, false);
+});
+
+test('a currency anchor retires corrections in every same-currency cash scope', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    const ledger = makeScopeLedger({[USD_SAVINGS_SCOPE]: 1_000, [OTHER_USD_SCOPE]: 500});
+    const savingsSell = makeSettlementSell({
+        brokerRunningCash: 1_500,
+        calculatedBalances: {USD: 1_500},
+        cashScopeLedger: ledger,
+    });
+    const currentSell = makeSettlementSell({
+        balanceAfter: 800,
+        brokerRunningCash: 1_500,
+        calculatedBalances: {USD: 1_500},
+        cashScopeLedger: ledger,
+        sourceFileKind: 'hsbc_multi_currency_cash_account_text',
+        sourceSequenceSha256: HSBC_SEQUENCE_SHA_B,
+    });
+    currentSell.net_amount_raw = '300';
+    currentSell.normalized.net_amount = '300';
+    currentSell.source.statement_order_id = 'S-200002';
+    currentSell.source.cash_settlement_amount_raw = '300';
+    Object.assign(currentSell.source.cash_settlement_postings[0], {
+        account_type: 'USD Current',
+        amount_raw: '300',
+        reference: 'REF S200002001 SEC',
+    });
+    // The USD total is both subaccounts after both postings: 1,200 + 800.
+    const anchored = makeAnchoredRow({
+        displayCash: 2_000,
+        calculatedBalances: {USD: 1_500},
+        cashScopeLedger: ledger,
+        anchors: {USD: {asOf: '2026-09-18', balance: 2_000, adjustment: 500, active: true}},
+    });
+
+    applyHsbcHistoryPresentationProjection([savingsSell, currentSell, anchored]);
+
+    assert.equal(currentSell.history_broker_cash, 2_000);
+    assert.equal(anchored.history_broker_cash, 2_000);
+    assert.equal(anchored.history_cash_is_provisional, false);
+});
+
+test('a native anchor leaves other-currency corrections on their replay basis', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    const sell = makeSettlementSell({brokerRunningCash: 1_010});
+    const hkdAnchored = makeAnchoredRow({
+        displayCash: 1_015,
+        calculatedBalances: {USD: 1_000, HKD: 150},
+        anchors: {HKD: {asOf: '2026-09-18', balance: 150, adjustment: 0, active: true}},
+    });
+
+    applyHsbcHistoryPresentationProjection([sell, hkdAnchored]);
+
+    assert.equal(hkdAnchored.history_broker_cash, 1_215);
+    assert.equal(hkdAnchored.history_cash_is_provisional, false);
+});
+
+test('a settlement dated after its currency anchor fails closed without double counting', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    const sell = makeSettlementSell({brokerRunningCash: 1_010});
+    sell.date = '2026-09-16';
+    // The snapshot predates the 18 Sep posting, so their order conflicts.
+    const anchored = makeAnchoredRow({
+        date: '2026-09-17',
+        displayCash: 1_110,
+        anchors: {USD: {asOf: '2026-09-17', balance: 1_100, adjustment: 100, active: true}},
+    });
+
+    applyHsbcHistoryPresentationProjection([sell, anchored]);
+
+    assert.equal(anchored.history_broker_cash, 1_110);
+    assert.equal(anchored.history_cash_is_provisional, true);
+    assert.match(anchored.history_balance_provisional_reason, /predates a settlement posting/);
+});
+
+test('an inactive anchor no longer retires later settlement corrections', () => {
+    const {applyHsbcHistoryPresentationProjection} = createHistoryProjection();
+    const retiredAnchor = makeAnchoredRow({
+        date: '2026-09-16',
+        displayCash: 1_010,
+        anchors: {},
+    });
+    const sell = makeSettlementSell({brokerRunningCash: 1_010});
+    const afterSell = makeAnchoredRow({
+        date: '2026-09-17',
+        displayCash: 1_010,
+        anchors: {},
+    });
+
+    applyHsbcHistoryPresentationProjection([retiredAnchor, sell, afterSell]);
+
+    assert.equal(afterSell.history_broker_cash, 1_210);
 });

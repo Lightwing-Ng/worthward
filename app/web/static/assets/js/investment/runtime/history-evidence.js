@@ -1,7 +1,9 @@
 /**
  * HSBC history evidence normalization and immutable-identity helpers.
  *
- * Code version: v1.0.3
+ * Code version: v1.1.0
+ * - Changed: A pasted USD Savings row may restate its producer order with a
+ *   legacy `chronological` marker when its row and ledger sequence agree.
  * - Fixed: Evidence dates require the producer's exact ISO day and monetary
  *   strings must retain a safely representable decimal coefficient.
  * - Fixed: Direct cash requires canonical raw amount and balance fields;
@@ -417,6 +419,13 @@ export function createHsbcHistoryEvidenceUtils(runtime, context) {
             'hsbc_usd_account_text',
             'hsbc_usd_savings_csv',
         ].includes(descriptor.sourceFileKind);
+        // Pasted pages number rows in ascending ledger order. A legacy pasted
+        // USD Savings row may carry the CSV `chronological` marker; it restates
+        // that same order only while its row and ledger sequence are identical.
+        const hasProducerSequenceOrder = sequenceOrder === '' || (
+            sequenceOrder === 'chronological'
+            && descriptor.sourceFileKind === 'hsbc_usd_account_text'
+        );
         const hasDirectSequenceIdentity = (
             parseHsbcPositiveSequenceNumber(source.row_number) !== null
             && parseHsbcPositiveSequenceNumber(source.ledger_sequence) !== null
@@ -425,7 +434,7 @@ export function createHsbcHistoryEvidenceUtils(runtime, context) {
                 descriptor.sourceFileKind === 'hsbc_usd_savings_csv'
                     ? sequenceOrder === 'chronological'
                     : (
-                        sequenceOrder === ''
+                        hasProducerSequenceOrder
                         && descriptor.rowNumber === descriptor.ledgerSequence
                     )
             )

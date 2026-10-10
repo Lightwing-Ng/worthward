@@ -1,7 +1,11 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.2.2
+ * Code version: v1.3.0
+ * - Added: Explicit per-currency ending balances are native cash anchors,
+ *   each dated by its own component post date and converted once.
+ * - Changed: Loads HSBC evidence that accepts a legacy pasted USD Savings
+ *   chronological marker only with identical row and ledger sequence.
  * - Changed: Loads exact-date and safe-decimal HSBC evidence validation.
  * - Fixed: HSBC balance boundaries reuse the complete importer evidence
  *   contract instead of trusting filename patterns and coercible balances.
@@ -13,7 +17,7 @@
 
 import {
     createHsbcHistoryEvidenceUtils,
-} from '../runtime/history-evidence.js?v=investment-history-evidence-v1.0.3';
+} from '../runtime/history-evidence.js?v=investment-history-evidence-v1.1.0';
 
 export function createInvestmentCoreCashUtils(runtime) {
     const formatTransactionCurrency = (...args) => runtime.formatTransactionCurrency(...args);
@@ -728,6 +732,215 @@ export function createInvestmentCoreCashUtils(runtime) {
         };
     }
 
+    function normalizeBrokerCashCurrency(brokerCode, currency) {
+        const normalizedCurrency = normalizeCurrencyCode(currency);
+        // HSBC keeps CNY and RMB as raw labels; its canonical currency is CNH.
+        return brokerCode === 'hsbc'
+            ? normalizedCurrency.replace(/^(?:CNY|RMB)$/, 'CNH')
+            : normalizedCurrency;
+    }
+
+    function parseExplicitCashAmount(value) {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value !== 'string' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value.trim())) {
+            return null;
+        }
+        const numericValue = Number(value.trim());
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function readExplicitEndingCashMap(brokerCode) {
+        const rawBalances = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[brokerCode]
+            ?.ending_cash_by_currency;
+        if (!rawBalances || typeof rawBalances !== 'object' || Array.isArray(rawBalances)) {
+            return null;
+        }
+        const valuesByCurrency = new Map();
+        Object.entries(rawBalances).forEach(([currency, value]) => {
+            if (value === undefined || value === null || String(value).trim() === '') return;
+            const normalizedCurrency = normalizeBrokerCashCurrency(brokerCode, currency);
+            if (!normalizedCurrency) return;
+            if (!valuesByCurrency.has(normalizedCurrency)) valuesByCurrency.set(normalizedCurrency, []);
+            valuesByCurrency.get(normalizedCurrency).push(parseExplicitCashAmount(value));
+        });
+        if (!valuesByCurrency.size) return null;
+        const balances = {};
+        const rejectedCurrencies = [];
+        valuesByCurrency.forEach((values, currency) => {
+            // A malformed value or two spellings of one currency conflict.
+            if (values.length === 1 && values[0] !== null) balances[currency] = values[0];
+            else rejectedCurrencies.push(currency);
+        });
+        return {balances, rejectedCurrencies};
+    }
+
+    function getInvestmentBrokerExplicitEndingCashBalances(brokerCode) {
+        // An explicit per-currency map holds native balances, including
+        // authoritative zeros. A scalar-only snapshot is a base-currency
+        // total and therefore never yields a balance map here; a declared map
+        // whose entries are all unusable stays explicit and empty.
+        const explicitMap = readExplicitEndingCashMap(
+            String(brokerCode || '').trim().toLowerCase(),
+        );
+        return explicitMap ? explicitMap.balances : null;
+    }
+
+    function getInvestmentBrokerDatedCashAnchors(brokerCode) {
+        const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
+        const explicitMap = readExplicitEndingCashMap(normalizedBroker);
+        if (!explicitMap) return null;
+        const {balances} = explicitMap;
+        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker] || {};
+        const nonEmptyMap = (value) => (
+            value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length
+                ? value
+                : null
+        );
+        const componentDates = nonEmptyMap(summary.hsbc_cash_component_post_dates);
+        const components = nonEmptyMap(summary.hsbc_ending_cash_components);
+        const sharedAsOf = getInvestmentBrokerEndingCashAsOf(normalizedBroker);
+        const sharedAsOfDateTime = getInvestmentBrokerEndingCashAsOfDateTime(normalizedBroker);
+        const anchors = [];
+        const unanchoredCurrencies = [...explicitMap.rejectedCurrencies];
+        Object.keys(balances).sort().forEach((currency) => {
+            const balance = balances[currency];
+            if (!componentDates) {
+                if (sharedAsOf) {
+                    anchors.push({currency, balance, asOf: sharedAsOf, asOfDateTime: sharedAsOfDateTime});
+                } else {
+                    unanchoredCurrencies.push(currency);
+                }
+                return;
+            }
+            // A currency total is known from its latest component post date,
+            // and only when every component is dated and they sum to it.
+            const componentKeys = Object.keys(components || componentDates).filter((key) => (
+                normalizeBrokerCashCurrency(normalizedBroker, String(key).split(':')[0]) === currency
+            ));
+            const amounts = components
+                ? componentKeys.map((key) => parseExplicitCashAmount(components[key]))
+                : [];
+            const dates = componentKeys.map((key) => normalizeHsbcEvidenceDate(componentDates[key]));
+            if (
+                !componentKeys.length
+                || dates.some((date) => !date)
+                || amounts.some((amount) => amount === null)
+                || (components && Math.abs(
+                    amounts.reduce((total, amount) => total + amount, 0) - balance,
+                ) > 1e-6)
+            ) {
+                unanchoredCurrencies.push(currency);
+                return;
+            }
+            anchors.push({currency, balance, asOf: dates.sort().at(-1), asOfDateTime: ''});
+        });
+        return {anchors, unanchoredCurrencies: unanchoredCurrencies.sort()};
+    }
+
+    function buildDatedCashBalanceProjection(
+        rows,
+        {
+            anchors = [],
+            getRowDate = (row) => row?.date,
+            getRowDateTime = (row) => row?.datetime,
+            getBalances = (row) => row?.broker_cash_by_currency,
+            getBoundaryCurrencies = () => [],
+            convertBalancesToBaseCash = (balances) => sumCashLedgerInBaseCurrency(balances, '', null),
+        } = {},
+    ) {
+        // Each native anchor replaces only its own currency from its own as-of
+        // boundary, and cash is the converted sum of the projected balances.
+        const orderedRows = Array.isArray(rows) ? rows : [];
+        const normalizeDateTime = (value) => {
+            const match = String(value ?? '').trim().replace('T', ' ')
+                .match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+            return match ? `${match[1]} ${match[2]}` : '';
+        };
+        const dateKeys = orderedRows.map((row) => normalizeLedgerDate(getRowDate(row)));
+        let dateTimeKeys = null;
+        const getDateTimeKeys = () => {
+            dateTimeKeys = dateTimeKeys || orderedRows.map((row, index) => (
+                normalizeDateTime(getRowDateTime(row))
+                || (dateKeys[index] ? `${dateKeys[index]} 00:00:00` : '')
+            ));
+            return dateTimeKeys;
+        };
+        const plans = [];
+        (Array.isArray(anchors) ? anchors : []).forEach((anchor) => {
+            const currency = normalizeCurrencyCode(anchor?.currency);
+            const balance = Number(anchor?.balance);
+            const asOf = normalizeLedgerDate(anchor?.asOf);
+            const asOfDateTime = normalizeDateTime(anchor?.asOfDateTime);
+            const anchorKey = asOfDateTime || asOf;
+            if (
+                !currency
+                || !Number.isFinite(balance)
+                || !anchorKey
+                || plans.some((plan) => plan.currency === currency)
+            ) return;
+            const keys = asOfDateTime ? getDateTimeKeys() : dateKeys;
+            let boundaryIndex = -1;
+            let hasExactBoundary = false;
+            keys.forEach((key, index) => {
+                if (!key || key > anchorKey) return;
+                if (key === anchorKey) hasExactBoundary = true;
+                boundaryIndex = index;
+            });
+            const latestKey = keys.filter(Boolean).sort().pop() || '';
+            // A boundary after the latest row belongs to the current snapshot.
+            if (boundaryIndex < 0 || latestKey < anchorKey) return;
+            const boundaryBalance = Number(
+                cloneCashLedgerBalances(getBalances(orderedRows[boundaryIndex]) || {})[currency] ?? 0,
+            );
+            plans.push({
+                currency,
+                balance,
+                keys,
+                anchorKey,
+                asOf: asOf || anchorKey.slice(0, 10),
+                applyFromIndex: hasExactBoundary ? boundaryIndex : boundaryIndex + 1,
+                adjustment: balance - boundaryBalance,
+                active: true,
+            });
+        });
+        if (!plans.length) return {applied: false, projections: []};
+        const projections = [];
+        const firstIndex = Math.min(...plans.map((plan) => plan.applyFromIndex));
+        for (let index = firstIndex; index < orderedRows.length; index += 1) {
+            const row = orderedRows[index];
+            const boundaryCurrencies = new Set(
+                (Array.isArray(getBoundaryCurrencies(row)) ? getBoundaryCurrencies(row) : [])
+                    .map(normalizeCurrencyCode)
+                    .filter(Boolean),
+            );
+            const balances = cloneCashLedgerBalances(getBalances(row) || {});
+            const rowAnchors = {};
+            plans.forEach((plan) => {
+                const rowKey = plan.keys[index];
+                if (index < plan.applyFromIndex || !rowKey || rowKey < plan.anchorKey) return;
+                const afterSnapshot = rowKey > plan.anchorKey;
+                // Later direct evidence in this currency supersedes the anchor.
+                if (afterSnapshot && boundaryCurrencies.has(plan.currency)) plan.active = false;
+                if (plan.active) addCashLedgerDelta(balances, plan.currency, plan.adjustment);
+                rowAnchors[plan.currency] = {
+                    asOf: plan.asOf,
+                    balance: plan.balance,
+                    adjustment: plan.active ? plan.adjustment : 0,
+                    active: plan.active,
+                    afterSnapshot,
+                };
+            });
+            if (!Object.keys(rowAnchors).length) continue;
+            projections.push({
+                index,
+                balances,
+                runningCash: Number(convertBalancesToBaseCash(balances, row)),
+                anchors: rowAnchors,
+            });
+        }
+        return {applied: projections.length > 0, projections};
+    }
+
     function normalizeCurrencyCode(value) {
         return String(value || '').trim().toUpperCase();
     }
@@ -1245,6 +1458,9 @@ export function createInvestmentCoreCashUtils(runtime) {
         getInvestmentPositionSnapshotAsOf,
         getInvestmentBrokerPositionSnapshotAsOf,
         buildDatedCashSnapshotProjection,
+        getInvestmentBrokerExplicitEndingCashBalances,
+        getInvestmentBrokerDatedCashAnchors,
+        buildDatedCashBalanceProjection,
         normalizeCurrencyCode,
         getInvestmentBaseCurrency,
         isKolRewardTransaction,

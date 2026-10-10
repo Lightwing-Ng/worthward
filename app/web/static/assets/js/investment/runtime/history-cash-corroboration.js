@@ -1,7 +1,9 @@
 /**
  * Corroborate a pasted cash row against the opening balance of SEC postings.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Changed: A legacy USD Savings order marker is judged by the shared
+ *   direct-cash evidence contract instead of a local exception.
  */
 
 export function createHsbcOpeningCashCorroborationMatcher(
@@ -59,14 +61,7 @@ export function createHsbcOpeningCashCorroborationMatcher(
         });
         if (foreignCashRows.length !== 1) return;
         const cashRow = foreignCashRows[0];
-        const source = cashRow?.source || {};
-        // A legacy pasted row can carry a CSV-only marker. Independent CSV
-        // balances must prove its position before that marker is disregarded.
-        const markerOnlyCandidate = source.file_kind === 'hsbc_usd_account_text'
-            && source.ledger_sequence_order === 'chronological'
-            ? {...cashRow, source: {...source, ledger_sequence_order: ''}}
-            : cashRow;
-        const evidence = getHsbcCashEvidenceState(markerOnlyCandidate);
+        const evidence = getHsbcCashEvidenceState(cashRow);
         if (evidence.isConsistent
             && evidence.balance !== null
             && Math.abs(evidence.balance - (firstBalance - firstAmount)) <= 1e-6) {

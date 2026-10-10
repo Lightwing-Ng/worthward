@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.120.5
+ * Code version: v1.121.0
+ * - Added: Exposes explicit native ending balances, their per-currency
+ *   component anchors, and the dated native-currency cash projection.
  * - Changed: Loads tax-lot attestation that tolerates an HSBC snapshot whose
  *   only review reason is a missing Portfolio market-data timestamp.
  * - Changed: Loads settlement consumers that allow fees on either side of
@@ -241,7 +243,7 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.2.2';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.3.0';
 import {
     createInvestmentInterestAccrualUtils,
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
@@ -605,6 +607,9 @@ export function createInvestmentDataUtils({
         getInvestmentEndingCashInBaseCurrencyAsOf,
         getInvestmentPositionSnapshotAsOf,
         buildDatedCashSnapshotProjection,
+        buildDatedCashBalanceProjection,
+        getInvestmentBrokerDatedCashAnchors,
+        getInvestmentBrokerExplicitEndingCashBalances,
         getAuthoritativePerformanceSnapshot,
         getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
@@ -744,6 +749,9 @@ export function createInvestmentDataUtils({
         getInvestmentEndingCashInBaseCurrencyAsOf,
         getInvestmentPositionSnapshotAsOf,
         buildDatedCashSnapshotProjection,
+        buildDatedCashBalanceProjection,
+        getInvestmentBrokerDatedCashAnchors,
+        getInvestmentBrokerExplicitEndingCashBalances,
         getAuthoritativePerformanceSnapshot,
         getAuthoritativeBrokerPerformanceSnapshots,
         getInvestmentStartingCash,
@@ -804,7 +812,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.120.5';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.121.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

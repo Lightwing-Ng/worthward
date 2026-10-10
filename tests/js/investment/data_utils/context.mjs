@@ -1,4 +1,6 @@
-/* Code version: v1.1.2 */
+/* Code version: v1.2.0
+ * Added: Dated native-currency cash anchor and projection helpers.
+ */
 import fs from 'node:fs';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
@@ -51,6 +53,7 @@ export {
 export const {
     buildDailyEquityChartPoints,
     buildDatedCashSnapshotProjection,
+    buildDatedCashBalanceProjection,
     buildTickerPriceIndex,
     buildInvestmentFxRateTimeline,
     computeInvestmentLiveHoldingsTotalEquity,
@@ -82,6 +85,8 @@ export const {
     getInvestmentCostBasisMethod,
     getInvestmentBrokerStartingCashBalances,
     getInvestmentBrokerEndingCashBalances,
+    getInvestmentBrokerExplicitEndingCashBalances,
+    getInvestmentBrokerDatedCashAnchors,
     getInvestmentBrokerEndingCashInBaseCurrency,
     getInvestmentBrokerCurrentPendingSettlementCash,
     getInvestmentBrokerCurrentDisplayCash,

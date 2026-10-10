@@ -1,6 +1,6 @@
 # Investment frontend changelog
 
-Documentation version: `v1.61.0`
+Documentation version: `v1.62.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
@@ -8,6 +8,13 @@ It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
 
+- Fixed: HSBC Transaction History no longer treats the native USD Savings
+  balance as total cash. Each explicit per-currency ending balance anchors only
+  its own currency from its own component post date, foreign cash is converted
+  once, and a dated anchor retires same-currency settlement corrections instead
+  of deducting them again, so Cash no longer drops and rebounds at the latest
+  row. A legacy pasted USD Savings row that restates its producer order with the
+  CSV `chronological` marker is valid direct-cash evidence again.
 - Changed: An HSBC snapshot held in review only because the Portfolio paste has
   no market-data update timestamp now attests tax-lot realized P&L for every
   ticker whose complete replay matches the snapshot quantity, so Holdings no

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.94.0`
+Documentation version: `v1.95.0`
 
 ## Price Field startup promotion
 
@@ -671,7 +671,32 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   corroborating statement PDF digest leaves the CSV row's sequence aliases and
   that the current CSV upgrades a legacy row's chronological provenance. Import
   simulations must set the configured HSBC account, or deduplication results
-  are not representative.
+  are not representative. The same suite verifies that a dated native-currency
+  anchor retires settlement corrections in every scope of its currency, leaves
+  other currencies on their replay basis, and marks a row provisional when a
+  settlement posting is dated after the anchor. It also accepts a pasted USD
+  Savings row that restates producer order with the legacy `chronological`
+  marker and rejects the marker on other kinds or beside a divergent sequence.
+- `tests/js/investment/data_utils/dated-cash-anchors.mjs` (loaded by
+  `test_investment_data_utils.mjs`) pins the native-currency cash contract:
+  explicit balance maps keep authoritative zeros and reject conflicting
+  spellings, HSBC component post dates date each currency independently and
+  fail closed for an undated, malformed, or non-summing component, and the
+  dated projection converts foreign cash once, keeps earlier same-day rows on
+  their replay balance, keeps zero and negative anchors signed, and retires
+  only the currency of a later direct balance.
+  `tests/js/investment/test_investment_workspace_controls.mjs` applies that
+  contract through `applyAuthoritativeBrokerEndingCashBalances` and proves that
+  a scalar-only snapshot keeps its base-currency total semantics.
+- `tests/js/investment/test_investment_hsbc_multicurrency_replay.mjs` replays a
+  compact anonymized HSBC fixture through the production
+  `renderTransactionTable` pipeline, composed by
+  `tests/js/investment/hsbc_multicurrency_replay_support.mjs` with only
+  rendering, realtime, and network hooks replaced. As the only broker and
+  beside a second broker, it verifies historical Cash and Equity across mixed
+  USD, HKD, and CNH component dates and a same-day currency exchange, current
+  Holdings Cash, the Overview Cash and Equity points, unchanged holdings and
+  market value, and a legacy-marker USD Savings row anchoring the replay.
 - `tests/js/investment/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/python/services/test_investment_import.py` and `tests/python/web/test_more_page.py`: IBKR Trade
