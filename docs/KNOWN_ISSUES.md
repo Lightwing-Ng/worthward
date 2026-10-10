@@ -837,7 +837,22 @@ Shared disclosure motion, 7 Sep 2026: `.ui-collapse` expands with the existing
 natural size. Native keyboard toggles and named accordion behavior remain intact.
 Closing cancels the expansion; reduced-motion preference bypasses it, including
 when that preference changes during playback. The Style tokens Collapse specimen
-and product disclosures share `motion.js` v1.2.0.
+and product disclosures now share `motion.js` v1.2.1, with the initial-velocity
+correction described below.
+
+Shared spring initial velocity, 8 Oct 2026: `motion.js` v1.2.1 corrects the
+underdamped sine coefficient so the declared `initialVelocity` is the actual
+initial normalized displacement velocity. The prior coefficient added twice
+the decay rate, producing an 18/s initial velocity for the zero-velocity bouncy
+preset. The unchanged mass, stiffness, damping, and duration now produce a
+5.83% bouncy peak overshoot, instead of 22.06%. The emphasized spring peaks at
+0.39%, and the standard spring approaches its endpoint without overshooting
+during its 560ms interval. This affects the shared spring easing, including
+disclosure expansion and chip reveal; the separate polynomial easing functions,
+CSS timing tokens, numerical Backtest scroll integrator, overdamped branch, and
+finite-duration endpoint behavior are unchanged. The template uses the matching
+`motion-v1.2.1` cache key. Focused Node tests cover all three presets and signed
+nonzero initial velocities. The user-owned 8688 service was not restarted.
 
 Manual LSTM startup, 7 Sep 2026: the CLI now decodes `--selected-params`
 JSON before validating the requested compute backend. Previously every web
@@ -879,7 +894,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.275.0`
+Documentation version: `v1.275.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
