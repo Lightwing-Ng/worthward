@@ -25,7 +25,7 @@ Werkzeug==3.1.8
 
 # Bayesian and LSTM Apple Silicon/CUDA acceleration. The application still
 # falls back to the deterministic NumPy CPU backend when no device is usable.
-torch==2.14.0
+torch==2.14.1
 
 # Development and quality dependencies pinned for the supported runtime and quality gate.
 pytest==9.1.1
