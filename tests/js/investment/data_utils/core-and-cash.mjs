@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.3.4 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -256,6 +256,7 @@ test('current broker cash converts foreign balances and applies pending once', (
         assert.deepEqual(getInvestmentBrokerEndingCashBalances('hsbc'), {
             HKD: 89.24,
             USD: 23412.54,
+            CNH: 0,
         });
         const fxTimeline = buildInvestmentFxRateTimeline([], 'USD');
         const hsbcSnapshot = getInvestmentBrokerCurrentCashSnapshot(

@@ -1,7 +1,9 @@
 /**
  * Daily equity and ticker-summary composition utilities.
  *
- * Code version: v1.2.1
+ * Code version: v1.3.0
+ * - Added: Current broker/all-account snapshot scope is explicit.
+ * - Fixed: Dated realized amounts use each account currency and current FX.
  * - Fixed: Daily equity materializes reported interest-accrual statement dates
  *   and fails closed when a dated FX conversion is unavailable.
  * - Added: A daily equity point on a reported broker interest-accrual as-of
@@ -350,6 +352,7 @@ export function createInvestmentSummaryUtils(runtime) {
             useAuthoritativePositionSnapshot: allowAuthoritativePositionSnapshot = true,
             useAuthoritativePerformanceSnapshot: allowAuthoritativePerformanceSnapshot = true,
             valuationDate = '',
+            snapshotBrokerScope = '',
         } = {},
     ) {
         const tickerMap = new Map();
@@ -360,7 +363,7 @@ export function createInvestmentSummaryUtils(runtime) {
         const baseCurrency = getInvestmentBaseCurrency();
         const fxTimeline = buildInvestmentFxRateTimeline(orderedTransactions, baseCurrency);
         const authoritativePositionSnapshot = allowAuthoritativePositionSnapshot
-            ? getAuthoritativePositionSnapshotForTransactions(orderedTransactions)
+            ? getAuthoritativePositionSnapshotForTransactions(orderedTransactions, {brokerScope: snapshotBrokerScope})
             : null;
         const authoritativePerformanceSnapshot = allowAuthoritativePerformanceSnapshot
             ? getAuthoritativePerformanceSnapshot()
@@ -673,6 +676,7 @@ export function createInvestmentSummaryUtils(runtime) {
                 status,
                 source,
                 sourceCurrency,
+                transactions: orderedTransactions,
             });
             if (reconciliation.coverageStatus !== 'complete') {
                 if (status === 'complete') status = 'unavailable';
@@ -972,20 +976,17 @@ export function createInvestmentSummaryUtils(runtime) {
                         Number(Number(value).toFixed(12)),
                     ])),
                 );
-            const realizedPnlByDate = pnlUnavailable
-                ? {}
-                : Object.fromEntries(
-                    Object.entries(realizedPnlByDateLocal).map(([ledgerDate, dailyRealizedPnlLocal]) => ([
-                        ledgerDate,
-                        convertAmountToBaseCurrency(
-                            dailyRealizedPnlLocal,
-                            quoteCurrency,
-                            ledgerDate,
-                            fxTimeline,
-                            baseCurrency,
-                        ),
-                    ])),
-                );
+            const realizedPnlByDate = {};
+            if (!pnlUnavailable) {
+                completeRealizedPnlAccounts.forEach((result) => {
+                    Object.entries(result.reconciliation?.realizedPnlByDateLocal || {}).forEach(([date, amount]) => {
+                        const converted = convertAmountToBaseCurrencyAtLatestRate(
+                            amount, result.reconciliation.currency, fxTimeline, baseCurrency,
+                        );
+                        realizedPnlByDate[date] = (realizedPnlByDate[date] || 0) + converted;
+                    });
+                });
+            }
             const safeRealizedPnl = pnlUnavailable ? null : realizedPnl;
             const safeRealizedPnlLocal = pnlUnavailable ? null : realizedPnlLocal;
             const safeUnrealizedPnl = pnlUnavailable ? null : unrealizedPnl;

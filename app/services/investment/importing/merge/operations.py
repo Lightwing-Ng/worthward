@@ -1,8 +1,7 @@
 """Investment import domain: merge.
 
-Code version: v0.4.0
-- Added: Unique Schwab CSV sales supersede provisional thinkorswim workbook
-  sales while retaining both source artifacts.
+Code version: v0.4.2
+- Changed: Call the side-aware Schwab provisional trade reconciliation.
 """
 
 from __future__ import annotations
@@ -313,7 +312,7 @@ def merge_investment_payloads(
         existing_transactions_for_merge,
         incoming_transactions_for_merge,
         superseded_schwab_provisional_trade_count,
-    ) = _ii_schwab_provisional.reconcile_schwab_provisional_sales(
+    ) = _ii_schwab_provisional.reconcile_schwab_provisional_trades(
         existing_transactions_for_merge,
         incoming_transactions_for_merge,
     )
@@ -380,6 +379,7 @@ def merge_investment_payloads(
         ) = _ii_merge_identity._remove_ibkr_csv_stock_trades_superseded_by_gainskeeper(
             existing_transactions_for_merge,
             incoming_transactions_for_merge,
+            normalized_incoming.get("source_artifacts") or [],
         )
     superseded_incoming_ibkr_csv_gainskeeper_stock_trade_count = 0
     if (
@@ -489,11 +489,25 @@ def merge_investment_payloads(
     merged_transactions = merged_non_grant_transactions + merged_grant_transactions
     grant_reconciliation_warnings: list[str] = []
     if incoming_position_snapshot:
+        def belongs_to_snapshot(record: dict[str, Any]) -> bool:
+            source = record.get("source") or {}
+            return (
+                _ii_basics._normalize_broker_code(record.get("broker")) == incoming_broker
+                and _ii_basics._accounts_are_compatible(
+                    incoming_broker,
+                    _normalize_text(record.get("account") or source.get("account")),
+                    incoming_account,
+                )
+            )
+
+        other_transactions = [
+            record for record in merged_transactions if not belongs_to_snapshot(record)
+        ]
         merged_transactions = _ii_records._reconcile_positions_grants_to_snapshot(
-            merged_transactions,
+            [record for record in merged_transactions if belongs_to_snapshot(record)],
             incoming_position_snapshot,
             grant_reconciliation_warnings,
-        )
+        ) + other_transactions
     _ii_records._sort_transactions(merged_transactions)
     merged_ibkr_closed_trade_details = (
         _ii_records._extract_ibkr_closed_trade_details_from_transactions(
@@ -838,7 +852,7 @@ def merge_investment_payloads(
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generator": {
-            "name": "ibkr_csv_to_investment_json",
+            "name": "investment_incremental_merge",
             "version": SCHEMA_VERSION,
             "generated_at": _ii_basics._now_iso(),
         },
@@ -893,6 +907,10 @@ def merge_investment_payloads(
         "manual_security_transfer_attributions": merged_security_transfer_attributions,
         "transactions": merged_transactions,
     }
+    if incoming_broker == "schwab" and "schwab_positions_validation" in incoming_summary:
+        payload["summary"]["schwab_positions_validation"] = incoming_summary[
+            "schwab_positions_validation"
+        ]
     if hsbc_cash_settlement_evidence:
         payload["hsbc_cash_settlement_evidence"] = hsbc_cash_settlement_evidence
     if merged_schwab_suppressed_internal_transfer_rows:

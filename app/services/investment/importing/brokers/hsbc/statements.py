@@ -1,6 +1,6 @@
 """Investment import domain: hsbc statements.
 
-Code version: v0.2.1
+Code version: v0.3.0
 - Added: Cash rows retain their immutable statement sequence identity for
   same-day settlement replay comparisons.
 - Fixed: Statement-pair orders retain the consumed principal and fee rows as
@@ -551,6 +551,7 @@ def _build_hsbc_statement_pdf_cash_capture(
                     record_source["statement_currency_to_base_rate_raw"] = (
                         exchange_rates_to_base[current_currency]
                     )
+                    record_source["statement_currency_to_base_rate_as_of"] = statement_day.isoformat()
                 if mapped_type == "forex_trade_component":
                     forex_pair_reference = (
                         _ii_hsbc_core._extract_hsbc_statement_forex_pair_reference(
@@ -745,28 +746,7 @@ def build_investment_payload_from_hsbc_statement_pdfs(
     ending_cash = (
         _decimal_to_str(ending_cash_dec) if ending_cash_dec is not None else None
     )
-    if cash_captures:
-        latest_ending_by_currency = latest_cash_capture.get("ending_by_currency") or {}
-        latest_rates_to_base = latest_cash_capture.get("exchange_rates_to_base") or {}
-    else:
-        latest_ending_by_currency = {}
-        latest_rates_to_base = {}
-    ending_cash_base_currency = None
-    if cash_captures:
-        ending_cash_base_currency_dec = ZERO
-        for raw_currency, raw_amount in latest_ending_by_currency.items():
-            currency = _ii_merge_identity._normalize_hsbc_currency_code(raw_currency)
-            amount = _ii_hsbc_cash._parse_decimal_text_or_none(raw_amount)
-            rate = _ii_hsbc_cash._parse_decimal_text_or_none(
-                latest_rates_to_base.get(currency)
-            )
-            if not currency or amount is None:
-                continue
-            if currency == "USD":
-                ending_cash_base_currency_dec += amount
-            elif rate is not None and rate > ZERO:
-                ending_cash_base_currency_dec += amount / rate
-        ending_cash_base_currency = _decimal_to_str(ending_cash_base_currency_dec)
+    ending_cash_base_currency = ending_cash
     source_artifacts = [
         capture["source_artifact"]
         for capture in captures
@@ -1666,22 +1646,7 @@ def _build_hsbc_statement_pair_payload(
             cash_capture.get("component_post_dates") or {}
         )
     )
-    ending_cash_base_currency = None
-    if ending_cash_by_currency:
-        ending_cash_base_currency_dec = ZERO
-        exchange_rates_to_base = cash_capture.get("exchange_rates_to_base") or {}
-        for currency, raw_amount in ending_cash_by_currency.items():
-            amount = _ii_hsbc_cash._parse_decimal_text_or_none(raw_amount)
-            rate = _ii_hsbc_cash._parse_decimal_text_or_none(
-                exchange_rates_to_base.get(currency)
-            )
-            if amount is None:
-                continue
-            if currency == "USD":
-                ending_cash_base_currency_dec += amount
-            elif rate is not None and rate > ZERO:
-                ending_cash_base_currency_dec += amount / rate
-        ending_cash_base_currency = _decimal_to_str(ending_cash_base_currency_dec)
+    ending_cash_base_currency = ending_cash
 
     for record in transactions:
         record["broker"] = "hsbc"

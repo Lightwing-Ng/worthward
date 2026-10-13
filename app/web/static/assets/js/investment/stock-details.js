@@ -1,7 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.40.3
+ * Code version: v0.40.5
+ * - Fixed: Uses the audited dated cash and realized-basis helpers.
+ * - Fixed: Loads residual transfer-basis conservation in data utilities.
  * - Changed: Loads Investment data utilities v1.121.0.
  * - Changed: Loads Investment data utilities v1.120.5.
  * - Changed: Loads settlement utilities with either-side and optional fees.
@@ -20,7 +22,7 @@ import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.121.0';
+} from './data-utils.js?v=investment-data-utils-v1.122.0';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -66,7 +68,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.40.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.40.5';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,

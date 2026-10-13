@@ -1,7 +1,8 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.1.1
+ * Code version: v1.1.2
+ * - Fixed: Current Holdings includes authoritative positions-only accounts.
  * - Fixed: Realtime Holdings delegates current NAV arithmetic to the shared
  *   total-equity calculation, preventing dated interest accrual double counting.
  * - Added: Current Holdings Total equity includes a reported broker
@@ -561,6 +562,7 @@ function getInvestmentHoldingsRealtimeState() {
                 runtime.state.investmentLatestPricesCache,
                 safeTotalEquity,
                 runtime.state.investmentTickerClosePricesCache,
+                {snapshotBrokerScope: 'all'},
             ),
         ).map((summary) => {
             const nextSummary = { ...summary };

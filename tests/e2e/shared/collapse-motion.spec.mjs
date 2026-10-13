@@ -1,4 +1,4 @@
-/* Code version: v1.1.2 */
+/* Code version: v1.1.3 */
 import {expect, test} from '@playwright/test';
 
 async function disclosureRotation(summary) {
@@ -20,6 +20,17 @@ for (const width of [1137, 390]) {
             await summary.scrollIntoViewIfNeeded();
             expect(await disclosureRotation(summary)).toBe(-90);
             const closed = await details.evaluate(el => el.getBoundingClientRect().height);
+            await details.evaluate(el => {
+                const animate = el.animate;
+                // Capture the real opening animation before browser scheduling
+                // can finish it between separate assertions and sampling.
+                el.animate = function (...args) {
+                    el.animate = animate;
+                    const animation = animate.apply(this, args);
+                    animation.pause();
+                    return animation;
+                };
+            });
             await summary.press('Enter');
             await expect(details).toHaveAttribute('open');
             await expect.poll(() => disclosureRotation(summary)).toBe(0);

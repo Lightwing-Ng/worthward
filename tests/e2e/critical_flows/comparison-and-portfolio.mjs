@@ -1,4 +1,4 @@
-/* Code version: v1.4.5 */
+/* Code version: v1.4.6 */
 import {
     expect,
     test,
@@ -367,7 +367,11 @@ test('keeps Backtest pending glass fixed over exact graphics and values', async 
     await expect(page.locator('#backtest_probability_detail_panel')).toBeVisible();
     const tuneButton = page.locator('[data-trade-strategy-tune-button]');
     const tuneColors = await tuneButton.evaluate((button) => {
-        const parse = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        // Chromium serializes color-mix() results as color(srgb r g b) with 0-1 channels.
+        const parse = (value) => {
+            const channels = (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+            return value.startsWith('color(srgb') ? channels.map((channel) => channel * 255) : channels;
+        };
         const luminance = (value) => {
             const channels = parse(value).map((channel) => {
                 const normalized = channel / 255;
@@ -395,8 +399,7 @@ test('keeps Backtest pending glass fixed over exact graphics and values', async 
                 / (Math.min(foreground, backdrop) + 0.05),
         };
     });
-    // Dark mode lets the pressed action follow the surrounding surface, so its primary-blue
-    // glyph must stay legible against the page background it now shows through.
+    // Dark mode reveals the carrying surface; the active glyph must contrast with that backdrop.
     expect(tuneColors.backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(tuneColors.color).toBe(tuneColors.activeColor);
     expect(tuneColors.contrast).toBeGreaterThanOrEqual(4.5);

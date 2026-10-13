@@ -1,7 +1,7 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.13.1
+Code version: v0.13.2
 """
 
 from __future__ import annotations
@@ -965,6 +965,8 @@ def build_standard_investment_xlsx(
                 column=column_number,
                 value=value,
             )
+        # An exported timestamp includes explicit seconds, even at midnight.
+        transaction_sheet.cell(row=row_number, column=3).number_format = "yyyy-mm-dd hh:mm:ss"
     workbook.active = 0
     buffer = BytesIO()
     workbook.save(buffer)
@@ -1072,6 +1074,7 @@ def _datetime_cell(cell: Any) -> tuple[datetime, bool]:
         and parsed.minute == 0
         and parsed.second == 0
         and parsed.microsecond == 0
+        and "hh:mm:ss" not in str(cell.number_format).lower()
     )
     if defaulted_time:
         parsed = parsed.replace(hour=23)

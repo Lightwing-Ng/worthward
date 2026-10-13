@@ -1,7 +1,7 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.2
  * - Added: Explicit per-currency ending balances are native cash anchors,
  *   each dated by its own component post date and converted once.
  * - Changed: Loads HSBC evidence that accepts a legacy pasted USD Savings
@@ -260,7 +260,7 @@ export function createInvestmentCoreCashUtils(runtime) {
 
     function getInvestmentStartingCash() {
         const rawValue = window.WORTHWARD_INVESTMENT_DATA?.starting_cash;
-        if (rawValue === undefined || rawValue === null || rawValue === '') {
+        if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') {
             return 0;
         }
         const numericValue = Number(rawValue);
@@ -336,13 +336,13 @@ export function createInvestmentCoreCashUtils(runtime) {
     function getInvestmentEndingCashBalances() {
         const rawBalances = window.WORTHWARD_INVESTMENT_DATA?.ending_cash_by_currency;
         if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
-            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances, {preserveZero: true});
             if (Object.keys(normalizedBalances).length) return normalizedBalances;
         }
         const endingCash = getInvestmentEndingCash();
         return endingCash === null
             ? null
-            : createCashLedger(endingCash, getInvestmentBaseCurrency());
+            : {[getInvestmentBaseCurrency()]: endingCash};
     }
 
     function getInvestmentEndingCashInBaseCurrency() {
@@ -372,7 +372,7 @@ export function createInvestmentCoreCashUtils(runtime) {
         const summary = summaries[normalizedBroker];
         if (!summary || typeof summary !== 'object') return null;
         const rawValue = summary.ending_cash ?? summary.ending_cash_raw;
-        if (rawValue === undefined || rawValue === null || rawValue === '') {
+        if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') {
             return null;
         }
         const numericValue = Number(rawValue);
@@ -388,13 +388,13 @@ export function createInvestmentCoreCashUtils(runtime) {
         if (!summary || typeof summary !== 'object') return null;
         const rawBalances = summary.ending_cash_by_currency;
         if (rawBalances && typeof rawBalances === 'object' && !Array.isArray(rawBalances)) {
-            const normalizedBalances = cloneCashLedgerBalances(rawBalances);
+            const normalizedBalances = cloneCashLedgerBalances(rawBalances, {preserveZero: true});
             if (Object.keys(normalizedBalances).length) return normalizedBalances;
         }
         const endingCash = getInvestmentBrokerEndingCash(normalizedBroker);
         return endingCash === null
             ? null
-            : createCashLedger(endingCash, getInvestmentBaseCurrency());
+            : {[getInvestmentBaseCurrency()]: endingCash};
     }
 
     function getInvestmentBrokerEndingCashInBaseCurrency(brokerCode) {
@@ -446,7 +446,7 @@ export function createInvestmentCoreCashUtils(runtime) {
         // snapshot plus the ledger movement since the boundary, so the
         // difference is the post-snapshot cash movement per currency.
         const projected = cloneCashLedgerBalances(projectedBalances || {});
-        const authoritative = cloneCashLedgerBalances(authoritativeBalances || {});
+        const authoritative = cloneCashLedgerBalances(authoritativeBalances || {}, {preserveZero: true});
         const delta = {};
         Object.entries(authoritative).forEach(([currency, value]) => {
             const change = (Number(projected[currency]) || 0) - (Number(value) || 0);
@@ -580,11 +580,35 @@ export function createInvestmentCoreCashUtils(runtime) {
             .pop() || '';
     }
 
-    function getInvestmentBrokerPositionSnapshotAsOf(brokerCode) {
+    function getInvestmentBrokerPositionSnapshotAsOf(brokerCode, {accountTokens = null} = {}) {
         const normalizedBroker = String(brokerCode || '').trim().toLowerCase();
         if (!normalizedBroker) return '';
-        const summary = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries?.[normalizedBroker];
+        const includedAccounts = Array.isArray(accountTokens) ? new Set(accountTokens) : null;
+        const data = window.WORTHWARD_INVESTMENT_DATA || {};
+        const snapshots = runtime.getAuthoritativeBrokerPositionSnapshots().filter((snapshot) => (
+            snapshot.broker === normalizedBroker
+            && (!includedAccounts || includedAccounts.has(snapshot.accountToken))
+        ));
+        if (snapshots.length) {
+            const dates = snapshots.map((snapshot) => normalizeLedgerDate(snapshot.positionSnapshotAsOf));
+            // The combined position cannot be applied before any included account.
+            return dates.every(Boolean) ? dates.sort().at(-1) : '';
+        }
+        const includesAccount = (snapshot) => !includedAccounts || includedAccounts.has(
+            runtime.getTransactionLotScope({
+                broker: normalizedBroker,
+                account: snapshot.account_id ?? snapshot.account ?? '',
+            }).accountToken,
+        );
+        const canonicalPositionExists = Object.values(data.broker_snapshots || {}).some((snapshot) => (
+            snapshot && String(snapshot.broker || '').trim().toLowerCase() === normalizedBroker
+            && includesAccount(snapshot)
+            && (Object.hasOwn(snapshot, 'position_snapshot_authoritative') || snapshot.position_snapshot)
+        ));
+        if (canonicalPositionExists) return '';
+        const summary = data.broker_summaries?.[normalizedBroker];
         if (!summary || typeof summary !== 'object') return '';
+        if (!includesAccount(summary)) return '';
         const explicitDate = normalizeLedgerDate(summary.position_snapshot_as_of);
         if (explicitDate) return explicitDate;
         const rawSnapshot = summary.position_snapshot;
@@ -669,7 +693,7 @@ export function createInvestmentCoreCashUtils(runtime) {
             && typeof authoritativeBalances === 'object'
             && !Array.isArray(authoritativeBalances)
         )
-            ? cloneCashLedgerBalances(authoritativeBalances)
+            ? cloneCashLedgerBalances(authoritativeBalances, {preserveZero: true})
             : {};
         const balanceAdjustments = {};
         Object.entries(normalizedAuthoritativeBalances).forEach(([currency, value]) => {
@@ -1026,11 +1050,13 @@ export function createInvestmentCoreCashUtils(runtime) {
             : createCashLedger(fallbackCash, baseCurrency);
     }
 
-    function cloneCashLedgerBalances(balances) {
+    function cloneCashLedgerBalances(balances, {preserveZero = false} = {}) {
         return Object.entries(balances || {}).reduce((snapshot, [currency, value]) => {
             const normalizedCurrency = normalizeCurrencyCode(currency);
             const numericValue = Number(value);
-            if (!normalizedCurrency || !Number.isFinite(numericValue) || Math.abs(numericValue) < 1e-9) {
+            if (value === null || value === undefined || String(value).trim() === ''
+                || !normalizedCurrency || !Number.isFinite(numericValue)
+                || (!preserveZero && Math.abs(numericValue) < 1e-9)) {
                 return snapshot;
             }
             snapshot[normalizedCurrency] = numericValue;
@@ -1306,10 +1332,12 @@ export function createInvestmentCoreCashUtils(runtime) {
         recordForexTradeFxRates(transactions, dateRates, normalizedBaseCurrency);
         (Array.isArray(transactions) ? transactions : []).forEach((txn) => {
             const currency = normalizeCurrencyCode(formatTransactionCurrency(txn));
-            const ledgerDate = normalizeLedgerDate(txn?.date);
+            const statementDate = normalizeLedgerDate(txn?.source?.statement_currency_to_base_rate_as_of);
             const statementRate = Number(txn?.source?.statement_currency_to_base_rate_raw);
-            if (currency && currency !== normalizedBaseCurrency && ledgerDate && Number.isFinite(statementRate) && statementRate > 0) {
-                recordFxRateForDate(dateRates, currency, ledgerDate, statementRate);
+            if (currency && currency !== normalizedBaseCurrency && statementDate
+                && Number.isFinite(statementRate) && statementRate > 0
+                && dateRates[currency]?.[statementDate] === undefined) {
+                recordFxRateForDate(dateRates, currency, statementDate, statementRate);
             }
         });
 
@@ -1343,12 +1371,6 @@ export function createInvestmentCoreCashUtils(runtime) {
         const dates = Array.isArray(entry.dates) ? entry.dates : [];
         for (let index = dates.length - 1; index >= 0; index -= 1) {
             if (dates[index] <= normalizedDate) {
-                const rate = Number(entry.values?.[dates[index]]);
-                return Number.isFinite(rate) && rate > 0 ? rate : null;
-            }
-        }
-        for (let index = 0; index < dates.length; index += 1) {
-            if (dates[index] >= normalizedDate) {
                 const rate = Number(entry.values?.[dates[index]]);
                 return Number.isFinite(rate) && rate > 0 ? rate : null;
             }

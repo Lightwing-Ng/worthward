@@ -1,6 +1,6 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.5.2
+Code version: v1.5.3
 - Added: Classified Longbridge connection check for the broker authorize action.
 - Added: Investment session-token handler for import dialog readiness.
 - Changed: Investment transaction cache schema v16 invalidates payloads built
@@ -403,7 +403,7 @@ def report_fetch_abort_debug_event(
 
 
 PORTFOLIO_BENCHMARK_TICKERS = ("SPY", "QQQ")
-INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v16"
+INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION = "investment-transactions-v17"
 INVESTMENT_TRANSACTIONS_CACHE_PATH = (
     SETTINGS_STORE_DIR / "investment_cache" / "transactions_payload.json"
 )

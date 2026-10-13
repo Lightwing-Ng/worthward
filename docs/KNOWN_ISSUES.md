@@ -1,5 +1,72 @@
 # Known issues and operating constraints
 
+Follow-up audit, 13 Oct 2026: additional Claude audit entries were independently
+checked with isolated regressions. Confirmed merge defects included reused
+execution occurrences, repeated FX legs collapsed into one occurrence,
+positional money-market identities, cross-account grant reconciliation,
+duplicated closed-lot metadata, and falsely continuous GainsKeeper coverage.
+The fixes conserve transaction counts and amounts across repeated imports and
+preserve report totals when individual lot attribution is ambiguous. Transfer
+choices survive uniquely evidenced reexports; unresolved choices stay inactive
+and reviewable. Cache publication, strict storage decoding, zero balances,
+dated cash provenance, and account-scoped snapshots have dedicated regressions.
+These are source and isolated-test results; they do not establish that a live
+service has adopted the source or that missing historical documents exist. The
+complete gate in [Testing](TESTING.md#complete-audit-verification) applies to the
+verified local snapshot before integration with `origin/main` `f24d2429`, not to
+the integrated PR head.
+
+Pending cash and linked trade dates, 13 Oct 2026: isolated regressions reproduced
+two previously static findings. Pending HSBC history rows discarded foreign
+cash when replacing the replay with the native USD boundary. The projection now
+replaces only USD and retains the row's dated foreign balances, with signed
+pending cash added once. Tests include a later HSBC transaction so the final-row
+balance override cannot hide the error. Schwab linked-trade validation formerly
+included the day before every Hong Kong capture, even when New York had the same
+date. It now reconstructs the eligible dates from the complete timestamp and
+time-zone rules, preserving genuine ambiguity and revision checks.
+
+Claude audit completion, 13 Oct 2026: the interrupted CI work was recovered
+from its temporary worktrees by individual changes. HSBC browser fixtures now
+carry valid immutable posting evidence, source order, and producer-valid order
+references without changing their accounting oracles. UI checks follow the
+current overlay and circular-button contracts. Dark pressed strategy-tuning
+actions retain their transparent surface with an accessible blue tint, and
+motion tests capture the real animation before sampling to avoid a completion
+race. These changes do not synchronize sibling applications or prove adoption
+by a running user-owned service.
+
+The same audit reproduced two import-boundary defects using temporary stores.
+Schwab rows marked Canceled, Working, or Unfilled were accepted when a Price
+column was present, and a substring check treated Unfilled as Filled. Explicit
+securities status now requires execution evidence, and an explicit filled
+quantity takes precedence over order quantity. A supported canceled or working
+order retains its evidenced partial fill rather than discarding an execution.
+Separately, a second
+valid import could finish between the first import's write and readback,
+causing the first successful write to be reported as a mismatch. The production
+composition now holds the reentrant ledger lock through readback and evidence
+verification, without removing corruption checks or changing stored records.
+
+The lot audit also reproduced a loss of basis after a FIFO-reconstructed
+security transfer under a different buy/sell matcher. An equal per-share
+adjustment clipped individual lot prices at zero while leaving the aggregate
+cost unchanged, so later liquidation consumed a different basis. Reconstructed
+transfers use available FIFO lots only when they reproduce the evidenced basis;
+otherwise the selected matcher remains authoritative for available inventory.
+Residual basis adjustments conserve the sum of remaining lot costs. The regression includes zero-cost grants and a
+complete subsequent sale; no persisted transfer records are rewritten.
+
+The legacy CMB Wing Lung email-builder audit reproduced a related evidence
+failure: a canceled sell could fall back to requested quantity and limit price,
+and a sale without earlier purchases could create an inferred zero-cost bonus
+grant. Email builders now require explicit execution quantity and price, retain
+evidenced partial fills, and warn about incomplete trade history without
+inventing grants. Actual sales remain eligible for incremental import because
+earlier purchases may exist in the stored ledger. Existing manual grants are
+unchanged. This repair is verified through the public Python builders and
+registry; the web import route has no dedicated CMB Wing Lung email branch.
+
 HSBC multicurrency dated cash, 10 Oct 2026: Transaction History Cash and
 Equity for HSBC rows from the USD Savings ledger date onward fell by the USD
 value of the HKD and CNH balances plus one settlement correction, then
@@ -43,19 +110,21 @@ Cash, market value, holdings, and every daily Overview point were identical
 before and after, and no other broker's Transaction History value changed.
 Accepting the legacy rows also anchors USD Savings to their bank balances,
 which closes several earlier pre-existing Cash gaps and removes the provisional
-flag that the pre-pass had applied retroactively. Three limitations remain:
-Transaction History applies each settlement boundary's posted balance in trade
-execution order, so when HSBC posts a day's settlements in another order a row
-between them can omit later-posted proceeds (this affected earlier days and is
-now also visible on one row whose day previously failed closed; an
-amount-based accrual like the Overview replay is the planned fix); an
-unresolved order row still projects the posted USD Savings balance plus
-pending settlement, as documented, and so omits foreign-currency cash; and the
-Overview's final point can still step when brokers outside the current-cash
+flag that the pre-pass had applied retroactively. The 13 Oct 2026 follow-up
+also reproduced and fixed reversed execution/posting order. History projects a
+comparable bank boundary into execution order by excluding later executions
+already posted and including earlier executions not yet posted. Buy/sell pairs,
+interleaved principal and fees, and intervening deposits have isolated monetary
+oracles; incomparable source domains still cannot establish that chronology.
+The Overview's final point can still step when brokers outside the current-cash
 scope keep residual replay cash, as described in the 22 Sep 2026 entry below.
-The production ledger, caches, and evidence were not rewritten, and the
-user-owned 8688 process was not restarted, so it adopts this change at its next
-manual restart.
+The repair did not rewrite the production ledger, caches, or evidence, and no
+stop or restart command was sent to the user-owned 8688 process. Development
+reload behavior is not live-service acceptance. The final offline replay still has two historical cash rows
+without eligible on-or-before FX evidence. Those values remain unavailable;
+future quotes and missing source documents are not fabricated. An ambiguous
+oldest HSBC cash row is now rejected with a warning, but already persisted
+guessed rows are not silently rewritten without new source evidence.
 
 Overlay backdrop hover lift and stale E2E expectations, 10 Oct 2026: the
 sidebar backdrop and the Backtest/Prices controls backdrop are full-viewport
@@ -71,12 +140,12 @@ notification Frosted Glass variant for modals and banners (26 Sep), the
 transparent Dark pressed tuning action (24 Sep), and the HSBC pending marker
 that appears only on the order reference (22 Sep). Two measurement races now
 wait for the settled theme transition and the redrawn Stock details chart.
-Still open: the Dark pressed tuning glyph measures about 2.96:1 against the page
-background, below the 4.5:1 its regression requires, pending a design decision;
-and eight HSBC replay regressions use settlement or direct-cash fixtures without
-the evidence that the 21 Sep evidence contract requires. Their expected ledger
-values remain unchanged until the fixtures carry that evidence. No production
-store was read or written, and the user-owned 8688 service was not restarted.
+At the 10 Oct checkpoint, the Dark pressed tuning glyph measured about 2.96:1
+against the page background, below the 4.5:1 its regression required, and eight
+HSBC replay regressions lacked settlement or direct-cash evidence required by the
+21 Sep contract. The 13 Oct audit above resolved the contrast and completed the
+fixtures while retaining their accounting oracles. The earlier repair did not
+read or write a production store or restart the user-owned 8688 service.
 
 Econometric Price Field audit follow-up, 1 Oct 2026: an independent Codex
 audit of the four econometric Price Field strategies rated a warmup gap medium
@@ -951,7 +1020,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.276.0`
+Documentation version: `v1.277.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
@@ -1264,26 +1333,40 @@ is claimed and concurrent layout work remains preserved.
   confirmation takes precedence in both persisted replay and browser replay.
   A linked dividend or withholding row displays its canonical ticker before
   the preserved broker description.
-- A Schwab sell entered from a thinkorswim page through the manual XLSX
-  workbook is provisional only when its `TOS-PAGE-...-SELL-...` reference and
-  entered timestamp agree. A later paired Schwab Transactions and Positions
+- A Schwab buy or sell entered from a thinkorswim page through the manual
+  XLSX workbook is provisional only when its `TOS-PAGE-...-BUY-...` or
+  `TOS-PAGE-...-SELL-...` reference matches the row's Type and its entered
+  timestamp agrees. A later paired Schwab Transactions and Positions
   import replaces that row only when account, ticker, side, currency, absolute
   quantity, execution price, and the New York or entered Hong Kong trade date
-  identify one CSV sale. The CSV supplies the final fee and net proceeds;
+  identify one CSV trade on the same side. A buy never supersedes a sale or
+  the reverse. An overnight-session fill entered in Hong Kong time converts to
+  the previous New York evening, while Schwab books it on the next trade date;
+  both dates are eligible. The CSV supplies the final fee and net amount;
   the workbook and both CSV source artifacts remain available, and the CSV
   row retains the manual reference. Ambiguous or conflicting candidates stop
-  the import for review. If the CSV omits the sale, the provisional row stays.
-  Once linked, a later CSV must retain the original sale before another sale
-  for the same account, ticker, and currency in the eligible date window can
-  be accepted. A missing original row or a revised quantity, price, date,
-  fee, or proceeds stops import for manual review instead of adding a sale.
+  the import for review. If the CSV omits the trade, the provisional row stays.
+  Once linked, a later CSV that lists same-side trades for that account,
+  ticker, and currency in the eligible date window must retain the original
+  row. A missing original row, a revised quantity, price, date, fee, or net
+  amount, or a second same-side row at the linked quantity and price stops
+  import for manual review instead of adding a trade. A distinct same-side
+  fill at another price is accepted, so repeated full-history exports with
+  several same-size buys on one day still import.
   A date-only CSV cannot prove whether the page's clock was New York or Hong
   Kong time; the two-day candidate window is an explicitly inferred attribution
-  supported by a unique exact-price fill. An intraday CSV timestamp must agree
+  supported by a unique exact-price fill. The window contains only one date
+  when the complete Hong Kong timestamp converts to the same New York date;
+  linked validation uses that same conversion, including daylight-saving rules,
+  rather than always adding the previous calendar date. An intraday CSV timestamp must agree
   with one of those two interpretations.
   A stated Schwab trade `Amount` must also reconcile with quantity, price, and
   `Fees & Comm` before its net proceeds are accepted.
-  A transaction-only manual replay cannot clear Schwab cash. With at least one
+  A transaction-only manual replay cannot clear Schwab cash. Until the next
+  Positions import, a provisional buy adds its shares while Schwab Cash stays
+  at the last Positions balance, so Total equity overstates by the bought
+  shares' market value (a provisional sale understates it by the sold shares'
+  market value). With at least one
   listed security, an older Positions snapshot cannot roll back newer cash or
   positions. Cash-only Positions exports still lack an empty-holdings snapshot
   boundary and need separate reconciliation before they can clear old holdings.

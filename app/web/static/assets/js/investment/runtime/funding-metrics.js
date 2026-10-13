@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
+ * - Fixed: Current broker metrics request their explicit snapshot scope.
  * - Changed: Holdings metrics expose the ticker summaries behind their realized
  *   total so historical chart hover can reuse the same attribution.
  * - Fixed: HSBC sell-settlement principal adjustments and separately posted
@@ -380,7 +381,8 @@ function getHoldingsSummaryMetrics(
                 safeTransactions,
                 safeLatestPrices,
                 TOTAL_EQUITY,
-                runtime.normalizePriceHistoryPayload(window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {})
+                runtime.normalizePriceHistoryPayload(window.WORTHWARD_INVESTMENT_DATA?.price_history_by_ticker || {}),
+                {snapshotBrokerScope: brokerCode},
             ),
         );
         const resolvedBrokerBenefitMetrics = brokerBenefitMetrics || getBrokerBenefitMetrics(

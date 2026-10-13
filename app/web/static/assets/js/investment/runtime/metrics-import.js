@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.3.2
+ * Code version: v1.3.3
+ * - Fixed: Pending-trade Metrics uses current multicurrency Total equity.
  * - Changed: Import height reads the canonical responsive circular-action size.
  * - Added: Initial Holdings loading reports completed work stages and rejects
  *   stale or interrupted requests before claiming completion.
@@ -281,7 +282,7 @@ function getInvestmentBrokerSummaryTotalEquity(brokerCode) {
         const latestProcessed = [...runtime.state.investmentProcessedTransactionsCache].reverse().find((txn) => (
             runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === normalizedBrokerCode
         ));
-        const brokerTotalEquity = Number(latestProcessed?.broker_total_equity);
+        const brokerTotalEquity = Number(latestProcessed?.broker_current_total_equity ?? latestProcessed?.broker_total_equity);
         return Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : 0;
     }
 

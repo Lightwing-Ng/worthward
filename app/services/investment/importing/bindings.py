@@ -1,6 +1,6 @@
 """Investment import domain: bindings.
 
-Code version: v0.2.1
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -474,6 +474,9 @@ def normalize_investment_internal_transfer_bindings(
             current_source_identity = _investment_internal_transfer_source_identity(
                 record
             )
+            aliases = (record.get("source") or {}).get("transfer_source_identity_aliases") or []
+            if historical_source_identity in aliases:
+                current_source_identity = historical_source_identity
             if len(current_source_identity) != len(historical_source_identity):
                 continue
             if any(
@@ -500,15 +503,20 @@ def normalize_investment_internal_transfer_bindings(
     for source_key, target_key in normalized_bindings.items():
         stable_source_key = resolve_stable_key(source_key)
         stable_target_key = resolve_stable_key(target_key)
+        resolved_pair = (
+            len(effective_key_index.get(stable_source_key, [])) == 1
+            and len(effective_key_index.get(stable_target_key, [])) == 1
+        )
         if (
             not stable_source_key
             or not stable_target_key
             or stable_source_key == stable_target_key
-            or stable_target_key in claimed_target_keys
+            or (resolved_pair and stable_target_key in claimed_target_keys)
         ):
             continue
         migrated_bindings[stable_source_key] = stable_target_key
-        claimed_target_keys.add(stable_target_key)
+        if resolved_pair:
+            claimed_target_keys.add(stable_target_key)
     return migrated_bindings
 
 
@@ -571,6 +579,15 @@ def normalize_investment_internal_transfer_ignored_source_keys(
             for record_id, effective_key in effective_key_by_record.items()
             if key == effective_key or key == legacy_key_by_record.get(record_id)
         ]
+        if not matches:
+            # Match aliases against each current, uniquely resolved source key.
+            for record in transactions:
+                source = record.get("source") or {}
+                base = build_investment_internal_transfer_binding_key(record)
+                for alias in source.get("transfer_source_identity_aliases") or []:
+                    alias_key = "v3:" + json.dumps([base, alias], ensure_ascii=False, separators=(",", ":"))
+                    if alias_key == key and id(record) in effective_key_by_record:
+                        matches.append(effective_key_by_record[id(record)])
         if len(set(matches)) != 1:
             continue
         migrated_key = matches[0]
@@ -792,19 +809,32 @@ def normalize_investment_security_transfer_attributions(
         source_account = _normalize_text(raw_attribution.get("source_account"))
         if not receipt_key or not source_broker or not source_account:
             continue
-        if resolved_binding_index:
+        receipt_status = ""
+        if isinstance(transactions, list) or binding_index is not None:
             receipt_records = resolved_binding_index.get(receipt_key, [])
             if len(receipt_records) != 1:
-                continue
-            receipt_leg = _ii_records._security_transfer_reconciliation_leg(
-                receipt_records[0]
-            )
-            if (
-                receipt_leg is None
-                or receipt_leg["type"] != "transfer_in"
-                or receipt_leg["broker"] != "schwab"
-            ):
-                continue
+                base_matches = {
+                    id(record)
+                    for records in resolved_binding_index.values()
+                    for record in records
+                    if build_investment_internal_transfer_binding_key(record)
+                    == receipt_key
+                }
+                receipt_status = (
+                    "receipt_identity_ambiguous"
+                    if len(receipt_records) > 1 or len(base_matches) > 1
+                    else "receipt_identity_unresolved"
+                )
+            else:
+                receipt_leg = _ii_records._security_transfer_reconciliation_leg(
+                    receipt_records[0]
+                )
+                if (
+                    receipt_leg is None
+                    or receipt_leg["type"] != "transfer_in"
+                    or receipt_leg["broker"] != "schwab"
+                ):
+                    receipt_status = "receipt_identity_unresolved"
         attribution = {
             "schema_version": "1",
             "source_broker": source_broker,
@@ -813,6 +843,8 @@ def normalize_investment_security_transfer_attributions(
         attested_at = _normalize_text(raw_attribution.get("attested_at"))
         if attested_at:
             attribution["attested_at"] = attested_at
+        if receipt_status:
+            attribution["status"] = receipt_status
         normalized[receipt_key] = attribution
     return normalized
 
@@ -934,6 +966,7 @@ def validate_investment_security_transfer_attribution(
     *,
     existing_attributions: Any = None,
     binding_index: dict[str, list[dict[str, Any]]] | None = None,
+    manual_bindings: Any = None,
 ) -> dict[str, Any]:
     """Validate a user-attested source account without fabricating source evidence."""
     if not isinstance(transactions, list):
@@ -1004,6 +1037,11 @@ def validate_investment_security_transfer_attribution(
             "The selected source broker and account are not represented by imported ledger evidence."
         )
 
+    normalized_attributions = normalize_investment_security_transfer_attributions(
+        existing_attributions,
+        transactions=transactions,
+        binding_index=index,
+    )
     matching_source_evidence = (
         _ii_records._security_transfer_attribution_source_evidence(
             [
@@ -1023,16 +1061,53 @@ def validate_investment_security_transfer_attribution(
             "More than one matching source transfer-out is imported; select the exact source leg manually."
         )
     if len(matching_source_evidence) == 1:
+        source_leg = matching_source_evidence[0]
+        for other_key, attribution in normalized_attributions.items():
+            if other_key == normalized_receipt_key:
+                continue
+            other_records = index.get(other_key, [])
+            if len(other_records) != 1 or other_records[0] is receipt:
+                continue
+            other_leg = _ii_records._security_transfer_reconciliation_leg(
+                other_records[0]
+            )
+            if (
+                other_leg is not None
+                and _ii_records._security_transfer_attribution_source_evidence(
+                    [source_leg], other_leg,
+                    source_broker=attribution["source_broker"],
+                    source_account=attribution["source_account"],
+                )
+            ):
+                raise ValueError(
+                    "The source transfer-out is already reserved by another attribution."
+                )
+        for source_key, target_key in normalize_investment_internal_transfer_bindings(
+            manual_bindings, transactions=transactions
+        ).items():
+            source_matches = index.get(source_key, [])
+            target_matches = index.get(target_key, [])
+            if (
+                len(source_matches) != 1
+                or source_matches[0] is not source_leg["record"]
+                or len(target_matches) != 1
+                or target_matches[0] is receipt
+            ):
+                continue
+            try:
+                validate_investment_internal_transfer_binding(
+                    transactions, source_key, target_key, binding_index=index
+                )
+            except ValueError:
+                continue
+            raise ValueError(
+                "The source transfer-out is already linked to another receipt."
+            )
         # The user has explicitly named the source account and there is exactly
         # one matching immutable source record.  Persisting this confirmation is
         # safe: reconciliation will mark it evidence-backed, never as an overlay.
         return receipt
 
-    normalized_attributions = normalize_investment_security_transfer_attributions(
-        existing_attributions,
-        transactions=transactions,
-        binding_index=index,
-    )
     available_quantity = _security_transfer_source_quantity_before(
         transactions,
         source_broker=normalized_source_broker,
@@ -1145,7 +1220,7 @@ def _is_investment_internal_transfer_fx_pair(
         _is_ibkr_base_currency_equivalent_cash_record(source)
         and target_broker in _INVESTMENT_INTERNAL_TRANSFER_BANK_BROKERS
         and _investment_internal_transfer_type(target) == "withdrawal"
-        and target_currency in {"CNH", "CNY", "HKD", "RMB"}
+        and target_currency in {"CNH", "CNY", "RMB"}
     )
 
 
@@ -1318,6 +1393,8 @@ def validate_investment_internal_transfer_binding(
         )
 
     source_currency = _normalize_text(source.get("currency")).upper()
+    if _is_ibkr_base_currency_equivalent_cash_record(source):
+        source_currency = "USD"
     target_currency = _normalize_text(target.get("currency")).upper()
     is_fx_pair = _is_investment_internal_transfer_fx_pair(source, target)
     if (

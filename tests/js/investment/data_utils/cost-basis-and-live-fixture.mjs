@@ -1,4 +1,4 @@
-/* Code version: v1.2.4 */
+/* Code version: v1.2.6 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentFundingMetricsRuntime} from '../../../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
@@ -634,6 +634,151 @@ test('unknown transfer-in preserves existing lot order for subsequent FIFO sells
     assert.equal(dram.costBasisUnavailableReason, 'open_position_cost_basis_unknown');
     assert.equal(dram.pnlUnavailable, true);
     assert.equal(dram.pnlUnavailableReason, 'open_position_cost_basis_unknown');
+});
+
+function makeTransferBasisTrade(type, day, quantity, price, commission = 0) {
+    return makeScopedDramTrade({
+        broker: 'ibkr', account: 'U00000001', type,
+        date: `2026-08-${String(day).padStart(2, '0')}`,
+        quantity, price, commission,
+    });
+}
+
+function replayTransferBasisState(transactions) {
+    const utils = createUtils();
+    const state = utils.createPositionState('DRAM');
+    transactions.forEach((txn) => utils.applyInvestmentTransactionToState(
+        state, txn, txn.type, Number(txn.quantity_abs),
+        Number(txn.normalized.net_amount), txn.date,
+    ));
+    return state;
+}
+
+function assertTransferLotCostIsConserved(state) {
+    const lotCost = state.lots.reduce(
+        (total, lot) => total + Math.abs(lot.quantity) * lot.unitPrice, 0,
+    );
+    assert.ok(Math.abs(lotCost - state.totalCost) < 1e-9);
+    assert.ok(state.lots.every((lot) => lot.unitPrice >= 0));
+}
+
+for (const method of ['lowest_cost_first', 'fifo', 'lifo', 'moving_average']) {
+    for (const commission of [0, 1]) {
+        test(`FIFO transfer basis preserves grants and liquidation P&L under ${method} with fee ${commission}`, () => {
+            setDramTestWindow();
+            setCostBasisMethod(method);
+            const transfer = {
+                ...makeTransferBasisTrade('transfer_out', 4, 1, 0, 3),
+                transfer_out_cost_basis_raw: String(100 + commission),
+                transfer_out_cost_basis_status: 'known',
+                transfer_out_cost_basis_method: 'fifo_reconstructed',
+                transfer_out_cost_basis_method_label: 'FIFO reconstructed',
+            };
+            const transactions = [
+                makeTransferBasisTrade('buy', 1, 1, 100, commission),
+                makeTransferBasisTrade('grant', 2, 1, 0),
+                makeTransferBasisTrade('buy', 3, 1, 20, commission),
+                transfer,
+            ];
+            const state = replayTransferBasisState(transactions);
+            assert.equal(state.shares, 2);
+            assert.equal(state.totalCost, 20 + commission);
+            assertTransferLotCostIsConserved(state);
+            assert.deepEqual(state.lots.map((lot) => lot.unitPrice), [0, 20 + commission]);
+
+            const open = buildTickerSummaries(transactions, {DRAM: 120}, 0, {})[0];
+            assert.equal(open.totalCost, 20 + commission);
+            assert.equal(open.unrealizedPnlLocal, 220 - commission);
+            const closed = buildTickerSummaries([
+                ...transactions, makeTransferBasisTrade('sell', 5, 2, 120, commission),
+            ], {DRAM: 120}, 0, {})[0];
+            assert.equal(closed.shares, 0);
+            assert.equal(closed.totalCost, 0);
+            assert.equal(closed.realizedPnlLocal, 220 - 2 * commission);
+            assert.equal(closed.totalPnlLocal, closed.realizedPnlLocal);
+            assert.equal(closed.lotMatchingMethod, method);
+            assert.equal(closed.pnlUnavailable, false);
+        });
+    }
+
+    test(`FIFO transfer after a ${method} sale conserves the remaining authoritative basis`, () => {
+        setDramTestWindow();
+        setCostBasisMethod(method);
+        const transfer = {
+            ...makeTransferBasisTrade('transfer_out', 6, 1, 0),
+            transfer_out_cost_basis_raw: '0',
+            transfer_out_cost_basis_status: 'known',
+            transfer_out_cost_basis_method: 'fifo_reconstructed',
+        };
+        const transactions = [
+            makeTransferBasisTrade('buy', 1, 1, 100),
+            makeTransferBasisTrade('grant', 2, 1, 0),
+            makeTransferBasisTrade('buy', 3, 1, 20),
+            makeTransferBasisTrade('buy', 4, 1, 200),
+            makeTransferBasisTrade('sell', 5, 1, 120),
+            transfer,
+        ];
+        const beforeTransfer = replayTransferBasisState(transactions.slice(0, -1));
+        const afterTransfer = replayTransferBasisState(transactions);
+        assert.equal(afterTransfer.shares, 2);
+        assert.equal(afterTransfer.totalCost, beforeTransfer.totalCost);
+        assertTransferLotCostIsConserved(afterTransfer);
+        const closed = buildTickerSummaries([
+            ...transactions, makeTransferBasisTrade('sell', 7, 2, 200),
+        ], {DRAM: 200}, 0, {})[0];
+        // Total proceeds are $520, original paid basis is $320, and the
+        // reconstructed transfer carries zero basis out of this scope.
+        assert.ok(Math.abs(closed.realizedPnlLocal - 200) < 1e-9);
+    });
+}
+
+for (const status of ['unknown', 'partial']) {
+    test(`${status} transfer basis cannot authorize a known FIFO removal`, () => {
+        setDramTestWindow();
+        setCostBasisMethod('lowest_cost_first');
+        const transactions = [
+            makeTransferBasisTrade('buy', 1, 1, 100),
+            makeTransferBasisTrade('grant', 2, 1, 0),
+            makeTransferBasisTrade('buy', 3, 1, 20),
+            {
+                ...makeTransferBasisTrade('transfer_out', 4, 1, 0),
+                transfer_out_cost_basis_raw: '100',
+                transfer_out_cost_basis_status: status,
+                transfer_out_cost_basis_method: 'fifo_reconstructed',
+            },
+        ];
+        const state = replayTransferBasisState(transactions);
+        assert.equal(state.costBasisStatus, status);
+        assert.deepEqual(state.lots.map((lot) => lot.unitPrice), [100, 20]);
+        assertTransferLotCostIsConserved(state);
+        const summary = buildTickerSummaries(transactions, {DRAM: 120}, 0, {})[0];
+        assert.equal(summary.pnlUnavailable, true);
+        assert.equal(summary.totalCost, null);
+        assert.equal(summary.unrealizedPnlLocal, null);
+    });
+}
+
+test('an unlabelled known transfer keeps the selected matcher while conserving its stated basis', () => {
+    setDramTestWindow();
+    setCostBasisMethod('lowest_cost_first');
+    const transactions = [
+        makeTransferBasisTrade('buy', 1, 1, 100),
+        makeTransferBasisTrade('grant', 2, 1, 0),
+        makeTransferBasisTrade('buy', 3, 1, 20),
+        {
+            ...makeTransferBasisTrade('transfer_out', 4, 1, 0),
+            transfer_out_cost_basis_raw: '100',
+            transfer_out_cost_basis_status: 'known',
+        },
+    ];
+    const state = replayTransferBasisState(transactions);
+    assert.deepEqual(state.lots.map((lot) => lot.sequence), [0, 2]);
+    assert.equal(state.totalCost, 20);
+    assertTransferLotCostIsConserved(state);
+    const closed = buildTickerSummaries([
+        ...transactions, makeTransferBasisTrade('sell', 5, 2, 120),
+    ], {DRAM: 120}, 0, {})[0];
+    assert.ok(Math.abs(closed.realizedPnlLocal - 220) < 1e-9);
 });
 
 test('dividend reinvestment opens shares at the reinvestment cost basis', () => {
@@ -1733,6 +1878,7 @@ test('missing supplemental replay boundary cannot become complete', () => {
     ibkrSummary.position_snapshot = {};
     ibkrSummary.position_snapshot_authoritative = false;
     ibkrSummary.holdings_validation = {matched: false, history_complete: false};
+    fixture.broker_snapshots = {'ibkr:U00000001': ibkrSummary};
     fixture.broker_summaries = {ibkr: ibkrSummary};
     fixture.transactions = fixture.transactions.filter((transaction) => transaction.broker === 'ibkr');
     fixture.summary = {
@@ -1894,4 +2040,38 @@ test('dated performance snapshots count dividend income and withholding once acr
             assert.equal(account.reconciliation.incrementalRealizedPnlLocal, 27 - incomeInSnapshot);
         }
     }
+});
+
+for (const method of ['lowest_cost_first', 'fifo', 'lifo', 'moving_average']) {
+    test(`full transfer leaves zero residual basis before a new purchase under ${method}`, () => {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = method;
+        const transactions = [makeTransferBasisTrade('buy', 1, 10, 50), makeTransferBasisTrade('buy', 2, 10, 100), makeTransferBasisTrade('sell', 3, 10, 80), {
+            ...makeTransferBasisTrade('transfer_out', 4, 10, 0),
+            transfer_out_cost_basis_raw: '490', transfer_out_cost_basis_status: 'known', transfer_out_cost_basis_method: 'fifo_reconstructed',
+        }];
+        const flat = replayTransferBasisState(transactions);
+        assert.equal(flat.shares, 0);
+        assert.equal(flat.totalCost, 0);
+        assert.deepEqual(flat.lots, []);
+        const reopened = replayTransferBasisState([...transactions, makeTransferBasisTrade('buy', 5, 5, 60)]);
+        assert.equal(reopened.totalCost, 300);
+        assertTransferLotCostIsConserved(reopened);
+    });
+}
+
+test('transfer quantities consume verified row and earliest-backward split factors', () => {
+    setDramTestWindow();
+    const trade = (type, date, quantity, price) => makeScopedDramTrade({broker: 'schwab', account: 'S1', ticker: 'TQQQ', type, date, quantity, price});
+    const closes = {TQQQ: {'2021-06-01': 50, '2021-06-02': 51, '2021-06-03': 52, '2021-07-01': 55, '2022-02-01': 60}};
+    const outgoing = {broker: 'schwab', account: 'S1', ticker: 'TQQQ', currency: 'USD', type: 'transfer_out', date: '2021-07-01', quantity_abs: '30', quantity_raw: '-30', normalized: {unit_price: '110'}};
+    const [summary] = buildTickerSummaries([trade('buy', '2021-06-01', 10, 100), trade('buy', '2021-06-02', 10, 102), trade('buy', '2021-06-03', 10, 104), outgoing], {TQQQ: 60}, 0, closes);
+    assert.equal(summary.shares, 0);
+    assert.equal(summary.hasOpenPosition, false);
+    const incoming = {...outgoing, type: 'transfer_in', date: '2021-05-01', quantity_raw: '10', quantity_abs: '10', normalized: {}};
+    const utils = createUtils();
+    const hints = utils.buildRenderedSplitFactorHints([incoming, trade('sell', '2021-06-01', 10, 100)], utils.buildTickerPriceIndex(closes));
+    assert.equal(utils.getTransactionValuationQuantity(incoming, utils.buildTickerPriceIndex(closes), hints), 20);
+    const sameDay = {...incoming, date: '2021-06-01'};
+    assert.equal(utils.getTransactionValuationQuantity(sameDay, utils.buildTickerPriceIndex(closes), hints), 20);
 });

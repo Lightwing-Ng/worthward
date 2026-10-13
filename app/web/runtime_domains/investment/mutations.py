@@ -1,6 +1,6 @@
 """Build the investment mutations web-runtime context.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -218,6 +218,12 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                             existing_source_key != source_key
                             and existing_target_key == target_key
                         ):
+                            try:
+                                validate_investment_internal_transfer_binding(
+                                    transactions, existing_source_key, existing_target_key,
+                                )
+                            except ValueError:
+                                continue
                             raise ValueError(
                                 "The selected internal-transfer counterpart is already bound to another source record. Remove that binding first."
                             )
@@ -332,6 +338,7 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                         raw_source_broker,
                         raw_source_account,
                         existing_attributions=next_attributions,
+                        manual_bindings=investment_payload.get("manual_internal_transfer_bindings"),
                     )
                     next_attributions[requested_receipt_key] = {
                         "schema_version": "1",

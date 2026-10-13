@@ -1,7 +1,8 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.1
+ * - Fixed: Canonical realized baseline dates survive later boundary replay.
  * - Changed: Overview x-axis labels use the shared pixel-space date layout and
  *   never show a time of day, including the hover date label.
  * - Fixed: The Overview y-axis hugs its widest drawn label and drops the
@@ -63,6 +64,7 @@ function updateDashboardWithEquity(
                 mergedLatestPrices,
                 chartTotalEquity,
                 tickerClosePrices,
+                {snapshotBrokerScope: 'all'},
             ),
         );
         const valuationDate = runtime.normalizeLedgerDate(chartPoints[chartPoints.length - 1]?.date)
@@ -272,7 +274,7 @@ function buildInvestmentChartRealizedPnlTimeline(tickerSummaries = []) {
                 const byDateLocal = {...(account?.realizedPnlByDateLocal || {})};
                 const reconciliation = account?.reconciliation || {};
                 const baselineLocal = Number(reconciliation.baselineRealizedPnlLocal) || 0;
-                if (account?.source === 'broker_performance_snapshot' && Math.abs(baselineLocal) > 1e-9) {
+                if (!reconciliation.baselineDate && account?.source === 'broker_performance_snapshot' && Math.abs(baselineLocal) > 1e-9) {
                     const performanceAsOf = runtime.normalizeLedgerDate(reconciliation.asOf?.performanceSnapshot);
                     if (performanceAsOf && Number.isFinite(Number(byDateLocal[performanceAsOf]))) {
                         byDateLocal[performanceAsOf] = Number(byDateLocal[performanceAsOf]) - baselineLocal;

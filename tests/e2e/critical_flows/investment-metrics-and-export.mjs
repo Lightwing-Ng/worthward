@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -209,6 +209,10 @@ test('expands broker-scoped Unrealized P&L into open-position contributions', as
 test('preserves HKD funding evidence when calculating USD funding Metrics', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['zircon_hk'],
+        // Funding uses the deposit day's rate, before the later FX trade.
+        fxRateHistoryByCurrency: {
+            HKD: {dates: ['2026-07-01'], values: {'2026-07-01': 650 / 83.22}},
+        },
         transactions: [
             {
                 ledger_no: 1,

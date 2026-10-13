@@ -1,6 +1,6 @@
 """Investment import domain: usmart tiger.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -553,6 +553,12 @@ def build_investment_payload_from_usmart_hk_statement_pdf(
 
 def _nearby_statement_date(lines: list[str], index: int, *, lookback: int = 6) -> str:
     for candidate_index in range(index, max(-1, index - lookback), -1):
+        executed_date = re.search(
+            r"(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}",
+            lines[candidate_index],
+        )
+        if executed_date:
+            return executed_date.group(1)
         dates = re.findall(r"\d{4}-\d{2}-\d{2}", lines[candidate_index])
         if dates:
             return dates[-1]

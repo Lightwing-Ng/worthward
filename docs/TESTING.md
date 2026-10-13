@@ -1,6 +1,119 @@
 # Testing guide
 
-Documentation version: `v1.95.0`
+Documentation version: `v1.96.1`
+
+## Complete audit verification
+
+On 13 Oct 2026, `./scripts/check.sh` exited 0 on the verified local snapshot
+after the recovered Claude work and follow-up audit, before latest-main
+integration. Python reported 2,823 passed, 6 skipped, and
+406 subtests passed in 350.38 seconds, with 80.05% coverage against the unchanged
+50% minimum. JavaScript reported 624 passed and no failures or skips. Chromium
+reported 564 passed in 31.4 minutes using the supported isolated port 8699 and
+one worker. At final readback, all 848 source, test, and configuration files
+matched the hashes frozen before the run. Documentation-only acceptance updates
+followed that snapshot's complete gate and received the repository-contract
+checks.
+
+The PR worktree was subsequently created from `origin/main` `f24d2429` and
+integrated the verified snapshot with upstream additions. The counts above
+apply to the pre-integration snapshot. No complete gate on the integrated PR
+head is recorded here; subsequent integration checks must be reported
+separately.
+
+The preceding follow-up gate had 560 browser passes and four failures. Those
+evidence/readiness failures are described below; all four cases passed three
+focused repetitions each, then passed in that snapshot's complete gate. Private
+broker fixture skips reflect unavailable local source documents and are not evidence
+that those documents were validated. Production ledger and configuration hashes
+remained unchanged; no user-owned service restart or live adoption is claimed.
+
+## Recovered browser regressions
+
+The HSBC settlement cases in `tests/e2e/critical_flows/` use complete producer
+evidence: immutable SHA-256 aliases, consistent source-row and ledger order,
+valid order references, and direct-cash boundaries that leave settlement
+postings necessary to the asserted result. Keep their cash, equity, row-count,
+and no-derived-transaction oracles when maintaining fixtures.
+
+`tests/e2e/settings/style-token-alignment.spec.mjs` measures Dark pressed-action
+contrast at desktop and narrow widths through system and explicit theme modes.
+Its color parser supports both RGB and Chromium's normalized `color(srgb ...)`
+serialization. `tests/e2e/shared/collapse-motion.spec.mjs` pauses the actual
+opening animation at creation, then samples its full trajectory and preserves
+the overshoot, geometry, keyboard, and reduced-motion assertions. The Prices
+blur test bounds unrelated initial market-cap work and releases hydration only
+after observing the request and pending state.
+
+The follow-up complete gate exposed four browser-test evidence/readiness gaps.
+Funding Metrics fixtures supply FX on the deposit date instead of borrowing a
+future conversion. Stock-details hover instrumentation waits for pending layout
+and hover frames to finish and for geometry to remain stable; its update-count
+assertion stays exactly one. Overview hover checks wait for the selected range's
+actual points or dates before reading its badge. Touch Backtest checks wait for
+the existing `data-trade-chart-ready` contract before clicking. Original money,
+geometry, and pinned-origin assertions remain unchanged. A diagnostic stack
+confirmed that the stock-details test had counted `applyLayoutSync` beside
+`commitHoverFrame`, rather than two updates from its coalesced pointer burst.
+
+## Import audit regressions
+
+`test_investment_merge_multiplicity.py` uses the maintained IBKR public-builder
+fixtures to cover repeated/reversed imports, identical fills, closed-lot
+timestamp attribution and genuine ambiguity, disjoint source periods,
+multi-account grants, repeated FX conversions, and renumbered money-market
+captures. `test_investment_transfer_identity_audit.py` covers reexported binding
+and ignored-row decisions plus the documented funding-currency scope.
+`test_investment_transfer_binding_recovery.py` exercises the real browser write
+endpoint with a temporary ledger and verifies that an unresolved historical
+owner cannot suppress a newly reviewed binding. On 13 Oct 2026 these tests and
+the existing import, investment-page, and compatibility suites reported 316
+passed, 1 skipped, and 108 subtests passed; this focused result is separate from
+the final complete quality gate.
+
+`test_investment_persistence_audit.py` covers the cache-fingerprint race,
+retryable FX/price failures, empty-ledger round trips, migration concurrency,
+and malformed JSON cells using isolated stores. `test_investment_snapshot_audit.py`
+tests dated native-cash selection, authoritative zeros, position-source
+ordering, multi-account preservation, and gaps in performance coverage.
+`test_security_transfer_attribution_audit.py` protects one-to-one source use and
+the durable inactive state of unresolved user decisions. None of these fixtures
+may be written into production stores.
+
+The broker follow-up suites cover partial and ambiguous Longbridge fills,
+HSBC cash direction and per-currency capture boundaries, Futu fractional fills
+and source multiplicity, Tiger settlement dates, IBKR file-level selection and
+compound source identity, Schwab cash/reinvestment actions, and standardized
+midnight exports. They use existing builders and fixture helpers with in-memory
+inputs or temporary stores. Private-file skips are recorded separately from
+tests actually executed; a passing public fixture cannot prove a missing private
+source file's content.
+
+`tests/python/services/test_schwab_execution_status.py` exercises the complete
+paired CSV builder, rejecting non-executions without inventing shares or cash.
+It preserves status-free exports, posted cash rows, actual partial-fill
+quantities, and stated amount reconciliation, including zero or absent fills.
+
+`tests/python/services/test_cmbwl_execution_evidence.py` exercises the public
+email import registry with isolated in-memory messages. Requested quantity and
+limit price alone cannot establish a trade, while explicit partial executions
+survive cancellation. Complete and incomplete purchase histories preserve real
+executions without synthesizing bonus shares; the compatibility callable emits
+a history-gap warning and returns no inferred records. No production ledger or
+browser email-upload route participates in these tests.
+
+`tests/python/web/test_investment_commit_concurrency.py` drives the production
+foundation composition with real temporary Parquet and evidence sidecars. Two
+threads attempt imports between the first write and its readback; each must
+verify its own committed snapshot, and the final ledger retains both imports.
+Additional cases preserve corrupted-readback rejection, immutable source
+validation, disk-failure behavior, prior ledger bytes, and lock release. The
+fixture also checks the production ledger digest before and after.
+
+`tests/js/investment/data_utils/cost-basis-and-live-fixture.mjs` checks that a
+FIFO-reconstructed security transfer preserves residual lot cost through later
+sales, including zero-cost grants and alternative buy/sell matchers. The
+reported open basis and the basis consumed by liquidation must agree.
 
 ## Price Field startup promotion
 
@@ -229,7 +342,8 @@ failures are the Dark pressed tuning-glyph contrast in
 replay regressions whose fixtures lack the evidence that the 21 Sep contract requires
 (`investment-stock-details.mjs` lines 1139, 1233, 1329, and 1568;
 `investment-snapshots.mjs` lines 99, 226, and 906; `investment-transfer-replay.mjs`
-line 996). The complete gate therefore remains red. See the 10 Oct 2026 entry in
+line 996). That 10 Oct gate remained red; the verified 13 Oct snapshot above
+subsequently resolved those failures. See the 10 Oct 2026 entry in
 [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 The [econometric research contract](ECONOMETRIC_PRICE_FIELD_RESEARCH.md) gives the
@@ -697,6 +811,21 @@ Historical suite inventory measured on 28 Aug 2026 (not the current count):
   USD, HKD, and CNH component dates and a same-day currency exchange, current
   Holdings Cash, the Overview Cash and Equity points, unchanged holdings and
   market value, and a legacy-marker USD Savings row anchoring the replay.
+  Pending BUY and SELL cases include a later HSBC row, USD-only cash, HKD/CNH
+  balances before and after independent snapshot dates, a different replay and
+  snapshot foreign balance, and settlement conservation. They require signed
+  pending cash exactly once and preserve authoritative current Holdings and
+  the final Overview endpoint. The history projection suite also pins the
+  minimal USD 100, HKD 780 at 7.8, pending sale USD 20 case to USD 220.
+  A nonzero foreign snapshot adjustment is checked before, on, and after its
+  boundary for both sides, including sequential-buy preservation and a future
+  anchor that must not affect an earlier history row.
+- `tests/python/services/test_schwab_provisional_reconciliation.py` uses the
+  existing isolated import factories for BUY and SELL. Same-day Hong Kong/New
+  York trades accept an unrelated identical prior-day fill during repeated
+  CSV, manual, and other-broker imports. Cross-day cases retain true ambiguity
+  checks on both eligible dates, including the March and November daylight-saving
+  transitions. Quantity, price, fee, and duplicate-fill revisions still fail.
 - `tests/js/investment/test_investment_import_feedback.mjs`: trusted IBKR feedback markup,
   escaped notices, evidence-retention copy, and HSBC transfer-review plurality.
 - `tests/python/services/test_investment_import.py` and `tests/python/web/test_more_page.py`: IBKR Trade

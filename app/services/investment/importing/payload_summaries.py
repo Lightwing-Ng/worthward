@@ -1,6 +1,6 @@
 """Investment import domain: payload summaries.
 
-Code version: v0.2.0
+Code version: v0.2.2
 - Changed: Schwab cash summaries follow the newest dated Positions evidence;
   transaction-only manual workbooks cannot erase an existing cash snapshot.
 """
@@ -523,9 +523,9 @@ def _ibkr_cash_snapshot_datetime_from_summary(summary: dict[str, Any]) -> str:
         if normalized:
             return normalized
     for field_name in (
-        "ending_cash_replay_as_of",
         "ending_cash_as_of",
         "cash_snapshot_as_of",
+        "ending_cash_replay_as_of",
     ):
         raw_date = _normalize_text(summary.get(field_name))[:10]
         try:
@@ -1058,6 +1058,11 @@ def _infer_broker_summary_from_transactions(
         if _ii_basics._normalize_broker_code(txn.get("broker")) != broker:
             continue
         source = txn.get("source") if isinstance(txn.get("source"), dict) else {}
+        if (
+            _normalize_text(txn.get("currency") or source.get("currency")).upper()
+            != "USD"
+        ):
+            continue
         available_cash = _normalize_text(source.get("available_cash_after_raw"))
         settlement_cash = _normalize_text(
             source.get("cash_settlement_balance_after_raw")
@@ -1099,7 +1104,12 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
     derived_summary = _build_broker_summary_from_payload(payload)
     if derived_summary:
         broker = derived_summary["broker"]
-        summaries[broker] = {**summaries.get(broker, {}), **derived_summary}
+        if broker == "ibkr" and broker in summaries:
+            summaries[broker] = _merge_ibkr_cash_snapshot_fields(
+                summaries[broker], derived_summary
+            )
+        else:
+            summaries[broker] = {**summaries.get(broker, {}), **derived_summary}
 
     transactions = payload.get("transactions")
     if not isinstance(transactions, list):
@@ -1274,6 +1284,21 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
                         ledger_balance_source,
                     ) = declared_boundary
                     ledger_balance_as_of = declared_balance_as_of or expected_cash_as_of
+            component_usd_date = _normalize_text(
+                component_dates.get("USD:SAVINGS")
+            )[:10]
+            if (
+                component_values.get("USD:SAVINGS") is not None
+                and component_usd_date
+                and ledger_balance_as_of
+                and component_usd_date > ledger_balance_as_of
+            ):
+                # An older live capture cannot roll back a newer posted balance.
+                ledger_balance = component_values["USD:SAVINGS"]
+                ledger_balance_as_of = component_usd_date
+                ledger_balance_source = "hsbc_usd_savings_component_balance"
+                available_balance = None
+                available_components = {}
             if ledger_balance is not None:
                 for component_key in list(component_values):
                     currency, _, account_type = component_key.partition(":")
@@ -1335,6 +1360,12 @@ def _normalize_broker_summaries(payload: dict[str, Any]) -> dict[str, dict[str, 
                         == "hsbc"
                     ):
                         payload_summary["ending_cash_base_currency"] = usd_balance_text
+                elif _ii_hsbc_cash._parse_decimal_text_or_none(
+                    summary.get("ending_cash_base_currency")
+                ) is None:
+                    # A foreign-only component map cannot substantiate a USD scalar.
+                    summary.pop("ending_cash", None)
+                    summary.pop("ending_cash_raw", None)
                 payload_snapshot_source = _summary_text(
                     payload_summary,
                     "cash_snapshot_source",

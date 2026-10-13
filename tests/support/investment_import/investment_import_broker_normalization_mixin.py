@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -2004,6 +2004,7 @@ class BrokerNormalizationImportTestsMixin:
                 "29 May 2026",
                 "HK812548HJDNP12I 812",
                 "400.00",
+                "0.00",
                 "400.00",
                 "Download",
             ]
@@ -2102,6 +2103,7 @@ class BrokerNormalizationImportTestsMixin:
                 "16 Jun 2026",
                 "HK149972CVFAK7AO 414",
                 "685.19",
+                "0.00",
                 "685.19",
                 "Download",
             ]

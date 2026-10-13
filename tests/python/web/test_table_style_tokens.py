@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.2."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.3."""
 
 from __future__ import annotations
 
@@ -290,6 +290,12 @@ def test_style_tokens_expose_the_optional_strategy_tuning_control() -> None:
         "--strategy-tune-panel-label-share: 60%;",
     ):
         assert token in tokens_css
+    # Dark mode reveals the sidebar, so both dark-theme selectors use a legible blue tint.
+    for token in (
+        "--strategy-tune-button-active-color: color-mix(in srgb, var(--theme-accent-primary) 70%, white);",
+        "--strategy-tune-button-active-border: 1px solid var(--strategy-tune-button-active-color);",
+    ):
+        assert tokens_css.count(token) == 2
     assert "width: var(--strategy-tune-button-size);" in forms_css
     assert "background: var(--strategy-tune-button-active-background);" in forms_css
     assert "border: var(--strategy-tune-button-active-border);" in forms_css

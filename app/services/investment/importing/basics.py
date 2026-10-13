@@ -1,6 +1,6 @@
 """Investment import domain: basics.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -1026,7 +1026,7 @@ def _build_synthetic_contract_trade_record(
     if booking_date:
         try:
             date_text = date.fromisoformat(booking_date).isoformat()
-            datetime_text = f"{date_text} {DEFAULT_CONVENTION_TIME}"
+            datetime_text = _longbridge_booking_datetime_to_utc_string(date_text, symbol)
         except ValueError:
             warnings.append(
                 f"Longbridge Fund Details contract row {contract.get('row_number')}: "
@@ -1264,7 +1264,14 @@ def _normalize_longbridge_order_status(value: object) -> str:
 def _longbridge_symbol_date_timezone(symbol: str) -> timezone | ZoneInfo:
     normalized_symbol = normalize_ticker(_normalize_text(symbol))
     market = normalized_symbol.rsplit(".", 1)[-1] if "." in normalized_symbol else ""
-    return LONGBRIDGE_MARKET_TIMEZONES.get(market.upper(), timezone.utc)
+    return LONGBRIDGE_MARKET_TIMEZONES.get(market.upper(), LONGBRIDGE_US_MARKET_TIMEZONE)
+
+
+def _longbridge_booking_datetime_to_utc_string(booking_date: str, symbol: str) -> str:
+    localized = datetime.fromisoformat(f"{booking_date} {DEFAULT_CONVENTION_TIME}").replace(
+        tzinfo=_longbridge_symbol_date_timezone(symbol),
+    )
+    return localized.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _longbridge_contract_multiplier(symbol: str) -> Decimal:
@@ -1331,6 +1338,8 @@ def _normalize_longbridge_flow_type(
     if normalized_flow == "corp action fee":
         return "foreign_tax_withholding"
     if normalized_flow == "others":
+        return "adjustment"
+    if normalized_flow in LONGBRIDGE_STOCK_FEE_FLOW_SIDES:
         return "adjustment"
     if normalized_flow == "credit corporate action funds":
         return "adjustment"
@@ -1520,7 +1529,7 @@ def _build_longbridge_stock_cash_flow_rows(
                 desc = _normalize_text(
                     row.get("description") or row.get("flow_name") or ""
                 )
-                m = re.search(r"(-?\d+)\s+Shares", desc, re.IGNORECASE)
+                m = re.search(r"(?<![\d.])(-?\d+(?:\.\d+)?)\s+Shares", desc, re.IGNORECASE)
                 if m:
                     try:
                         shares_dec = abs(Decimal(m.group(1)))
@@ -1629,7 +1638,9 @@ def _apply_longbridge_fund_details_booking_dates(
         source["fund_details_contract_booking_dates"] = booking_dates
         transaction["source"] = source
         transaction["date"] = booking_date
-        transaction["datetime"] = f"{booking_date} {DEFAULT_CONVENTION_TIME}"
+        transaction["datetime"] = _longbridge_booking_datetime_to_utc_string(
+            booking_date, _normalize_text(transaction.get("ticker")),
+        )
         updated_count += 1
     return updated_count
 
@@ -1816,6 +1827,55 @@ def _apply_longbridge_stock_cash_flows_to_order_records(
             record_time,
         )
         if not selected_contract_indexes:
+            quantity = _parse_decimal(record.get("quantity_raw"), "quantity", 0, [])
+            price = _parse_decimal(record.get("price_raw"), "price", 0, [])
+            source = record.get("source") or {}
+            quantity_candidates = []
+            for index, contract in enumerate(contract_rows):
+                if index in matched_contract_indexes:
+                    continue
+                if (
+                    contract.get("symbol") != ticker
+                    or contract.get("side") != side
+                    or _normalize_text(contract.get("currency")) != currency
+                    or contract.get("shares") != quantity
+                ):
+                    continue
+                if not source.get("source_time_is_order_time") and _longbridge_time_distance_hours(
+                    contract.get("time"), record_time,
+                ) > LONGBRIDGE_STOCK_CASH_FLOW_MATCH_HOURS:
+                    continue
+                rounding = (
+                    abs(quantity) * Decimal(1).scaleb(min(price.as_tuple().exponent, -4))
+                    if quantity is not None and price is not None
+                    else ZERO
+                )
+                if abs(abs(contract["gross_amount"]) - abs(gross_amount)) <= (
+                    rounding + Decimal("0.05")
+                ):
+                    quantity_candidates.append(index)
+            if len(quantity_candidates) == 1:
+                selected_contract_indexes = quantity_candidates
+            elif quantity_candidates:
+                raise ValueError(
+                    "Longbridge order has ambiguous matching Fund Details contracts; "
+                    "review the execution evidence."
+                )
+
+        if not selected_contract_indexes:
+            if any(
+                index not in matched_contract_indexes
+                and contract.get("symbol") == ticker
+                and contract.get("side") == side
+                and _normalize_text(contract.get("currency")) == currency
+                and contract.get("shares") is not None
+                and contract["shares"] > ZERO
+                for index, contract in enumerate(contract_rows)
+            ):
+                raise ValueError(
+                    "Longbridge unmatched order and Fund Details contract overlap; "
+                    "review the execution evidence before importing."
+                )
             warnings.append(
                 "Longbridge order "
                 f"{_normalize_text(record.get('source', {}).get('order_id')) or record.get('source', {}).get('row_number')}: "
@@ -2143,6 +2203,7 @@ def _build_longbridge_history_order_record(
             "transaction_type_raw": status or side_raw or "HistoryOrder",
             "order_id": order_id,
             "datetime_source_field": datetime_source_field,
+            "source_time_is_order_time": bool(row.get("_source_time_is_order_time")),
         },
         "quantity_raw": _decimal_to_str(abs(quantity_dec)),
         "quantity_abs": _decimal_to_str(abs(quantity_dec)),
@@ -2319,7 +2380,10 @@ def _build_longbridge_cash_flow_record(
         balance_dec,
         None,
         net_amount_dec,
-        is_cash_flow_override=not cash_equivalent_transfer,
+        is_cash_flow_override=(
+            not cash_equivalent_transfer
+            and _normalize_whitespace(flow_name).lower() not in LONGBRIDGE_STOCK_FEE_FLOW_SIDES
+        ),
     )
     if cash_equivalent_transfer:
         record["normalized"]["cash_equivalent_transfer"] = True

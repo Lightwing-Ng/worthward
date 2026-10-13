@@ -1,6 +1,6 @@
 """Shared constants and dependency bindings for investment import domains.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -386,7 +386,7 @@ LONGBRIDGE_SG_FUND_TICKER_PATTERN = re.compile(
     r"^[A-Z0-9]+\.(US|HK|SH|SZ|SG)$", re.IGNORECASE
 )
 
-LONGBRIDGE_SG_FUND_SHARES_PATTERN = re.compile(r"^-?\d+\s+Shares$", re.IGNORECASE)
+LONGBRIDGE_SG_FUND_SHARES_PATTERN = re.compile(r"^-?\d+(?:\.\d+)?\s+Shares$", re.IGNORECASE)
 
 LONGBRIDGE_SG_FUND_SKIP_LINES = frozenset({"All Months", "Filter"})
 
@@ -595,7 +595,7 @@ FUTUHK_TRADE_ROW_PATTERN = re.compile(
     r"(?P<order_id>\d+)\s+"
     r"(?:(?P<inline_name>.+?)\s+)?"
     r"(?P<trade_date>\d{4}/\d{2}/\d{2})\s+"
-    r"(?P<quantity>[\d,]+)\s+"
+    r"(?P<quantity>[\d,]+(?:\.\d+)?)\s+"
     r"(?P<price>[\d,]+\.?\d*)\s+"
     r"(?P<gross>[\d,]+\.\d+)\s+"
     r"(?P<net>[+-]?[\d,]+\.\d+)$"
@@ -620,7 +620,7 @@ FUTUHK_SETTLEMENT_DATE_PATTERN = re.compile(
     r"交收日期[：:]\s*(?P<date>\d{4}/\d{2}/\d{2})"
 )
 
-FUTUHK_SYMBOL_PREFIX_PATTERN = re.compile(r"^([A-Z]{1,5})\([^)]*$")
+FUTUHK_SYMBOL_PREFIX_PATTERN = re.compile(r"^([A-Z]{1,5}(?:\.[A-Z])?)\([^)]*$")
 
 FUTUHK_PAGE_MARKER_PATTERN = re.compile(
     r"(?:--\s*)?\d+\s+of\s+\d+\s+--|\d+/\d+$", re.IGNORECASE

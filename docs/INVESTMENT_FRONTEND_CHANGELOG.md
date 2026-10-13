@@ -1,12 +1,33 @@
 # Investment frontend changelog
 
-Documentation version: `v1.62.0`
+Documentation version: `v1.64.0`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Zero-valued cash boundaries retain subsequent cash movements. Foreign
+  cash requires dated FX evidence; future quotes no longer backfill earlier
+  rows, and explicitly dated statement quotes cannot override other dates.
+- Fixed: Account-scoped position snapshots, post-capture trades, and
+  post-performance cash income retain their own evidence boundaries. Realized
+  and residual lot basis use a consistent matcher. Holdings' realized-by-date
+  breakdown converts each account's native currency at the same current rate
+  as its headline total; historical equity retains its dated FX contract.
+- Fixed: HSBC History projects comparable bank balances into execution order
+  when settlements post in a different order. Pending accruals, interleaved
+  fees, intervening deposits, and separate native cash scopes remain distinct.
+
+- Fixed: FIFO-reconstructed security transfers use matching available FIFO
+  inventory and conserve remaining lot basis, so a later liquidation realizes the same cost
+  previously reported in Holdings even with a different buy/sell matcher.
+
+- Fixed: Pending HSBC buys and sells retain each history row's dated foreign
+  cash beside the authoritative USD balance. Signed pending cash is added once,
+  without reapplying historical USD settlement corrections; current Holdings
+  and the final Overview endpoint keep their authoritative balances.
 
 - Fixed: HSBC Transaction History no longer treats the native USD Savings
   balance as total cash. Each explicit per-currency ending balance anchors only

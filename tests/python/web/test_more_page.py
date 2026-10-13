@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.3
+Code version: v0.27.4
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
@@ -760,7 +760,7 @@ Fees: 0.12
         )
         self.assertEqual(
             sheet.cell(row=expected_end_row, column=3).number_format,
-            "yyyy-mm-dd hh:mm",
+            "yyyy-mm-dd hh:mm:ss",
         )
         self.assertEqual(
             sheet.cell(row=expected_end_row, column=10).number_format,

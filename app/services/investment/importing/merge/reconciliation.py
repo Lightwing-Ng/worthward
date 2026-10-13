@@ -1,6 +1,6 @@
 """Investment import domain: merge reconciliation.
 
-Code version: v0.2.1
+Code version: v0.2.2
 - Added: Statement-derived settlement postings retain their cash subaccount and
   immutable source sequence identity for browser replay.
 """
@@ -82,6 +82,7 @@ def _merge_non_grant_transactions(
             merged_by_key,
             candidate_slots,
             slot_order,
+            allow_cross_source=False,
         )
         existing_record = merged_by_key.get(composite_key)
         if existing_record is None:
@@ -115,6 +116,7 @@ def _merge_non_grant_transactions(
     incoming_occurrences: dict[tuple[str, ...], int] = {}
     claimed_cross_source_slots: set[tuple[tuple[str, ...], int]] = set()
     claimed_statement_evidence_slots: set[tuple[tuple[str, ...], int]] = set()
+    claimed_slots: set[tuple[tuple[str, ...], int]] = set()
     for record in incoming_transactions:
         if _normalize_text(record.get("type")).lower() == "grant":
             continue
@@ -154,6 +156,7 @@ def _merge_non_grant_transactions(
                 if len(best_candidates) == 1:
                     candidate_key = best_candidates[0]
                     claimed_statement_evidence_slots.add(candidate_key)
+                    claimed_slots.add(candidate_key)
                     duplicate_count += 1
                     merged_by_key[candidate_key] = (
                         _ii_merge_identity._merge_transaction_records(
@@ -185,6 +188,7 @@ def _merge_non_grant_transactions(
                 if existing_file_kind == incoming_file_kind:
                     continue
                 claimed_cross_source_slots.add(candidate_key)
+                claimed_slots.add(candidate_key)
                 duplicate_count += 1
                 merged_by_key[candidate_key] = (
                     _ii_merge_identity._merge_transaction_records(
@@ -206,7 +210,9 @@ def _merge_non_grant_transactions(
             merged_by_key,
             candidate_slots,
             slot_order,
+            claimed_slots,
         )
+        claimed_slots.add(composite_key)
         existing_record = merged_by_key.get(composite_key)
         if existing_record is None:
             merged_by_key[composite_key] = dict(record)
@@ -794,7 +800,12 @@ def _merge_grant_transactions(
             if record.get("ticker")
             else ""
         )
-        if ticker and ticker in superseded:
+        if ticker and ticker in superseded and any(
+            _normalize_text(incoming.get("type")).lower() == "grant"
+            and _ii_merge_identity._grant_identity_key(incoming)[:3]
+            == _ii_merge_identity._grant_identity_key(record)[:3]
+            for incoming in incoming_transactions
+        ):
             continue
         identity_key = _ii_merge_identity._grant_identity_key(record)
         if identity_key in merged_by_key:

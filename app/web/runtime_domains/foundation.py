@@ -1,6 +1,6 @@
 """Build the foundation web-runtime context.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -853,32 +853,35 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                 update_investment_store_payload(updater, INVESTMENT_STORE_PATH),
             )
 
-        existing_source_artifact_storage_keys = investment_source_artifact_storage_keys(
-            load_investment_store_payload(INVESTMENT_STORE_PATH)
-        )
+        # Keep a later legitimate writer outside this import's readback boundary.
+        # Store and evidence operations share this reentrant ledger lock.
+        with market_store_file_lock(INVESTMENT_STORE_PATH):
+            existing_source_artifact_storage_keys = investment_source_artifact_storage_keys(
+                load_investment_store_payload(INVESTMENT_STORE_PATH)
+            )
 
-        return commit_investment_import(
-            imported_payload,
-            normalize_payload=normalize_payload,
-            merge_payloads=lambda current, incoming: merge_investment_payloads(
-                current,
-                incoming,
-                hsbc_dividend_action_loader=load_local_investment_dividend_actions,
-            ),
-            update_store=update_store,
-            load_store=load_normalized_investment_payload,
-            invalidate_cache=invalidate_investment_transactions_cache,
-            materialize_payload=lambda payload: materialize_investment_source_artifacts(
-                payload,
-                INVESTMENT_STORE_PATH,
-                allow_missing_storage_keys=existing_source_artifact_storage_keys,
-            ),
-            verify_persisted_payload=lambda payload: verify_investment_source_artifacts(
-                payload,
-                INVESTMENT_STORE_PATH,
-                allow_missing_storage_keys=existing_source_artifact_storage_keys,
-            ),
-        )
+            return commit_investment_import(
+                imported_payload,
+                normalize_payload=normalize_payload,
+                merge_payloads=lambda current, incoming: merge_investment_payloads(
+                    current,
+                    incoming,
+                    hsbc_dividend_action_loader=load_local_investment_dividend_actions,
+                ),
+                update_store=update_store,
+                load_store=load_normalized_investment_payload,
+                invalidate_cache=invalidate_investment_transactions_cache,
+                materialize_payload=lambda payload: materialize_investment_source_artifacts(
+                    payload,
+                    INVESTMENT_STORE_PATH,
+                    allow_missing_storage_keys=existing_source_artifact_storage_keys,
+                ),
+                verify_persisted_payload=lambda payload: verify_investment_source_artifacts(
+                    payload,
+                    INVESTMENT_STORE_PATH,
+                    allow_missing_storage_keys=existing_source_artifact_storage_keys,
+                ),
+            )
 
     def refresh_investment_import_price_caches(
         imported_payload: dict[str, Any],

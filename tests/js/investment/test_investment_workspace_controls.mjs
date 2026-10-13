@@ -1,8 +1,9 @@
 /* Investment workspace-control ordering and dated-cash regressions.
- * Code version: v1.1.0
+ * Code version: v1.1.1
  * Added: Native-currency dated cash projection regressions.
  */
 
+import {createInvestmentRuntimeConfig} from '../../../app/web/static/assets/js/investment/runtime/config.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -265,3 +266,56 @@ test('an explicit balance map with no usable balance fails closed instead of usi
 
     assert.deepEqual(rows, replayRows);
 });
+
+
+for (const currency of ['CNH', 'CNY', 'RMB']) {
+    test(`explicit next-day IBKR base-equivalent funding remains bindable from ${currency}`, () => {
+        const source = {
+            date: '2026-05-31', type: 'deposit', broker: 'ibkr', account: 'U00000001', currency: null,
+            normalized: {net_amount: '739.1'}, net_amount_raw: '739.1', description: 'Electronic Fund Transfer',
+            source: {file_kind: 'transactions', row_number: 219, transaction_type_raw: 'Deposit'},
+        };
+        const target = {
+            date: '2026-06-01', type: 'withdrawal', broker: 'hsbc', account: 'TEST-CASH', currency,
+            normalized: {net_amount: '-5000.02'}, net_amount_raw: '-5000.02', description: 'REF00000000000000 01JUN',
+            source: {file_kind: 'hsbc_multi_currency_cash_account_text', row_number: 15},
+        };
+        const bindings = {};
+        const runtime = {
+            ...createCashProjectionRuntime(),
+            formatTransactionCurrency: (txn) => txn.currency || '',
+            buildInvestmentFxRateTimeline: () => ({}),
+            getFxRateForDate: () => 6.765,
+            readInvestmentInternalTransferIgnoredSourceKeys: () => new Set(),
+            readInvestmentInternalTransferBindings: () => bindings,
+            getInvestmentBrokerMeta: (broker) => ({label: broker}),
+            formatTransactionDateDisplay: (txn) => txn.date,
+            formatTransactionDescription: (txn) => txn.description,
+            formatAmountWithCurrency: (amount, denomination) => `${denomination} ${amount}`,
+            formatAmount: String,
+            formatHoldingsPosition: String,
+            formatInvestmentTickerForDisplay: String,
+        };
+        Object.assign(runtime, createInvestmentRuntimeConfig(runtime));
+        Object.assign(runtime, createInvestmentWorkspaceControlsRuntime(runtime));
+        assert.equal(runtime.isInvestmentInternalTransferFxPair(source, target), true);
+        assert.equal(runtime.isInvestmentInternalTransferChronologicallyValid(source, target), true);
+        let context = runtime.buildInvestmentInternalTransferContext([source, target]);
+        const sourceKey = source.manual_internal_transfer_key;
+        const targetKey = target.manual_internal_transfer_key;
+        assert.ok(context.sourceOptionsByKey.get(sourceKey).some((option) => option.key === targetKey));
+        bindings[sourceKey] = targetKey;
+        context = runtime.buildInvestmentInternalTransferContext([source, target]);
+        assert.equal(context.resolvedBindingsBySourceKey.has(sourceKey), true);
+        assert.equal(runtime.isInvestmentInternalTransferChronologicallyValid(source, {
+            ...target, date: '2026-06-02', description: 'REF 02JUN',
+        }), false);
+        assert.equal(runtime.isInvestmentInternalTransferChronologicallyValid(source, {
+            ...target, currency: 'HKD',
+        }), false);
+        assert.equal(runtime.isInvestmentInternalTransferFxPair(source, {...target, currency: 'HKD'}), false);
+        assert.equal(runtime.isInvestmentInternalTransferChronologicallyValid(source, {
+            ...target, currency: 'USD', net_amount_raw: '-739.1',
+        }), false);
+    });
+}

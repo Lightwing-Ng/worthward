@@ -1,6 +1,8 @@
 """Investment import domain: cmbwl.
 
-Code version: v0.1.1
+Code version: v0.1.2
+- Fixed: Only explicit executed fields establish trades, and incomplete email
+  history cannot manufacture bonus shares or a zero-cost position boundary.
 """
 
 from __future__ import annotations
@@ -10,8 +12,6 @@ from app.services.investment.importing.support import (
     CMBWL_ACCOUNT_PATTERN,
     CMBWL_ACTION_PATTERN,
     CMBWL_CANCELLED_ORDER_PATTERN,
-    CMBWL_CANCELLED_PRICE_PATTERN,
-    CMBWL_CANCELLED_QTY_PATTERN,
     CMBWL_COMPLETED_ORDER_PATTERN,
     CMBWL_EXECUTED_PRICE_PATTERN,
     CMBWL_EXECUTED_QTY_PATTERN,
@@ -131,6 +131,7 @@ def _synthesize_cmbwl_bonus_share_grants(
     account: str,
     warnings: list[str],
 ) -> list[dict[str, Any]]:
+    """Keep the compatibility callable, but report gaps without inventing grants."""
     trade_records = [
         record
         for record in transactions
@@ -150,73 +151,36 @@ def _synthesize_cmbwl_bonus_share_grants(
         ),
     )
 
-    holdings: dict[str, Decimal] = {}
-    buy_days_by_ticker: dict[str, list[date]] = {}
-    grants: list[dict[str, Any]] = []
+    holdings: dict[tuple[str, str, str], Decimal] = {}
     for record in ordered_records:
         ticker = normalize_ticker(_normalize_text(record.get("ticker")))
         txn_type = _normalize_text(record.get("type")).lower()
         quantity_dec = _ii_records._transaction_quantity_for_replay(record)
         if not ticker or quantity_dec is None:
             continue
+        scope = (
+            _normalize_text(record.get("account")) or account,
+            _normalize_text(record.get("currency")).upper(),
+            ticker,
+        )
 
         if txn_type == "buy":
-            holdings[ticker] = holdings.get(ticker, ZERO) + quantity_dec
-            trade_day = _ii_basics._parse_longbridge_date(
-                _normalize_text(record.get("date")),
-                "CMB Wing Lung trade date",
-            )
-            buy_days_by_ticker.setdefault(ticker, []).append(trade_day)
+            holdings[scope] = holdings.get(scope, ZERO) + quantity_dec
             continue
 
         if txn_type != "sell":
             continue
 
-        available = holdings.get(ticker, ZERO)
+        available = holdings.get(scope, ZERO)
         deficit = quantity_dec - available
-        if deficit <= ZERO:
-            holdings[ticker] = available - quantity_dec
-            if holdings[ticker] == ZERO:
-                holdings.pop(ticker, None)
-            continue
-
-        sell_day = _ii_basics._parse_longbridge_date(
-            _normalize_text(record.get("date")),
-            "CMB Wing Lung sell date",
-        )
-        grant_day = _infer_cmbwl_bonus_share_grant_day(
-            sell_day,
-            prior_buy_days=buy_days_by_ticker.get(ticker, []),
-        )
-        related_sell_order_id = _normalize_text(
-            record.get("source", {}).get("order_id")
-            or record.get("source", {}).get("statement_order_id")
-        )
-        display_description = _format_cmbwl_description(
-            _normalize_text(record.get("description")),
-            _normalize_text(record.get("source", {}).get("symbol")),
-            _normalize_text(record.get("currency")),
-            ticker=ticker,
-        )
-        grants.append(
-            _build_cmbwl_bonus_share_grant_record(
-                grant_day=grant_day,
-                ticker=ticker,
-                quantity_dec=deficit,
-                currency=_normalize_text(record.get("currency")).upper() or "USD",
-                description=f"Bonus shares (赠股): {display_description}",
-                account=account,
-                related_sell_order_id=related_sell_order_id,
+        if deficit > ZERO:
+            warnings.append(
+                f"CMB Wing Lung {ticker}: incomplete trade history leaves {deficit} sold share(s) "
+                "without purchase or transfer evidence in this capture; cost basis remains unknown. "
+                "Earlier ledger records may supply the missing history. No bonus shares were inferred."
             )
-        )
-        warnings.append(
-            f"CMB Wing Lung {ticker}: inferred {deficit} bonus share(s) (赠股) before sell order {related_sell_order_id or 'unknown'}."
-        )
-        holdings[ticker] = available + deficit - quantity_dec
-        if holdings[ticker] == ZERO:
-            holdings.pop(ticker, None)
-
-    return grants
+        holdings[scope] = available - quantity_dec
+    return []
 
 
 def _normalize_cmbwl_hk_ticker_code(symbol: str) -> str:
@@ -304,17 +268,10 @@ def _parse_cmbwl_securities_order_eml(
         qty_match = CMBWL_EXECUTED_QTY_PATTERN.match(candidate)
         if qty_match:
             parsed["quantity"] = qty_match.group(1).replace(",", "")
-        cancelled_qty_match = CMBWL_CANCELLED_QTY_PATTERN.match(candidate)
-        if cancelled_qty_match and "quantity" not in parsed:
-            parsed["quantity"] = cancelled_qty_match.group(1).replace(",", "")
         price_match = CMBWL_EXECUTED_PRICE_PATTERN.match(candidate)
         if price_match:
             parsed["currency"] = price_match.group(1).upper()
             parsed["price"] = price_match.group(2).replace(",", "")
-        cancelled_price_match = CMBWL_CANCELLED_PRICE_PATTERN.match(candidate)
-        if cancelled_price_match and "price" not in parsed:
-            parsed["currency"] = cancelled_price_match.group(1).upper()
-            parsed["price"] = cancelled_price_match.group(2).replace(",", "")
         order_match = CMBWL_ORDER_NO_PATTERN.match(candidate)
         if order_match:
             parsed["order_no"] = order_match.group(1)
@@ -323,9 +280,6 @@ def _parse_cmbwl_securities_order_eml(
     if side not in {"bought", "sold"}:
         warnings.append(f"{source_filename}: unsupported or missing trade action.")
         return None
-    if is_cancelled and side != "sold":
-        return None
-
     mapped_type = "buy" if side == "bought" else "sell"
     quantity_dec = _parse_decimal(
         parsed.get("quantity"), "executed quantity", 0, warnings
@@ -361,7 +315,7 @@ def _parse_cmbwl_securities_order_eml(
     order_notification_status = "cancelled" if is_cancelled else "completed"
     if is_cancelled:
         warnings.append(
-            f"{source_filename}: recorded cancelled sell notification for order {order_no or 'unknown'}."
+            f"{source_filename}: retained only the explicitly executed portion of cancelled order {order_no or 'unknown'}."
         )
     return {
         "date": trade_day,
@@ -435,10 +389,10 @@ def build_investment_payload_from_cmbwl_securities_order_emls(
                 if action_match:
                     cancelled_side = action_match.group(1).lower()
                     break
-            if cancelled_side != "sold":
+            if cancelled_side == "bought":
                 cancelled_buy_count += 1
-                continue
-            cancelled_sell_count += 1
+            elif cancelled_side == "sold":
+                cancelled_sell_count += 1
 
         record = _parse_cmbwl_securities_order_eml(
             eml_bytes,
@@ -466,11 +420,11 @@ def build_investment_payload_from_cmbwl_securities_order_emls(
 
     if cancelled_buy_count:
         warnings.append(
-            f"Skipped {cancelled_buy_count} cancelled CMB Wing Lung buy notification(s)."
+            f"Captured {cancelled_buy_count} cancelled CMB Wing Lung buy notification(s); unmatched quantities are not executions."
         )
     if cancelled_sell_count:
         warnings.append(
-            f"Recorded {cancelled_sell_count} cancelled CMB Wing Lung sell notification(s) as executed sells."
+            f"Captured {cancelled_sell_count} cancelled CMB Wing Lung sell notification(s); unmatched quantities are not executions."
         )
     if not transactions:
         raise ValueError(

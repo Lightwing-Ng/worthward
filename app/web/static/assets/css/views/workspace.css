@@ -1,4 +1,4 @@
-/* Code version: v1.30.5 */
+/* Code version: v1.30.6 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -122,6 +122,12 @@
 .workspace-controls-toggle,
 .workspace-controls-backdrop {
     display: none;
+}
+
+.workspace-controls-backdrop:hover,
+.workspace-controls-backdrop:focus-visible,
+.workspace-controls-backdrop:active {
+    transform: none;
 }
 
 .icon-workspace-controls {
