@@ -7,7 +7,7 @@ read-only preview in that panel; importing still requires the existing submit
 action. The separate preview/saved-card buttons and summary paragraphs have
 been removed. All six activity columns share the available width with
 14%, 10%, 32%, 14%, 12%, and 18% allocations and wrap without horizontal scrolling.
-Below 400px of available table width, columns use 14%, 14%, 24%, 14%,
+At viewport widths up to 600px, columns use 14%, 14%, 24%, 14%,
 14%, and 20%. A failed preview can be retried by pasting the page again.
 Mixed cash/card captures require explicit separation. The cash parser rejects
 recognized card evidence before account, available-balance, or cash-transaction
@@ -1049,7 +1049,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.279.0`
+Documentation version: `v1.279.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

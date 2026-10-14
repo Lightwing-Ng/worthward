@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -192,7 +192,7 @@ for (const [width, height] of [[1280, 720], [600, 1222], [390, 844], [320, 700]]
         expect(percentages.every((value) => value > 0 && (value % 2 === 0 || value % 5 === 0))).toBe(true);
         expect(percentages.reduce((total, value) => total + value, 0)).toBe(100);
         const responsivePercentages = layout.renderedPercentages.map((value) => Math.round(value));
-        expect(responsivePercentages).toEqual(layout.wrapper.clientWidth <= 400
+        expect(responsivePercentages).toEqual(layout.viewportWidth <= 600
             ? [14, 14, 24, 14, 14, 20] : [14, 10, 32, 14, 12, 18]);
         expect(responsivePercentages.reduce((total, value) => total + value, 0)).toBe(100);
         expect(layout.wrapper.scrollWidth).toBeLessThanOrEqual(layout.wrapper.clientWidth + 1);

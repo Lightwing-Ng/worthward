@@ -1,4 +1,4 @@
-/* Code version: v1.2.6 */
+/* Code version: v1.2.7 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1376,11 +1376,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     max-width: 100%;
 }
 
-.hsbc-credit-card-panel {
-    container-type: inline-size;
-    container-name: credit-card-preview;
-}
-
 .hsbc-credit-card-content {
     display: flex;
     flex-direction: column;
@@ -1410,7 +1405,7 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     text-align: right;
 }
 
-@container credit-card-preview (max-width: 400px) {
+@media (max-width: 600px) {
     .hsbc-credit-card-table col:nth-child(1) { width: 14% !important; }
     .hsbc-credit-card-table col:nth-child(2) { width: 14% !important; }
     .hsbc-credit-card-table col:nth-child(3) { width: 24% !important; }
