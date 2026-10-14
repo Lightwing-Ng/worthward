@@ -1,7 +1,7 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
  * - Fixed: HSBC paste validation refreshes the browser write session first.
  * - Changed: HSBC is the import chooser fallback when a selection is absent.
@@ -901,7 +901,7 @@ function summarizeHsbcPastedText(kind, rawText, validationState) {
             : (kind === 'portfolio' ? 'Portfolio' : 'Order Status');
         const chunkLabel = chunkCount === 1 ? '1 clip' : `${chunkCount.toLocaleString('en-US')} clips`;
         const readiness = cardKind === 'credit_card'
-            ? (runtime.isHsbcCreditCardReady?.() ? 'Preview ready' : 'Select Preview')
+            ? (runtime.isHsbcCreditCardReady?.() ? 'Preview ready' : 'Check preview')
             : validationState === 'valid'
             ? 'Ready'
             : (validationState === 'pending' ? 'Checking…' : 'Check format');
@@ -1017,7 +1017,7 @@ function resetHsbcPasteValidation() {
     }
 
 function requestHsbcPasteValidation({ debounce = true } = {}) {
-        if (runtime.syncHsbcCreditCardInput?.()) return;
+        if (runtime.syncHsbcCreditCardInput?.({retry: !debounce})) return;
         if (!isHsbcPasteValidationActive()) {
             return;
         }
@@ -1407,7 +1407,7 @@ function syncInvestmentImportMode() {
                 : isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
                     ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
-                    : 'Paste HSBC cash-account or credit-card pages in the first field. Credit-card pages require Preview before import. For cash accounts, supplementary captures are allowed and duplicate chunks are ignored; Portfolio and Order Status can refresh holdings.')
+                    : 'Paste HSBC cash-account or credit-card pages in the first field. Credit-card pages are previewed automatically; review the entries before importing. For cash accounts, supplementary captures are allowed and duplicate chunks are ignored; Portfolio and Order Status can refresh holdings.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                     : (isLongbridgeSg

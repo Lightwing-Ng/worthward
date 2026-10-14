@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -60,8 +60,9 @@ const fixture = () => ({
 });
 const response = (value) => ({ok: true, json: async () => value});
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return {promise, resolve}; };
+const settle = () => new Promise(setImmediate);
 
-function setup(t, fetcher = async () => response(fixture())) {
+function setup(t, fetcher = async () => response(fixture()), initialText = cardPage) {
     const elements = new Map();
     const documentBefore = globalThis.document;
     const fetchBefore = globalThis.fetch;
@@ -94,7 +95,7 @@ function setup(t, fetcher = async () => response(fixture())) {
     for (const key of ['splitHsbcPastedTextChunks', 'mergeHsbcPastedText', 'getHsbcPasteTexts', 'getHsbcPasteValidationSignature']) {
         runtime[key] = workflows[key];
     }
-    runtime.hsbcCashAccountTextInput.value = cardPage;
+    runtime.hsbcCashAccountTextInput.value = initialText;
     Object.assign(runtime, createHsbcCreditCardImportRuntime(runtime));
     runtime.syncHsbcCreditCardInput();
     return {runtime, elements};
@@ -102,7 +103,6 @@ function setup(t, fetcher = async () => response(fixture())) {
 
 function changeInput(runtime, text) {
     runtime.hsbcCashAccountTextInput.value = text;
-    runtime.invalidateHsbcCreditCardPreview();
     runtime.syncHsbcCreditCardInput();
 }
 
@@ -119,15 +119,15 @@ test('formats dates, amounts, and unavailable values without coercing missing da
     assert.equal(formatCreditCardDate(''), 'Unavailable');
 });
 
-test('preview uses the shared account text and safely renders only after a manual request', async (t) => {
+test('complete shared account text previews automatically without an import request', async (t) => {
     const requests = [];
     const {runtime, elements} = setup(t, async (url, options) => { requests.push({url, options}); return response(fixture()); });
     assert.equal(runtime.mode, 'paste');
     assert.equal(runtime.isHsbcCreditCardInput(), true);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
-    assert.equal(requests.length, 0);
-    await runtime.previewHsbcCreditCard();
+    await settle();
     assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.equal(requests.length, 1);
     assert.equal(requests[0].url, '/api/credit-cards/hsbc/preview');
     assert.deepEqual(JSON.parse(requests[0].options.body), {text: cardPage});
     assert.equal(requests[0].options.headers['X-CSRF-Token'], 'test-token');
@@ -137,62 +137,132 @@ test('preview uses the shared account text and safely renders only after a manua
     assert.equal(cells[4].textContent, 'Pending');
     assert.equal(cells[5].textContent, 'HKD 2,450.00');
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
+    for (const removedId of ['hsbc_credit_card_preview_button', 'hsbc_credit_card_saved_button', 'hsbc_credit_card_summary']) {
+        assert.equal(elements.has(removedId), false);
+    }
 });
 
 for (const [label, replacement] of [
-    ['changed card', cardPage.replace('4,850.50', '4,000.00')],
     ['cash page', cashPage],
     ['mixed account batch', joinChunks(cardPage, cashPage)],
     ['empty input', ''],
 ]) {
     test(`a pending preview cannot authorize ${label}`, async (t) => {
         const pending = deferred();
-        const {runtime, elements} = setup(t, () => pending.promise);
-        const preview = runtime.previewHsbcCreditCard();
-        await Promise.resolve();
+        const requests = [];
+        const {runtime, elements} = setup(t, (url) => { requests.push(url); return pending.promise; });
+        await settle();
         changeInput(runtime, replacement);
         pending.resolve(response(fixture()));
-        await preview;
+        await settle();
         assert.equal(runtime.isHsbcCreditCardReady(), false);
         assert.equal(elements.get('hsbc_credit_card_results').hidden, true);
+        assert.equal(requests.length, 1);
     });
 }
 
+test('changing complete text while busy previews only the latest input after discarding the old response', async (t) => {
+    const first = deferred();
+    const latest = deferred();
+    const requests = [];
+    const {runtime, elements} = setup(t, (url, options) => {
+        requests.push({url, text: JSON.parse(options.body).text});
+        return requests.length === 1 ? first.promise : latest.promise;
+    });
+    await settle();
+    changeInput(runtime, cardPage.replace('4,850.50', '4,000.00'));
+    const finalText = cardPage.replace('4,850.50', '3,000.00');
+    changeInput(runtime, finalText);
+    assert.equal(requests.length, 1);
+    first.resolve(response(fixture()));
+    await settle();
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    assert.equal(elements.get('hsbc_credit_card_results').hidden, true);
+    assert.deepEqual(requests.map(({text}) => text), [cardPage, finalText]);
+    latest.resolve(response({...fixture(), source_sha256: 'b'.repeat(64)}));
+    await settle();
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.equal(requests.every(({url}) => url.endsWith('/preview')), true);
+});
+
 for (const dimension of ['mode', 'broker']) {
-    test(`a ${dimension} round trip invalidates a pending preview even with unchanged text`, async (t) => {
-        const pending = deferred();
-        const {runtime, elements} = setup(t, () => pending.promise);
-        const preview = runtime.previewHsbcCreditCard();
-        await Promise.resolve();
+    test(`a ${dimension} round trip rejects the old response and automatically previews again`, async (t) => {
+        const first = deferred();
+        const fresh = deferred();
+        let requests = 0;
+        const {runtime, elements} = setup(t, () => (++requests === 1 ? first.promise : fresh.promise));
+        await settle();
         const initial = runtime[dimension];
         runtime[dimension] = dimension === 'mode' ? 'statement_pdf' : 'ibkr';
         runtime.invalidateHsbcCreditCardPreview();
+        runtime.syncHsbcCreditCardInput();
         runtime[dimension] = initial;
         runtime.invalidateHsbcCreditCardPreview();
-        pending.resolve(response(fixture()));
-        await preview;
+        runtime.syncHsbcCreditCardInput();
+        first.resolve(response(fixture()));
+        await settle();
+        assert.equal(requests, 2);
         assert.equal(runtime.isHsbcCreditCardReady(), false);
         assert.equal(elements.get('hsbc_credit_card_results').hidden, true);
+        fresh.resolve(response(fixture()));
+        await settle();
+        assert.equal(runtime.isHsbcCreditCardReady(), true);
     });
 }
 
-test('saved readback cannot authorize an import', async (t) => {
-    const {runtime, elements} = setup(t, async () => response({...fixture(), accounts: [{...fixture().account, snapshot: fixture().snapshot}]}));
-    await runtime.previewHsbcCreditCard();
-    assert.equal(runtime.isHsbcCreditCardReady(), true);
-    await runtime.viewSavedHsbcCreditCards();
+test('review warnings remain visible and block importing after the summary is removed', async (t) => {
+    const warning = 'Matching pending and posted purchases need original statement review.';
+    const urls = [];
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        return response({...fixture(), ready: false, review_required: true, warnings: [warning]});
+    });
+    await settle();
     assert.equal(runtime.isHsbcCreditCardReady(), false);
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Saved credit-card activity/);
+    assert.equal(elements.get('hsbc_credit_card_results').hidden, false);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Preview needs review/);
+    assert.equal(elements.get('hsbc_credit_card_status').textContent.includes(warning), true);
+    await runtime.importHsbcCreditCard();
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview']);
 });
 
-test('commit sends only shared card text and its preview digest once while retaining security drafts', async (t) => {
+test('a failed preview retries once on an explicit identical re-paste but never on routine sync', async (t) => {
+    let requests = 0;
+    const {runtime, elements} = setup(t, async () => {
+        requests += 1;
+        if (requests < 3) throw new Error('Connection interrupted');
+        return response(fixture());
+    });
+    await settle();
+    for (let index = 0; index < 3; index += 1) runtime.syncHsbcCreditCardInput();
+    await settle();
+    assert.equal(requests, 1);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Paste the page again to retry/);
+    runtime.syncHsbcCreditCardInput({retry: true});
+    await settle();
+    runtime.syncHsbcCreditCardInput();
+    await settle();
+    assert.equal(requests, 2);
+    runtime.syncHsbcCreditCardInput({retry: true});
+    await settle();
+    assert.equal(requests, 3);
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+});
+
+test('commit sends shared card text and digest once, then displays persisted rows and retains drafts', async (t) => {
     const requests = [];
-    const {runtime, elements} = setup(t, async (url, options) => { requests.push({url, options}); return response(fixture()); });
+    const savedRow = {...fixture().transactions[0], description: 'Persisted purchase', status: 'posted'};
+    const {runtime, elements} = setup(t, async (url, options) => {
+        requests.push({url, options});
+        return response({...fixture(), merged_transactions: [savedRow]});
+    });
     runtime.hsbcPortfolioTextInput.value = 'Existing Portfolio';
     runtime.hsbcOrderStatusTextInput.value = 'Existing Order Status';
-    await runtime.previewHsbcCreditCard();
+    await settle();
     await runtime.importHsbcCreditCard();
+    runtime.syncHsbcCreditCardInput();
     await runtime.importHsbcCreditCard();
+    await settle();
     assert.deepEqual(requests.map(({url}) => url), ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
     assert.deepEqual(JSON.parse(requests[1].options.body), {text: cardPage, source_sha256: 'a'.repeat(64)});
     assert.equal(runtime.hsbcCashAccountTextInput.value, cardPage);
@@ -201,13 +271,14 @@ test('commit sends only shared card text and its preview digest once while retai
     assert.equal(runtime.state.investmentImportInFlight, false);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     assert.equal(elements.get('hsbc_credit_card_results').hidden, false);
+    assert.equal(elements.get('hsbc_credit_card_rows').children[0].children[2].textContent, 'Persisted purchase');
     assert.match(elements.get('hsbc_credit_card_status').textContent, /read back/);
 });
 
 test('changing shared input during session refresh prevents a captured commit', async (t) => {
     const urls = [];
     const {runtime} = setup(t, async (url) => { urls.push(url); return response(fixture()); });
-    await runtime.previewHsbcCreditCard();
+    await settle();
     const session = deferred();
     runtime.ensureInvestmentImportSession = () => session.promise;
     const commit = runtime.importHsbcCreditCard();
@@ -218,19 +289,45 @@ test('changing shared input during session refresh prevents a captured commit', 
     assert.equal(runtime.state.investmentImportInFlight, false);
 });
 
-test('an uncertain failed commit requires a fresh preview before retry', async (t) => {
-    let requests = 0;
-    const {runtime, elements} = setup(t, async () => {
-        requests += 1;
-        if (requests > 1) throw new Error('Connection interrupted');
+test('new card text entered during a commit previews afterward without another write', async (t) => {
+    const commitResponse = deferred();
+    const urls = [];
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        return url.endsWith('/import') ? commitResponse.promise : response(fixture());
+    });
+    await settle();
+    const commit = runtime.importHsbcCreditCard();
+    await settle();
+    changeInput(runtime, cardPage.replace('4,850.50', '4,000.00'));
+    commitResponse.resolve(response({...fixture(), merged_transactions: []}));
+    await commit;
+    await settle();
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import', '/api/credit-cards/hsbc/preview']);
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
+    assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
+});
+
+test('an uncertain failed commit needs an explicit re-paste and fresh preview before retry', async (t) => {
+    const urls = [];
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        if (url.endsWith('/import')) throw new Error('Connection interrupted');
         return response(fixture());
     });
-    await runtime.previewHsbcCreditCard();
+    await settle();
     await runtime.importHsbcCreditCard();
+    runtime.syncHsbcCreditCardInput();
     await runtime.importHsbcCreditCard();
-    assert.equal(requests, 2);
+    await settle();
+    assert.equal(urls.length, 2);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Preview again/);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Paste the page again to preview/);
+    runtime.syncHsbcCreditCardInput({retry: true});
+    await settle();
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import', '/api/credit-cards/hsbc/preview']);
 });
 
 test('classification distinguishes complete cards, card clues, and ordinary navigation', () => {
@@ -244,8 +341,7 @@ test('classification distinguishes complete cards, card clues, and ordinary navi
 });
 
 test('multiple cash clips remain in the existing cash workflow', (t) => {
-    const {runtime} = setup(t);
-    changeInput(runtime, cashPage);
+    const {runtime} = setup(t, undefined, cashPage);
     const otherCash = cashPage.replace('HKD Savings', 'USD Savings');
     appendInput(runtime, otherCash);
     assert.equal(runtime.getHsbcCreditCardInputKind(), 'none');
@@ -253,15 +349,19 @@ test('multiple cash clips remain in the existing cash workflow', (t) => {
     assert.equal(runtime.hsbcCashAccountTextInput.value, joinChunks(cashPage, otherCash));
 });
 
-test('a repeated card clip is deduplicated in the shared source without automatic preview', (t) => {
-    const {runtime} = setup(t, () => { throw new Error('Detection must not send a request'); });
+test('a repeated card clip is deduplicated without another preview or import', async (t) => {
+    const urls = [];
+    const {runtime} = setup(t, async (url) => { urls.push(url); return response(fixture()); });
+    await settle();
     const merged = appendInput(runtime, cardPage);
+    runtime.syncHsbcCreditCardInput({retry: true});
+    await settle();
     assert.equal(merged.duplicate, true);
     assert.equal(merged.addedChunkCount, 0);
     assert.equal(runtime.hsbcCashAccountTextInput.value, cardPage);
     assert.equal(runtime.getHsbcCreditCardInputKind(), 'credit_card');
-    assert.equal(runtime.mode, 'paste');
-    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview']);
 });
 
 for (const [label, first, next] of [
@@ -272,34 +372,35 @@ for (const [label, first, next] of [
     ['unknown clip before card', 'Unrecognized account capture', cardPage],
 ]) {
     test(`${label} preserves every clip and blocks both preview and import`, async (t) => {
-        const {runtime, elements} = setup(t, () => { throw new Error('Mixed input must not send a request'); });
-        changeInput(runtime, first);
-        appendInput(runtime, next);
+        const urls = [];
+        const mixedText = joinChunks(first, next);
+        const {runtime} = setup(t, async (url) => { urls.push(url); return response(fixture()); }, mixedText);
         assert.equal(runtime.hsbcCashAccountTextInput.value, joinChunks(first, next));
         assert.equal(runtime.getHsbcCreditCardInputKind(), 'mixed');
         assert.equal(runtime.isHsbcCreditCardInput(), true);
         assert.equal(runtime.isHsbcCreditCardReady(), false);
-        assert.equal(elements.get('hsbc_credit_card_preview_button').disabled, true);
-        await runtime.previewHsbcCreditCard();
         await runtime.importHsbcCreditCard();
+        await settle();
+        assert.deepEqual(urls, []);
     });
 }
 
 test('incomplete card input is preserved without falling back to cash or allowing preview', async (t) => {
-    const {runtime, elements} = setup(t, () => { throw new Error('Incomplete card must not send a request'); });
+    const urls = [];
     const incomplete = cardPage.replace('Payment due date:', 'See payment details:');
-    changeInput(runtime, incomplete);
+    const {runtime} = setup(t, async (url) => { urls.push(url); return response(fixture()); }, incomplete);
     assert.equal(runtime.hsbcCashAccountTextInput.value, incomplete);
     assert.equal(runtime.getHsbcCreditCardInputKind(), 'incomplete');
     assert.equal(runtime.isHsbcCreditCardInput(), true);
-    assert.equal(elements.get('hsbc_credit_card_preview_button').disabled, true);
-    await runtime.previewHsbcCreditCard();
     await runtime.importHsbcCreditCard();
+    await settle();
     assert.equal(runtime.isHsbcCreditCardReady(), false);
+    assert.deepEqual(urls, []);
 });
 
 test('shared card detection is inactive outside HSBC Copy/paste', (t) => {
-    const {runtime} = setup(t);
+    const {runtime} = setup(t, undefined, '');
+    runtime.hsbcCashAccountTextInput.value = cardPage;
     runtime.broker = 'ibkr';
     assert.equal(runtime.isHsbcCreditCardInput(), false);
     runtime.broker = 'hsbc';

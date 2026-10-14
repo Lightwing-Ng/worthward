@@ -1,11 +1,11 @@
 # Architecture guide
 
-Documentation version: `v1.137.0`
+Documentation version: `v1.138.0`
 
 ## HSBC credit-card boundary
 
 The first HSBC Copy/paste account-page field recognizes credit-card pages
-and requires an explicit Preview before import. It owns a separate local
+and automatically runs a read-only preview before explicit import. It owns a separate local
 `credit_cards.json` ledger under the configured settings directory. Its dedicated preview, import, and
 read routes are `/api/credit-cards/hsbc/preview`,
 `/api/credit-cards/hsbc/import`, and `/api/credit-cards/hsbc`. POST routes use

@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.41.0`
+Documentation version: `v3.42.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -607,14 +607,14 @@ remain explicitly provisional.
 
 In Investment import, select HSBC, then Copy/paste. Paste one complete English
 credit-card account page into the first account-page field. The same panel
-shows Preview so you can inspect purchases, repayments, RewardCash offsets,
-and pending authorizations before Import now. View saved cards reads the
-separate card history. The credit-card parser accepts HKD webpage text;
+automatically previews purchases, repayments, RewardCash offsets, and pending
+authorizations in a compact six-column table. Review the entries before
+selecting Import now; saved entries are read back after that explicit import. The credit-card parser accepts HKD webpage text;
 credit-card PDF and CSV imports are not supported.
 
 The first Copy/paste field recognizes complete cash or credit-card account
-pages. A detected card page still requires explicit Preview; recognition
-never imports records automatically. Keep cash and credit-card captures
+pages. A detected card page starts a read-only preview; recognition never imports
+records automatically. Keep cash and credit-card captures
 separate, and resolve mixed content before importing. Portfolio and Order
 Status drafts remain separate. If a card page reaches cash validation,
 the error explains how to refresh Import and preview the card page in the

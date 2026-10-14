@@ -1,4 +1,4 @@
-{# Code version: v1.76.0
+{# Code version: v1.77.0
    Changed: Cash and credit cards share the HSBC account-page paste field. #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
@@ -699,7 +699,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open a cash account or a credit card.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page, including account number, balances, transactions, dates, and any Pending labels.</span>
-                                                <span class="investment-import-help-step">4. Paste here. Credit cards require Preview before import; keep them separate from cash pages. Cash-only captures can sync on their own; use Portfolio and Order Status below when refreshing holdings too. HSBC CNY cash is stored as CNH.</span>
+                                                <span class="investment-import-help-step">4. Paste here. Credit cards are previewed automatically before import; keep them separate from cash pages. Cash-only captures can sync on their own; use Portfolio and Order Status below when refreshing holdings too. HSBC CNY cash is stored as CNH.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -730,20 +730,23 @@
                                               name="hsbc_cash_account_text"
                                               hidden
                                               spellcheck="false"></textarea>
-                                    <div id="hsbc_credit_card_panel" style="min-width: 0;" hidden>
-                                        <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0; box-sizing: border-box;">
+                                    <div id="hsbc_credit_card_panel" class="hsbc-credit-card-panel" hidden>
+                                        <div class="hsbc-credit-card-content">
                                             <p class="settings-service-note" id="hsbc_credit_card_help">Copy the full HSBC credit-card page, including balances, due date, transaction dates, amounts, and Pending labels.</p>
-                                            <div>
-                                                <button type="button" class="settings-inline-button settings-inline-button-primary" id="hsbc_credit_card_preview_button" disabled>Preview</button>
-                                                <button type="button" class="settings-inline-button" id="hsbc_credit_card_saved_button">View saved cards</button>
-                                            </div>
-                                            <p class="settings-service-note" id="hsbc_credit_card_status" role="status" aria-live="polite">Preview the current text to review purchases, repayments, RewardCash, and pending activity.</p>
+                                            <p class="settings-service-note" id="hsbc_credit_card_status" role="status" aria-live="polite">Paste a complete credit-card page to preview its activity.</p>
                                             <div id="hsbc_credit_card_results" hidden>
-                                                <div id="hsbc_credit_card_summary"></div>
-                                                <div class="trade-transactions-wrap" tabindex="0" role="region" aria-label="Credit-card transactions">
-                                                    <table class="settings-table" style="min-width: 680px;" aria-label="HSBC credit-card activity">
+                                                <div class="hsbc-credit-card-table-wrap" role="region" aria-label="Credit-card transactions">
+                                                    <table class="settings-table hsbc-credit-card-table" aria-label="HSBC credit-card activity">
                                                         <caption id="hsbc_credit_card_caption">Captured transactions</caption>
-                                                        <thead><tr><th scope="col">Date</th><th scope="col">Card ending</th><th scope="col">Description</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Amount</th></tr></thead>
+                                                        <colgroup>
+                                                            <col style="width: 14%;">
+                                                            <col style="width: 10%;">
+                                                            <col style="width: 32%;">
+                                                            <col style="width: 14%;">
+                                                            <col style="width: 12%;">
+                                                            <col style="width: 18%;">
+                                                        </colgroup>
+                                                        <thead><tr><th scope="col">Date</th><th scope="col" aria-label="Card ending">Card</th><th scope="col">Description</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Amount</th></tr></thead>
                                                         <tbody id="hsbc_credit_card_rows"></tbody>
                                                     </table>
                                                 </div>
@@ -955,5 +958,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.159.0') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.160.0') }}"></script>
 {% endblock %}

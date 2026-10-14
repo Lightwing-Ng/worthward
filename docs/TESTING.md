@@ -1,11 +1,11 @@
 # Testing guide
 
-Documentation version: `v1.97.0`
+Documentation version: `v1.98.0`
 
 ## HSBC credit-card verification
 
 The first HSBC Copy/paste account-page field recognizes a complete card page
-and exposes an explicit Preview. Mixed or incomplete captures retain their
+and starts a read-only preview automatically. Mixed or incomplete captures retain their
 source text and cannot reach either import writer. Portfolio and Order Status
 drafts are retained and excluded from card imports.
 
@@ -14,8 +14,8 @@ page factories and isolated stores. They cover purchase, repayment, RewardCash,
 and pending classification; occurrence-aware overlap deduplication; same-date
 pending promotion; ambiguous later postings; atomic writes and persisted
 readback; CSRF and source digests; read-only previews; and stale responses after
-text, broker, or mode changes. Browser cases exercise the existing Stock details
-entry at desktop and narrow widths without committing to production stores.
+text, broker, or mode changes, including a newer paste queued during a request. Browser cases exercise the existing Stock details
+entry and the Holdings dialog at desktop and narrow widths without committing to production stores.
 
 On 14 Oct 2026, the scoped PR branch based on `origin/main` `f530214d` passed
 `python3 -B -m pytest -q tests/python/services/test_hsbc_credit_card_cash_guard.py
