@@ -1,7 +1,8 @@
 """
 Trade route registration.
 
-Code version: v0.10.0
+Code version: v0.11.0
+- Added: Independent HSBC credit-card preview, import, and saved-record routes.
 - Added: Investment session-token route for import dialog readiness.
 - Added: Schwab security-transfer source-account confirmation route.
 """
@@ -12,6 +13,9 @@ from app.web.runtime import WebRuntime
 
 
 def register_trade_routes(app: Flask, runtime: WebRuntime) -> None:
+    app.post("/api/credit-cards/hsbc/preview")(runtime.credit_card_preview)
+    app.post("/api/credit-cards/hsbc/import")(runtime.credit_card_import)
+    app.get("/api/credit-cards/hsbc")(runtime.credit_card_read)
     app.get("/trade")(runtime.trade_root)
     app.get("/trade/<section_name>")(runtime.trade_page)
     app.post("/trade/live-trading/unlock")(runtime.live_trading_unlock)

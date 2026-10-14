@@ -1,4 +1,4 @@
-/* Code version: v1.2.5 */
+/* Code version: v1.2.7 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1365,6 +1365,57 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-process-list .investment-import-paste-button {
     grid-column: 2;
+}
+
+/* Credit-card previews keep every column within the shared account field. */
+.hsbc-credit-card-panel,
+.hsbc-credit-card-content,
+.hsbc-credit-card-table-wrap,
+#hsbc_credit_card_results {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.hsbc-credit-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hsbc-credit-card-table-wrap {
+    width: 100%;
+}
+
+.settings-table.hsbc-credit-card-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+}
+
+.hsbc-credit-card-table :is(th, td) {
+    padding: 6px 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    text-overflow: clip;
+    vertical-align: top;
+}
+
+.hsbc-credit-card-table :is(th, td):last-child {
+    text-align: right;
+}
+
+@media (max-width: 600px) {
+    .hsbc-credit-card-table col:nth-child(1) { width: 14% !important; }
+    .hsbc-credit-card-table col:nth-child(2) { width: 14% !important; }
+    .hsbc-credit-card-table col:nth-child(3) { width: 24% !important; }
+    .hsbc-credit-card-table col:nth-child(4) { width: 14% !important; }
+    .hsbc-credit-card-table col:nth-child(5) { width: 14% !important; }
+    .hsbc-credit-card-table col:nth-child(6) { width: 20% !important; }
+
+    .hsbc-credit-card-table :is(th, td) {
+        padding-inline: 1px;
+    }
 }
 
 .investment-import-broker-field {

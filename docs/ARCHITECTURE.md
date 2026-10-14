@@ -1,6 +1,47 @@
 # Architecture guide
 
-Documentation version: `v1.136.0`
+Documentation version: `v1.138.0`
+
+## HSBC credit-card boundary
+
+The first HSBC Copy/paste account-page field recognizes credit-card pages
+and automatically runs a read-only preview before explicit import. It owns a separate local
+`credit_cards.json` ledger under the configured settings directory. Its dedicated preview, import, and
+read routes are `/api/credit-cards/hsbc/preview`,
+`/api/credit-cards/hsbc/import`, and `/api/credit-cards/hsbc`. POST routes use
+the existing same-origin session CSRF boundary. Preview is read-only; commit
+reparses the supplied source and serializes atomic replacement and readback
+under one ledger lock. Neither route uses the investment commit, market-data,
+valuation, or investment-cache pipeline.
+
+The parser accepts complete English HKD credit-card account pages. It retains
+the source text and SHA-256 digest, uses the full normalized account number's
+digest for account scope, and exposes only the last four digits in browser
+responses. Duplicated account-number accessibility text is normalized before
+identity construction. Purchases, repayments, and RewardCash offsets remain
+distinct. Pending authorizations have no posted liability delta; confirmed
+repayments and RewardCash offsets reduce liability without becoming investment
+income. Unknown descriptions or incomplete rows fail closed when copied text
+does not preserve a reliable amount direction.
+
+Transaction identity includes account, card, date, normalized description,
+kind, currency, amount, and occurrence. Status does not change same-date
+identity. Pending-to-posted reconciliation consumes an exact same-date identity
+once and never demotes a posted record on an older replay. A potential match
+whose posted date is one through seven days after the pending date requires
+review even when it is unique; no broker identifier proves that the records
+describe one purchase. This check also covers pending and posted records
+within one initial capture. Missing pending rows do not imply cancellations. Snapshots
+preserve the bank's balance, amount due, minimum payment, due date, and rewards
+as independent fields. Capture order is not a bank-issued balance as-of time,
+and the last visible transaction date must not be assigned to the balance.
+Reads reparse hash-verified source text and compare account ownership, capture
+snapshots, transaction identities, and amounts with the stored structures.
+
+The product-specific UI reuses existing controls and table primitives without
+changing shared typography or layout contracts. Editing the text or switching
+the import mode invalidates a preview; reading saved records cannot enable an
+import. A successful import displays the card ledger's persisted readback.
 
 ## Import evidence and replay audit boundaries
 

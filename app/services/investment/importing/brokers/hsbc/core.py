@@ -1,6 +1,8 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.4.0
+Code version: v0.5.0
+- Changed: Credit-card pages fail before investment cash parsing and direct
+  users to the first HSBC Copy/paste field and explicit Preview.
 - Fixed: Pasted cash evidence periods include visible zero-net postings even
   though those rows remain excluded from the economic transaction ledger.
 """
@@ -2041,11 +2043,39 @@ def _build_hsbc_pasted_cash_account_section(
     )
 
 
+def _reject_hsbc_credit_card_cash_text(raw_text: str) -> None:
+    """Keep card liabilities out of the investment cash parser."""
+    text = str(raw_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    named_card = re.search(
+        r"^\s*HSBC[^\r\n]*\bCredit\s+Card\s*\n\s*"
+        r"(?:Change account\b|Account number\s*:)",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    card_fields = {
+        _normalize_whitespace(match.group(1)).lower()
+        for match in re.finditer(
+            r"^\s*(RewardCash balance|Current amount due|"
+            r"Total minimum payment amount|Payment due date)\s*:",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    }
+    if named_card or len(card_fields) >= 2:
+        raise ValueError(
+            "This is an HSBC credit-card page. Refresh the page and reopen Import, "
+            "select HSBC, then Copy/paste. Paste one complete credit-card account "
+            "page into the first account-page field and select Preview. "
+            "Keep cash and credit-card pages in separate captures."
+        )
+
+
 def _build_hsbc_cash_account_capture_from_text_single(
     raw_text: str,
     *,
     warnings: list[str],
 ) -> dict[str, Any]:
+    _reject_hsbc_credit_card_cash_text(raw_text)
     text = _normalize_text(raw_text)
     if not text:
         raise ValueError("The HSBC cash-account text is empty.")
@@ -2171,6 +2201,8 @@ def _build_hsbc_cash_account_capture_from_text(
     chunks = _split_hsbc_pasted_text_chunks(raw_text)
     if not chunks:
         raise ValueError("The HSBC cash-account text is empty.")
+    for chunk in chunks:
+        _reject_hsbc_credit_card_cash_text(chunk)
     account_number = ""
     available_balance_components: dict[str, Decimal] = {}
     ledger_balance_components: dict[str, Decimal] = {}

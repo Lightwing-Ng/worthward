@@ -1,6 +1,34 @@
 # Testing guide
 
-Documentation version: `v1.96.1`
+Documentation version: `v1.98.0`
+
+## HSBC credit-card verification
+
+The first HSBC Copy/paste account-page field recognizes a complete card page
+and starts a read-only preview automatically. Mixed or incomplete captures retain their
+source text and cannot reach either import writer. Portfolio and Order Status
+drafts are retained and excluded from card imports.
+
+The dedicated parser, ledger, HTTP, JavaScript, and browser suites use anonymous
+page factories and isolated stores. They cover purchase, repayment, RewardCash,
+and pending classification; occurrence-aware overlap deduplication; same-date
+pending promotion; ambiguous later postings; atomic writes and persisted
+readback; CSRF and source digests; read-only previews; and stale responses after
+text, broker, or mode changes, including a newer paste queued during a request. Browser cases exercise the existing Stock details
+entry and the Holdings dialog at desktop and narrow widths without committing to production stores.
+
+On 14 Oct 2026, the scoped PR branch based on `origin/main` `f530214d` passed
+`python3 -B -m pytest -q tests/python/services/test_hsbc_credit_card_cash_guard.py
+tests/python/services/test_hsbc_credit_card.py
+tests/python/services/test_credit_card_ledger.py
+tests/python/web/test_credit_card_routes.py`: 98 passed in 1.74 seconds.
+`python3 -B -m pytest -q tests/python/web/test_more_page.py
+tests/python/architecture/test_repository_contracts.py` reported 73 passed
+and 7 subtests passed in 20.45 seconds. `node --test
+tests/js/investment/test_hsbc_credit_card_import.mjs` passed all 22 cases.
+`./scripts/test_e2e.sh tests/e2e/investment/hsbc-credit-card-import.spec.mjs`
+reported 17 passed in 26.9 seconds. All commands exited 0. These are scoped
+integration results, not a complete gate result for the PR branch.
 
 ## Complete audit verification
 
