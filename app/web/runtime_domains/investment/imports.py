@@ -1,6 +1,8 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.1.2
+Code version: v0.2.0
+- Changed: Reject non-investment HSBC import modes and direct credit-card
+  requests to the unified Copy/paste account-page field and explicit Preview.
 """
 
 from __future__ import annotations
@@ -843,6 +845,13 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                 hsbc_import_mode = (
                     str(request.form.get("hsbc_import_mode", "paste")).strip().lower()
                 )
+                if hsbc_import_mode not in {"paste", "statement_pdf"}:
+                    raise ValueError(
+                        "Refresh the page and reopen Import, select HSBC, then Copy/paste. "
+                        "Paste one complete credit-card account page into the first "
+                        "account-page field and select Preview. Keep cash and "
+                        "credit-card pages in separate captures."
+                    )
                 if hsbc_import_mode == "statement_pdf":
                     statement_pdf_payloads: list[tuple[bytes, str]] = []
                     for statement_pdf_file in request.files.getlist(

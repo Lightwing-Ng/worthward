@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.3.3
+ * Code version: v1.4.0
+ * - Changed: Shared HSBC account input enables only its detected import path.
  * - Fixed: Pending-trade Metrics uses current multicurrency Total equity.
  * - Changed: Import height reads the canonical responsive circular-action size.
  * - Added: Initial Holdings loading reports completed work stages and rejects
@@ -492,7 +493,8 @@ function syncImportValidationState() {
         const isBocHk = selectedBroker === 'boc_hk';
         const isHsbc = selectedBroker === 'hsbc';
         const hsbcImportMode = runtime.getSelectedHsbcImportMode();
-        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
+        const isHsbcCreditCard = isHsbc && runtime.isHsbcCreditCardInput?.();
+        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste' && !isHsbcCreditCard;
         const isHsbcStatementPdf = isHsbc && hsbcImportMode === 'statement_pdf';
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
@@ -538,7 +540,9 @@ function syncImportValidationState() {
         const hsbcOrderStatusValidationState = isHsbcPaste
             ? runtime.getHsbcPasteFieldValidationState('order', hsbcOrderStatusText)
             : 'empty';
-        const hsbcCashAccountValidationState = isHsbcPaste
+        const hsbcCashAccountValidationState = isHsbcCreditCard
+            ? (runtime.isHsbcCreditCardReady?.() ? 'valid' : 'empty')
+            : isHsbcPaste
             ? runtime.getHsbcPasteFieldValidationState('cash', hsbcCashAccountText)
             : 'empty';
         const hsbcPasteReady = isHsbcPaste
@@ -578,6 +582,7 @@ function syncImportValidationState() {
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isBocHk && Boolean(bocHkStatementsReady))
+            || (isHsbcCreditCard && runtime.isHsbcCreditCardReady?.())
             || Boolean(hsbcPasteReady)
             || (isHsbcStatementPdf && Boolean(hsbcStatementsReady))
             || (isSchwab && Boolean(schwabReady))
@@ -618,7 +623,8 @@ function syncImportValidationState() {
             runtime.hsbcCashAccountTextStatus,
             hsbcCashAccountValidationState,
             hsbcCashAccountValidationState === 'valid'
-                ? `HSBC ${runtime.state.hsbcPasteValidation.cashCurrencies.join(', ') || 'cash-account'} text validated.`
+                ? (isHsbcCreditCard ? 'HSBC credit-card preview ready.'
+                    : `HSBC ${runtime.state.hsbcPasteValidation.cashCurrencies.join(', ') || 'cash-account'} text validated.`)
                 : '',
         );
         runtime.setImportStatusIcon(runtime.hsbcStatementPdfsStatus, Boolean(hsbcStatementsReady));

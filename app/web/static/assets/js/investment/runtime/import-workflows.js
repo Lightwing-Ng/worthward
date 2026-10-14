@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.0.2
+ * Code version: v1.1.0
+ * - Changed: HSBC account-page paste detects cash and credit cards in one field.
  * - Fixed: HSBC paste validation refreshes the browser write session first.
  * - Changed: HSBC is the import chooser fallback when a selection is absent.
  * - Added: Extracted from the Investment workspace composition root.
@@ -894,11 +895,14 @@ function summarizeHsbcPastedText(kind, rawText, validationState) {
         const chunkCount = splitHsbcPastedTextChunks(normalized).length || 1;
         const lineCount = countClipboardLines(normalized);
         const charCount = normalized.length.toLocaleString('en-US');
+        const cardKind = kind === 'cash' ? runtime.getHsbcCreditCardInputKind?.() : 'none';
         const label = kind === 'cash'
-            ? 'HSBC cash accounts'
+            ? (cardKind && cardKind !== 'none' ? 'HSBC credit card' : 'HSBC cash accounts')
             : (kind === 'portfolio' ? 'Portfolio' : 'Order Status');
         const chunkLabel = chunkCount === 1 ? '1 clip' : `${chunkCount.toLocaleString('en-US')} clips`;
-        const readiness = validationState === 'valid'
+        const readiness = cardKind === 'credit_card'
+            ? (runtime.isHsbcCreditCardReady?.() ? 'Preview ready' : 'Select Preview')
+            : validationState === 'valid'
             ? 'Ready'
             : (validationState === 'pending' ? 'Checking…' : 'Check format');
         return `${label} clipboard pasted · ${chunkLabel} · ${lineCount} lines · ${charCount} chars · ${readiness}`;
@@ -992,7 +996,8 @@ function cancelHsbcPasteValidation() {
 
 function isHsbcPasteValidationActive() {
         return getSelectedInvestmentImportBroker() === 'hsbc'
-            && getSelectedHsbcImportMode() === 'paste';
+            && getSelectedHsbcImportMode() === 'paste'
+            && !runtime.isHsbcCreditCardInput?.();
     }
 
 function resetHsbcPasteValidation() {
@@ -1012,6 +1017,7 @@ function resetHsbcPasteValidation() {
     }
 
 function requestHsbcPasteValidation({ debounce = true } = {}) {
+        if (runtime.syncHsbcCreditCardInput?.()) return;
         if (!isHsbcPasteValidationActive()) {
             return;
         }
@@ -1239,6 +1245,9 @@ async function pasteHsbcClipboardIntoField(kind) {
         }
         try {
             const rawText = await navigator.clipboard.readText();
+            if (getSelectedInvestmentImportBroker() !== 'hsbc'
+                || getSelectedHsbcImportMode() !== 'paste'
+                || runtime.state.investmentImportInFlight) return;
             const normalizedText = normalizeClipboardText(rawText);
             if (!normalizedText) {
                 runtime.setImportFeedback('Clipboard is empty.', 'error');
@@ -1256,6 +1265,7 @@ async function pasteHsbcClipboardIntoField(kind) {
                 runtime.hsbcOrderStatusTextInput.value = mergeResult.mergedText;
             }
             runtime.clearImportFeedback();
+            runtime.syncInvestmentImportMode();
             syncHsbcPasteDisplaySummaries();
             runtime.syncImportValidationState();
             requestHsbcPasteValidation({debounce: false});
@@ -1290,6 +1300,7 @@ function seedLongbridgeImportDateRange() {
     }
 
 function syncInvestmentImportMode() {
+        runtime.syncHsbcCreditCardInput?.();
         const selectedBroker = getSelectedInvestmentImportBroker();
         const isIbkr = selectedBroker === 'ibkr';
         const ibkrImportMode = getSelectedIbkrImportMode();
@@ -1301,7 +1312,8 @@ function syncInvestmentImportMode() {
         const isFutuhk = selectedBroker === 'futuhk';
         const isBocHk = selectedBroker === 'boc_hk';
         const isHsbc = selectedBroker === 'hsbc';
-        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste';
+        const isHsbcCreditCard = isHsbc && runtime.isHsbcCreditCardInput?.();
+        const isHsbcPaste = isHsbc && hsbcImportMode === 'paste' && !isHsbcCreditCard;
         const isHsbcStatementPdf = isHsbc && hsbcImportMode === 'statement_pdf';
         const isSchwab = selectedBroker === 'schwab';
         const isTigertrade = selectedBroker === 'tigertrade';
@@ -1310,7 +1322,7 @@ function syncInvestmentImportMode() {
         const usesStandardXlsxImport = runtime.GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker);
         const usesSyncAction = isLongbridgeHk
             || isIbkrWebPaste
-            || (isHsbc && hsbcImportMode === 'paste');
+            || isHsbcPaste;
 
         if (runtime.investmentImportIbkrFields instanceof HTMLElement) {
             runtime.investmentImportIbkrFields.hidden = !isIbkr;
@@ -1390,10 +1402,12 @@ function syncInvestmentImportMode() {
             runtime.hsbcStatementPdfsInput.required = isHsbc && hsbcImportMode === 'statement_pdf';
         }
         if (runtime.investmentImportNote instanceof HTMLElement) {
-            runtime.investmentImportNote.innerHTML = isHsbc
+            runtime.investmentImportNote.innerHTML = isHsbcCreditCard
+                ? 'Preview the full credit-card page, then import into the separate credit-card ledger. Pending activity stays separate from posted purchases. Repeated captures are deduplicated.'
+                : isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
                     ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
-                    : 'Paste HSBC cash-account pages here. USD Savings settlement-only cash refreshes and HKD/CNH cash-only captures can sync on their own; a full USD Portfolio and Order Status snapshot remains available when holdings also need refresh. Supplementary captures are allowed and duplicate chunks are ignored.')
+                    : 'Paste HSBC cash-account or credit-card pages in the first field. Credit-card pages require Preview before import. For cash accounts, supplementary captures are allowed and duplicate chunks are ignored; Portfolio and Order Status can refresh holdings.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
                     : (isLongbridgeSg

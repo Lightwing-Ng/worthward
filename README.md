@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.40.1`
+Documentation version: `v3.41.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -602,6 +602,40 @@ remain explicitly provisional.
   proceeds row or deducted twice from an already-net amount.
 - Account validation is opt-in through local environment variables. No account
   number, balance, position quantity, or order reference is documented here.
+
+### HSBC credit-card import
+
+In Investment import, select HSBC, then Copy/paste. Paste one complete English
+credit-card account page into the first account-page field. The same panel
+shows Preview so you can inspect purchases, repayments, RewardCash offsets,
+and pending authorizations before Import now. View saved cards reads the
+separate card history. The credit-card parser accepts HKD webpage text;
+credit-card PDF and CSV imports are not supported.
+
+The first Copy/paste field recognizes complete cash or credit-card account
+pages. A detected card page still requires explicit Preview; recognition
+never imports records automatically. Keep cash and credit-card captures
+separate, and resolve mixed content before importing. Portfolio and Order
+Status drafts remain separate. If a card page reaches cash validation,
+the error explains how to refresh Import and preview the card page in the
+first Copy/paste field without interpreting card liability as investment cash.
+
+Credit-card records live in `settings_store/credit_cards.json`, separate from
+the investment ledger. Purchases increase card liability; repayments and
+RewardCash offsets reduce it. Pending authorizations stay outside posted totals.
+The bank's displayed balance, current amount due, minimum payment, due date,
+and RewardCash balance remain separate source facts; a visible transaction
+window is not a complete statement and cannot reconstruct its opening balance.
+
+Repeated and overlapping captures are merged by account, card, transaction
+identity, and occurrence. A later posted record replaces a same-date pending
+authorization with the same identity once. Possible matches posted within
+1–7 days after a pending authorization and other ambiguities block import for
+review instead of guessing. An authorization without a confirmed posting stays
+pending; its absence never establishes cancellation. Raw
+source text is retained locally with its SHA-256 digest; browser responses show
+only masked account identity. Preview performs no writes, and card imports
+never alter investment cash, holdings, or returns.
 
 ### HSBC statement import
 

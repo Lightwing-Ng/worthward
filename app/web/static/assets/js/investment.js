@@ -1,7 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.158.0
+ * Code version: v2.159.0
+ * - Changed: HSBC cash and credit-card pages share the existing paste field.
+ * - Added: HSBC credit-card preview and import use an independent card ledger.
  * - Changed: Loads the complete import-audit cash, account, and realized-basis replay.
  * - Fixed: Refreshes pending HSBC history's multicurrency cash projection.
  * - Changed: Loads dated HSBC cash that keeps native foreign balances on their
@@ -80,11 +82,12 @@ import {createInvestmentFundingMetricsRuntime} from './investment/runtime/fundin
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.2';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.0.2';
+import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.1.0';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.1.0';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
-} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.3.3';
+} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.4.0';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.0';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
@@ -193,7 +196,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.158.0',
+    entry: 'v2.159.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -688,6 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     Object.assign(runtime, createInvestmentExportHistoryRuntime(runtime));
     Object.assign(runtime, createInvestmentShareLinkedHoverRuntime(runtime));
     Object.assign(runtime, createInvestmentMetricsImportRuntime(runtime));
+    Object.assign(runtime, createHsbcCreditCardImportRuntime(runtime));
     Object.assign(runtime, createInvestmentHoldingsWorkspaceRuntime(runtime));
     Object.assign(runtime, createInvestmentHoldingsLiveRuntime(runtime));
     Object.assign(runtime, createInvestmentHistoryPaginationRuntime(runtime));
@@ -881,6 +885,7 @@ Object.assign(runtime, createInvestmentDataUtils({
             input.addEventListener('change', () => {
                 runtime.clearImportFeedback();
                 if (input === runtime.investmentImportBrokerSelect) {
+                    runtime.invalidateHsbcCreditCardPreview();
                     rememberInvestmentImportBroker(input);
                     runtime.syncInvestmentImportMode();
                 }
@@ -908,6 +913,7 @@ Object.assign(runtime, createInvestmentDataUtils({
     document.querySelectorAll('input[name="hsbc_import_mode"]').forEach((input) => {
         if (!(input instanceof HTMLInputElement)) return;
         input.addEventListener('change', () => {
+            runtime.invalidateHsbcCreditCardPreview();
             runtime.clearImportFeedback();
             runtime.syncInvestmentImportMode();
             runtime.syncImportValidationState();
@@ -918,6 +924,7 @@ Object.assign(runtime, createInvestmentDataUtils({
         if (!input) return;
         input.addEventListener('input', () => {
             runtime.clearImportFeedback();
+            runtime.syncInvestmentImportMode();
             runtime.syncHsbcPasteDisplaySummaries();
             runtime.syncImportValidationState();
             runtime.requestHsbcPasteValidation();
@@ -1019,6 +1026,10 @@ Object.assign(runtime, createInvestmentDataUtils({
             const transactionsCsv = document.getElementById('transactions_csv');
             const positionsCsv = document.getElementById('positions_csv');
             const selectedBroker = runtime.getSelectedInvestmentImportBroker();
+            if (selectedBroker === 'hsbc' && runtime.isHsbcCreditCardInput()) {
+                runtime.importHsbcCreditCard();
+                return;
+            }
             const transactionsFile = transactionsCsv?.files?.[0];
             const positionsFile = positionsCsv?.files?.[0];
             const ibkrImportMode = runtime.getSelectedIbkrImportMode();

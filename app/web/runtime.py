@@ -1,6 +1,7 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.5.3
+Code version: v1.6.0
+- Added: Independent HSBC credit-card handlers in the explicit runtime schema.
 - Added: Classified Longbridge connection check for the broker authorize action.
 - Added: Investment session-token handler for import dialog readiness.
 - Changed: Investment transaction cache schema v16 invalidates payloads built
@@ -627,6 +628,9 @@ class WebRuntime:
     local_market_store_page_data_api: Any
     market_store_presence_api: Any
     investment_page: Any
+    credit_card_preview: Any
+    credit_card_import: Any
+    credit_card_read: Any
     investment_get_transactions: Any
     investment_session_security_token: Any
     investment_add_transaction: Any
@@ -780,6 +784,7 @@ from app.web.runtime_domains.workspace.context import build_workspace_context
 from app.web.runtime_domains.pages_settings import build_pages_settings_context
 from app.web.runtime_domains.compare_training import build_compare_training_context
 from app.web.runtime_domains.investment.imports import build_investment_import_context
+from app.web.runtime_domains.investment.credit_cards import build_credit_card_context
 from app.web.runtime_domains.investment.mutations import build_investment_mutation_context
 from app.web.runtime_domains.investment.market_live import build_investment_market_live_context
 
@@ -793,6 +798,7 @@ def build_web_runtime() -> WebRuntime:
     context.update(build_pages_settings_context(context))
     context.update(build_compare_training_context(context))
     context.update(build_investment_import_context(context))
+    context.update(build_credit_card_context(context))
     context.update(build_investment_mutation_context(context))
     context.update(build_investment_market_live_context(context))
     backtest_page = context["backtest_page"]
@@ -925,6 +931,9 @@ def build_web_runtime() -> WebRuntime:
         local_market_store_page_data_api=local_market_store_page_data_api,
         market_store_presence_api=market_store_presence_api,
         investment_page=investment_page,
+        credit_card_preview=context["credit_card_preview"],
+        credit_card_import=context["credit_card_import"],
+        credit_card_read=context["credit_card_read"],
         investment_get_transactions=investment_get_transactions,
         investment_session_security_token=investment_session_security_token,
         investment_add_transaction=investment_add_transactions,

@@ -1,5 +1,29 @@
 # Known issues and operating constraints
 
+HSBC credit-card routing, 14 Oct 2026: card pages sent through cash validation
+previously produced a missing-available-balance error. The first account-page
+field in HSBC Copy/paste now recognizes card pages and shows an explicit
+Preview in that panel; recognition never previews or commits automatically.
+Mixed cash/card captures require explicit separation. The cash parser rejects
+recognized card evidence before account, available-balance, or cash-transaction
+parsing and directs users to refresh Import, select HSBC and Copy/paste, and
+preview one complete card page in the first field. Ordinary credit-card
+navigation and payment descriptions in a cash page remain valid.
+
+HSBC credit-card import, 14 Oct 2026: the first HSBC Copy/paste account field
+accepts the full English HKD card-page text and keeps card liability,
+repayments, RewardCash offsets,
+and pending authorizations in a separate card ledger. It does not accept
+credit-card PDF/CSV files or infer a complete monthly statement from the visible
+transaction window. Unknown or ambiguous copied rows block import rather than
+guessing their direction. Pending matching cannot establish a cancellation
+from an absent row. Same-date identities can be promoted automatically;
+possible postings 1–7 days later require review, and later matches remain
+unresolved. The bank's displayed
+balance is preserved independently of partial-history totals. Verification
+and sample imports must use isolated stores; source changes do not establish
+adoption by a running user-owned service.
+
 Follow-up audit, 13 Oct 2026: additional Claude audit entries were independently
 checked with isolated regressions. Confirmed merge defects included reused
 execution occurrences, repeated FX legs collapsed into one occurrence,
@@ -1020,7 +1044,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.277.1`
+Documentation version: `v1.278.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
