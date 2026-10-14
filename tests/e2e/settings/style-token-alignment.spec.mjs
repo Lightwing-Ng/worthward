@@ -1,4 +1,4 @@
-/* Code version: v1.8.4 */
+/* Code version: v1.8.5 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -9,21 +9,50 @@ async function expectFieldTitle(locator) {
     await expect(locator).toHaveCSS('color', 'rgb(11, 12, 12)');
 }
 
-for (const width of [1024, 390]) {
-    test(`strategy tuning active surface follows the dark sidebar at ${width}px`, async ({page}) => {
+const darkTuningCases = [1024, 390].flatMap((width) => (
+    ['system', 'override'].map((themeSource) => ({width, themeSource}))
+));
+for (const {width, themeSource} of darkTuningCases) {
+    test(`strategy tuning active surface follows the dark sidebar at ${width}px (${themeSource})`, async ({page}) => {
         await page.setViewportSize({width, height: 863});
-        await page.emulateMedia({colorScheme: 'dark'});
+        await page.emulateMedia({colorScheme: themeSource === 'system' ? 'dark' : 'light'});
         await page.goto('/settings/style-tokens');
+        if (themeSource === 'override') {
+            await page.evaluate(() => document.documentElement.setAttribute('data-theme-override', 'dark'));
+        }
         const button = page.locator('[data-style-token-strategy-tune-button]');
         await expect(button).toHaveAttribute('aria-pressed', 'true');
         await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
         await expect(button).toHaveCSS('background-image', 'none');
-        const colors = await button.evaluate((node) => ({
-            border: getComputedStyle(node).borderColor,
-            icon: getComputedStyle(node.querySelector('.icon')).backgroundColor,
-        }));
-        expect(colors.border).toBe('rgb(0, 85, 204)');
-        expect(colors.icon).toBe('rgb(0, 85, 204)');
+        await expect(button).toHaveCSS('color', 'color(srgb 0.3 0.533333 0.86)');
+        const colors = await button.evaluate((node) => {
+            const luminance = (value) => {
+                const channels = (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+                const normalized = value.startsWith('color(srgb')
+                    ? channels : channels.map((channel) => channel / 255);
+                const linear = normalized.map((channel) => channel <= 0.04045
+                    ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+                return (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2]);
+            };
+            const probe = document.createElement('i');
+            probe.style.backgroundColor = 'var(--theme-background)';
+            node.append(probe);
+            const backdrop = luminance(getComputedStyle(probe).backgroundColor);
+            probe.remove();
+            const border = getComputedStyle(node).borderColor;
+            const icon = getComputedStyle(node.querySelector('.icon')).backgroundColor;
+            const foreground = luminance(icon);
+            return {
+                border,
+                icon,
+                contrast: (Math.max(foreground, backdrop) + 0.05)
+                    / (Math.min(foreground, backdrop) + 0.05),
+            };
+        });
+        // The transparent dark surface needs a lighter tint of the same primary blue.
+        expect(colors.border).toBe('color(srgb 0.3 0.533333 0.86)');
+        expect(colors.icon).toBe('color(srgb 0.3 0.533333 0.86)');
+        expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
     });
 }
 

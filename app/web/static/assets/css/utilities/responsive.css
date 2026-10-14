@@ -1,4 +1,4 @@
-/* Code version: v3.37.6 */
+/* Code version: v3.37.7 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
@@ -13,9 +13,9 @@
 	appearance: none;
 	-webkit-appearance: none;
 }
-/* The full-viewport dismissal target must not inherit the generic button hover lift. */
-.sidebar-backdrop,
-.sidebar-backdrop:hover {
+.sidebar-backdrop:hover,
+.sidebar-backdrop:focus-visible,
+.sidebar-backdrop:active {
 	transform: none;
 }
 @media (max-width: 980px) {

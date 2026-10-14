@@ -1,6 +1,6 @@
 """Investment import domain: merge identity.
 
-Code version: v0.3.2
+Code version: v0.3.3
 - Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
   is recorded as corroboration instead of a conflicting sequence-digest alias.
 - Fixed: HSBC dividend fallback identity requires exact account, currency,
@@ -44,6 +44,7 @@ import app.services.investment.importing.payload_summaries as _ii_payload_summar
 import app.services.investment.importing.records as _ii_records
 
 from app.services.investment.importing import compat as _investment_import_compat
+from app.services.investment.importing.merge.ibkr_trade_evidence import closed_lot_match_rank
 
 
 _HSBC_POSITIVE_DIVIDEND_ATTRIBUTION_STATUSES = frozenset(
@@ -298,9 +299,8 @@ def _normalize_currency_balance_map(value: Any) -> dict[str, str]:
             continue
         normalized[currency] = normalized.get(currency, ZERO) + amount
     return {
-        currency: _decimal_to_str(amount) or "0"
+        currency: "0" if amount == ZERO else _decimal_to_str(amount)
         for currency, amount in normalized.items()
-        if amount != ZERO
     }
 
 
@@ -331,9 +331,8 @@ def _normalize_bochk_currency_balance_map(value: Any) -> dict[str, str]:
             continue
         normalized[currency] = normalized.get(currency, ZERO) + amount
     return {
-        currency: _decimal_to_str(amount) or "0"
+        currency: "0" if amount == ZERO else _decimal_to_str(amount)
         for currency, amount in normalized.items()
-        if amount != ZERO
     }
 
 
@@ -780,17 +779,18 @@ def _transaction_identity_key(record: dict[str, Any]) -> tuple[str, ...]:
                     _forex_trade_component_identity_currency(record),
                 )
             return identity
-    fund_details_entry_number = _normalize_text(source.get("fund_details_entry_number"))
     if (
         broker == "longbridge_hk"
         and bool(source.get("cash_equivalent_transfer"))
-        and fund_details_entry_number
     ):
         return (
             broker,
             _ii_basics._account_identity_token(broker, account),
             "longbridge_hk_cash_equivalent_entry",
-            fund_details_entry_number,
+            _normalize_text(record.get("date")),
+            _normalize_text(record.get("currency")).upper(),
+            _ii_basics._normalize_decimal_identity_token(record.get("gross_amount_raw")),
+            _normalize_whitespace(record.get("description")),
         )
     if _is_fx_translation_pnl_record(record):
         return _fx_translation_pnl_merge_slot_key(record)
@@ -1068,6 +1068,23 @@ def _merge_transaction_records_default(
             merged[key] = incoming_value
         elif not _is_missing_merge_value(incoming_value):
             merged[key] = incoming_value
+    if _normalize_text(merged.get("type")) in {
+        "deposit", "withdrawal", "transfer_in", "transfer_out"
+    } and _normalize_whitespace(current.get("description")) == _normalize_whitespace(incoming.get("description")):
+        from app.services.investment.importing import bindings
+
+        aliases = []
+        for record in (current, incoming):
+            source = record.get("source") or {}
+            for alias in [
+                bindings._investment_internal_transfer_source_identity(record),
+                *(source.get("transfer_source_identity_aliases") or []),
+            ]:
+                if isinstance(alias, list) and len(alias) == 6 and alias not in aliases:
+                    aliases.append(alias)
+        source = dict(merged.get("source") or {})
+        source["transfer_source_identity_aliases"] = aliases
+        merged["source"] = source
     return merged
 
 
@@ -1246,8 +1263,10 @@ def _merge_transaction_records(
             else incoming
         )
         supplemental = incoming if preferred is current else current
-        return _prune_hsbc_settled_pending_flag(
-            _merge_transaction_records_default(supplemental, preferred)
+        return _prune_ibkr_authoritative_source_metadata(
+            _prune_hsbc_settled_pending_flag(
+                _merge_transaction_records_default(supplemental, preferred)
+            )
         )
     return _prune_hsbc_settled_pending_flag(
         _preserve_hsbc_order_status_execution_sequence(
@@ -1274,6 +1293,16 @@ def _prune_ibkr_authoritative_source_metadata(
     ):
         source.pop(key, None)
     record["source"] = source
+    if source.get("file_kind") == "gainskeeper":
+        _normalize_ibkr_gainskeeper_transaction_datetimes({"transactions": [record]})
+        if source.get("closed_trade_metadata_status") in {"ambiguous", "unmatched"}:
+            for field in ("proceeds", "commission_or_fee", "cost_basis", "realized_pnl"):
+                record.pop(f"broker_{field}_raw", None)
+                if isinstance(record.get("normalized"), dict):
+                    record["normalized"].pop(f"broker_{field}", None)
+            for field in list(source):
+                if field.startswith("closed_lot_"):
+                    source.pop(field)
     return record
 
 
@@ -2028,50 +2057,11 @@ def _merge_ibkr_closed_trade_metadata(
     existing_transactions: list[dict[str, Any]],
     incoming_transactions: list[dict[str, Any]],
 ) -> None:
-    """Preserve Realized Summary fields before CSV/GainsKeeper deduplication."""
-    existing_gainskeeper = [
-        record
-        for record in existing_transactions
-        if _is_ibkr_source_stock_trade(record, file_kind="gainskeeper")
-    ]
-    incoming_gainskeeper = [
-        record
-        for record in incoming_transactions
-        if _is_ibkr_source_stock_trade(record, file_kind="gainskeeper")
-    ]
-    existing_csv = [
-        record
-        for record in existing_transactions
-        if _is_ibkr_source_stock_trade(record, file_kind="transactions")
-    ]
-    incoming_csv = [
-        record
-        for record in incoming_transactions
-        if _is_ibkr_source_stock_trade(record, file_kind="transactions")
-    ]
-    for gainskeeper_record in (*existing_gainskeeper, *incoming_gainskeeper):
-        for csv_record in (*existing_csv, *incoming_csv):
-            if not _is_ibkr_csv_gainskeeper_equivalent_stock_trade(
-                gainskeeper_record,
-                csv_record,
-            ):
-                continue
-            if _has_ibkr_closed_trade_metadata(gainskeeper_record):
-                continue
-            if not _has_ibkr_closed_trade_metadata(csv_record):
-                continue
-            merged = _merge_transaction_records(gainskeeper_record, csv_record)
-            if gainskeeper_record in existing_transactions:
-                existing_transactions[
-                    existing_transactions.index(gainskeeper_record)
-                ] = merged
-            else:
-                incoming_transactions[
-                    incoming_transactions.index(gainskeeper_record)
-                ] = merged
-            gainskeeper_record.clear()
-            gainskeeper_record.update(merged)
-            break
+    from app.services.investment.importing.merge.ibkr_trade_evidence import (
+        merge_closed_trade_metadata,
+    )
+
+    merge_closed_trade_metadata(existing_transactions, incoming_transactions)
 
 
 def _has_same_source_fitid(
@@ -2389,63 +2379,15 @@ def _ibkr_gainskeeper_stock_trade_coverage(
 def _remove_ibkr_csv_stock_trades_superseded_by_gainskeeper(
     existing_transactions: list[dict[str, Any]],
     incoming_transactions: list[dict[str, Any]],
+    source_artifacts: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    _merge_ibkr_closed_trade_metadata(existing_transactions, incoming_transactions)
-    coverage = _ibkr_gainskeeper_stock_trade_coverage(incoming_transactions)
-    if not coverage:
-        return existing_transactions, 0
+    from app.services.investment.importing.merge.ibkr_trade_evidence import (
+        remove_superseded_csv_trades,
+    )
 
-    legacy_candidates = [
-        record
-        for record in incoming_transactions
-        if _normalize_text(
-            (
-                record.get("source") if isinstance(record.get("source"), dict) else {}
-            ).get("file_kind")
-        )
-        == "gainskeeper"
-        and _normalize_text(record.get("type")).lower() in {"buy", "sell"}
-    ]
-    claimed_legacy_candidates: set[int] = set()
-
-    retained: list[dict[str, Any]] = []
-    superseded_count = 0
-    for record in existing_transactions:
-        source = record.get("source") if isinstance(record.get("source"), dict) else {}
-        if _normalize_text(source.get("file_kind")) == "transactions":
-            matched_legacy_candidate = next(
-                (
-                    candidate
-                    for candidate in legacy_candidates
-                    if id(candidate) not in claimed_legacy_candidates
-                    and _is_ibkr_legacy_transaction_gainskeeper_match(
-                        record,
-                        candidate,
-                    )
-                ),
-                None,
-            )
-            if matched_legacy_candidate is not None:
-                claimed_legacy_candidates.add(id(matched_legacy_candidate))
-                superseded_count += 1
-                continue
-        if not _is_ibkr_source_stock_trade(record, file_kind="transactions"):
-            retained.append(record)
-            continue
-        broker = _ii_basics._normalize_broker_code(record.get("broker"))
-        account = _normalize_text(record.get("account")) or _normalize_text(
-            source.get("account")
-        )
-        ticker = normalize_ticker(_normalize_text(record.get("ticker")))
-        date_token = _ibkr_stock_identity_date_token(record, source)
-        date_range = coverage.get(
-            (_ii_basics._account_identity_token(broker, account), ticker)
-        )
-        if date_range is not None and date_range[0] <= date_token <= date_range[1]:
-            superseded_count += 1
-            continue
-        retained.append(record)
-    return retained, superseded_count
+    return remove_superseded_csv_trades(
+        existing_transactions, incoming_transactions, source_artifacts or []
+    )
 
 
 def _remove_incoming_ibkr_csv_stock_trades_already_covered_by_gainskeeper(
@@ -2453,28 +2395,8 @@ def _remove_incoming_ibkr_csv_stock_trades_already_covered_by_gainskeeper(
     incoming_transactions: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int]:
     _merge_ibkr_closed_trade_metadata(existing_transactions, incoming_transactions)
-    existing_gainskeeper_stock_trades = [
-        record
-        for record in existing_transactions
-        if _is_ibkr_source_stock_trade(record, file_kind="gainskeeper")
-    ]
-    if not existing_gainskeeper_stock_trades:
-        return incoming_transactions, 0
-
-    retained: list[dict[str, Any]] = []
-    superseded_count = 0
-    for record in incoming_transactions:
-        if not _is_ibkr_source_stock_trade(record, file_kind="transactions"):
-            retained.append(record)
-            continue
-        if any(
-            _is_ibkr_csv_gainskeeper_equivalent_stock_trade(existing_record, record)
-            for existing_record in existing_gainskeeper_stock_trades
-        ):
-            superseded_count += 1
-            continue
-        retained.append(record)
-    return retained, superseded_count
+    # The main matcher owns one-to-one consumption across both source sets.
+    return incoming_transactions, 0
 
 
 def _merge_candidate_index_keys(
@@ -2585,6 +2507,9 @@ def _merge_slot_for_transaction(
     merged_by_key: dict[tuple[tuple[str, ...], int], dict[str, Any]],
     candidate_slots: dict[tuple[str, ...], list[tuple[tuple[str, ...], int]]],
     slot_order: dict[tuple[tuple[str, ...], int], int],
+    claimed_slots: set[tuple[tuple[str, ...], int]] | None = None,
+    *,
+    allow_cross_source: bool = True,
 ) -> tuple[tuple[tuple[str, ...], int], bool]:
     if _is_fx_translation_pnl_record(record):
         return (identity_key, 0), False
@@ -2596,7 +2521,15 @@ def _merge_slot_for_transaction(
     }
     for existing_key in sorted(
         candidate_keys,
-        key=lambda candidate_key: slot_order.get(candidate_key, 0),
+        key=lambda candidate_key: (
+            not (
+                _ibkr_source_fitid_identity_key(record)
+                and _ibkr_source_fitid_identity_key(merged_by_key[candidate_key])
+                == _ibkr_source_fitid_identity_key(record)
+            ),
+            closed_lot_match_rank(merged_by_key[candidate_key], record),
+            slot_order.get(candidate_key, 0),
+        ),
     ):
         existing_record = merged_by_key[existing_key]
         record_fitid_key = _ibkr_source_fitid_identity_key(record)
@@ -2622,6 +2555,21 @@ def _merge_slot_for_transaction(
             return existing_key, False
         if _has_same_hsbc_dividend_event(existing_record, record):
             return existing_key, False
+        if not allow_cross_source or (
+            claimed_slots is not None and existing_key in claimed_slots
+        ):
+            continue
+        if closed_lot_match_rank(existing_record, record) == 2:
+            continue
+        if (
+            existing_key[0] == identity_key
+            and record.get("type") in {"deposit", "withdrawal"}
+            and (record.get("source") or {}).get("file_kind") == "transactions"
+            and (existing_record.get("source") or {}).get("file_kind") == "transactions"
+            and _normalize_whitespace(record.get("description"))
+            == _normalize_whitespace(existing_record.get("description"))
+        ):
+            return existing_key, False
         if _is_ibkr_csv_gainskeeper_equivalent_stock_trade(existing_record, record):
             return existing_key, False
         if _is_ibkr_web_trade_refinement_pair(existing_record, record):
@@ -2632,7 +2580,9 @@ def _merge_slot_for_transaction(
             return existing_key, False
     precision_slot = (identity_key, 0)
     existing_record = merged_by_key.get(precision_slot)
-    if existing_record is not None:
+    if allow_cross_source and existing_record is not None and (
+        claimed_slots is None or precision_slot not in claimed_slots
+    ) and closed_lot_match_rank(existing_record, record) != 2:
         if _has_same_source_fitid(existing_record, record):
             return precision_slot, False
         if _is_ibkr_csv_gainskeeper_precision_pair(existing_record, record):
@@ -2643,8 +2593,15 @@ def _merge_slot_for_transaction(
             return precision_slot, False
         if _is_ibkr_web_forex_authoritative_precision_pair(existing_record, record):
             return precision_slot, False
-    if _is_forex_trade_component_record(record):
-        return precision_slot, False
     occurrence_index = occurrences.get(identity_key, 0)
+    while (
+        claimed_slots is not None and (identity_key, occurrence_index) in claimed_slots
+    ) or (
+        (identity_key, occurrence_index) in merged_by_key
+        and closed_lot_match_rank(
+            merged_by_key[(identity_key, occurrence_index)], record
+        ) == 2
+    ):
+        occurrence_index += 1
     occurrences[identity_key] = occurrence_index + 1
     return (identity_key, occurrence_index), True

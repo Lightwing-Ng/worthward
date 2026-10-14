@@ -1,26 +1,39 @@
-"""Reconcile provisional thinkorswim workbook sales with Schwab CSV evidence.
+"""Reconcile provisional thinkorswim workbook trades with Schwab CSV evidence.
 
-Code version: v0.1.0
+Code version: v0.2.1
+- Added: TOS page buys reconcile like sales, matched only against a Schwab CSV
+  trade on the same side.
+- Changed: A linked trade blocks only same-side, same-quantity, same-price
+  ambiguity; distinct fills at other prices remain importable.
+- Fixed: Linked date windows use the actual Hong Kong to New York conversion.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 import re
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from app.services.investment.importing.support import _normalize_text, normalize_ticker
+from app.services.investment.importing.support import (
+    DEFAULT_CONVENTION_TIMEZONE,
+    _normalize_text,
+    normalize_ticker,
+)
 
 import app.services.investment.importing.basics as _ii_basics
 
 
-_TOS_PAGE_SALE_REFERENCE = re.compile(
+_TOS_PAGE_TRADE_REFERENCE = re.compile(
     r"TOS-PAGE-(?P<date>\d{8})-(?P<time>\d{6})-"
-    r"(?P<ticker>[A-Z0-9][A-Z0-9.-]*)-SELL-\d+",
+    r"(?P<ticker>[A-Z0-9][A-Z0-9.-]*)-(?P<side>BUY|SELL)-\d+",
     re.IGNORECASE,
 )
+_TRADE_SIDES = {"buy", "sell"}
+_TOS_PAGE_TIMEZONE = ZoneInfo("Asia/Hong_Kong")
+_LEDGER_TIMEZONE = ZoneInfo(DEFAULT_CONVENTION_TIMEZONE)
 
 
 def _record_source(record: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +43,11 @@ def _record_source(record: dict[str, Any]) -> dict[str, Any]:
 
 def _record_account(record: dict[str, Any]) -> str:
     return _normalize_text(record.get("account") or _record_source(record).get("account"))
+
+
+def _trade_side(record: dict[str, Any]) -> str:
+    side = _normalize_text(record.get("type")).lower()
+    return side if side in _TRADE_SIDES else ""
 
 
 def _positive_absolute_decimal(value: Any) -> Decimal | None:
@@ -44,14 +62,14 @@ def _provisional_reference(record: dict[str, Any]) -> str:
     source = _record_source(record)
     if (
         _ii_basics._normalize_broker_code(record.get("broker")) != "schwab"
-        or _normalize_text(record.get("type")).lower() != "sell"
+        or not _trade_side(record)
         or _normalize_text(source.get("file_kind")) != "manual_investment_xlsx"
         or _normalize_text(source.get("source_timezone")) != "Asia/Hong_Kong"
     ):
         return ""
     reference = _normalize_text(source.get("reference_id"))
-    match = _TOS_PAGE_SALE_REFERENCE.fullmatch(reference)
-    if match is None:
+    match = _TOS_PAGE_TRADE_REFERENCE.fullmatch(reference)
+    if match is None or match.group("side").lower() != _trade_side(record):
         return ""
     source_datetime = _normalize_text(source.get("source_datetime_raw"))
     if (
@@ -71,6 +89,7 @@ def _provisional_signature(record: dict[str, Any]) -> tuple[str, ...]:
     source = _record_source(record)
     return (
         _record_account(record),
+        _trade_side(record),
         _normalize_text(record.get("date")),
         _normalize_text(source.get("source_datetime_raw"))[:10],
         normalize_ticker(_normalize_text(record.get("ticker"))),
@@ -80,11 +99,11 @@ def _provisional_signature(record: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
-def _official_sale(record: dict[str, Any]) -> bool:
+def _official_trade(record: dict[str, Any]) -> bool:
     source = _record_source(record)
     return (
         _ii_basics._normalize_broker_code(record.get("broker")) == "schwab"
-        and _normalize_text(record.get("type")).lower() == "sell"
+        and bool(_trade_side(record))
         and _normalize_text(source.get("file_kind")) == "schwab_csv"
         and bool(_record_account(record))
     )
@@ -99,6 +118,7 @@ def _official_identity(record: dict[str, Any]) -> tuple[str, ...]:
     )
     return (
         _record_account(record),
+        _trade_side(record),
         _normalize_text(record.get("date")),
         normalize_ticker(_normalize_text(record.get("ticker"))),
         _normalize_text(record.get("currency")).upper(),
@@ -118,41 +138,48 @@ def _official_identity(record: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _official_scope(record: dict[str, Any]) -> tuple[Any, ...]:
+    """Return the same-side trade scope followed by its exact fill economics."""
     return (
         _record_account(record),
+        _trade_side(record),
         normalize_ticker(_normalize_text(record.get("ticker"))),
         _normalize_text(record.get("currency")).upper(),
         _positive_absolute_decimal(record.get("quantity_raw")),
+        _positive_absolute_decimal(record.get("price_raw")),
     )
 
 
-def _linked_sale_dates(record: dict[str, Any]) -> set[str]:
+def _linked_trade_dates(record: dict[str, Any]) -> set[str]:
     linked_date = _normalize_text(record.get("date"))
     reference = _normalize_text(
         _record_source(record).get("superseded_manual_reference_id")
     )
-    match = _TOS_PAGE_SALE_REFERENCE.fullmatch(reference)
+    match = _TOS_PAGE_TRADE_REFERENCE.fullmatch(reference)
     if match is None:
         return {linked_date}
-    raw_date = match.group("date")
     try:
-        page_date = date.fromisoformat(
-            f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-        )
-    except ValueError:
+        page_datetime = datetime.strptime(
+            f"{match.group('date')}{match.group('time')}", "%Y%m%d%H%M%S"
+        ).replace(tzinfo=_TOS_PAGE_TIMEZONE)
+        ledger_date = page_datetime.astimezone(_LEDGER_TIMEZONE).date()
+    except (ValueError, OverflowError):
         return {linked_date}
+    # Rebuild the original candidate dates, including seasonal UTC offsets.
+    # Same-day captures must not acquire an unrelated previous-day candidate.
     return {
         linked_date,
-        page_date.isoformat(),
-        (page_date - timedelta(days=1)).isoformat(),
+        page_datetime.date().isoformat(),
+        ledger_date.isoformat(),
     }
 
 
-def _reject_conflicting_linked_csv_sales(
+def _reject_conflicting_linked_csv_trades(
     official_rows: list[tuple[int, int, dict[str, Any]]],
 ) -> None:
+    # A distinct fill at another price is a separate trade. A second identity
+    # at the linked quantity and price cannot be told apart from a revision.
     linked_scopes = {
-        (_official_scope(row), frozenset(_linked_sale_dates(row)))
+        (_official_scope(row), frozenset(_linked_trade_dates(row)))
         for _, _, row in official_rows
         if _normalize_text(
             _record_source(row).get("superseded_manual_reference_id")
@@ -170,7 +197,7 @@ def _reject_conflicting_linked_csv_sales(
                 identities_by_side[_official_identity(row)][side] += 1
         if sum(max(counts.values()) for counts in identities_by_side.values()) > 1:
             raise ValueError(
-                "A linked provisional Schwab sale has another CSV row with conflicting or ambiguous economics; review before importing."
+                "A linked provisional Schwab trade has another CSV row with conflicting or ambiguous economics; review before importing."
             )
     for linked_side, _, linked_row in official_rows:
         if not _normalize_text(
@@ -178,12 +205,12 @@ def _reject_conflicting_linked_csv_sales(
         ):
             continue
         linked_scope = _official_scope(linked_row)
-        eligible_dates = _linked_sale_dates(linked_row)
+        eligible_dates = _linked_trade_dates(linked_row)
         other_side_rows = [
             row
             for side, _, row in official_rows
             if side != linked_side
-            and _official_scope(row)[:3] == linked_scope[:3]
+            and _official_scope(row)[:4] == linked_scope[:4]
             and _normalize_text(row.get("date")) in eligible_dates
         ]
         if other_side_rows and not any(
@@ -191,7 +218,7 @@ def _reject_conflicting_linked_csv_sales(
             for row in other_side_rows
         ):
             raise ValueError(
-                "A linked provisional Schwab sale has another CSV row with conflicting or ambiguous economics; review before importing."
+                "A linked provisional Schwab trade has another CSV row with conflicting or ambiguous economics; review before importing."
             )
 
 
@@ -223,11 +250,11 @@ def _official_execution_time_matches(
     return bool(official_datetime and official_datetime in manual_datetimes)
 
 
-def reconcile_schwab_provisional_sales(
+def reconcile_schwab_provisional_trades(
     existing: list[dict[str, Any]],
     incoming: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
-    """Replace only a unique TOS page sale with its broker CSV transaction."""
+    """Replace only a unique same-side TOS page trade with its broker CSV row."""
     sides = (existing, incoming)
     provisional_groups: dict[str, list[tuple[int, int, dict[str, Any]]]] = defaultdict(list)
     official_rows: list[tuple[int, int, dict[str, Any]]] = []
@@ -236,9 +263,9 @@ def reconcile_schwab_provisional_sales(
             reference = _provisional_reference(record)
             if reference:
                 provisional_groups[reference].append((side, index, record))
-            if _official_sale(record):
+            if _official_trade(record):
                 official_rows.append((side, index, record))
-    _reject_conflicting_linked_csv_sales(official_rows)
+    _reject_conflicting_linked_csv_trades(official_rows)
 
     removed: set[tuple[int, int]] = set()
     claimed_official_ids: set[tuple[str, ...]] = set()
@@ -247,9 +274,10 @@ def reconcile_schwab_provisional_sales(
         signatures = {_provisional_signature(row) for _, _, row in manual_rows}
         if len(signatures) != 1:
             raise ValueError(
-                "A provisional Schwab sale has conflicting manual workbook rows; review the trade before importing."
+                "A provisional Schwab trade has conflicting manual workbook rows; review the trade before importing."
             )
         manual = manual_rows[0][2]
+        manual_side = _trade_side(manual)
         manual_account = _record_account(manual)
         manual_ticker = normalize_ticker(_normalize_text(manual.get("ticker")))
         manual_currency = _normalize_text(manual.get("currency")).upper()
@@ -258,6 +286,7 @@ def reconcile_schwab_provisional_sales(
             (side, index, row)
             for side, index, row in official_rows
             if _record_account(row) == manual_account
+            and _trade_side(row) == manual_side
             and normalize_ticker(_normalize_text(row.get("ticker"))) == manual_ticker
             and _normalize_text(row.get("currency")).upper() == manual_currency
             and _normalize_text(row.get("date")) in eligible_dates
@@ -274,7 +303,7 @@ def reconcile_schwab_provisional_sales(
             for side, index, _ in prior_links
         ):
             raise ValueError(
-                "A provisional Schwab sale conflicts with an existing broker CSV reconciliation."
+                "A provisional Schwab trade conflicts with an existing broker CSV reconciliation."
             )
         if not scoped_candidates:
             continue
@@ -288,7 +317,7 @@ def reconcile_schwab_provisional_sales(
         ]
         if not candidates:
             raise ValueError(
-                "A provisional Schwab sale conflicts with the broker CSV quantity or price; review the trade before importing."
+                "A provisional Schwab trade conflicts with the broker CSV quantity or price; review the trade before importing."
             )
         candidates = list(
             {
@@ -309,12 +338,12 @@ def reconcile_schwab_provisional_sales(
         )
         if candidate_count != 1:
             raise ValueError(
-                "A provisional Schwab sale has ambiguous broker CSV matches; review the trade before importing."
+                "A provisional Schwab trade has ambiguous broker CSV matches; review the trade before importing."
             )
         official_id = next(iter(candidates_by_identity))
         if official_id in claimed_official_ids:
             raise ValueError(
-                "A provisional Schwab sale shares its broker CSV match with another manual sale."
+                "A provisional Schwab trade shares its broker CSV match with another manual trade."
             )
         claimed_official_ids.add(official_id)
         if not all(
@@ -322,7 +351,7 @@ def reconcile_schwab_provisional_sales(
             for _, _, row in candidates
         ):
             raise ValueError(
-                "A provisional Schwab sale conflicts with the broker CSV execution time; review the trade before importing."
+                "A provisional Schwab trade conflicts with the broker CSV execution time; review the trade before importing."
             )
         manual_sha = _normalize_text(
             _record_source(manual).get("source_file_sha256")
@@ -335,7 +364,7 @@ def reconcile_schwab_provisional_sales(
             )
             if linked_reference and linked_reference != reference:
                 raise ValueError(
-                    "A provisional Schwab sale conflicts with an existing broker CSV reconciliation."
+                    "A provisional Schwab trade conflicts with an existing broker CSV reconciliation."
                 )
             source["superseded_manual_reference_id"] = reference
             if manual_sha:

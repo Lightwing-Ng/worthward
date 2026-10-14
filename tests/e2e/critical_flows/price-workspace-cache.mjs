@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -668,26 +668,40 @@ test('submits a valid market-cap ticker after it is committed by blur', async ({
             body: JSON.stringify({missingHistory: []}),
         });
     });
-    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&ticker=GOOGL&period=1y');
+    // This checks ticker commitment; a year of market-cap calculations is
+    // unrelated setup work that can exhaust the browser interaction budget.
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA&ticker=GOOGL&period=1d');
     await page.locator('#add_ticker').click();
     const tickerInput = page.locator('#ticker_4');
     await tickerInput.fill('MSFT');
     const hydrationHtml = await page.content();
+    let releaseHydration;
+    const hydrationReady = new Promise((resolve) => { releaseHydration = resolve; });
     await page.route('**/workspaces/prices?*', async (route) => {
         const request = route.request();
         const isMarketCap = new URL(request.url()).searchParams.get('metric') === 'market-cap';
         if (isMarketCap && request.headers()['x-requested-with'] === 'workspace-hydrate') {
+            await hydrationReady;
             await route.fulfill({contentType: 'text/html', body: hydrationHtml});
             return;
         }
         await route.continue();
     });
 
-    await page.locator('.workspace-mode-main').click({position: {x: 420, y: 560}});
-
-    await expect(page.locator('#workspace_modal_overlay .workspace-modal-title')).toHaveText(
-        /^(Calculating comparison|Updating local market data)$/,
-    );
+    const hydrationRequest = page.waitForRequest((request) => (
+        request.headers()['x-requested-with'] === 'workspace-hydrate'
+        && new URL(request.url()).searchParams.getAll('ticker').includes('MSFT')
+    ));
+    try {
+        await page.locator('.workspace-mode-main').click({position: {x: 420, y: 560}});
+        await hydrationRequest;
+        await expect(page.locator('#workspace_modal_overlay')).toBeVisible();
+        await expect(page.locator('#workspace_modal_overlay .workspace-modal-title')).toHaveText(
+            /^(Calculating comparison|Updating local market data)$/,
+        );
+    } finally {
+        releaseHydration();
+    }
     await expect(page).toHaveURL(/ticker=MSFT/);
     await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await expect(page.locator('#market_cap_history_heading')).toBeVisible();

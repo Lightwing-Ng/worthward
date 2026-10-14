@@ -1,6 +1,6 @@
 """Investment import domain: ibkr.
 
-Code version: v0.2.1
+Code version: v0.3.0
 - Added: IBKR CSV statement pairs retain a dated Interest Accruals NAV
   snapshot separately from cash and market value.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.services.investment.importing.support import (
     Any,
+    Counter,
     DEFAULT_CONVENTION_TIME,
     DEFAULT_CONVENTION_TIMEZONE,
     Decimal,
@@ -2024,11 +2025,7 @@ def _build_gkx_bank_record(
     elif raw_type == "CASH":
         mapped_type = "withdrawal" if amount_dec < ZERO else "deposit"
         transaction_type_raw = "Withdrawal" if amount_dec < ZERO else "Deposit"
-        description = (
-            "Disbursement Initiated by Liying Wu"
-            if "DISBURSEMENT" in memo_upper
-            else memo
-        )
+        description = memo
     elif raw_type == "INT":
         mapped_type = "credit_interest" if amount_dec >= ZERO else "debit_interest"
         transaction_type_raw = (
@@ -2200,13 +2197,14 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
         raise ValueError("Please upload at least one IBKR GainsKeeper .gkx file.")
     warnings: list[str] = []
     transactions: list[dict[str, Any]] = []
-    seen_fitids: set[str] = set()
-    seen_transfer_keys: set[str] = set()
+    seen_records: Counter[tuple[str, ...]] = Counter()
     position_snapshot: dict[str, dict[str, str]] = {}
     source_artifacts: list[dict[str, Any]] = []
     account: str | None = None
     ending_cash: str | None = None
     latest_position_as_of = ""
+    cash_artifact: dict[str, Any] = {}
+    cash_transactions: list[dict[str, Any]] = []
     for file_index, (payload, filename) in enumerate(files, start=1):
         if not payload:
             continue
@@ -2242,6 +2240,26 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                 root=root,
             )
         )
+        file_records: Counter[tuple[str, ...]] = Counter()
+        file_transactions: list[dict[str, Any]] = []
+
+        def append_record(record: dict[str, Any]) -> None:
+            file_transactions.append(record)
+            fitid = _normalize_text((record.get("source") or {}).get("fitid"))
+            if fitid:
+                key = (fitid,) + tuple(
+                    _normalize_text(record.get(field))
+                    for field in ("type", "date", "datetime", "currency", "ticker",
+                                  "quantity_raw", "price_raw", "net_amount_raw")
+                )
+                file_records[key] += 1
+                if file_records[key] <= seen_records[key]:
+                    warnings.append(
+                        f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
+                    )
+                    return
+            transactions.append(record)
+
         row_number = 0
         for transaction_tag in ("BUYSTOCK", "BUYOTHER"):
             inner_tag = "INVBUY"
@@ -2260,15 +2278,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                     warnings=warnings,
                 )
                 if record is not None:
-                    fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                    if fitid and fitid in seen_fitids:
-                        warnings.append(
-                            f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                        )
-                        continue
-                    if fitid:
-                        seen_fitids.add(fitid)
-                    transactions.append(record)
+                    append_record(record)
         for transaction_tag in ("SELLSTOCK", "SELLOTHER"):
             inner_tag = "INVSELL"
             for node in root.findall(f".//{transaction_tag}"):
@@ -2286,15 +2296,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                     warnings=warnings,
                 )
                 if record is not None:
-                    fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                    if fitid and fitid in seen_fitids:
-                        warnings.append(
-                            f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                        )
-                        continue
-                    if fitid:
-                        seen_fitids.add(fitid)
-                    transactions.append(record)
+                    append_record(record)
         for node in root.findall(".//INCOME"):
             row_number += 1
             record = _build_gkx_income_record(
@@ -2307,15 +2309,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                 warnings=warnings,
             )
             if record is not None:
-                fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                if fitid and fitid in seen_fitids:
-                    warnings.append(
-                        f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                    )
-                    continue
-                if fitid:
-                    seen_fitids.add(fitid)
-                transactions.append(record)
+                append_record(record)
         for node in root.findall(".//INVEXPENSE"):
             row_number += 1
             record = _build_gkx_expense_record(
@@ -2328,15 +2322,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                 warnings=warnings,
             )
             if record is not None:
-                fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                if fitid and fitid in seen_fitids:
-                    warnings.append(
-                        f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                    )
-                    continue
-                if fitid:
-                    seen_fitids.add(fitid)
-                transactions.append(record)
+                append_record(record)
         for node in root.findall(".//INVBANKTRAN"):
             row_number += 1
             record = _build_gkx_bank_record(
@@ -2349,15 +2335,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                 warnings=warnings,
             )
             if record is not None:
-                fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                if fitid and fitid in seen_fitids:
-                    warnings.append(
-                        f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                    )
-                    continue
-                if fitid:
-                    seen_fitids.add(fitid)
-                transactions.append(record)
+                append_record(record)
         report_currency = _gkx_text(root, ".//CURDEF") or "USD"
         for node in root.findall(".//TRANSFER"):
             row_number += 1
@@ -2372,28 +2350,7 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
                 warnings=warnings,
             )
             if record is not None:
-                fitid = _normalize_text((record.get("source") or {}).get("fitid"))
-                transfer_dedupe_key = (
-                    "|".join(
-                        (
-                            fitid,
-                            _normalize_text(record.get("date")),
-                            normalize_ticker(_normalize_text(record.get("ticker"))),
-                            _normalize_text(record.get("quantity_raw")),
-                            _normalize_text(record.get("type")),
-                        )
-                    )
-                    if fitid
-                    else ""
-                )
-                if transfer_dedupe_key and transfer_dedupe_key in seen_transfer_keys:
-                    warnings.append(
-                        f"{filename}: skipped duplicate GainsKeeper FITID {fitid} from overlapping files."
-                    )
-                    continue
-                if transfer_dedupe_key:
-                    seen_transfer_keys.add(transfer_dedupe_key)
-                transactions.append(record)
+                append_record(record)
         candidate_snapshot = _extract_gkx_position_snapshot(root, security_map)
         candidate_as_of = max(
             (str(item.get("as_of") or "") for item in candidate_snapshot.values()),
@@ -2404,7 +2361,21 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
             position_snapshot = candidate_snapshot
         balances = _extract_gkx_balances(root)
         if balances.get("cash") is not None:
-            ending_cash = balances.get("cash")
+            artifact = source_artifacts[-1]
+            candidate_cash_date = _normalize_text(artifact.get("statement_period_end"))
+            selected_cash_date = _normalize_text(cash_artifact.get("statement_period_end"))
+            candidate_cash = balances["cash"]
+            if (
+                ending_cash is not None
+                and candidate_cash_date == selected_cash_date
+                and Decimal(candidate_cash) != Decimal(ending_cash)
+            ):
+                raise ValueError("GainsKeeper cash balances conflict at the same reported date.")
+            if ending_cash is None or candidate_cash_date >= selected_cash_date:
+                ending_cash = candidate_cash
+                cash_artifact = artifact
+                cash_transactions = file_transactions
+        seen_records |= file_records
     _ii_records._sort_transactions(transactions)
     holdings_mismatches = _ii_records._validate_holdings(
         transactions, position_snapshot
@@ -2453,25 +2424,17 @@ def build_investment_payload_from_ibkr_gainskeeper_files(
     if position_snapshot:
         payload["summary"]["position_snapshot_source"] = "ibkr_gainskeeper_positions"
     if ending_cash is not None:
-        period_starts = [
-            _normalize_text(artifact.get("statement_period_start"))
-            for artifact in source_artifacts
-            if _normalize_text(artifact.get("statement_period_start"))
-        ]
-        period_ends = [
-            _normalize_text(artifact.get("statement_period_end"))
-            for artifact in source_artifacts
-            if _normalize_text(artifact.get("statement_period_end"))
-        ]
+        cash_period_start = _normalize_text(cash_artifact.get("statement_period_start"))
+        cash_period_end = _normalize_text(cash_artifact.get("statement_period_end"))
         cash_snapshot_dates = _ii_records._ibkr_cash_snapshot_dates(
-            transactions,
-            period_start=min(period_starts, default=""),
-            period_end=max(period_ends, default=""),
+            cash_transactions,
+            period_start=cash_period_start,
+            period_end=cash_period_end,
         )
         latest_intraday_datetime = (
             _ii_records._ibkr_latest_intraday_transaction_datetime(
-                transactions,
-                as_of_date=max(period_ends, default=""),
+                cash_transactions,
+                as_of_date=cash_period_end,
             )
         )
         if latest_intraday_datetime:

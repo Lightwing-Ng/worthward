@@ -1,4 +1,4 @@
-/* Compact anonymized HSBC multicurrency replay fixture. Code version: v1.0.0 */
+/* Compact anonymized HSBC multicurrency replay fixture. Code version: v1.1.0 */
 import {
     applyInvestmentVerifiedTaxLotCompatibilityFallbacks,
     createInvestmentDataUtils,
@@ -30,7 +30,7 @@ const USD_LEGACY_MARKER_SHA = '2'.repeat(64);
 const USD_SETTLEMENT_SHA = '3'.repeat(64);
 const MULTICURRENCY_SHA = '4'.repeat(64);
 
-function usdSavingsCash(date, type, amount, balance, rowNumber, sha, extraSource = {}) {
+export function usdSavingsCash(date, type, amount, balance, rowNumber, sha, extraSource = {}) {
     return {
         broker: 'hsbc',
         account: HSBC_TEST_ACCOUNT,
@@ -91,7 +91,7 @@ function foreignSavingsCash(date, type, currency, amount, balance, rowNumber, de
     };
 }
 
-function hsbcOrder(date, type, ticker, quantity, price, orderId, extraSource = {}) {
+export function hsbcOrder(date, type, ticker, quantity, price, orderId, extraSource = {}) {
     const gross = (quantity * price).toFixed(2);
     const net = type === 'buy' ? `-${gross}` : gross;
     return {
@@ -271,6 +271,70 @@ export function buildHsbcMulticurrencyPayload({withSecondBroker = false} = {}) {
         ticker_lineage: {},
         realtime_quotes: [],
     };
+}
+
+export function buildHsbcPendingMulticurrencyPayload({
+    side = 'sell',
+    pendingDate = '2026-03-05',
+    includeForeignCash = true,
+    settled = false,
+} = {}) {
+    const payload = buildHsbcMulticurrencyPayload();
+    const summary = payload.broker_summaries.hsbc;
+    const pendingIndex = payload.transactions.findIndex((txn) => (
+        txn.source?.cash_replay_pending_settlement === true
+    ));
+    const orderId = `${side === 'buy' ? 'P' : 'S'}-1000003`;
+    const order = hsbcOrder(pendingDate, side, 'CHRL', 2, 152.8, orderId, {
+        cash_replay_pending_settlement: true,
+    });
+    payload.transactions[pendingIndex] = order;
+    const pendingCash = Number(order.net_amount_raw);
+    summary.hsbc_pending_settlement_cash = String(settled ? 0 : pendingCash);
+    summary.hsbc_pending_settlement_order_count = settled ? 0 : 1;
+    summary.hsbc_broker_cash_estimate = String(21_210 + pendingCash);
+    if (side === 'buy') {
+        summary.position_snapshot.CHRL = {
+            quantity: '4', currency: 'USD', last_price: '152.80', market_value: '611.20',
+        };
+    }
+    if (settled) {
+        const balance = (21_210 + pendingCash).toFixed(2);
+        const settlement = usdSavingsCash(
+            '2026-03-06', side === 'buy' ? 'withdrawal' : 'deposit',
+            order.net_amount_raw, balance, 7, USD_SETTLEMENT_SHA,
+        );
+        payload.transactions.push(settlement);
+        Object.assign(order.source, {
+            cash_settlement_date: settlement.date,
+            cash_settlement_amount_raw: order.net_amount_raw,
+            cash_settlement_postings: [{
+                date: settlement.date, currency: 'USD', amount_raw: order.net_amount_raw,
+                balance_after_raw: balance, row_number: 7, ledger_sequence: 7,
+                source_file_kind: 'hsbc_usd_account_text', source_sequence_sha256: USD_SETTLEMENT_SHA,
+                account_number: HSBC_TEST_ACCOUNT, account_type: 'USD Savings',
+                reference: `REF ${orderId.replace('-', '')}001 SEC`, role: 'principal',
+            }],
+        });
+        summary.ending_cash = balance;
+        summary.ending_cash_raw = balance;
+        summary.ending_cash_base_currency = balance;
+        summary.ending_cash_base_currency_as_of = settlement.date;
+        summary.ending_cash_by_currency.USD = balance;
+        summary.hsbc_ending_cash_components['USD:SAVINGS'] = balance;
+        summary.hsbc_cash_component_post_dates['USD:SAVINGS'] = settlement.date;
+    }
+    if (!includeForeignCash) {
+        payload.transactions = payload.transactions.filter((txn) => txn.currency === 'USD');
+        for (const field of [
+            'ending_cash_by_currency', 'hsbc_ending_cash_components', 'hsbc_cash_component_post_dates',
+        ]) {
+            summary[field] = Object.fromEntries(
+                Object.entries(summary[field]).filter(([key]) => key.split(':')[0] === 'USD'),
+            );
+        }
+    }
+    return payload;
 }
 
 const noop = () => {};

@@ -1,4 +1,4 @@
-/* Dated native-currency cash anchor regressions. Code version: v1.0.0 */
+/* Dated native-currency cash anchor regressions. Code version: v1.0.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -6,7 +6,13 @@ import {
     getInvestmentBrokerDatedCashAnchors,
     getInvestmentBrokerExplicitEndingCashBalances,
     getInvestmentCashBalanceBoundary,
+    getInvestmentBrokerEndingCashBalances,
+    buildInvestmentPostSnapshotCashDelta,
+    getInvestmentBrokerPositionSnapshotAsOf,
+    createUtils,
+    makeScopedDramTrade,
 } from './context.mjs';
+import {inspectInvestmentReplay, buildHsbcMulticurrencyPayload} from '../hsbc_multicurrency_replay_support.mjs';
 
 const ACCOUNT = 'HSBC-TEST-001';
 const SEQUENCE_SHA = 'c'.repeat(64);
@@ -22,6 +28,104 @@ function withInvestmentData(data, callback) {
         else globalThis.window = previousWindow;
     }
 }
+
+function positionBoundary(account, quantity, date) {
+    return {
+        broker: 'ibkr', account, position_snapshot_authoritative: true,
+        position_snapshot_as_of: date,
+        position_snapshot: {DRAM: {
+            quantity: String(quantity), cost_price: '50', cost_basis_status: 'known',
+            as_of: `${date} 20:00:00`,
+        }},
+    };
+}
+
+test('broker position date includes canonical accounts and respects an explicit account scope', () => {
+    const first = positionBoundary('U00000001', 10, '2026-08-12');
+    const second = positionBoundary('U00000002', 7, '2026-08-20');
+    const accountToken = createUtils().getTransactionLotScope({broker: 'ibkr', account: first.account}).accountToken;
+    withInvestmentData({
+        broker_summaries: {ibkr: first},
+        broker_snapshots: {first, second},
+    }, () => {
+        assert.equal(getInvestmentBrokerPositionSnapshotAsOf('ibkr'), '2026-08-20');
+        assert.equal(getInvestmentBrokerPositionSnapshotAsOf('ibkr', {accountTokens: [accountToken]}), '2026-08-12');
+    });
+});
+
+test('canonical position rejection blocks a stale date but performance-only metadata does not', () => {
+    const first = positionBoundary('U00000001', 10, '2026-08-12');
+    for (const rejected of [true, false]) {
+        withInvestmentData({
+            broker_summaries: {ibkr: first},
+            broker_snapshots: {first: {
+                broker: 'ibkr', account: first.account,
+                ...(rejected ? {position_snapshot_authoritative: false} : {performance_snapshot_authoritative: true}),
+            }},
+        }, () => assert.equal(getInvestmentBrokerPositionSnapshotAsOf('ibkr'), rejected ? '' : '2026-08-12'));
+    }
+});
+
+for (const [latestDate, expectedShares] of [['2026-08-15', 2], ['2026-08-20', 17], ['2026-08-21', 17]]) {
+    test(`combined account positions do not apply before every included boundary: ${latestDate}`, async () => {
+        const first = positionBoundary('U00000001', 10, '2026-08-12');
+        const second = positionBoundary('U00000002', 7, '2026-08-20');
+        const payload = {
+            broker: 'ibkr', brokers: ['ibkr'], summary: {position_snapshot_authoritative: false},
+            broker_summaries: {ibkr: first}, broker_snapshots: {first, second},
+            transactions: [first, second].map(({account}) => makeScopedDramTrade({
+                broker: 'ibkr', account, type: 'buy', date: '2026-08-01', quantity: 1, price: 50,
+            })),
+            price_history_by_ticker: {DRAM: [
+                {date: '2026-08-01', close: 50}, {date: latestDate, close: 50},
+            ]},
+        };
+        payload.transactions.push({
+            broker: 'ibkr', account: first.account, type: 'deposit', ticker: '', currency: 'USD',
+            date: latestDate, datetime: `${latestDate} 21:00:00`, normalized: {net_amount: '1000'},
+        });
+        await inspectInvestmentReplay(payload, ({processed}) => {
+            assert.equal(processed.at(-1).broker_holdings.DRAM, expectedShares);
+        }, {today: '2026-08-21'});
+    });
+}
+
+for (const boundary of [{ending_cash: '0.00'}, {ending_cash_by_currency: {USD: '0.00'}}]) {
+    test(`zero cash boundary rolls forward in history, Metrics, and Overview: ${JSON.stringify(boundary)}`, async () => {
+        const payload = buildHsbcMulticurrencyPayload();
+        payload.broker = 'ibkr';
+        payload.brokers = ['ibkr'];
+        payload.summary = {authoritative_current_cash_brokers: ['ibkr']};
+        payload.transactions = [['2026-03-04', '500'], ['2026-03-06', '1000']].map(([date, amount]) => ({
+            broker: 'ibkr', account: 'TEST-ACCOUNT', date, datetime: `${date} 10:00:00`,
+            type: 'deposit', ticker: '', currency: 'USD', net_amount_raw: amount,
+            normalized: {net_amount: amount}, source: {file_kind: 'ibkr_transaction_history'},
+        }));
+        payload.broker_summaries = {ibkr: {
+            broker: 'ibkr', account: 'TEST-ACCOUNT', ...boundary,
+            ending_cash_as_of: '2026-03-05', ending_cash_replay_as_of: '2026-03-04',
+            cash_snapshot_source: 'ibkr_csv_summary', cash_snapshot_authoritative: true,
+        }};
+        await inspectInvestmentReplay(payload, ({runtime, processed, chartPoints}) => {
+            const current = runtime.resolveInvestmentMetricsCurrentCash(
+                runtime.getInvestmentBrokerSummaryTransactions('ibkr'), 'ibkr',
+            );
+            assert.equal(processed.at(-1).broker_running_cash, 1000);
+            assert.deepEqual({...processed.at(-1).broker_post_snapshot_cash_delta}, {USD: 1000});
+            assert.equal(current.cash, 1000);
+            assert.equal(chartPoints.at(-1).aggregate_display_cash, 1000);
+        });
+    });
+}
+
+test('explicit zero foreign balances participate in post-snapshot cash deltas; blank balances do not', () => {
+    assert.deepEqual(buildInvestmentPostSnapshotCashDelta({HKD: 780}, {HKD: '0.00', USD: ''}), {HKD: 780});
+    for (const value of [null, undefined, '', '  ']) {
+        withInvestmentData({broker_summaries: {ibkr: {ending_cash: value}}}, () => {
+            assert.equal(getInvestmentBrokerEndingCashBalances('ibkr'), null);
+        });
+    }
+});
 
 function convertAtFixtureRates(balances) {
     return Object.entries(balances || {}).reduce(

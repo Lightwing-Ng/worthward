@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -78,7 +78,7 @@ import {
 } from './context.mjs';
 
 test('KOL rewards count as realized income and legacy deposits are detected', () => {
-    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [], fx_rate_history_by_currency: {SGD: {dates: ['2024-07-25'], values: {'2024-07-25': 1.3}}} } };
+    globalThis.window = { WORTHWARD_INVESTMENT_DATA: { ticker_lineage: {}, money_market_tickers: [], fx_rate_history_by_currency: {HKD: {dates: ['2024-06-25'], values: {'2024-06-25': 1 / 0.1277}}, SGD: {dates: ['2024-07-25'], values: {'2024-07-25': 1.3}}} } };
     const transactions = [
         {
             type: 'kol_reward',
@@ -968,3 +968,179 @@ test('tax-lot replay uses broker execution chronology instead of same-time cash 
     assert.equal(hibs.realizedPnlAccounts[0].source, 'account_tax_lot_reconstruction');
 });
 
+
+function auditBrokerSnapshot({account = 'U00000001', quantity = 10, cost = 50, date = '2026-08-12', time = '20:00:00', performance = null} = {}) {
+    return {
+        broker: 'ibkr', account,
+        position_snapshot_authoritative: true, position_snapshot_as_of: date,
+        position_snapshot: {DRAM: {quantity: String(quantity), cost_price: String(cost), cost_basis_status: 'known', as_of: `${date} ${time}`}},
+        ...(performance === null ? {} : {
+            performance_snapshot_authoritative: true,
+            performance_snapshot_as_of: '2026-08-11',
+            performance_snapshot: {DRAM: {currency: 'USD', realized_total: String(performance)}},
+        }),
+    };
+}
+
+const auditTrade = (type, date, quantity, price, account = 'U00000001') => makeScopedDramTrade({
+    broker: 'ibkr', account, type, date, quantity, price,
+});
+
+for (const snapshotCost of [50, 100]) {
+    test(`position-only snapshot preserves a consistent selected-matcher basis at cost ${snapshotCost}`, () => {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({cost: snapshotCost})};
+        const transactions = [auditTrade('buy', '2026-08-01', 10, 100), auditTrade('buy', '2026-08-02', 10, 50), auditTrade('sell', '2026-08-03', 10, 80)];
+        const [summary] = buildTickerSummaries(transactions, {DRAM: 80}, 0, {});
+        assert.equal(summary.shares, 10);
+        assert.equal(summary.realizedPnlLocal, 300);
+        assert.equal(summary.totalCost, 1000);
+        assert.equal(summary.totalPnlLocal, 800 + 800 - 1500);
+    });
+}
+
+test('snapshot projection includes only fills after the exact same-day capture', () => {
+    setDramTestWindow();
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({quantity: 100, cost: 50, time: '20:20:00'})};
+    const before = auditTrade('buy', '2026-08-12', 100, 50);
+    before.datetime = '2026-08-12 19:00:00';
+    const after = auditTrade('sell', '2026-08-12', 10, 55);
+    after.datetime = '2026-08-12 21:56:00';
+    const [summary] = buildTickerSummaries([before, after], {DRAM: 55}, 0, {});
+    assert.equal(summary.shares, 90);
+    assert.equal(summary.marketValue, 4950);
+    assert.equal(summary.totalCost, 4500);
+});
+
+for (const includesIncome of [false, true]) {
+    test(`closed scope retains post-performance income without a position replay: includes=${includesIncome}`, () => {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: {
+            broker: 'ibkr', account: 'U00000001', performance_snapshot_authoritative: true,
+            performance_snapshot_as_of: '2026-08-11',
+            performance_snapshot: {DRAM: {currency: 'USD', realized_total: '100', realized_total_includes_nonperformance: includesIncome}},
+        }};
+        const income = (type, amount) => ({broker: 'ibkr', account: 'U00000001', ticker: 'DRAM', currency: 'USD', type, date: '2026-08-20', normalized: {net_amount: String(amount)}});
+        const [summary] = buildTickerSummaries([
+            auditTrade('buy', '2026-08-01', 10, 50), auditTrade('sell', '2026-08-05', 10, 60),
+            income('dividend', 50), income('foreign_tax_withholding', -5), income('payment_in_lieu', 10),
+        ], {}, 0, {});
+        assert.equal(summary.realizedPnlLocal, 155);
+        const record = summary.realizedPnlAccounts[0].reconciliation;
+        assert.equal(record.baselineRealizedPnlLocal, 100);
+        assert.equal(record.incrementalRealizedPnlLocal, 55);
+        assert.equal(record.realizedPnlByDateLocal['2026-08-20'], 55);
+        assert.equal(record.coverageStatus, 'complete');
+    });
+}
+
+for (const method of ['lowest_cost_first', 'fifo', 'lifo', 'moving_average']) {
+    test(`broker FIFO baseline and boundary inventory remain consistent under ${method}`, () => {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = method;
+        window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({date: '2026-08-20', cost: 70, performance: -200})};
+        const [summary] = buildTickerSummaries([
+            auditTrade('buy', '2026-08-01', 10, 100), auditTrade('buy', '2026-08-02', 10, 50),
+            auditTrade('buy', '2026-08-03', 10, 70), auditTrade('sell', '2026-08-05', 10, 80), auditTrade('sell', '2026-08-15', 10, 80),
+        ], {DRAM: 80}, 0, {});
+        assert.equal(summary.totalCost, 700);
+        assert.equal(summary.realizedPnlAccounts[0].reconciliation.incrementalRealizedPnlLocal, 300);
+        assert.equal(summary.totalPnlLocal, 1600 + 800 - 2200);
+    });
+}
+
+test('canonical realized timeline dates the broker baseline to the last eligible disposal', () => {
+    for (const laterSale of [false, true]) {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({date: '2026-08-20', quantity: laterSale ? 5 : 10, cost: 50, performance: 100})};
+        const transactions = [auditTrade('buy', '2026-06-01', 20, 50), auditTrade('sell', '2026-07-01', 10, 60)];
+        if (laterSale) transactions.push(auditTrade('sell', '2026-08-12', 5, 60));
+        const [summary] = buildTickerSummaries(transactions, {DRAM: 60}, 0, {});
+        assert.equal(summary.realizedPnlByDateLocal['2026-07-01'], 100);
+        assert.equal(summary.realizedPnlByDateLocal['2026-08-11'], undefined);
+        assert.equal(summary.realizedPnlByDateLocal['2026-08-12'], laterSale ? 50 : undefined);
+        assert.equal(Object.values(summary.realizedPnlByDate).reduce((a, b) => a + b, 0), summary.realizedPnl);
+    }
+});
+
+test('one account snapshot cannot replace another account inventory', () => {
+    setDramTestWindow();
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({quantity: 100})};
+    const [summary] = buildTickerSummaries([
+        auditTrade('buy', '2026-08-01', 100, 50), auditTrade('buy', '2026-08-02', 50, 40, 'U00000002'),
+        auditTrade('sell', '2026-08-20', 10, 60, 'U00000002'),
+    ], {DRAM: 60}, 0, {});
+    assert.equal(summary.shares, 140);
+    assert.equal(summary.marketValue, 8400);
+    assert.equal(summary.totalCost, 6600);
+});
+
+test('account-specific authoritative snapshots preserve both broker accounts without summary loss', () => {
+    setDramTestWindow();
+    const first = auditBrokerSnapshot({quantity: 10});
+    const second = auditBrokerSnapshot({account: 'U00000002', quantity: 7, cost: 40});
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: first};
+    window.WORTHWARD_INVESTMENT_DATA.broker_snapshots = {'ibkr:U00000001': first, 'ibkr:U00000002': second};
+    const transactions = [auditTrade('buy', '2026-08-01', 1, 50), auditTrade('buy', '2026-08-01', 1, 40, 'U00000002')];
+    const [summary] = buildTickerSummaries(transactions, {DRAM: 60}, 0, {});
+    assert.equal(summary.shares, 17);
+    assert.equal(summary.marketValue, 1020);
+    assert.equal(summary.totalCost, 780);
+});
+
+test('foreign realized dated amounts sum to current value using each account currency', () => {
+    setDramTestWindow();
+    window.WORTHWARD_INVESTMENT_DATA.fx_rate_history_by_currency = {CNH: {dates: ['2026-01-05', '2026-09-01'], values: {'2026-01-05': 7.3, '2026-09-01': 7}}};
+    const trades = [auditTrade('buy', '2026-01-05', 100, 1000), auditTrade('sell', '2026-01-06', 100, 1100)]
+        .map((txn) => ({...txn, broker: 'longbridge_hk', ticker: '600519.SH', currency: 'CNH'}));
+    const [summary] = buildTickerSummaries(trades, {}, 0, {});
+    const total = Object.values(summary.realizedPnlReconciliation.realizedPnlByDate).reduce((a, b) => a + b, 0);
+    assert.ok(Math.abs(total - 10000 / 7) < 1e-7);
+    assert.ok(Math.abs(total - summary.realizedPnl) < 1e-7);
+});
+
+
+for (const [method, baseline, endingCost] of [
+    ['lifo', 100, 1000], ['lowest_cost_first', 300, 1000], ['moving_average', 200 / 3, 2200 / 3],
+]) {
+    test(`proven ${method} broker baseline retains its own residual basis`, () => {
+        setDramTestWindow();
+        window.WORTHWARD_INVESTMENT_DATA.investment_cost_basis_method = method;
+        window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: auditBrokerSnapshot({date: '2026-08-20', cost: endingCost / 10, performance: baseline})};
+        const [summary] = buildTickerSummaries([
+            auditTrade('buy', '2026-08-01', 10, 100), auditTrade('buy', '2026-08-02', 10, 50),
+            auditTrade('buy', '2026-08-03', 10, 70), auditTrade('sell', '2026-08-05', 10, 80), auditTrade('sell', '2026-08-15', 10, 80),
+        ], {DRAM: 80}, 0, {});
+        assert.ok(Math.abs(summary.totalCost - endingCost) < 1e-7);
+        assert.ok(Math.abs(summary.totalPnlLocal - (1600 + 800 - 2200)) < 1e-7);
+    });
+}
+
+
+test('explicit broker and aggregate snapshots include a positions-only account without leaking into account input', () => {
+    setDramTestWindow();
+    const first = auditBrokerSnapshot({quantity: 10});
+    const second = auditBrokerSnapshot({account: 'U00000002', quantity: 7, cost: 40});
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: first};
+    window.WORTHWARD_INVESTMENT_DATA.broker_snapshots = {'ibkr:U00000001': first, 'ibkr:U00000002': second};
+    const transactions = [auditTrade('buy', '2026-08-01', 1, 50)];
+    for (const snapshotBrokerScope of ['ibkr', 'all']) {
+        const [summary] = buildTickerSummaries(transactions, {DRAM: 60}, 0, {}, {snapshotBrokerScope});
+        assert.equal(summary.shares, 17);
+        assert.equal(summary.marketValue, 1020);
+        assert.equal(summary.totalCost, 780);
+    }
+    const [accountOnly] = buildTickerSummaries(transactions, {DRAM: 60}, 0, {});
+    assert.equal(accountOnly.shares, 10);
+    assert.equal(accountOnly.totalCost, 500);
+});
+
+test('canonical nonauthoritative account evidence cannot revive a stale legacy snapshot', () => {
+    setDramTestWindow();
+    const first = auditBrokerSnapshot({quantity: 10});
+    window.WORTHWARD_INVESTMENT_DATA.broker_summaries = {ibkr: first};
+    window.WORTHWARD_INVESTMENT_DATA.broker_snapshots = {'ibkr:U00000001': {...first, position_snapshot_authoritative: false}};
+    const [summary] = buildTickerSummaries([auditTrade('buy', '2026-08-01', 1, 50)], {DRAM: 60}, 0, {});
+    assert.equal(summary.shares, 1);
+    assert.equal(summary.totalCost, 50);
+});

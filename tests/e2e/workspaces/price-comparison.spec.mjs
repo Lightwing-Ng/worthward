@@ -1,5 +1,55 @@
-/* Code version: v0.3.2 */
+/* Code version: v0.3.3 */
 import {expect, test} from '@playwright/test';
+
+for (const overlay of [
+    {name: 'global sidebar', toggle: '#sidebar_toggle', backdrop: '#sidebar_backdrop'},
+    {
+        name: 'workspace controls',
+        toggle: '[data-workspace-controls-toggle]',
+        backdrop: '[data-workspace-controls-backdrop]',
+    },
+]) {
+    test(`keeps the ${overlay.name} dismissal backdrop over the full viewport on hover`, async ({page}) => {
+        const viewport = {width: 751, height: 912};
+        await page.setViewportSize(viewport);
+        await page.addInitScript(() => {
+            window.sessionStorage.setItem('worthward:sidebar-open', 'false');
+            window.sessionStorage.setItem('worthward:price-comparison-controls-open', 'false');
+        });
+        await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&range=1d');
+        await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
+            notices.forEach((notice) => { notice.hidden = true; });
+        });
+        const toggle = page.locator(overlay.toggle);
+        const backdrop = page.locator(overlay.backdrop);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(backdrop).toBeVisible();
+        const readBounds = () => backdrop.evaluate((element) => {
+            const {left, top, right, bottom, width, height} = element.getBoundingClientRect();
+            return {left, top, right, bottom, width, height};
+        });
+        const expectedBounds = {
+            left: 0, top: 0, right: viewport.width, bottom: viewport.height, ...viewport,
+        };
+        await expect.poll(readBounds).toEqual(expectedBounds);
+
+        await backdrop.hover({position: {x: viewport.width - 4, y: viewport.height / 2}});
+        await expect.poll(() => backdrop.evaluate((element) => element.matches(':hover'))).toBe(true);
+        // Read the settled geometry, including any inherited button transition.
+        await backdrop.evaluate((element) => Promise.all(
+            element.getAnimations().map((animation) => animation.finished),
+        ));
+        expect(await readBounds()).toEqual(expectedBounds);
+        const bottomEdge = {x: viewport.width - 4, y: viewport.height - 1};
+        expect(await backdrop.evaluate((element, point) => (
+            document.elementFromPoint(point.x, point.y) === element
+        ), bottomEdge)).toBe(true);
+        await page.mouse.click(bottomEdge.x, bottomEdge.y);
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(backdrop).toBeHidden();
+    });
+}
 
 test('reuses the Backtest controls-overlay contract for the second Prices sidebar', async ({page}) => {
     await page.addInitScript(() => {

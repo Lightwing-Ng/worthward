@@ -1,7 +1,11 @@
 /**
  * Position lots, split adjustment, ranges, and valuation utilities.
  *
- * Code version: v1.3.4
+ * Code version: v1.3.6
+ * - Fixed: Flat transfers clear residual basis; evidenced split factors apply
+ *   to security transfers as well as fills.
+ * - Fixed: Reconstructed transfers use matching FIFO inventory when available
+ *   and conserve the authoritative residual basis across remaining lots.
  * - Fixed: Settlement plans accept distinct fee postings on either side of
  *   their principal within the same immutable cash-evidence domain.
  * - Fixed: Settlement owner and posting dates use the shared exact ISO-day
@@ -100,7 +104,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
     function getTransactionRenderedSplitFactor(txn, tickerPriceIndex) {
         if (!shouldTrackHoldingTicker(txn)) return 1;
         const normalizedType = getNormalizedTransactionType(txn);
-        if (!['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)) return 1;
+        if (!['buy', 'sell', 'grant', 'dividend_reinvestment', 'transfer_in', 'transfer_out'].includes(normalizedType)) return 1;
         const rawPrice = getTransactionPrice(txn);
         if (!Number.isFinite(rawPrice) || rawPrice <= 0) return 1;
         const renderedClose = getIndexedClosePriceForTransaction(txn, tickerPriceIndex);
@@ -296,7 +300,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
         const normalizedType = getNormalizedTransactionType(txn);
         let factor = getTransactionRenderedSplitFactor(txn, tickerPriceIndex);
         if (
-            ['buy', 'sell', 'grant', 'dividend_reinvestment'].includes(normalizedType)
+            ['buy', 'sell', 'grant', 'dividend_reinvestment', 'transfer_in', 'transfer_out'].includes(normalizedType)
             && renderedSplitFactorHints instanceof Map
         ) {
             const hintKey = getRenderedSplitFactorHintKey(txn);
@@ -361,8 +365,8 @@ export function createInvestmentPositionValuationUtils(runtime) {
         state.nextLotSequence = (Number(state.nextLotSequence) || 0) + 1;
     }
 
-    function getLotsForClosing(state, side) {
-        const method = getInvestmentCostBasisMethod();
+    function getLotsForClosing(state, side, methodOverride = null) {
+        const method = methodOverride || getInvestmentCostBasisMethod();
         const sign = side === 'short' ? -1 : 1;
         const lots = ensurePositionLots(state).filter((lot) => (
             Math.sign(Number(lot?.quantity) || 0) === sign
@@ -385,7 +389,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
         return lots;
     }
 
-    function consumePositionLots(state, quantity, {useAverage = false} = {}) {
+    function consumePositionLots(state, quantity, {useAverage = false, methodOverride = null} = {}) {
         if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) {
             return {removedQuantity: 0, removedCost: 0};
         }
@@ -402,7 +406,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
                 sequence: Number(state.nextLotSequence) || 0,
             }];
         }
-        const lots = getLotsForClosing(state, sign > 0 ? 'long' : 'short');
+        const lots = getLotsForClosing(state, sign > 0 ? 'long' : 'short', methodOverride);
         let remaining = Math.min(quantity, Math.abs(originalShares));
         let removedCost = 0;
         let removedQuantity = 0;
@@ -432,25 +436,59 @@ export function createInvestmentPositionValuationUtils(runtime) {
         return {removedQuantity, removedCost};
     }
 
-    function removePositionLots(state, quantity, { basisOverride = null, useAverage = false } = {}) {
+    function removePositionLots(state, quantity, {
+        basisOverride = null,
+        useAverage = false,
+        methodOverride = null,
+    } = {}) {
         if (!Number.isFinite(quantity) || quantity <= 0 || isFlatPosition(state.shares)) return 0;
         const originalTotalCost = Number(state.totalCost) || 0;
-        const {removedQuantity} = consumePositionLots(state, quantity, {useAverage});
+        let matchingMethod = methodOverride;
+        if (matchingMethod === 'fifo' && basisOverride !== null) {
+            let remaining = Math.min(quantity, Math.abs(state.shares));
+            const fifoCost = getLotsForClosing(state, state.shares > 0 ? 'long' : 'short', 'fifo')
+                .reduce((total, lot) => {
+                    const matched = Math.min(Math.abs(lot.quantity), remaining);
+                    remaining -= matched;
+                    return total + matched * lot.unitPrice;
+                }, 0);
+            // A prior selected-method sale may leave inventory that cannot
+            // reproduce the producer's FIFO basis. Preserve that compatibility
+            // path rather than inventing a match to unavailable original lots.
+            if (remaining > 1e-9 || Math.abs(fifoCost - Number(basisOverride)) > 1e-7) {
+                matchingMethod = null;
+            }
+        }
+        const {removedQuantity} = consumePositionLots(state, quantity, {
+            useAverage, methodOverride: matchingMethod,
+        });
         if (basisOverride !== null && Number.isFinite(Number(basisOverride))) {
             const targetTotalCost = Math.max(0, originalTotalCost - Number(basisOverride));
-            const remainingShares = Math.abs(Number(state.shares) || 0);
-            const remainingLotCost = state.lots.reduce(
-                (total, lot) => total + (Math.abs(Number(lot.quantity) || 0) * Number(lot.unitPrice) || 0),
-                0,
-            );
-            const costAdjustmentPerShare = remainingShares > 1e-9
-                ? (targetTotalCost - remainingLotCost) / remainingShares
-                : 0;
-            state.lots.forEach((lot) => {
-                lot.unitPrice = Math.max(0, Number(lot.unitPrice) + costAdjustmentPerShare);
-            });
+            let adjustableLots = [...state.lots];
+            while (adjustableLots.length) {
+                const remainingShares = adjustableLots.reduce(
+                    (total, lot) => total + Math.abs(Number(lot.quantity) || 0), 0,
+                );
+                if (remainingShares <= 1e-9) break;
+                const remainingLotCost = adjustableLots.reduce(
+                    (total, lot) => total + Math.abs(lot.quantity) * lot.unitPrice, 0,
+                );
+                const adjustment = (targetTotalCost - remainingLotCost) / remainingShares;
+                const exhaustedLots = adjustableLots.filter((lot) => lot.unitPrice + adjustment < 0);
+                if (!exhaustedLots.length) {
+                    adjustableLots.forEach((lot) => { lot.unitPrice += adjustment; });
+                    break;
+                }
+                // Keep the established equal-per-share adjustment, but when a
+                // lot reaches zero, allocate the rest to the surviving lots.
+                // Clipping every lot independently would silently lose basis.
+                exhaustedLots.forEach((lot) => { lot.unitPrice = 0; });
+                const exhausted = new Set(exhaustedLots);
+                adjustableLots = adjustableLots.filter((lot) => !exhausted.has(lot));
+            }
             state.totalCost = targetTotalCost;
         }
+        if (isFlatPosition(state.shares)) resetPositionState(state);
         return removedQuantity;
     }
 

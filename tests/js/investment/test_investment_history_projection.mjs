@@ -1,4 +1,6 @@
-/* Investment history-projection regressions. Code version: v1.4.0
+/* Investment history-projection regressions. Code version: v1.4.2
+ * Added: Pending orders preserve row-projected foreign balances and add their
+ *   signed pending amount once beside the authoritative native USD boundary.
  * Added: Dated native-currency anchors retire same-currency settlement
  *   corrections, and pasted USD Savings rows may restate chronological order.
  */
@@ -8,6 +10,9 @@ import assert from 'node:assert/strict';
 import {
     createInvestmentHistoryProjectionRuntime,
 } from '../../../app/web/static/assets/js/investment/runtime/history-projection.js';
+import {
+    projectHsbcPendingHistoryCash,
+} from '../../../app/web/static/assets/js/investment/runtime/history-cash-anchors.js';
 import {
     normalizeInvestmentAuthoritativeCashBoundaryAmount,
     resolveInvestmentEvidenceSafeCashDelta,
@@ -21,6 +26,49 @@ const OTHER_USD_SCOPE = 'HSBC|HSBC-TEST|CURRENT|USD';
 const HKD_SAVINGS_SCOPE = 'HSBC|HSBC-TEST|SAVINGS|HKD';
 const HSBC_SEQUENCE_SHA_A = 'a'.repeat(64);
 const HSBC_SEQUENCE_SHA_B = 'b'.repeat(64);
+
+test('pending cash projection prefers dated native balances without modifying its input', () => {
+    const txn = {
+        broker_dated_cash_balances: Object.freeze({USD: 999, HKD: 780, CNH: 700}),
+        broker_cash_by_currency: Object.freeze({USD: 9, HKD: 7.8}),
+        calculated_broker_cash_by_currency: Object.freeze({USD: 1}),
+        broker_pending_settlement_cash: -20,
+    };
+    const original = structuredClone(txn);
+    let conversionCount = 0;
+    const cash = projectHsbcPendingHistoryCash(txn, {
+        baseCurrency: 'USD',
+        pendingCashBoundary: 100,
+        ledgerDate: '2026-03-05',
+        cloneCashLedgerBalances: (balances) => ({...balances}),
+        convertCashBalances: (balances, ledgerDate) => {
+            conversionCount += 1;
+            assert.equal(ledgerDate, '2026-03-05');
+            assert.deepEqual(balances, {USD: 100, HKD: 780, CNH: 700});
+            return balances.USD + balances.HKD / 7.8 + balances.CNH / 7;
+        },
+    });
+    assert.equal(cash, 280);
+    assert.equal(conversionCount, 1);
+    assert.deepEqual(txn, original);
+});
+
+test('pending cash projection preserves unavailable foreign-currency conversion', () => {
+    const cash = projectHsbcPendingHistoryCash({
+        calculated_broker_cash_by_currency: {USD: 999, CNH: 700},
+        broker_pending_settlement_cash: 20,
+    }, {
+        baseCurrency: 'USD',
+        pendingCashBoundary: 100,
+        ledgerDate: '2026-03-05',
+        cloneCashLedgerBalances: (balances) => ({...balances}),
+        convertCashBalances: (balances) => {
+            assert.deepEqual(balances, {USD: 100, CNH: 700});
+            return Number.NaN;
+        },
+    });
+    assert.ok(Number.isNaN(cash));
+});
 
 test('HSBC cash metrics do not repeat the pending-order asterisk', () => {
     const runtime = createInvestmentExportHistoryRuntime({
@@ -46,7 +94,7 @@ test('HSBC authoritative cash boundaries preserve verified negative balances', (
     }), 0);
 });
 
-function createHistoryProjection() {
+function createHistoryProjection(runtimeOverrides = {}) {
     const convertAmountToBaseCurrency = (amount, currency) => (
         String(currency || '').toUpperCase() === 'HKD'
             ? Number(amount) / 10
@@ -86,6 +134,7 @@ function createHistoryProjection() {
             0,
         ),
         cloneCashLedgerBalances: (balances) => ({...(balances || {})}),
+        ...runtimeOverrides,
     };
     return createInvestmentHistoryProjectionRuntime(runtime, {
         baseCurrency: 'USD',
@@ -1136,7 +1185,8 @@ test('same-day cash corroborated as the opening balance retains later SEC settle
     };
     const rejected = buildHsbcSettlementReplaySnapshots([owner, conflictingCash], [boundary]);
     assert.equal(rejected.length, 2);
-    assert.equal(rejected[0].aggregate_pending_settlement_cash, 0);
+    // The uncertain cash ordering rejects the boundary, not the executed trade.
+    assert.equal(rejected[0].aggregate_pending_settlement_cash, 200);
 });
 
 test('replay rejects an invalid-date direct row claiming the boundary physical row', () => {
@@ -1448,3 +1498,75 @@ test('an inactive anchor no longer retires later settlement corrections', () => 
 
     assert.equal(afterSell.history_broker_cash, 1_210);
 });
+
+test('pending sale keeps USD 100 and HKD 780 plus USD 20 before the final HSBC row', () => {
+    const projection = createHistoryProjection({
+        isHsbcSettlementActuallyPending: (source) => source?.cash_replay_pending_settlement === true,
+        getInvestmentBrokerEndingCashInBaseCurrency: () => 100,
+        sumCashLedgerInBaseCurrency: (balances) => Number(balances.USD || 0)
+            + Number(balances.HKD || 0) / 7.8,
+    });
+    const pending = {
+        ...makeSettlementSell(),
+        date: '2026-09-19',
+        broker_running_cash: 100,
+        broker_display_cash: 120,
+        broker_pending_settlement_cash: 20,
+        broker_market_value: 500,
+        broker_cash_by_currency: {USD: 100, HKD: 780},
+        source: {file_kind: 'hsbc_order_status_text', cash_replay_pending_settlement: true},
+    };
+    const later = {
+        ...pending,
+        date: '2026-09-20',
+        type: 'interest',
+        source: {},
+        broker_cash_balance_source: 'authoritative_current_cash_snapshot',
+        broker_display_cash: 221,
+    };
+    const rows = [pending, later];
+    projection.applyHsbcHistoryPresentationProjection(rows);
+    projection.applyAuthoritativeCurrentBrokerHistoryBoundary(rows);
+
+    assert.equal(pending.history_broker_cash, 220);
+    assert.equal(pending.history_broker_equity, 720);
+    assert.equal(later.history_broker_cash, 221);
+    assert.equal(later.history_broker_equity, 721);
+});
+
+for (const side of ['buy', 'sell']) {
+    for (const hasForeignCash of [false, true]) {
+        test(`pending ${side} keeps ${hasForeignCash ? 'projected foreign' : 'USD-only'} cash exactly once`, () => {
+            const pendingAmount = side === 'buy' ? -20 : 20;
+            const {applyHsbcHistoryPresentationProjection} = createHistoryProjection({
+                isHsbcSettlementActuallyPending: (source) => source?.cash_replay_pending_settlement === true,
+                getInvestmentBrokerEndingCashInBaseCurrency: () => 1_200,
+            });
+            // This older settlement raises raw USD 1,000 to the same USD
+            // 1,200 boundary already used by the current pending projection.
+            const settled = makeSettlementSell({brokerRunningCash: 1_000});
+            const pending = {
+                ...makeSettlementSell(),
+                date: '2026-09-19',
+                type: side,
+                broker_running_cash: 1_200,
+                broker_display_cash: 1_200 + pendingAmount,
+                broker_pending_settlement_cash: pendingAmount,
+                broker_market_value: 500,
+                // The dated HKD anchor has replaced raw HKD 100 with 150.
+                broker_cash_by_currency: hasForeignCash ? {USD: 1_000, HKD: 150} : {USD: 1_000},
+                calculated_broker_cash_by_currency: hasForeignCash ? {USD: 1_000, HKD: 100} : {USD: 1_000},
+                source: {file_kind: 'hsbc_order_status_text', cash_replay_pending_settlement: true},
+            };
+            const originalBalances = {...pending.broker_cash_by_currency};
+
+            applyHsbcHistoryPresentationProjection([settled, pending]);
+
+            const expectedCash = 1_200 + (hasForeignCash ? 15 : 0) + pendingAmount;
+            assert.equal(pending.history_broker_cash, expectedCash);
+            assert.equal(pending.history_broker_equity, expectedCash + 500);
+            assert.equal(pending.history_cash_is_provisional, true);
+            assert.deepEqual(pending.broker_cash_by_currency, originalBalances);
+        });
+    }
+}

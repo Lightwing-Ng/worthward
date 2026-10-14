@@ -1,6 +1,6 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -90,6 +90,8 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
     ]
 
     load_normalized_investment_payload = context["load_normalized_investment_payload"]
+
+    market_store_file_lock = context["market_store_file_lock"]
 
     merge_and_write_investment_payload = context["merge_and_write_investment_payload"]
 
@@ -219,13 +221,15 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                 )
                 return apply_no_store_headers(response)
 
-            data = load_normalized_investment_payload()
+            # Bind the payload and version to one committed ledger snapshot.
+            with market_store_file_lock(INVESTMENT_STORE_PATH):
+                data = load_normalized_investment_payload()
+                investment_store_fingerprint = build_file_fingerprint(
+                    investment_store_path_for(INVESTMENT_STORE_PATH)
+                )
             section_freshness = build_investment_section_freshness(data)
             freshness_refresh_failures = ensure_latest_investment_daily_caches(
                 section_freshness["open_tickers"]
-            )
-            investment_store_fingerprint = build_file_fingerprint(
-                investment_store_path_for(INVESTMENT_STORE_PATH)
             )
             transactions = data.get("transactions", [])
             data["fx_rate_history_by_currency"] = (
@@ -268,18 +272,36 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                 transactions,
                 section_freshness["open_tickers"],
             )
-            if not freshness_refresh_failures:
+            required_fx_currencies = {
+                "CNY" if currency in {"CNY", "CNH", "RMB"} else currency
+                for row in transactions
+                if (currency := str(row.get("currency") or "").strip().upper())
+                in {"HKD", "CNY", "CNH", "RMB"}
+            }
+            fx_history_complete = all(
+                data["fx_rate_history_by_currency"].get(currency, {}).get("values")
+                for currency in required_fx_currencies
+            )
+            if (
+                not freshness_refresh_failures
+                and not price_history_failures
+                and fx_history_complete
+            ):
                 cacheable_data = dict(data)
                 cacheable_data["realtime_quotes"] = []
                 cacheable_data["investment_cache"] = {
                     "status": "stored",
                     "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
                 }
-                write_investment_transactions_cache(
-                    investment_store_fingerprint=investment_store_fingerprint,
-                    price_store_fingerprints=price_store_fingerprints,
-                    payload=cacheable_data,
-                )
+                with market_store_file_lock(INVESTMENT_STORE_PATH):
+                    if investment_store_fingerprint == build_file_fingerprint(
+                        investment_store_path_for(INVESTMENT_STORE_PATH)
+                    ):
+                        write_investment_transactions_cache(
+                            investment_store_fingerprint=investment_store_fingerprint,
+                            price_store_fingerprints=price_store_fingerprints,
+                            payload=cacheable_data,
+                        )
             response = jsonify(data)
             report_fetch_abort_debug_event(
                 "E",

@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.24.0`
+Documentation version: `v1.24.1`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -62,9 +62,11 @@ The Collapse specimen has no placeholder explanatory paragraph.
 - A pressed strategy-tuning action uses the
   `--strategy-tune-button-active-*` contract: an opaque adaptive-white surface
   in Light mode and a transparent surface that follows the surrounding sidebar
-  in Dark mode. The standard primary-blue glyph and border, restrained blue
-  active shadow, and press transform distinguish it from the idle frosted
-  material in both modes.
+  in Dark mode. Light mode uses the standard primary-blue glyph and border;
+  Dark mode mixes that primary blue with 30% white so the glyph remains legible
+  against the exposed sidebar. The active border uses the same glyph color.
+  The restrained blue active shadow and press transform distinguish the action
+  from the idle frosted material in both modes.
 - Same-page Backtest hydration preserves the result surfaces in place and masks
   only the price/equity canvases, metric values, and Price Field detail plot.
   The mask's glass base is stationary; only its internal highlight animates.

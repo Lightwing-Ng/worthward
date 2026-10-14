@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.18.6
+Code version: v0.19.0
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
@@ -694,7 +694,7 @@ def _investment_payload_to_table(payload: dict[str, object]) -> pd.DataFrame:
 
 
 def _investment_table_to_payload(table: pd.DataFrame) -> dict[str, object]:
-    payload: dict[str, object] = {}
+    payload: dict[str, object] = {"transactions": []}
     transactions: list[object] = []
     if table.empty:
         return payload
@@ -710,11 +710,12 @@ def _investment_table_to_payload(table: pd.DataFrame) -> dict[str, object]:
         transaction_rows = transaction_rows.sort_values("row_index", ascending=True)
         for _, row in transaction_rows.iterrows():
             try:
-                value = json.loads(str(row.get("value_json") or "{}"))
-            except (json.JSONDecodeError, TypeError):
-                value = {}
-            if isinstance(value, dict):
-                transactions.append(value)
+                value = json.loads(str(row.get("value_json")))
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise RuntimeError("The investment ledger could not be read safely.") from exc
+            if not isinstance(value, dict):
+                raise RuntimeError("The investment ledger could not be read safely.")
+            transactions.append(value)
         payload["transactions"] = transactions
 
     metadata_rows = normalized.loc[normalized["section"] != "transactions"].copy()
@@ -726,9 +727,9 @@ def _investment_table_to_payload(table: pd.DataFrame) -> dict[str, object]:
             if not section:
                 continue
             try:
-                payload[section] = json.loads(str(row.get("value_json") or "null"))
-            except (json.JSONDecodeError, TypeError):
-                payload[section] = None
+                payload[section] = json.loads(str(row.get("value_json")))
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise RuntimeError("The investment ledger could not be read safely.") from exc
 
     return payload
 
@@ -760,25 +761,26 @@ def load_investment_store_payload(path: Path = INVESTMENT_STORE_PATH) -> dict[st
                     strict=True,
                 )
             )
-    if not legacy_path.exists():
-        return {}
-    with market_store_file_lock(legacy_path):
         if not legacy_path.exists():
             return {}
-        if legacy_path.stat().st_size == 0:
-            raise RuntimeError(
-                "The legacy investment ledger exists but is empty and cannot be read safely."
-            )
-        try:
-            payload = json.loads(legacy_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError, TypeError) as exc:
-            raise RuntimeError(
-                "The legacy investment ledger could not be read safely."
-            ) from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError("The legacy investment ledger could not be read safely.")
-    save_investment_store_payload(payload, path)
-    return payload
+        # Match the parquet-then-legacy order used by ledger removal.
+        with market_store_file_lock(legacy_path):
+            if not legacy_path.exists():
+                return {}
+            if legacy_path.stat().st_size == 0:
+                raise RuntimeError(
+                    "The legacy investment ledger exists but is empty and cannot be read safely."
+                )
+            try:
+                payload = json.loads(legacy_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError, TypeError) as exc:
+                raise RuntimeError(
+                    "The legacy investment ledger could not be read safely."
+                ) from exc
+            if not isinstance(payload, dict):
+                raise RuntimeError("The legacy investment ledger could not be read safely.")
+        save_investment_store_payload(payload, path)
+        return payload
 
 
 def save_investment_store_payload(payload: dict[str, object], path: Path = INVESTMENT_STORE_PATH) -> None:

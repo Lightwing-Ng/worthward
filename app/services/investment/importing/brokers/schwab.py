@@ -1,6 +1,8 @@
 """Investment import domain: schwab.
 
-Code version: v0.2.0
+Code version: v0.3.0
+- Fixed: Explicit non-execution statuses cannot create trades, and filled
+  quantity takes precedence over an order's reported quantity.
 - Added: Stock trade Amount must reconcile with quantity, price, and fees
   before the CSV can establish authoritative net proceeds.
 """
@@ -68,6 +70,8 @@ def _canonicalize_schwab_legacy_transaction_type(
 def _normalize_schwab_header_key(key: str) -> str:
     k = _normalize_text(key).lower()
     k = re.sub(r"[\s_|]+", "", k)
+    if k in {"filledquantity", "filledqty", "executedquantity", "executedqty"}:
+        return "filledquantity"
     k = k.replace("quantityfacevalue", "quantity")
     k = k.replace("timeanddate(et)", "datetime")
     k = k.replace("timeanddate", "datetime")
@@ -167,6 +171,15 @@ def _classify_schwab_transaction_type(
     """Map Schwab's human-readable action variants to ledger semantics."""
     normalized_action = _normalize_whitespace(action).lower()
     normalized_description = _normalize_whitespace(description).lower()
+    action_mapping = {
+        "reinvest dividend": "dividend",
+        "qual div reinvest": "dividend",
+        "pr yr div reinvest": "dividend",
+        "reinvest shares": "dividend_reinvestment",
+        "bank interest": "credit_interest",
+    }
+    if normalized_action in action_mapping:
+        return action_mapping[normalized_action]
     direct_mapping = SCHWAB_ACTION_TO_TYPE.get(normalized_action)
     if direct_mapping is not None:
         return direct_mapping
@@ -226,22 +239,20 @@ def _build_schwab_transaction_record(
 
     symbol = norm_row.get("symbol") or norm_row.get("ticker") or ""
     description = norm_row.get("description") or norm_row.get("name") or ""
-    status = norm_row.get("status", "").lower()
+    status = _normalize_whitespace(norm_row.get("status", "")).lower()
     action_raw = (norm_row.get("action") or norm_row.get("type") or "").strip()
-
-    if status and status not in SCHWAB_FILLED_STATUS and "filled" not in status:
-        if "price" not in norm_row and "fillprice" not in norm_row:
-            return None
 
     mapped_type = _classify_schwab_transaction_type(
         action_raw,
         description,
         unknown_types,
     )
-
     qty_raw = (
         norm_row.get("quantity") or norm_row.get("qty") or norm_row.get("shares") or ""
     )
+    filled_quantity_raw = norm_row.get("filledquantity", "")
+    if mapped_type in {"buy", "sell", "dividend_reinvestment"} and "filledquantity" in norm_row:
+        qty_raw = filled_quantity_raw
     price_raw = (
         norm_row.get("price")
         or norm_row.get("fillprice")
@@ -262,6 +273,28 @@ def _build_schwab_transaction_record(
     )
     if commission_dec < 0:
         commission_dec = abs(commission_dec)
+
+    if mapped_type in {"buy", "sell", "dividend_reinvestment"}:
+        if status and status not in SCHWAB_FILLED_STATUS:
+            # A partly executed order may later be canceled or remain working.
+            # Its explicit executed quantity and reconciled cash prove only that filled portion.
+            captured_partial_execution = (
+                mapped_type in {"buy", "sell"}
+                and status in {"canceled", "cancelled", "working"}
+                and "filledquantity" in norm_row
+                and quantity_dec is not None
+                and quantity_dec > ZERO
+                and bool(
+                    norm_row.get("amount")
+                    or norm_row.get("netamount")
+                    or norm_row.get("proceeds")
+                )
+            )
+            if not captured_partial_execution:
+                warnings.append(
+                    f"Row {row_number}: skipped Schwab trade with non-execution status {status!r}."
+                )
+                return None
 
     if (
         mapped_type == "transfer_in"
@@ -347,12 +380,29 @@ def _build_schwab_transaction_record(
             stated_amount = _parse_schwab_decimal(
                 stated_amount_raw, "amount", row_number, warnings
             )
-            if stated_amount is None or abs(stated_amount - net_amount) > Decimal(
-                "0.005"
+            # The displayed average price is rounded independently of net cash.
+            # Bound that rounding by its actual printed precision, plus half a cent.
+            price_exponent = price_dec.as_tuple().exponent
+            price_rounding = (
+                abs(quantity_dec) * Decimal(1).scaleb(price_exponent) / 2
+                if price_exponent <= -3
+                else ZERO
+            )
+            tolerance = price_rounding + Decimal("0.005")
+            if (
+                stated_amount is None
+                or (mapped_type == "buy" and stated_amount >= ZERO)
+                or (mapped_type == "sell" and stated_amount <= ZERO)
+                or abs(stated_amount - net_amount) > tolerance
             ):
                 raise ValueError(
                     f"Schwab Transactions row {row_number}: Amount does not reconcile with quantity, price, and Fees & Comm."
                 )
+            net_amount = stated_amount
+            gross_amount = stated_amount + commission_dec
+
+    if mapped_type in {"deposit", "withdrawal"} and net_amount is not None:
+        mapped_type = "deposit" if net_amount >= ZERO else "withdrawal"
 
     reinvestment_cost_basis_status = ""
     if mapped_type == "dividend_reinvestment":
@@ -395,6 +445,9 @@ def _build_schwab_transaction_record(
         record["source"]["reinvestment_cost_basis_status"] = (
             reinvestment_cost_basis_status
         )
+    if filled_quantity_raw and mapped_type in {"buy", "sell", "dividend_reinvestment"}:
+        record["source"]["quantity_source_field"] = "filledquantity"
+        record["source"]["reported_quantity_raw"] = norm_row.get("quantity", "")
     if symbol:
         record["ticker"] = normalize_ticker(symbol)
 

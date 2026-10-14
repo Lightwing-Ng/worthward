@@ -1,7 +1,11 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Added: Explicit broker snapshot scopes retain positions-only accounts.
+ * - Fixed: Dated gains, income, and residual basis share the verified matcher.
+ * - Fixed: Known FIFO-reconstructed transfers request matching FIFO inventory
+ *   independently of the selected buy/sell matching method.
  * - Changed: An HSBC snapshot held in review only because the Portfolio paste
  *   has no market-data timestamp may attest tax-lot replay for tickers whose
  *   replayed quantity matches it. Every other review reason stays unverified.
@@ -166,6 +170,7 @@ export function createInvestmentReconciliationUtils(runtime) {
                 costPrice,
                 marketValue,
                 lastPrice,
+                ...(snapshot.as_of || snapshot.asOf ? {asOf: String(snapshot.as_of ?? snapshot.asOf).trim()} : {}),
             };
         });
         return normalizedSnapshot;
@@ -291,37 +296,38 @@ export function createInvestmentReconciliationUtils(runtime) {
     }
 
     function getAuthoritativeBrokerPositionSnapshots() {
-        const brokerSummaries = window.WORTHWARD_INVESTMENT_DATA?.broker_summaries;
-        if (!brokerSummaries || typeof brokerSummaries !== 'object') return [];
-        const snapshots = [];
-        Object.entries(brokerSummaries).forEach(([broker, summary]) => {
-            if (!summary || typeof summary !== 'object') return;
-            if (summary.position_snapshot_authoritative !== true) return;
-            const rawSnapshot = summary.position_snapshot;
-            if (!rawSnapshot || typeof rawSnapshot !== 'object') return;
-            const normalizedBroker = String(broker || summary.broker || '').trim().toLowerCase();
+        const data = window.WORTHWARD_INVESTMENT_DATA || {};
+        const snapshotsByAccount = new Map();
+        const seenAccounts = new Set();
+        const addSnapshot = (broker, summary) => {
+            if (!summary) return;
+            if (!Object.prototype.hasOwnProperty.call(summary, 'position_snapshot_authoritative')
+                && !summary.position_snapshot) return;
+            const normalizedBroker = String(summary.broker || broker || '').trim().toLowerCase();
             if (!normalizedBroker) return;
-            snapshots.push({
-                broker: normalizedBroker,
-                accountId: String(summary.account_id ?? summary.account ?? '').trim(),
-                accountToken: normalizeInvestmentLotScopeAccount(
-                    normalizedBroker,
-                    summary.account_id ?? summary.account ?? '',
-                ),
-                positionSnapshotAsOf: getInvestmentBrokerPositionSnapshotAsOf(normalizedBroker),
+            const accountId = String(summary.account_id ?? summary.account ?? '').trim();
+            const accountToken = normalizeInvestmentLotScopeAccount(normalizedBroker, accountId);
+            const key = `${normalizedBroker}|${accountToken}`;
+            if (seenAccounts.has(key)) return;
+            seenAccounts.add(key);
+            const rawSnapshot = summary.position_snapshot;
+            if (summary.position_snapshot_authoritative !== true || !rawSnapshot || typeof rawSnapshot !== 'object') return;
+            snapshotsByAccount.set(key, {
+                broker: normalizedBroker, accountId, accountToken,
+                positionSnapshotAsOf: normalizeLedgerDate(summary.position_snapshot_as_of)
+                    || Object.values(rawSnapshot).map((entry) => normalizeLedgerDate(entry?.as_of ?? entry?.asOf)).filter(Boolean).sort().at(-1)
+                    || '',
                 positionSnapshot: normalizeAuthoritativePositionSnapshot(rawSnapshot),
                 positionSnapshotRaw: rawSnapshot,
-                holdingsValidation: summary.holdings_validation && typeof summary.holdings_validation === 'object'
-                    ? summary.holdings_validation
-                    : null,
+                holdingsValidation: summary.holdings_validation || null,
                 realizedPnlReconciliation: getBrokerRealizedPnlReconciliationMap(
-                    normalizedBroker,
-                    summary.account_id ?? summary.account ?? '',
-                    summary.realized_pnl_reconciliation,
+                    normalizedBroker, accountId, summary.realized_pnl_reconciliation,
                 ),
             });
-        });
-        return snapshots;
+        };
+        Object.values(data.broker_snapshots || {}).forEach((snapshot) => addSnapshot(snapshot?.broker, snapshot));
+        Object.entries(data.broker_summaries || {}).forEach(([broker, summary]) => addSnapshot(broker, summary));
+        return [...snapshotsByAccount.values()];
     }
 
     function normalizeLedgerDateTime(value, fallbackDate = '') {
@@ -572,6 +578,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         const lots = [];
         let shares = 0;
         let realizedPnl = 0;
+        let priorRealizedPnl = 0;
         const realizedPnlByDate = {};
         let hasLaterTransaction = false;
         let postPerformanceTransactionCount = 0;
@@ -625,13 +632,16 @@ export function createInvestmentReconciliationUtils(runtime) {
                 return true;
             }
 
-            if (!isAfterPerformanceBoundary) return true;
             const brokerRealizedPnl = getTransactionBrokerRealizedPnl(txn);
             const proceeds = getTransactionEvidencedTradeCashAmount(txn);
             const delta = brokerRealizedPnl === null
                 ? proceeds - consumption.removedCost
                 : brokerRealizedPnl;
             if (!Number.isFinite(delta)) return false;
+            if (!isAfterPerformanceBoundary) {
+                priorRealizedPnl += proceeds - consumption.removedCost;
+                return true;
+            }
             realizedPnl += delta;
             const ledgerDate = normalizeLedgerDate(txn?.date);
             if (ledgerDate) {
@@ -702,6 +712,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         return {
             status: 'complete',
             realizedPnl: hasLaterTransaction ? realizedPnl : 0,
+            priorRealizedPnl,
             realizedPnlByDate,
             source: 'authoritative_position_snapshot_fifo_transaction_history_replay',
             costBasisMethod: 'FIFO reconstructed',
@@ -747,6 +758,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         status,
         source,
         sourceCurrency,
+        transactions = [],
     }) {
         const hasPerformance = Boolean(
             performanceEntry && Number.isFinite(Number(performanceEntry.realizedTotal)),
@@ -796,23 +808,34 @@ export function createInvestmentReconciliationUtils(runtime) {
                     : nonPerformanceRealizedPnlLocal - postPerformanceIncome)
             : 0;
         const incrementalRealizedPnlLocal = hasPerformance
-            ? (supplementalComplete ? Number(supplemental.realizedPnl) || 0 : 0)
+            ? (supplementalComplete ? Number(supplemental.realizedPnl) || 0 : postPerformanceIncome)
             : Number(scopeState?.realizedPnl) || 0;
         const proposedRealizedPnlLocal = hasPerformance
             ? baselineRealizedPnlLocal + incrementalRealizedPnlLocal
             : Number(scopeState?.realizedPnl) || 0;
+        const baselineDate = transactions.filter((txn) => {
+            const txnScope = getTransactionLotScope(txn);
+            const date = normalizeLedgerDate(txn?.date);
+            return txnScope.broker === scope?.broker && txnScope.accountToken === scope?.accountToken
+                && txnScope.ticker === scope?.ticker && txnScope.currency === scope?.currency
+                && ['sell', 'transfer_out'].includes(getNormalizedTransactionType(txn))
+                && date && (!normalizedPerformanceAsOf || date <= normalizedPerformanceAsOf);
+        }).map((txn) => normalizeLedgerDate(txn.date)).sort().at(-1) || normalizedPerformanceAsOf;
         const dailyRealizedPnlLocal = {};
         if (status === 'complete') {
             if (hasPerformance) {
                 if (normalizedPerformanceAsOf) {
                     addInvestmentRealizedPnlByDate(
                         dailyRealizedPnlLocal,
-                        normalizedPerformanceAsOf,
+                        baselineDate,
                         baselineRealizedPnlLocal,
                     );
                 }
-                if (supplementalComplete) {
-                    Object.entries(supplemental.realizedPnlByDate || {}).forEach(
+                const incrementalDates = supplementalComplete
+                    ? supplemental.realizedPnlByDate
+                    : Object.fromEntries(Object.entries(scopeState?.nonPerformanceRealizedPnlByDate || {}).filter(([date]) => date > normalizedPerformanceAsOf));
+                if (incrementalDates) {
+                    Object.entries(incrementalDates).forEach(
                         ([ledgerDate, value]) => addInvestmentRealizedPnlByDate(
                             dailyRealizedPnlLocal,
                             ledgerDate,
@@ -859,6 +882,7 @@ export function createInvestmentReconciliationUtils(runtime) {
             );
         return {
             schemaVersion: 'v1',
+            baselineDate,
             broker: scope?.broker || '',
             account: scope?.accountId || scope?.accountToken || '',
             ticker: scope?.ticker || '',
@@ -939,16 +963,35 @@ export function createInvestmentReconciliationUtils(runtime) {
             scope,
             transactions,
         );
-        if (
-            fifoReplay?.status !== 'complete'
-            || !performanceAsOf
-            || !scopeState
-            || typeof scopeState !== 'object'
-        ) {
-            return fifoReplay;
+        if (fifoReplay?.status !== 'complete' || !scopeState) return fifoReplay;
+        if (!performanceAsOf) {
+            // A position boundary validates quantities; it cannot replace the
+            // selected matcher's basis while retaining that matcher's gains.
+            return Math.abs(scopeState.shares - fifoReplay.endingShares) <= 1e-7
+                && scopeState.costBasisStatus === 'known'
+                ? {...fifoReplay, endingTotalCost: scopeState.totalCost, costBasisMethod: scopeState.lotMatchingMethod}
+                : fifoReplay;
         }
-        const realizedPnlByDate = {};
-        Object.entries(scopeState.realizedPnlByDate || {}).forEach(([rawDate, rawAmount]) => {
+        const performance = brokerPerformanceSnapshot.performanceSnapshot?.[scope.ticker];
+        const priorIncome = Object.entries(scopeState.nonPerformanceRealizedPnlByDate || {}).reduce(
+            (total, [date, amount]) => date <= performanceAsOf ? total + (Number(amount) || 0) : total, 0,
+        );
+        const reportedTradingBaseline = Number(performance?.realizedTotal)
+            - (performance?.includesNonperformance ? priorIncome : 0);
+        const provenFifoBaseline = Number.isFinite(reportedTradingBaseline)
+            && Math.abs(reportedTradingBaseline - fifoReplay.priorRealizedPnl) <= 1e-7;
+        const selectedTradingBaseline = Object.entries(scopeState.realizedPnlByDate || {}).reduce(
+            (total, [date, amount]) => date <= performanceAsOf ? total + (Number(amount) || 0) : total, 0,
+        ) - priorIncome;
+        const provenSelectedBaseline = !provenFifoBaseline
+            && scopeState.costBasisStatus === 'known'
+            && Math.abs(scopeState.shares - fifoReplay.endingShares) <= 1e-7
+            && Math.abs(reportedTradingBaseline - selectedTradingBaseline) <= 1e-7;
+        const realizedPnlByDate = provenFifoBaseline ? {...fifoReplay.realizedPnlByDate} : {};
+        const increments = provenFifoBaseline
+            ? scopeState.nonPerformanceRealizedPnlByDate
+            : scopeState.realizedPnlByDate;
+        Object.entries(increments || {}).forEach(([rawDate, rawAmount]) => {
             const ledgerDate = normalizeLedgerDate(rawDate);
             const amount = Number(rawAmount);
             if (!ledgerDate || ledgerDate <= performanceAsOf || !Number.isFinite(amount)) return;
@@ -960,6 +1003,10 @@ export function createInvestmentReconciliationUtils(runtime) {
         );
         return {
             ...fifoReplay,
+            ...(provenSelectedBaseline ? {
+                endingTotalCost: scopeState.totalCost,
+                costBasisMethod: scopeState.lotMatchingMethod,
+            } : {}),
             realizedPnl,
             realizedPnlByDate,
             source: 'authoritative_position_snapshot_scoped_transaction_history_replay',
@@ -978,7 +1025,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         const laterTransactions = sortInvestmentTransactionsForReplay(
             (Array.isArray(transactions) ? transactions : []).filter((txn) => {
                 const ledgerDate = normalizeLedgerDate(txn?.date);
-                return ledgerDate && ledgerDate > boundaryDate;
+                return ledgerDate && ledgerDate >= boundaryDate;
             }),
         );
         laterTransactions.forEach((txn) => {
@@ -990,6 +1037,13 @@ export function createInvestmentReconciliationUtils(runtime) {
                 : txn?.ticker;
             const ticker = getInvestmentCanonicalTicker(rawTicker);
             if (!ticker || isForexPairTicker(ticker)) return;
+            const entryBoundary = projectedSnapshot[ticker]?.asOf;
+            const exactBoundary = String(entryBoundary || snapshotAsOf || '').replace('T', ' ')
+                .match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/);
+            const boundaryDateTime = exactBoundary
+                ? `${exactBoundary[1]} ${exactBoundary[2]}`
+                : `${normalizeLedgerDate(entryBoundary) || boundaryDate} 23:59:59`;
+            if (getInvestmentTransactionDateTime(txn) <= boundaryDateTime) return;
             const quantity = Math.abs(Number(getTransactionQuantity(txn)));
             if (!Number.isFinite(quantity) || quantity < 1e-9) return;
             const isIncrease = ['buy', 'dividend_reinvestment', 'grant', 'transfer_in'].includes(normalizedType);
@@ -1059,7 +1113,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         return projectedSnapshot;
     }
 
-    function getAuthoritativePositionSnapshotForTransactions(transactions = []) {
+    function getAuthoritativePositionSnapshotForTransactions(transactions = [], {brokerScope = ''} = {}) {
         const globalSnapshot = getAuthoritativePositionSnapshot();
         const scopedTransactions = Array.isArray(transactions) ? transactions : [];
         if (globalSnapshot !== null) {
@@ -1074,23 +1128,43 @@ export function createInvestmentReconciliationUtils(runtime) {
                 .map((txn) => String(txn?.broker || txn?.source?.broker || '').trim().toLowerCase())
                 .filter(Boolean),
         );
-        if (brokerCodes.size !== 1) return null;
-        const broker = [...brokerCodes][0];
-        const accountIds = new Set(
-            scopedTransactions
-                .map((txn) => String(txn?.account || txn?.source?.account || '').trim())
-                .filter(Boolean),
-        );
+        if (!brokerScope && brokerCodes.size !== 1) return null;
+        const requestedBrokers = brokerScope && brokerScope !== 'all'
+            ? new Set([String(brokerScope).trim().toLowerCase()]) : brokerCodes;
+        const transactionScopes = scopedTransactions.map((txn) => getTransactionLotScope(txn));
         const candidates = getAuthoritativeBrokerPositionSnapshots().filter((entry) => (
-            entry.broker === broker
-            && (!accountIds.size || !entry.accountId || accountIds.has(entry.accountId))
+            (brokerScope === 'all' || requestedBrokers.has(entry.broker))
+            && (brokerScope || transactionScopes.some((scope) => scope.broker === entry.broker && scope.accountToken === entry.accountToken))
         ));
-        if (candidates.length !== 1) return null;
-        return projectAuthoritativePositionSnapshot(
-            candidates[0].positionSnapshot,
-            scopedTransactions,
-            candidates[0].positionSnapshotAsOf,
-        );
+        if (!candidates.length || transactionScopes.some((scope) => !candidates.some((entry) => (
+            entry.broker === scope.broker && entry.accountToken === scope.accountToken
+        )))) return null;
+        const combined = {};
+        for (const candidate of candidates) {
+            const projected = projectAuthoritativePositionSnapshot(
+                candidate.positionSnapshot,
+                scopedTransactions.filter((txn) => {
+                    const scope = getTransactionLotScope(txn);
+                    return scope.broker === candidate.broker && scope.accountToken === candidate.accountToken;
+                }),
+                candidate.positionSnapshotAsOf,
+            );
+            for (const [ticker, entry] of Object.entries(projected)) {
+                if (!combined[ticker]) {
+                    combined[ticker] = entry;
+                    continue;
+                }
+                const previous = combined[ticker];
+                const quantity = previous.quantity + entry.quantity;
+                const known = previous.costBasisStatus === 'known' && entry.costBasisStatus === 'known';
+                combined[ticker] = {
+                    quantity, costBasisStatus: known ? 'known' : 'partial',
+                    costPrice: known && quantity ? (previous.quantity * previous.costPrice + entry.quantity * entry.costPrice) / quantity : null,
+                    marketValue: null, lastPrice: null,
+                };
+            }
+        }
+        return combined;
     }
 
     function normalizeAuthoritativePerformanceSnapshot(rawSnapshot) {
@@ -1882,10 +1956,14 @@ export function createInvestmentReconciliationUtils(runtime) {
         }
         if (normalizedType === 'transfer_out' && quantity !== null && !Number.isNaN(quantity)) {
             const transferredCostBasis = getTransactionDerivedCostBasis(txn, 'transfer_out');
+            const transferBasisMethod = getTransactionDerivedCostBasisMethod(txn, 'transfer_out')
+                .toLowerCase().replace(/\s+/g, '_');
             const sharesBeforeTransfer = Number(summary.shares) || 0;
             if (sharesBeforeTransfer > 1e-9) {
                 removePositionLots(summary, quantity, {
                     basisOverride: transferredCostBasis,
+                    methodOverride: transferredCostBasis !== null
+                        && transferBasisMethod === 'fifo_reconstructed' ? 'fifo' : null,
                 });
             } else {
                 summary.shares -= quantity;

@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.4.0
+Code version: v0.4.1
 - Changed: Principal-only sells settle without attaching fees from another cash scope.
 - Changed: A sell cash match commits only with its complete same-scope fee row.
 """
@@ -588,6 +588,7 @@ class HsbcReconciliationImportTestsMixin:
                 "18 Jun 2026",
                 "HK292344JOFHL25I 292",
                 "2,200.00",
+                "0.00",
                 "4,243.53",
                 "Download",
             ]

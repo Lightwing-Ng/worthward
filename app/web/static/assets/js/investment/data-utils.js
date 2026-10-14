@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.121.0
+ * Code version: v1.122.0
+ * - Changed: Resolves dated account snapshots, cash anchors, and cost-conserving replay.
+ * - Fixed: Reconstructed transfers conserve residual lot basis and later P&L.
  * - Added: Exposes explicit native ending balances, their per-currency
  *   component anchors, and the dated native-currency cash projection.
  * - Changed: Loads tax-lot attestation that tolerates an HSBC snapshot whose
@@ -243,19 +245,19 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.3.0';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.3.2';
 import {
     createInvestmentInterestAccrualUtils,
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
 import {
     createInvestmentPositionValuationUtils,
-} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.4';
+} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.6';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.3.0';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.4.0';
 import {
     createInvestmentSummaryUtils,
-} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.2.1';
+} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.3.0';
 import {
     createInvestmentTransactionPresentationUtils,
 } from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.4.1';
@@ -812,7 +814,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.121.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.122.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

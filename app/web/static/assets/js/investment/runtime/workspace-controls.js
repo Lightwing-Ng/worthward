@@ -1,7 +1,11 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.5.0
+ * Code version: v1.5.2
+ * - Fixed: Current Metrics retains foreign cash beside pending USD history,
+ *   and explicit CNH funding can settle one day after an IBKR receipt.
+ * - Fixed: Sequential pending-buy rows retain a private dated native cash
+ *   projection for history without replacing their authoritative USD ledger.
  * - Fixed: Explicit per-currency ending balances anchor dated history as
  *   native balances on their own component dates, so a native USD balance is
  *   never treated as total cash and foreign cash is converted exactly once.
@@ -259,7 +263,7 @@ function isInvestmentInternalTransferChronologicallyValid(sourceTxn, targetTxn) 
         if (!(sourceDate instanceof Date) || Number.isNaN(sourceDate.getTime())) return false;
         if (!(targetEffectiveDate instanceof Date) || Number.isNaN(targetEffectiveDate.getTime())) return false;
         const postingLagDays = targetDateEvidence.hasExplicitEventDate
-            ? 0
+            ? (isInvestmentInternalTransferFxPair(sourceTxn, targetTxn) ? 1 : 0)
             : runtime.INVESTMENT_INTERNAL_TRANSFER_UNDATED_POSTING_LAG_DAYS;
         return targetEffectiveDate.getTime() <= sourceDate.getTime() + (postingLagDays * 86400000);
     }
@@ -1007,7 +1011,17 @@ function applyDatedNativeCashAnchors(brokerRows, anchors, fxTransactions) {
                     return delta;
                 }, {})
                 : null;
-            if (runtime.shouldPreserveSequentialBrokerBuyHistory(txn)) return;
+            if (runtime.shouldPreserveSequentialBrokerBuyHistory(txn)) {
+                // Preserve the sequential buy ledger while making its dated
+                // foreign balances available to the history-only projection.
+                Object.defineProperty(txn, 'broker_dated_cash_balances', {
+                    configurable: true,
+                    enumerable: false,
+                    writable: true,
+                    value: {...balances},
+                });
+                return;
+            }
             if (Number.isFinite(runningCash)) txn.broker_running_cash = runningCash;
             txn.broker_cash_by_currency = {...balances};
             const brokerMarketValue = runtime.getOptionalInvestmentNumber(txn.broker_market_value);
@@ -1496,6 +1510,9 @@ function applyAuthoritativeCurrentAggregateCash(
                 (txn) => runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === snapshot.brokerCode,
             );
             if (!latestBroker) return;
+            const currentMarketValue = runtime.getOptionalInvestmentNumber(latestBroker.broker_market_value);
+            latestBroker.broker_current_total_equity = Number.isFinite(currentMarketValue)
+                ? snapshot.displayCash + currentMarketValue : null;
             if (runtime.shouldPreserveSequentialBrokerBuyHistory(latestBroker)) return;
             latestBroker.broker_running_cash = snapshot.runningCash;
             latestBroker.broker_cash_by_currency = {...snapshot.runningBalances};

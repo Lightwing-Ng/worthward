@@ -1,6 +1,6 @@
 """Investment import domain: longbridge files.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -427,7 +427,7 @@ def _parse_longbridge_sg_fund_details_entries(
                 symbol = normalize_ticker(extra.upper())
             elif LONGBRIDGE_SG_FUND_SHARES_PATTERN.fullmatch(extra):
                 description_parts.append(extra)
-                m = re.search(r"(-?\d+)", extra)
+                m = re.search(r"(-?\d+(?:\.\d+)?)", extra)
                 if m:
                     try:
                         shares_dec = Decimal(m.group(1))
@@ -606,7 +606,7 @@ def _append_longbridge_history_order_warnings(
 def _parse_longbridge_sg_history_orders_xlsx(
     history_orders_bytes: bytes,
     *,
-    accepted_order_statuses: frozenset[str] = frozenset({"filled"}),
+    accepted_order_statuses: frozenset[str] = frozenset({"filled", "partially cancelled"}),
     accepted_log_statuses: frozenset[str] = frozenset({"filled"}),
     workbook_metadata: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
@@ -682,6 +682,7 @@ def _parse_longbridge_sg_history_orders_xlsx(
         full_symbol = f"{symbol}.{market}" if market else symbol
         order_id = _normalize_text(order_row.get("Order No."))
         filled_time = filled_times_by_order_id.get(order_id)
+        used_order_time = filled_time is None
         if filled_time is None:
             filled_time = _parse_longbridge_sg_eastern_datetime(
                 order_row.get("Order Time"),
@@ -710,6 +711,7 @@ def _parse_longbridge_sg_history_orders_xlsx(
                 "currency": order_row.get("Currency"),
                 "time": utc_time_text,
                 "_parsed_time_utc": filled_time,
+                "_source_time_is_order_time": used_order_time,
             }
         )
     return rows
@@ -966,10 +968,10 @@ def build_investment_payload_from_longbridge_sg_files(
                 "Fund Details booking date for authoritative contract and cash-flow records"
             ),
             "datetime_field_meaning": (
-                "Fund Details booking date at the conventional exchange close; History Orders execution "
+                "Fund Details booking date at the conventional exchange close, normalized to UTC; History Orders execution "
                 "timestamps remain available in transaction source metadata"
             ),
-            "timezone": "Fund Details booking date; History Orders metadata uses UTC",
+            "timezone": "UTC",
             "source_has_intraday_timestamp": False,
         },
         "summary": _ii_payload_summaries._build_summary(
@@ -1689,7 +1691,7 @@ def build_investment_payload_from_longbridge_hk_files(
                 "Fund Details booking date at the conventional exchange close; matched History Orders "
                 "execution timestamps remain available in transaction source metadata"
             ),
-            "timezone": "Fund Details booking date; History Orders metadata uses UTC",
+            "timezone": "UTC",
             "source_has_intraday_timestamp": False,
         },
         "summary": _ii_payload_summaries._build_summary(

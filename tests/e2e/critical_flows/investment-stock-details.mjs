@@ -1,4 +1,4 @@
-/* Code version: v1.2.2 */
+/* Code version: v1.2.4 */
 import {
     expect,
     test,
@@ -137,13 +137,43 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(hoverBadgePixels.allocationBadgeRadius).toBe('2px');
     expect(hoverBadgePixels.cornerHasUnfilledPixels).toBe(true);
 
+    // ResizeObserver's settled layout update can outlive CSS transitions.
+    // Count hover work only after that scheduler and the geometry are idle.
+    await expect.poll(() => priceChartCanvas.evaluate(async (canvas) => {
+        const chart = canvas._investmentStockDetailsChart;
+        const readGeometry = () => {
+            const {left, top, width, height} = canvas.getBoundingClientRect();
+            return [left, top, width, height, chart?.width, chart?.height];
+        };
+        const isIdle = () => Boolean(chart)
+            && canvas._investmentStockDetailsChart === chart
+            && !canvas._layoutSyncTimer
+            && !canvas._layoutSyncRaf
+            && !canvas._hoverSyncRaf;
+        if (!isIdle()) return false;
+        const geometry = readGeometry();
+        for (let frame = 0; frame < 2; frame += 1) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            if (!isIdle() || readGeometry().some((value, index) => value !== geometry[index])) return false;
+        }
+        return true;
+    })).toBe(true);
+
     const coalescedHover = await priceChartCanvas.evaluate(async (canvas) => {
         const chart = canvas._investmentStockDetailsChart;
         const rect = canvas.getBoundingClientRect();
         const originalUpdate = chart.update.bind(chart);
         let updateCalls = 0;
+        const updateDiagnostics = [];
         chart.update = (...args) => {
             updateCalls += 1;
+            updateDiagnostics.push({
+                mode: args[0],
+                layoutTimer: canvas._layoutSyncTimer,
+                layoutFrame: canvas._layoutSyncRaf,
+                hoverFrame: canvas._hoverSyncRaf,
+                stack: new Error('Stock-details hover update').stack,
+            });
             return originalUpdate(...args);
         };
         const startX = rect.left + (rect.width * 0.42);
@@ -161,11 +191,12 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chart.update = originalUpdate;
         return {
             updateCalls,
+            updateDiagnostics,
             guideX: chart._activeInvestmentStockDetailsGuideX,
             expectedGuideX: (endX - rect.left) * chart.width / rect.width,
         };
     });
-    expect(coalescedHover.updateCalls).toBe(1);
+    expect(coalescedHover.updateCalls, JSON.stringify(coalescedHover.updateDiagnostics, null, 2)).toBe(1);
     expect(Math.abs(
         coalescedHover.guideX - coalescedHover.expectedGuideX,
     )).toBeLessThanOrEqual(1);
@@ -1136,6 +1167,162 @@ test('keeps the realtime equity endpoint aligned with cash-equivalent Holdings',
     expect(endpoint.chartTotal).toBeCloseTo(endpoint.holdingsTotal, 8);
 });
 
+// HSBC settlement evidence as the importer persists it after verifying SEC
+// legs. Each SHA-256 identifies one immutable CSV file or pasted capture.
+const HSBC_SAVINGS_CSV_SHA256 = '5'.repeat(64);
+const HSBC_EARLIER_CASH_CAPTURE_SHA256 = '6'.repeat(64);
+const HSBC_LATER_CASH_CAPTURE_SHA256 = '7'.repeat(64);
+const HSBC_CASH_CAPTURE_SHA256 = '8'.repeat(64);
+
+// A pasted capture numbers its rows in ledger order. The USD Savings CSV keeps
+// its newest-first file row and adds a chronological ledger sequence.
+function hsbcSettlementPosting({
+    date,
+    amount,
+    balance,
+    orderReference,
+    rowNumber,
+    ledgerSequence = rowNumber,
+    sha256,
+    sourceFileKind = 'hsbc_usd_account_text',
+    statementPeriodEnd = '',
+    role = 'principal',
+}) {
+    const isCsv = sourceFileKind === 'hsbc_usd_savings_csv';
+    return {
+        date,
+        amount_raw: amount,
+        balance_after_raw: balance,
+        reference: `REF ${orderReference.replace('-', '')}001 SEC`,
+        row_number: rowNumber,
+        ledger_sequence: ledgerSequence,
+        ...(isCsv ? {ledger_sequence_order: 'chronological'} : {}),
+        source_file_kind: sourceFileKind,
+        source_file_sha256: sha256,
+        source_sequence_sha256: sha256,
+        account_number: 'HSBC-TEST',
+        account_type: 'USD Savings',
+        ...(isCsv ? {statement_period_end: statementPeriodEnd} : {}),
+        currency: 'USD',
+        role,
+    };
+}
+
+// A USD Order Status order whose principal and fee legs the importer matched.
+function hsbcSettledUsdOrder({
+    date,
+    datetime = '',
+    type,
+    ticker,
+    quantity,
+    price,
+    commission = '0',
+    orderReference,
+    postings,
+}) {
+    const principal = postings.find((posting) => posting.role === 'principal');
+    const finalPosting = postings[postings.length - 1];
+    const gross = `${type === 'buy' ? '-' : ''}${(quantity * price).toFixed(2)}`;
+    return {
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date,
+        ...(datetime ? {datetime} : {}),
+        type,
+        ticker,
+        currency: 'USD',
+        quantity,
+        price,
+        amount: Number(principal.amount_raw),
+        quantity_raw: String(quantity),
+        quantity_abs: String(quantity),
+        price_raw: price.toFixed(2),
+        gross_amount_raw: gross,
+        commission_raw: commission,
+        net_amount_raw: principal.amount_raw,
+        normalized: {
+            side: type,
+            position_quantity: String(quantity),
+            display_quantity: String(quantity),
+            unit_price: price.toFixed(2),
+            gross_amount: gross,
+            display_amount: gross.replace('-', ''),
+            commission,
+            commission_display: commission.replace('-', ''),
+            net_amount: principal.amount_raw,
+            is_cash_flow: false,
+            accounting_adjustment_amount: principal.amount_raw,
+        },
+        source: {
+            file_kind: 'hsbc_order_status_text',
+            broker: 'hsbc',
+            account: 'HSBC-TEST',
+            account_number: 'HSBC-TEST',
+            order_id: orderReference,
+            statement_order_id: orderReference,
+            order_status: 'Fully Executed',
+            cash_settlement_date: principal.date,
+            cash_settlement_amount_raw: principal.amount_raw,
+            cash_settlement_balance_after_raw: finalPosting.balance_after_raw,
+            cash_settlement_reference: principal.reference,
+            cash_settlement_source_row_number: finalPosting.row_number,
+            cash_settlement_authoritative_source: principal.source_file_kind === 'hsbc_usd_savings_csv'
+                ? 'hsbc_usd_savings_transaction_history_csv'
+                : 'hsbc_cash_account_pasted_text',
+            cash_settlement_source_file_sha256: principal.source_file_sha256,
+            cash_settlement_postings: postings,
+            ...(type === 'sell' ? {
+                cash_flow_fee_amount_raw: commission.replace('-', ''),
+                cash_flow_fee_row_numbers: postings
+                    .filter((posting) => posting.role === 'fee')
+                    .map((posting) => posting.row_number),
+            } : {}),
+        },
+    };
+}
+
+function hsbcUsdSavingsCsvCash({date, amount, balance, rowNumber, ledgerSequence}) {
+    return {
+        broker: 'hsbc',
+        account: 'HSBC-TEST',
+        date,
+        datetime: `${date} 20:00:00`,
+        type: 'deposit',
+        ticker: '',
+        currency: 'USD',
+        description: 'TEST USD CREDIT',
+        amount: Number(amount),
+        quantity_raw: '',
+        quantity_abs: '',
+        price_raw: '',
+        gross_amount_raw: amount,
+        commission_raw: '0',
+        net_amount_raw: amount,
+        normalized: {
+            gross_amount: amount,
+            display_amount: amount,
+            commission: '0',
+            commission_display: '0',
+            net_amount: amount,
+            is_cash_flow: true,
+            cash_flow_amount: amount,
+        },
+        source: {
+            file_kind: 'hsbc_usd_savings_csv',
+            row_number: rowNumber,
+            ledger_sequence: ledgerSequence,
+            ledger_sequence_order: 'chronological',
+            account_number: 'HSBC-TEST',
+            account_type: 'USD Savings',
+            balance_after_raw: balance,
+            reference_id: 'TEST USD CREDIT',
+            cash_balance_scope: 'account',
+            cash_balance_authoritative: true,
+            source_sequence_sha256: HSBC_SAVINGS_CSV_SHA256,
+        },
+    };
+}
+
 test('keeps same-day HSBC USD settlement proceeds after earlier buys', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc'],
@@ -1149,62 +1336,48 @@ test('keeps same-day HSBC USD settlement proceeds after earlier buys', async ({p
                 currency: 'USD',
                 amount: 20_000,
             },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+            // Both SEC rows come from one 102-row, newest-first USD Savings
+            // CSV, whose two newest rows are the sale (row 2) and buy (row 3).
+            hsbcSettledUsdOrder({
                 date: '2026-07-01',
                 datetime: '2026-07-01 19:00:00',
                 type: 'buy',
                 ticker: 'BOXX',
-                currency: 'USD',
                 quantity: 1,
                 price: 100,
-                amount: -100,
-                source: {
-                    file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-01-JUL-BUY',
-                    cash_settlement_date: '2026-07-02',
-                    cash_settlement_amount_raw: '-100.00',
-                    cash_settlement_balance_after_raw: '19900.00',
-                    cash_settlement_postings: [{
-                        date: '2026-07-02',
-                        amount_raw: '-100.00',
-                        balance_after_raw: '19900.00',
-                        source_file_kind: 'hsbc_usd_savings_csv',
-                        ledger_sequence: 101,
-                        currency: 'USD',
-                        role: 'principal',
-                    }],
-                },
-            },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+                orderReference: 'P-100101',
+                postings: [hsbcSettlementPosting({
+                    date: '2026-07-02',
+                    amount: '-100.00',
+                    balance: '19900.00',
+                    orderReference: 'P-100101',
+                    rowNumber: 3,
+                    ledgerSequence: 101,
+                    sha256: HSBC_SAVINGS_CSV_SHA256,
+                    sourceFileKind: 'hsbc_usd_savings_csv',
+                    statementPeriodEnd: '2026-07-02',
+                })],
+            }),
+            hsbcSettledUsdOrder({
                 date: '2026-07-01',
                 datetime: '2026-07-01 20:00:00',
                 type: 'sell',
                 ticker: 'BOXX',
-                currency: 'USD',
                 quantity: 1,
                 price: 100,
-                amount: 100,
-                source: {
-                    file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-01-JUL-SELL',
-                    cash_settlement_date: '2026-07-02',
-                    cash_settlement_amount_raw: '100.00',
-                    cash_settlement_balance_after_raw: '20000.00',
-                    cash_settlement_postings: [{
-                        date: '2026-07-02',
-                        amount_raw: '100.00',
-                        balance_after_raw: '20000.00',
-                        source_file_kind: 'hsbc_usd_savings_csv',
-                        ledger_sequence: 102,
-                        currency: 'USD',
-                        role: 'principal',
-                    }],
-                },
-            },
+                orderReference: 'S-100102',
+                postings: [hsbcSettlementPosting({
+                    date: '2026-07-02',
+                    amount: '100.00',
+                    balance: '20000.00',
+                    orderReference: 'S-100102',
+                    rowNumber: 2,
+                    ledgerSequence: 102,
+                    sha256: HSBC_SAVINGS_CSV_SHA256,
+                    sourceFileKind: 'hsbc_usd_savings_csv',
+                    statementPeriodEnd: '2026-07-02',
+                })],
+            }),
         ],
         priceHistoryByTicker: {
             BOXX: [
@@ -1243,62 +1416,45 @@ test('recovers same-day HSBC settlement order from authoritative balance continu
                 currency: 'USD',
                 amount: 33_222.32,
             },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+            // BOXX executed first, but HSBC posted the EUV settlement first:
+            // 33,222.32 -> 32,992.32 -> 21,185.32. Each SEC row comes from a
+            // different pasted capture, so their row sequences are
+            // incomparable and execution order would apply BOXX first; only
+            // balance continuity recovers the posted order.
+            hsbcSettledUsdOrder({
                 date: '2026-09-01',
                 datetime: '2026-09-01 20:00:00',
                 type: 'buy',
-                ticker: 'EUV',
-                currency: 'USD',
-                quantity: 10,
-                price: 23,
-                amount: -230,
-                source: {
-                    file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-119045',
-                    cash_settlement_date: '2026-09-02',
-                    cash_settlement_amount_raw: '-230.00',
-                    cash_settlement_balance_after_raw: '32992.32',
-                    cash_settlement_postings: [{
-                        date: '2026-09-02',
-                        amount_raw: '-230.00',
-                        balance_after_raw: '32992.32',
-                        source_file_kind: 'hsbc_usd_account_text',
-                        ledger_sequence: 47,
-                        currency: 'USD',
-                        role: 'principal',
-                    }],
-                },
-            },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+                ticker: 'BOXX',
+                quantity: 100,
+                price: 118.07,
+                orderReference: 'P-742284',
+                postings: [hsbcSettlementPosting({
+                    date: '2026-09-02',
+                    amount: '-11807.00',
+                    balance: '21185.32',
+                    orderReference: 'P-742284',
+                    rowNumber: 43,
+                    sha256: HSBC_LATER_CASH_CAPTURE_SHA256,
+                })],
+            }),
+            hsbcSettledUsdOrder({
                 date: '2026-09-01',
                 datetime: '2026-09-01 20:00:01',
                 type: 'buy',
-                ticker: 'BOXX',
-                currency: 'USD',
-                quantity: 100,
-                price: 118.07,
-                amount: -11_807,
-                source: {
-                    file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-742284',
-                    cash_settlement_date: '2026-09-02',
-                    cash_settlement_amount_raw: '-11807.00',
-                    cash_settlement_balance_after_raw: '21185.32',
-                    cash_settlement_postings: [{
-                        date: '2026-09-02',
-                        amount_raw: '-11807.00',
-                        balance_after_raw: '21185.32',
-                        source_file_kind: 'hsbc_usd_account_text',
-                        ledger_sequence: 43,
-                        currency: 'USD',
-                        role: 'principal',
-                    }],
-                },
-            },
+                ticker: 'EUV',
+                quantity: 10,
+                price: 23,
+                orderReference: 'P-119045',
+                postings: [hsbcSettlementPosting({
+                    date: '2026-09-02',
+                    amount: '-230.00',
+                    balance: '32992.32',
+                    orderReference: 'P-119045',
+                    rowNumber: 47,
+                    sha256: HSBC_EARLIER_CASH_CAPTURE_SHA256,
+                })],
+            }),
         ],
         priceHistoryByTicker: {
             EUV: [
@@ -1353,74 +1509,45 @@ test('replays future HSBC settlement cash on the settlement date without a deriv
                 amount: -24_373.75,
                 description: 'Unscoped historical USD replay delta',
             },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+            // The same newest-first CSV proves 11,000 cash, then the next-day
+            // 500 credit before the 900 SEC debit. Its balances, not an
+            // inferred deposit, retire the unrelated historical replay delta.
+            hsbcUsdSavingsCsvCash({
                 date: '2026-06-22',
-                datetime: '2026-06-22 20:00:00',
-                type: 'deposit',
-                currency: 'USD',
-                amount: 1000,
-                net_amount_raw: '1000.00',
-                source: {
-                    file_kind: 'hsbc_usd_savings_csv',
-                    row_number: 104,
-                    ledger_sequence: 104,
-                    cash_balance_authoritative: true,
-                    balance_after_raw: '11000.00',
-                },
-            },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+                amount: '1000.00',
+                balance: '11000.00',
+                rowNumber: 4,
+                ledgerSequence: 102,
+            }),
+            hsbcSettledUsdOrder({
                 date: '2026-06-22',
                 datetime: '2026-06-22 21:00:00',
                 type: 'buy',
                 ticker: 'BOXX',
-                currency: 'USD',
                 quantity: 1,
                 price: 900,
-                amount: -900,
-                source: {
-                    file_kind: 'hsbc_order_status_text',
-                    statement_order_id: 'P-TEST',
-                    // Matched SEC evidence clears the provisional pending flag.
-                    // Trade-date equity must remain correct without that flag.
-                    cash_settlement_date: '2026-06-23',
-                    cash_settlement_amount_raw: '-900.00',
-                    cash_settlement_balance_after_raw: '10600.00',
-                    cash_settlement_reference: 'REF PTEST001 SEC',
-                    cash_settlement_source_row_number: 102,
-                    cash_settlement_postings: [{
-                        date: '2026-06-23',
-                        amount_raw: '-900.00',
-                        balance_after_raw: '10600.00',
-                        reference: 'REF PTEST001 SEC',
-                        row_number: 102,
-                        ledger_sequence: 102,
-                        source_file_kind: 'hsbc_usd_savings_csv',
-                        currency: 'USD',
-                        role: 'principal',
-                    }],
-                },
-            },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+                orderReference: 'P-900104',
+                // Matched SEC evidence clears the provisional pending flag.
+                // Trade-date equity must remain correct without that flag.
+                postings: [hsbcSettlementPosting({
+                    date: '2026-06-23',
+                    amount: '-900.00',
+                    balance: '10600.00',
+                    orderReference: 'P-900104',
+                    rowNumber: 2,
+                    ledgerSequence: 104,
+                    sha256: HSBC_SAVINGS_CSV_SHA256,
+                    sourceFileKind: 'hsbc_usd_savings_csv',
+                    statementPeriodEnd: '2026-06-23',
+                })],
+            }),
+            hsbcUsdSavingsCsvCash({
                 date: '2026-06-23',
-                datetime: '2026-06-23 20:00:00',
-                type: 'deposit',
-                currency: 'USD',
-                amount: 500,
-                net_amount_raw: '500.00',
-                source: {
-                    file_kind: 'hsbc_usd_savings_csv',
-                    row_number: 101,
-                    ledger_sequence: 101,
-                    cash_balance_authoritative: true,
-                    balance_after_raw: '11500.00',
-                },
-            },
+                amount: '500.00',
+                balance: '11500.00',
+                rowNumber: 3,
+                ledgerSequence: 103,
+            }),
         ],
         priceHistoryByTicker: {
             BOXX: [
@@ -1452,7 +1579,7 @@ test('replays future HSBC settlement cash on the settlement date without a deriv
         page.locator('#investment_history .investment-history-cell-left')
             .filter({hasText: 'BOXX @ 900.00 × 1'})
             .first(),
-    ).toHaveText('BOXX @ 900.00 × 1 · P-TEST');
+    ).toHaveText('BOXX @ 900.00 × 1 · P-900104');
     await expect(page.getByText('HSBC cash settlement replay', {exact: true})).toHaveCount(0);
     await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(5);
 });
@@ -1569,37 +1696,73 @@ test('anchors HSBC History cash to an evidenced future SEC settlement balance', 
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc'],
         transactions: [
+            // The pasted capture's first row; rows 2-7 are outside this fixture.
             {
                 broker: 'hsbc',
                 account: 'HSBC-TEST',
                 date: '2026-08-05',
                 type: 'deposit',
+                ticker: '',
                 currency: 'USD',
-                amount: 0,
+                description: 'TEST USD CREDIT',
+                amount: 13_000,
+                quantity_raw: '',
+                quantity_abs: '',
+                price_raw: '',
+                gross_amount_raw: '13000.00',
+                commission_raw: '0',
+                net_amount_raw: '13000.00',
+                normalized: {
+                    gross_amount: '13000.00',
+                    display_amount: '13000.00',
+                    commission: '0',
+                    commission_display: '0',
+                    net_amount: '13000.00',
+                    is_cash_flow: true,
+                    cash_flow_amount: '13000.00',
+                },
                 source: {
                     file_kind: 'hsbc_usd_account_text',
+                    row_number: 1,
+                    ledger_sequence: 1,
+                    account_number: 'HSBC-TEST',
                     balance_after_raw: '13000.00',
+                    reference_id: 'TEST USD CREDIT',
+                    account_type: 'USD Savings',
+                    cash_balance_scope: 'account',
+                    cash_balance_authoritative: true,
+                    source_sequence_sha256: HSBC_CASH_CAPTURE_SHA256,
                 },
             },
-            {
-                broker: 'hsbc',
-                account: 'HSBC-TEST',
+            // HSBC posts the 0.01 sale fee as its own SEC row after the principal.
+            hsbcSettledUsdOrder({
                 date: '2026-08-06',
                 type: 'sell',
                 ticker: 'DRAM',
-                currency: 'USD',
                 quantity: 2,
                 price: 52.35,
-                amount: 104.69,
-                source: {
-                    cash_replay_pending_settlement: true,
-                    cash_settlement_date: '2026-08-07',
-                    cash_settlement_amount_raw: '104.69',
-                    cash_settlement_balance_after_raw: '20976.10',
-                    cash_flow_fee_amount_raw: '0.01',
-                    cash_settlement_reference: 'REF S900040001 SEC',
-                },
-            },
+                commission: '-0.01',
+                orderReference: 'S-900040',
+                postings: [
+                    hsbcSettlementPosting({
+                        date: '2026-08-07',
+                        amount: '104.69',
+                        balance: '20976.11',
+                        orderReference: 'S-900040',
+                        rowNumber: 8,
+                        sha256: HSBC_CASH_CAPTURE_SHA256,
+                    }),
+                    hsbcSettlementPosting({
+                        date: '2026-08-07',
+                        amount: '-0.01',
+                        balance: '20976.10',
+                        orderReference: 'S-900040',
+                        rowNumber: 9,
+                        sha256: HSBC_CASH_CAPTURE_SHA256,
+                        role: 'fee',
+                    }),
+                ],
+            }),
         ],
         priceHistoryByTicker: {
             DRAM: [{date: '2026-08-06', close: 52.35}],

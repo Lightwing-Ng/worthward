@@ -1,6 +1,6 @@
 """Investment import domain: artifacts.
 
-Code version: v0.3.2
+Code version: v0.3.3
 - Fixed: A market-data timestamp from an earlier U.S. market day no longer
   outranks a same-day position snapshot captured without a timestamp.
 - Fixed: Re-importing identical HSBC cash-page evidence may expand legacy
@@ -583,7 +583,8 @@ def _snapshot_source_reliability(source: str) -> int:
     if normalized_source == "ibkr_csv_open_positions":
         return 400
     if normalized_source == "ibkr_gainskeeper_positions":
-        return 300
+        # Precise app and GainsKeeper observations compare by their capture time.
+        return 350
     if normalized_source in {"hsbc_portfolio_text", "hsbc_investment_statement_pdf"}:
         return 300
     if normalized_source.endswith("_positions_cli"):
@@ -1258,7 +1259,24 @@ def _aggregate_ibkr_csv_performance_snapshot(
             day_gap = (
                 date.fromisoformat(item["window_start"]) - date.fromisoformat(cursor)
             ).days
-            if day_gap in {1, 2, 3}:
+            # Missing weekdays are not evidence of a closed reporting interval.
+            weekend_gap = (
+                day_gap in {2, 3}
+                and all(
+                    date.fromordinal(
+                        date.fromisoformat(cursor).toordinal() + offset
+                    ).weekday() >= 5
+                    for offset in range(1, day_gap)
+                )
+                and not any(
+                    _ii_basics._normalize_broker_code(record.get("broker")) == broker
+                    and _normalize_text(record.get("account")) == account
+                    and cursor < _normalize_text(record.get("date"))[:10]
+                    < item["window_start"]
+                    for record in transactions
+                )
+            )
+            if day_gap == 1 or weekend_gap:
                 item["realized_increment"] = {
                     normalize_ticker(_normalize_text(ticker)): realized_total
                     for ticker, raw_entry in item["evidence"]

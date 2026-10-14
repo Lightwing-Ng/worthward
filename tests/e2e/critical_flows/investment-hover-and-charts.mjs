@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -118,15 +118,39 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
     await page.setViewportSize({width: 1_024, height: 863});
     await page.goto('/trade/investment?view=overview&range=1m');
 
+    const waitForRenderedRange = async (range) => {
+        if (range === '1w' || range === '1m') {
+            await expect.poll(() => page.evaluate(() => (
+                window.Chart?.getChart(document.querySelector('#investmentEquityChart'))
+                    ?.data?.datasets?.[0]?.data?.filter(Number.isFinite).length || 0
+            )), {timeout: 30_000}).toBe((range === '1w' ? 5 : 23) * 390);
+            return;
+        }
+        const firstDate = {
+            '3m': '2026-05-13',
+            ytd: '2026-01-01',
+            '1y': '2025-08-13',
+            max: '2025-01-02',
+        }[range];
+        const expectedDates = dailyHistory
+            .filter(({date}) => date >= firstDate)
+            .map(({date}) => date);
+        await expect.poll(() => page.evaluate(() => {
+            const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+            return {
+                dates: chart?.data?.rawLabels || [],
+                finitePoints: chart?.data?.datasets?.[0]?.data?.filter(Number.isFinite).length || 0,
+            };
+        }), {timeout: 30_000}).toEqual({dates: expectedDates, finitePoints: expectedDates.length});
+    };
+    await waitForRenderedRange('1m');
+
     for (const range of ['1w', '1m', '3m', 'ytd', '1y', 'max']) {
         await page.locator(`label[for="investment_equity_range_${range}"]`).click();
         await expect(page.locator(`#investment_equity_range_${range}`)).toBeChecked();
-        await expect.poll(() => page.evaluate(() => (
-            window.Chart?.getChart(document.querySelector('#investmentEquityChart'))
-                ?.data?.datasets?.[0]?.data?.filter(Number.isFinite).length || 0
-        )), {timeout: 30_000}).toBeGreaterThan(0);
+        await waitForRenderedRange(range);
 
-        const badge = await page.evaluate(() => {
+        const readBadge = () => page.evaluate(() => {
             const canvas = document.querySelector('#investmentEquityChart');
             const chart = window.Chart?.getChart(canvas);
             const dataset = chart?.data?.datasets?.[0]?.data || [];
@@ -168,6 +192,11 @@ test('shows hovered total equity in the shared blue y-axis badge across every Ov
                 yWithinPlot: bounds.y >= chart.chartArea.top && bounds.y <= chart.chartArea.bottom,
             };
         });
+        let badge = null;
+        await expect.poll(async () => {
+            badge = await readBadge();
+            return badge;
+        }, {timeout: 30_000}).not.toBeNull();
         expect(badge).toEqual({
             allocationBadgeRadius: '2px',
             badgeCoversAxis: true,

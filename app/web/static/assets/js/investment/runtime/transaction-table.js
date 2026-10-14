@@ -1,7 +1,9 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.5.2
+ * Code version: v1.5.4
+ * - Fixed: Same-day settlement balances retain their exact cash-account scope.
+ * - Fixed: Loads pending history cash with the dated foreign-currency basis.
  * - Changed: Loads the history projection whose dated native-currency
  *   anchors retire same-currency settlement corrections.
  * - Changed: Loads history settlement boundaries with fees on either side
@@ -34,7 +36,7 @@
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.4.0';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.4.2';
 
 export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
     const numericValue = Number(value);
@@ -333,6 +335,7 @@ async function renderTransactionTable(transactions, {
             currency = baseCurrency,
             ledgerDate = '',
             txn = null,
+            settlementBoundary = null,
         ) {
             const normalizedCash = normalizeInvestmentAuthoritativeCashBoundaryAmount(
                 authoritativeCash,
@@ -341,7 +344,7 @@ async function renderTransactionTable(transactions, {
             const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
             const boundary = hasConflictingHsbcDirectCashEvidence(txn)
                 ? null
-                : runtime.getInvestmentCashBalanceBoundary(txn);
+                : settlementBoundary || runtime.getInvestmentCashBalanceBoundary(txn);
             if (boundary) {
                 runtime.setInvestmentCashScopeBoundary(state.cashScopeLedger, {
                     ...boundary,
@@ -649,7 +652,7 @@ async function renderTransactionTable(transactions, {
             const brokerTransactions = orderedTransactions.filter((txn) => (
                 runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === normalizedBrokerCode
             ));
-            const snapshot = runtime.getAuthoritativePositionSnapshotForTransactions(brokerTransactions);
+            const snapshot = runtime.getAuthoritativePositionSnapshotForTransactions(brokerTransactions, {brokerScope: normalizedBrokerCode});
             if (snapshot !== null && Object.keys(snapshot).length) {
                 authoritativeBrokerPositionSnapshots.set(normalizedBrokerCode, snapshot);
             }
@@ -852,8 +855,12 @@ async function renderTransactionTable(transactions, {
                     transactionCurrency,
                     ledgerDate,
                     txn,
+                    settlementBalanceAfter !== undefined ? {
+                        scopeKey: validatedSettlementBoundary.cashScopeKey,
+                        currency: validatedSettlementBoundary.currency,
+                    } : null,
                 );
-                if (cashBoundary) {
+                if (cashBoundary || settlementBalanceAfter !== undefined) {
                     rebuildAggregateCashState(ledgerDate);
                 } else if (isSingleBrokerPortfolio) {
                     applyAuthoritativeCashBalance(
@@ -946,6 +953,7 @@ async function renderTransactionTable(transactions, {
 
         const authoritativePositionSnapshot = runtime.getAuthoritativePositionSnapshotForTransactions(
             orderedTransactions,
+            {brokerScope: 'all'},
         );
         // Get latest price from parquet (last available close) for final valuation
         const latestPrices = {};

@@ -1,6 +1,6 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.6.0
+Code version: v0.6.1
 - Fixed: Settlement repair uses bounded identity-matched fees and shared staged
   economics, reports skip reasons, and falls back to usable pasted evidence
   without allowing another order owner to reuse the same reference.
@@ -437,6 +437,10 @@ def _build_hsbc_cash_only_pasted_payload(
     ending_cash = _decimal_to_str(usd_ending) if usd_ending is not None else None
     earliest_cash_post_date = min(cash_post_dates, default="")
     latest_cash_post_date = max(cash_post_dates, default="")
+    usd_latest_post_date = max(
+        (cash_capture.get("visible_post_dates_by_currency") or {}).get("USD", []),
+        default="",
+    )
     cash_snapshot_source = (
         "hsbc_usd_savings_ledger_balance"
         if has_usd and usd_ledger is not None
@@ -544,14 +548,14 @@ def _build_hsbc_cash_only_pasted_payload(
             "cash_snapshot_status": "cash_only",
             "cash_snapshot_as_of": latest_cash_post_date,
             "cash_ledger_balance": (_decimal_to_str(usd_ledger) if has_usd else None),
-            "cash_ledger_balance_as_of": latest_cash_post_date
+            "cash_ledger_balance_as_of": usd_latest_post_date
             if usd_ledger is not None
             else "",
             "cash_ledger_balance_source": (
                 "hsbc_usd_savings_ledger_balance" if usd_ledger is not None else ""
             ),
             "ending_cash_base_currency": ending_cash,
-            "ending_cash_base_currency_as_of": latest_cash_post_date if has_usd else "",
+            "ending_cash_base_currency_as_of": usd_latest_post_date if has_usd else "",
             "ending_cash_base_currency_source": cash_snapshot_source if has_usd else "",
             "ending_cash_base_currency_status": (
                 "authoritative_current_cash_boundary" if has_usd else ""
@@ -657,7 +661,9 @@ def build_investment_payload_from_hsbc_pasted_text(
         account_number=portfolio_account_number,
         portfolio_capture=portfolio_capture,
         parsed_order_rows=parsed_order_rows,
-        cash_visible_post_dates=cash_capture.get("visible_post_dates", []),
+        cash_visible_post_dates=(
+            cash_capture.get("visible_post_dates_by_currency") or {}
+        ).get("USD", []),
         portfolio_text=portfolio_text,
         order_status_text=order_status_text,
         cash_account_text=cash_account_text,
@@ -1016,7 +1022,10 @@ def build_investment_payload_from_hsbc_pasted_text(
     if ledger_balance is not None:
         payload["summary"]["cash_ledger_balance"] = _decimal_to_str(ledger_balance)
         payload["summary"]["cash_ledger_balance_as_of"] = _normalize_text(
-            snapshot_report.get("cash_latest_post_date")
+            max(
+                (cash_capture.get("visible_post_dates_by_currency") or {}).get("USD", []),
+                default="",
+            )
         )
         payload["summary"]["cash_ledger_balance_source"] = (
             "hsbc_usd_savings_ledger_balance"

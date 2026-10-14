@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 import {
     expect,
     test,
@@ -527,9 +527,9 @@ test('pins the Bayesian overview origin on primary press, mouse click, and touch
         const touchUrl = new URL('/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
             + '&stop_loss=0&show_trade_details=0', page.url()).href;
         await touchPage.goto(touchUrl);
-        await expect.poll(() => touchPage.evaluate(() => Boolean(
-            window.Chart?.getChart?.(document.querySelector('#tradePriceChart')),
-        ))).toBe(true);
+        await expect(touchPage.locator('#tradePriceChart')).toHaveAttribute(
+            'data-trade-chart-ready', '1', {timeout: 30_000},
+        );
         await expect.poll(() => readAnchor(touchPage), {timeout: 10_000}).toBeTruthy();
         const touchAnchor = await readAnchor(touchPage);
         const touchTooltip = touchPage.locator('[data-backtest-chart-tooltip="probability-grid"]');

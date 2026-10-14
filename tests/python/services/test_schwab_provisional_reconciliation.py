@@ -1,6 +1,8 @@
 """Regression coverage for Schwab CSV reconciliation of provisional TOS trades.
 
-Code version: v0.1.0
+Code version: v0.2.1
+- Added: Overnight TOS page buy coverage and side-aware linkage guards.
+- Added: Same-day and cross-day linkage replay across New York DST boundaries.
 """
 
 from __future__ import annotations
@@ -9,13 +11,14 @@ import base64
 import hashlib
 import unittest
 from copy import deepcopy
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.services.investment.investment_record_basics import (
     build_normalized_transaction_view,
 )
 from app.services.investment.importing.merge.schwab_provisional import (
-    reconcile_schwab_provisional_sales,
+    reconcile_schwab_provisional_trades,
 )
 from app.services.investment_import import (
     build_investment_payload_from_schwab_csv,
@@ -25,6 +28,7 @@ from app.services.investment_import import (
 
 ACCOUNT = "Individual ...001"
 REFERENCE = "TOS-PAGE-20260929-081152-GOOGL-SELL-1"
+BUY_REFERENCE = "TOS-PAGE-20261013-104127-DRAM-BUY-1"
 
 
 def paired_csv_payload(
@@ -157,6 +161,122 @@ def provisional_payload(*, reference: str = REFERENCE) -> dict:
         "source_artifacts": [artifact],
         "transactions": [transaction],
     }
+
+
+def buy_csv_payload(
+    *,
+    buys: tuple[tuple[str, str, str], ...] = (("10/13/2026", "52.15", "0"),),
+    sales: tuple[tuple[str, str], ...] = (),
+) -> dict:
+    transactions = [
+        '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
+        '"10/01/2026","Security Transfer","QQQI","QQQI receipt","1","","",""',
+    ]
+    for buy_date, price, fee in buys:
+        amount = Decimal("5") * Decimal(price) + Decimal(fee)
+        fee_cell = f"${fee}" if Decimal(fee) else ""
+        transactions.append(
+            f'"{buy_date}","Buy","DRAM","ROUNDHILL MEMORY ETF","5",'
+            f'"${price}","{fee_cell}","-${amount:.2f}"'
+        )
+    for sale_date, price in sales:
+        transactions.append(
+            f'"{sale_date}","Sell","DRAM","ROUNDHILL MEMORY ETF","5",'
+            f'"${price}","","${Decimal("5") * Decimal(price):.2f}"'
+        )
+    held = 5 * (len(buys) - len(sales))
+    dram_value = Decimal(held) * Decimal("52.15")
+    total = Decimal("20.00") + dram_value + Decimal("100.00")
+    positions = [
+        f'"Positions for account {ACCOUNT} as of 09:00 AM ET, 2026/10/13"',
+        "",
+        '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
+        '"QQQI","QQQI ETF","1","20.00","$20.00","$20.00","ETFs & Closed End Funds",',
+    ]
+    if held:
+        positions.append(
+            f'"DRAM","ROUNDHILL MEMORY ETF","{held}","52.15","${dram_value:.2f}",'
+            f'"${dram_value:.2f}","ETFs & Closed End Funds",'
+        )
+    positions.extend(
+        [
+            '"Cash & Cash Investments","--","--","--","$100.00","--","Cash and Money Market",',
+            f'"Positions Total","--","--","--","${total:.2f}","--","",',
+        ]
+    )
+    return build_investment_payload_from_schwab_csv(
+        ("\n".join(transactions) + "\n").encode(),
+        ("\n".join(positions) + "\n").encode(),
+        transaction_filename="download.csv",
+        positions_filename="Individual-Positions-2026-10-13.csv",
+    )
+
+
+def provisional_buy_payload(*, reference: str = BUY_REFERENCE) -> dict:
+    payload = provisional_payload(reference=reference)
+    transaction = payload["transactions"][0]
+    transaction.update(
+        {
+            "date": "2026-10-12",
+            "datetime": "2026-10-12 22:41:27",
+            "type": "buy",
+            "ticker": "DRAM",
+            "description": "Temporary TOS overnight execution",
+            "quantity_raw": "5",
+            "quantity_abs": "5",
+            "price_raw": "52.15",
+            "gross_amount_raw": "-260.75",
+            "net_amount_raw": "-260.75",
+            "normalized": build_normalized_transaction_view(
+                "buy",
+                Decimal("5"),
+                Decimal("52.15"),
+                Decimal("-260.75"),
+                None,
+                Decimal("-260.75"),
+                is_cash_flow_override=False,
+                side_override="buy",
+            ),
+        }
+    )
+    transaction["source"]["source_datetime_raw"] = "2026-10-13 10:41:27"
+    return payload
+
+
+def dram_buys(payload: dict) -> list[dict]:
+    return [
+        row
+        for row in payload["transactions"]
+        if row["type"] == "buy" and row.get("ticker") == "DRAM"
+    ]
+
+
+def dated_trade_payloads(
+    side: str,
+    source_datetime: str,
+    ledger_datetime: str,
+) -> tuple[dict, dict]:
+    """Reuse broker fixtures with explicitly supplied timezone expectations."""
+    manual = provisional_buy_payload() if side == "buy" else provisional_payload()
+    official = (
+        buy_csv_payload() if side == "buy" else paired_csv_payload(include_sale=True)
+    )
+    trade = manual["transactions"][0]
+    source_date, source_time = source_datetime.split(" ")
+    trade["date"] = ledger_datetime[:10]
+    trade["datetime"] = ledger_datetime
+    trade["source"]["source_datetime_raw"] = source_datetime
+    trade["source"]["reference_id"] = (
+        f"TOS-PAGE-{source_date.replace('-', '')}-"
+        f"{source_time.replace(':', '')}-{trade['ticker']}-{side.upper()}-1"
+    )
+    official_trade = next(
+        row for row in official["transactions"] if row["type"] == side
+    )
+    official_trade["date"] = source_date
+    official_trade["datetime"] = f"{source_date} 20:00:00"
+    official["transactions"] = [official_trade]
+    return manual, official
 
 
 def other_broker_payload() -> dict:
@@ -374,12 +494,12 @@ class SchwabProvisionalReconciliationTests(unittest.TestCase):
         wrong_account_sale["account"] = "Individual ...999"
         wrong_account_sale["source"]["account"] = "Individual ...999"
         with self.assertRaisesRegex(ValueError, "provisional.*Schwab"):
-            reconcile_schwab_provisional_sales(
+            reconcile_schwab_provisional_trades(
                 [sale], wrong_account["transactions"]
             )
 
         manual = provisional_payload()["transactions"][0]
-        existing, incoming, removed = reconcile_schwab_provisional_sales(
+        existing, incoming, removed = reconcile_schwab_provisional_trades(
             [sale], [manual]
         )
         self.assertEqual(removed, 1)
@@ -410,6 +530,204 @@ class SchwabProvisionalReconciliationTests(unittest.TestCase):
                 revised = paired_csv_payload(include_sale=True, **options)
                 with self.assertRaisesRegex(ValueError, "Schwab.*CSV row.*conflicting"):
                     merge_investment_payloads(calibrated, revised)
+
+    def test_csv_replaces_overnight_provisional_buy_on_next_trade_date(self) -> None:
+        old_csv = buy_csv_payload(buys=())
+        manual = provisional_buy_payload()
+        pending = merge_investment_payloads(old_csv, manual)
+        self.assertEqual(len(dram_buys(pending)), 1)
+        self.assertEqual(
+            dram_buys(pending)[0]["source"]["file_kind"], "manual_investment_xlsx"
+        )
+
+        official = buy_csv_payload()
+        merged = merge_investment_payloads(pending, official)
+        buys = dram_buys(merged)
+        self.assertEqual(len(buys), 1)
+        self.assertEqual(buys[0]["date"], "2026-10-13")
+        self.assertEqual(buys[0]["source"]["file_kind"], "schwab_csv")
+        self.assertEqual(
+            buys[0]["source"]["superseded_manual_reference_id"], BUY_REFERENCE
+        )
+        self.assertEqual(
+            merged["summary"]["incremental_import"][
+                "superseded_schwab_provisional_trade_count"
+            ],
+            1,
+        )
+        self.assertIn(
+            manual["source_artifacts"][0]["sha256"],
+            {item["sha256"] for item in merged["source_artifacts"]},
+        )
+
+        replayed = merge_investment_payloads(merged, official)
+        replayed = merge_investment_payloads(replayed, manual)
+        self.assertEqual(len(dram_buys(replayed)), 1)
+
+        reversed_order = merge_investment_payloads(official, manual)
+        self.assertEqual(len(dram_buys(reversed_order)), 1)
+
+    def test_provisional_trade_never_matches_the_opposite_side(self) -> None:
+        manual = provisional_buy_payload()
+        sale_only = buy_csv_payload(buys=(), sales=(("10/13/2026", "52.15"),))
+        _, _, removed = reconcile_schwab_provisional_trades(
+            manual["transactions"], sale_only["transactions"]
+        )
+        self.assertEqual(removed, 0)
+
+        mislabeled = provisional_buy_payload(
+            reference="TOS-PAGE-20261013-104127-DRAM-SELL-1"
+        )
+        official = buy_csv_payload()
+        _, _, removed = reconcile_schwab_provisional_trades(
+            mislabeled["transactions"], official["transactions"]
+        )
+        self.assertEqual(removed, 0)
+
+    def test_distinct_same_quantity_buy_does_not_block_linked_buy(self) -> None:
+        manual = provisional_buy_payload()
+        official = buy_csv_payload(
+            buys=(("10/13/2026", "52.15", "0"), ("10/13/2026", "51.50", "0"))
+        )
+        merged = merge_investment_payloads(manual, official)
+        self.assertEqual(len(dram_buys(merged)), 2)
+        replayed = merge_investment_payloads(merged, official)
+        self.assertEqual(len(dram_buys(replayed)), 2)
+        self.assertEqual(
+            len(
+                [
+                    row
+                    for row in dram_buys(replayed)
+                    if row["source"].get("superseded_manual_reference_id")
+                    == BUY_REFERENCE
+                ]
+            ),
+            1,
+        )
+
+        revised = buy_csv_payload(
+            buys=(("10/13/2026", "52.15", "0.01"), ("10/13/2026", "51.50", "0"))
+        )
+        with self.assertRaisesRegex(ValueError, "Schwab.*CSV row.*conflicting"):
+            merge_investment_payloads(replayed, revised)
+
+    def test_identical_csv_buys_leave_provisional_buy_ambiguous(self) -> None:
+        manual = provisional_buy_payload()
+        duplicated = buy_csv_payload(
+            buys=(("10/13/2026", "52.15", "0"), ("10/13/2026", "52.15", "0"))
+        )
+        with self.assertRaisesRegex(ValueError, "provisional.*Schwab"):
+            merge_investment_payloads(manual, duplicated)
+
+    def test_same_day_link_preserves_previous_day_fill_on_replay(self) -> None:
+        cases = (
+            ("2026-10-13 22:00:00", "2026-10-13 10:00:00"),
+            ("2026-12-15 22:00:00", "2026-12-15 09:00:00"),
+            ("2026-03-09 12:00:00", "2026-03-09 00:00:00"),
+            ("2026-10-30 12:00:00", "2026-10-30 00:00:00"),
+            ("2026-11-02 13:00:00", "2026-11-02 00:00:00"),
+        )
+        for side in ("buy", "sell"):
+            for source_datetime, ledger_datetime in cases:
+                with self.subTest(side=side, source_datetime=source_datetime):
+                    manual, official = dated_trade_payloads(
+                        side, source_datetime, ledger_datetime
+                    )
+                    previous_trade = deepcopy(official["transactions"][0])
+                    previous_date = (
+                        date.fromisoformat(source_datetime[:10]) - timedelta(days=1)
+                    ).isoformat()
+                    previous_trade["date"] = previous_date
+                    previous_trade["datetime"] = f"{previous_date} 20:00:00"
+                    previous_trade["source"]["row_number"] += 1
+                    official["transactions"].append(previous_trade)
+
+                    merged = merge_investment_payloads(manual, official)
+                    for replay in (official, manual, other_broker_payload(), official):
+                        merged = merge_investment_payloads(merged, replay)
+                        trades = [
+                            row
+                            for row in merged["transactions"]
+                            if row["type"] == side
+                        ]
+                        self.assertEqual(len(trades), 2)
+                        self.assertEqual(
+                            {row["date"] for row in trades},
+                            {source_datetime[:10], previous_date},
+                        )
+                        linked = [
+                            row
+                            for row in trades
+                            if row["source"].get("superseded_manual_reference_id")
+                        ]
+                        self.assertEqual(len(linked), 1)
+                        self.assertEqual(linked[0]["date"], source_datetime[:10])
+
+    def test_cross_day_link_preserves_real_ambiguity_across_dst(self) -> None:
+        cases = (
+            ("2026-10-13 11:59:59", "2026-10-12 23:59:59"),
+            ("2026-12-15 12:59:59", "2026-12-14 23:59:59"),
+            ("2026-03-06 12:00:00", "2026-03-05 23:00:00"),
+            ("2026-11-02 12:00:00", "2026-11-01 23:00:00"),
+        )
+        for side in ("buy", "sell"):
+            for source_datetime, ledger_datetime in cases:
+                eligible_dates = (source_datetime[:10], ledger_datetime[:10])
+                for official_date in eligible_dates:
+                    with self.subTest(
+                        side=side,
+                        source_datetime=source_datetime,
+                        official_date=official_date,
+                    ):
+                        manual, official = dated_trade_payloads(
+                            side, source_datetime, ledger_datetime
+                        )
+                        trade = official["transactions"][0]
+                        trade["date"] = official_date
+                        trade["datetime"] = f"{official_date} 20:00:00"
+                        merged = merge_investment_payloads(manual, official)
+                        merged = merge_investment_payloads(merged, official)
+                        merged = merge_investment_payloads(merged, manual)
+                        self.assertEqual(len(merged["transactions"]), 1)
+
+                        other_date = next(
+                            day for day in eligible_dates if day != official_date
+                        )
+                        ambiguous = deepcopy(official)
+                        other_trade = deepcopy(trade)
+                        other_trade["date"] = other_date
+                        other_trade["datetime"] = f"{other_date} 20:00:00"
+                        other_trade["source"]["row_number"] += 1
+                        ambiguous["transactions"].append(other_trade)
+                        with self.assertRaisesRegex(ValueError, "Schwab.*ambiguous"):
+                            merge_investment_payloads(manual, ambiguous)
+                        with self.assertRaisesRegex(ValueError, "Schwab.*ambiguous"):
+                            merge_investment_payloads(merged, ambiguous)
+
+    def test_same_day_link_keeps_trade_and_fee_revision_guards(self) -> None:
+        for side in ("buy", "sell"):
+            manual, official = dated_trade_payloads(
+                side, "2026-10-13 22:00:00", "2026-10-13 10:00:00"
+            )
+            merged = merge_investment_payloads(manual, official)
+            for field, value in (
+                ("price_raw", "52.99"),
+                ("quantity_raw", "7"),
+                ("commission_raw", "-0.02"),
+            ):
+                with self.subTest(side=side, field=field):
+                    revised = deepcopy(official["transactions"])
+                    revised[0][field] = value
+                    with self.assertRaisesRegex(ValueError, "Schwab.*conflicting"):
+                        reconcile_schwab_provisional_trades(
+                            merged["transactions"], revised
+                        )
+            duplicated = deepcopy(official["transactions"] * 2)
+            with self.subTest(side=side, revision="duplicate"):
+                with self.assertRaisesRegex(ValueError, "Schwab.*ambiguous"):
+                    reconcile_schwab_provisional_trades(
+                        merged["transactions"], duplicated
+                    )
 
 
 if __name__ == "__main__":

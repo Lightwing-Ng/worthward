@@ -1,6 +1,6 @@
 """Investment import domain: futuhk.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from app.services.investment.importing.support import (
     _parse_decimal,
     datetime,
     json,
+    hashlib,
     map_ordered,
     normalize_ticker,
     re,
@@ -239,7 +240,7 @@ def _infer_futuhk_ticker(description: str) -> str | None:
     symbol_match = FUTUHK_SYMBOL_PREFIX_PATTERN.match(normalized.upper())
     if symbol_match is not None:
         return normalize_ticker(f"{symbol_match.group(1)}.US")
-    inline_match = re.search(r"\b([A-Z]{1,5})\(", normalized.upper())
+    inline_match = re.search(r"(?<![A-Z.])([A-Z]{1,5}(?:\.[A-Z])?)\(", normalized.upper())
     if inline_match is not None:
         return normalize_ticker(f"{inline_match.group(1)}.US")
     return None
@@ -439,6 +440,14 @@ def _parse_futuhk_flow_records(
             amount_dec,
             is_cash_flow_override=True,
         )
+        if mapped_type in {"dividend", "foreign_tax_withholding", "payment_in_lieu"}:
+            symbol_match = re.match(
+                r"^([A-Z][A-Z0-9._-]{0,15})\s+\d[\d,.]*\s+SHARES\s+"
+                r"(?:DIVIDENDS?|WITHHOLDING|PAYMENT)",
+                remark.upper(),
+            )
+            if symbol_match:
+                record["ticker"] = normalize_ticker(f"{symbol_match.group(1)}.US")
         _stamp_futuhk_internal_transfer_metadata(record)
         records.append(record)
     return records
@@ -459,6 +468,18 @@ def _merge_futuhk_statement_payloads(payloads: list[dict[str, Any]]) -> dict[str
         raise ValueError("No Futu (HK) statement payloads were produced.")
     if len(payloads) == 1:
         return payloads[0]
+
+    unique_payloads: list[dict[str, Any]] = []
+    seen_artifacts: set[tuple[str, str]] = set()
+    for payload in payloads:
+        sha256 = _normalize_text((payload.get("generator") or {}).get("source_sha256"))
+        artifact_key = (_normalize_text(payload.get("account")), sha256)
+        if sha256 and artifact_key in seen_artifacts:
+            continue
+        if sha256:
+            seen_artifacts.add(artifact_key)
+        unique_payloads.append(payload)
+    payloads = unique_payloads
 
     merged_transactions: list[dict[str, Any]] = []
     merged_warnings: list[str] = []
@@ -572,6 +593,7 @@ def build_investment_payload_from_futuhk_statement_pdf(
             "version": SCHEMA_VERSION,
             "generated_at": _ii_basics._now_iso(),
             "source_filename": source_filename,
+            "source_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
             "statement_period": statement_period,
             "trade_row_count": len(trade_records),
             "cash_flow_row_count": len(flow_records),

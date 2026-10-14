@@ -1,6 +1,71 @@
 # Architecture guide
 
-Documentation version: `v1.134.0`
+Documentation version: `v1.136.0`
+
+## Import evidence and replay audit boundaries
+
+An incremental merge preserves execution multiplicity. Cross-source economic
+matches consume one existing occurrence per incoming occurrence; immutable
+source identifiers still make repeated imports idempotent. Rebuilding an
+already merged ledger does not collapse surplus economic matches. Currency
+conversion legs retain their occurrence counts, and Longbridge HK money-market
+cash movements use economic fields rather than their position in a newest-first
+capture. IBKR GainsKeeper coverage is the union of each matching source
+artifact's explicit reporting interval, never the span between unrelated files.
+Closed-lot details match one execution using its source timestamp; ambiguous
+per-fill attribution remains unavailable while the authoritative report total
+survives. A conflicting closed-lot timestamp cannot consume another CSV
+occurrence while partial GainsKeeper files arrive; already attributed executions
+remain part of ambiguity checks on repeated imports. Position-derived grants
+are replaced and reconciled only within their
+broker/account scope.
+
+Broker parsers preserve explicit execution evidence. Schwab cash transfers use
+the cash action's direction, reinvestment rows retain their shares and basis,
+and amount reconciliation bounds rounding by the exported price's precision
+while preserving the broker's stated net cash and fees.
+Longbridge order summaries require matched fills before partial-order amounts
+can become cash; conflicting or ambiguous fill matches remain unresolved.
+Futu execution identities include market-qualified and fractional-share values,
+Tiger keeps its stated settlement date, and standardized Zircon exports preserve
+midnight as an explicit second-precision timestamp. IBKR file selection chooses
+one latest coherent dated balance boundary and combines immutable trade IDs
+with dated execution fields and occurrence counts while preserving the original memo.
+
+An unsigned oldest HSBC cash row without a preceding balance or explicit
+direction does not establish a deposit. It stays out of financial transactions
+with a warning while its dated ending balance remains evidence. Later history
+can establish its direction. Reparsing persisted captures requires their exact
+saved source bytes; missing evidence does not authorize guessed restoration.
+Cash components retain their own dates and authoritative zero balances.
+
+Transfer bindings preserve historical source identities through evidenced
+one-to-one reexports. Unresolved historical choices remain reviewable and cannot
+reserve a counterpart against a newly reviewed valid pair. Source-account
+attributions likewise remain stored when their receipt becomes ambiguous, but
+have no active accounting effect until uniquely resolved. One security
+transfer-out cannot evidence multiple receipts or be reused after a manual
+binding. The omitted-currency IBKR funding exception remains limited to an
+explicitly selected CNH/CNY/RMB bank leg; unsupported currencies cannot pass by
+comparing equal nominal amounts. Transaction-day FX affects candidate ranking,
+not an invented broker confirmation.
+
+Investment cache publication binds the payload to the ledger fingerprint read
+under the ledger lock and rechecks that fingerprint before writing the cache.
+Transient price repair or required FX failures remain retryable. Strict Parquet
+decoding rejects corrupt JSON cells, including malformed transaction objects;
+an empty transaction list round-trips as an empty list. Legacy JSON migration
+holds the same Parquet lock as an import and cannot overwrite a concurrent
+commit. Cache schema changes invalidate older derived payloads without rewriting
+financial records.
+
+Authoritative native-currency zero balances survive normalization and replay.
+Cash value, source, currency map, and as-of fields travel as one selected
+boundary. A newer currency component cannot inherit an older scalar's date;
+multiple accounts retain separate broker snapshots. Disjoint performance
+reporting windows never assert coverage across missing weekdays. Missing dated
+FX remains unavailable; a later quote cannot fill an earlier date, and a
+statement conversion quote is eligible only on its explicitly evidenced date.
 
 ## Shared loading indicator
 
@@ -1272,6 +1337,13 @@ Broker-reported closed-trade P&L remains authoritative; security-transfer basis
 reconstruction is explicitly labelled FIFO reconstructed in its transfer-basis
 detail and remains separate from the selected buy/sell matcher shown in Stock
 details.
+An evidenced FIFO-reconstructed transfer may consume FIFO lots when the
+available inventory reproduces that exact basis. Earlier selected-method sales
+can leave a different inventory; in that case preserve the existing matcher
+and adjust residual costs without inventing unavailable historical lot identity.
+Remaining lot costs must sum to the residual total basis, without negative lot
+prices or cost lost through per-lot clipping. Full liquidation must realize the
+same residual basis previously reported by Holdings.
 When a broker performance snapshot is older than its position snapshot, the
 browser reads the performance snapshot's own canonical broker-snapshot as-of
 date to determine which later trades supplement realized P&L. The position
@@ -1341,6 +1413,15 @@ projection contract:
   usable intraday row exists, the existing daily close fallback is used.
 - `Equity` is the row's displayed broker cash projection plus that row's
   `Market value`.
+- An unmatched pending buy or sell replaces only the native USD component
+  with the posted USD Savings boundary. Foreign balances remain on that row's
+  dated per-currency replay, are converted at that row's date, and are combined
+  with the signed source-bounded pending amount exactly once. Historical USD
+  settlement corrections are not added again to this authoritative USD basis.
+  A later current-balance override must not conceal an earlier row's cash loss.
+  When a buy preserves its sequential USD replay, private dated native balances
+  still carry any eligible foreign-currency anchor into history presentation;
+  neither a future anchor nor this private projection changes current Holdings.
 - Because exact execution timestamps are unavailable, this convention is a
   deterministic display approximation. It must not be presented as a precise
   fill-time or settlement-time valuation.
@@ -1568,6 +1649,35 @@ sets of values.
 ## High-risk invariants
 
 - Broker imports are incremental and must remain idempotent.
+- The production import composition holds one reentrant ledger lock from
+  reading existing evidence keys through merge, materialization, atomic write,
+  cache invalidation, persisted readback comparison, and evidence verification.
+  A later legitimate import cannot change the snapshot being verified. A
+  corrupted readback or source artifact still fails verification.
+- Schwab securities rows with an explicit execution-status column must name a
+  recognized executed state or an explicitly executed partial quantity in a
+  supported canceled or working state. Price and order quantity alone cannot
+  establish a fill; unfilled and unknown states are skipped with a warning. Standard
+  Transactions exports without Status remain supported, and posted cash rows
+  are not subject to this securities-only filter. An explicit filled-quantity
+  column owns the executed quantity; a missing or zero fill never falls back
+  to the requested order quantity. Stated amounts must still reconcile.
+- Linked provisional Schwab BUY and SELL trades use the same eligible dates
+  before and after CSV reconciliation: the Hong Kong page date and the actual
+  New York date derived from the complete page timestamp. Time-zone conversion
+  observes daylight-saving rules; the previous date is eligible only when the
+  conversion crosses midnight. Retain the linked official date for compatibility.
+  Exact-fill ambiguity and quantity, price, fee, and net-amount revision guards
+  remain active within this window on repeated imports.
+- CMB Wing Lung email builders retain only explicitly executed quantities and
+  prices. A canceled order may contain a real partial execution; its requested
+  quantity and limit price are never a fallback for missing execution evidence.
+  Incomplete purchase history emits a warning while retaining an evidenced
+  sale, since earlier purchases may already exist in the incremental ledger.
+  It cannot authorize a synthetic zero-cost grant. The legacy grant-inference
+  callable remains available for compatibility but returns no inferred records.
+  This contract applies to the Python email builders and import registry; it
+  does not establish a browser email-upload workflow.
 - Browser investment writes require a local same-origin request and a
   session-bound CSRF token. Cross-site forms, non-local rebinding hosts, and
   requests without the rendered session proof fail before request bodies reach

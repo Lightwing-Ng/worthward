@@ -1,6 +1,6 @@
 """Investment import domain: records.
 
-Code version: v0.1.2
+Code version: v0.1.3
 """
 
 from __future__ import annotations
@@ -1935,7 +1935,16 @@ def _reconcile_cross_broker_security_transfers(
 
     for receipt_key, attribution in normalized_attributions.items():
         receipt_records = binding_index.get(receipt_key, [])
-        if len(receipt_records) != 1:
+        if len(receipt_records) != 1 or attribution.get("status"):
+            invalid_attribution_receipt_keys.append(receipt_key)
+            attribution_statuses.append(
+                {
+                    "receipt_key": receipt_key,
+                    "status": attribution.get("status") or "receipt_identity_unresolved",
+                    "source_broker": attribution["source_broker"],
+                    "source_account": attribution["source_account"],
+                }
+            )
             continue
         receipt_record = receipt_records[0]
         receipt_leg = _security_transfer_reconciliation_leg(receipt_record)
@@ -1955,6 +1964,28 @@ def _reconcile_cross_broker_security_transfers(
             source_broker=source_broker,
             source_account=source_account,
         )
+        if len(source_evidence) <= 1:
+            try:
+                _ii_bindings.validate_investment_security_transfer_attribution(
+                    transactions,
+                    receipt_key,
+                    source_broker,
+                    source_account,
+                    existing_attributions=normalized_attributions,
+                    binding_index=binding_index,
+                    manual_bindings=manual_bindings,
+                )
+            except ValueError:
+                invalid_attribution_receipt_keys.append(receipt_key)
+                attribution_statuses.append(
+                    {
+                        "receipt_key": receipt_key,
+                        "status": "inactive_validation_failed",
+                        "source_broker": source_broker,
+                        "source_account": source_account,
+                    }
+                )
+                continue
         if len(source_evidence) == 1:
             source_record = source_evidence[0]["record"]
             attribution_evidence_record_ids.update(
@@ -1977,26 +2008,6 @@ def _reconcile_cross_broker_security_transfers(
                 {
                     "receipt_key": receipt_key,
                     "status": "source_record_ambiguous",
-                    "source_broker": source_broker,
-                    "source_account": source_account,
-                }
-            )
-            continue
-        try:
-            _ii_bindings.validate_investment_security_transfer_attribution(
-                transactions,
-                receipt_key,
-                source_broker,
-                source_account,
-                existing_attributions=normalized_attributions,
-                binding_index=binding_index,
-            )
-        except ValueError:
-            invalid_attribution_receipt_keys.append(receipt_key)
-            attribution_statuses.append(
-                {
-                    "receipt_key": receipt_key,
-                    "status": "inactive_validation_failed",
                     "source_broker": source_broker,
                     "source_account": source_account,
                 }

@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -948,7 +948,7 @@ test('convertAmountToBaseCurrency uses Longbridge SG FX timeline rates', () => {
     assert.ok(Math.abs(sgdUsd - 79.24) < 0.05, `expected ~79.24 USD, got ${sgdUsd}`);
 });
 
-test('historical FX payload converts CNY and statement rates remain authoritative', () => {
+test('historical FX payload converts CNY and undated statement rates cannot replace it', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {
         WORTHWARD_INVESTMENT_DATA: {
@@ -973,7 +973,40 @@ test('historical FX payload converts CNY and statement rates remain authoritativ
             amount: 720,
             source: {statement_currency_to_base_rate_raw: '7.2'},
         }], 'USD');
-        assert.equal(convertAmountToBaseCurrency(720, 'CNY', '2024-01-02', statementTimeline, 'USD'), 100);
+        assert.equal(convertAmountToBaseCurrency(720, 'CNY', '2024-01-02', statementTimeline, 'USD'), 720 / 7);
+    } finally {
+        if (previousWindow === undefined) delete globalThis.window;
+        else globalThis.window = previousWindow;
+    }
+});
+
+test('FX conversion never backfills a rate from the future', () => {
+    const utils = createUtils();
+    const timeline = {baseCurrency: 'USD', ratesByCurrency: {HKD: {
+        dates: ['2026-06-01'], values: {'2026-06-01': 7.75},
+    }}};
+    assert.equal(utils.getFxRateForDate(timeline, 'HKD', '2026-05-31'), null);
+    assert.ok(Number.isNaN(convertAmountToBaseCurrency(775, 'HKD', '2026-05-31', timeline, 'USD')));
+    assert.equal(convertAmountToBaseCurrency(775, 'HKD', '2026-06-01', timeline, 'USD'), 100);
+    assert.equal(convertAmountToBaseCurrency(775, 'HKD', '2026-06-02', timeline, 'USD'), 100);
+});
+
+test('statement FX is a dated fallback and cannot replace same-day market evidence', () => {
+    const previousWindow = globalThis.window;
+    const transaction = {
+        broker: 'hsbc', type: 'deposit', currency: 'HKD', date: '2026-06-01', amount: 780,
+        source: {statement_currency_to_base_rate_raw: '7.8', statement_currency_to_base_rate_as_of: '2026-06-30'},
+    };
+    try {
+        globalThis.window = {WORTHWARD_INVESTMENT_DATA: {}};
+        const fallback = buildInvestmentFxRateTimeline([transaction], 'USD');
+        assert.ok(Number.isNaN(convertAmountToBaseCurrency(780, 'HKD', '2026-06-01', fallback, 'USD')));
+        assert.equal(convertAmountToBaseCurrency(780, 'HKD', '2026-06-30', fallback, 'USD'), 100);
+        globalThis.window.WORTHWARD_INVESTMENT_DATA.fx_rate_history_by_currency = {
+            HKD: {dates: ['2026-06-30'], values: {'2026-06-30': 7.75}},
+        };
+        const market = buildInvestmentFxRateTimeline([transaction], 'USD');
+        assert.equal(convertAmountToBaseCurrency(775, 'HKD', '2026-06-30', market, 'USD'), 100);
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;

@@ -1,4 +1,4 @@
-{# Code version: v1.75.10
+{# Code version: v1.75.12
    Changed: Refreshes the dated HSBC multicurrency cash entry-module cache key. #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_date_picker_field, render_investment_share_actions, render_notice_banner, render_segmented_control with context %}
@@ -935,5 +935,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.157.6') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.158.0') }}"></script>
 {% endblock %}
