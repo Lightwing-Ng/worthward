@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.19.0
+Code version: v0.19.1
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
@@ -314,6 +314,7 @@ PINNED_LOGO_TICKERS = frozenset({
     "MU",
     "ORCL",
     "QQQ",
+    "QQQI",
     "SPCX",
     "SPY",
     "TSM",

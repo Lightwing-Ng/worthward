@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.6.2`
+Documentation version: `v1.6.3`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -11,17 +11,19 @@ cascade contract and must match the source exactly.
 2. `foundation/tokens.css`
 3. `layout/shell.css`
 4. `components/forms.css`
-5. `components/collapse.css`
-6. `components/resizer.css`
-7. `components/tables.css`
-8. `views/workspace.css`
-9. `views/settings.css`
-10. `views/settings-sections.css`
-11. `views/trade.css`
-12. `views/investment.css`
-13. `views/investment-tables.css`
-14. `utilities/responsive.css`
-15. `foundation/motion.css`
+5. `components/live-marker.css`
+6. `components/collapse.css`
+7. `components/process-list.css`
+8. `components/resizer.css`
+9. `components/tables.css`
+10. `views/workspace.css`
+11. `views/settings.css`
+12. `views/settings-sections.css`
+13. `views/trade.css`
+14. `views/investment.css`
+15. `views/investment-tables.css`
+16. `utilities/responsive.css`
+17. `foundation/motion.css`
 
 ## Cache versions
 
