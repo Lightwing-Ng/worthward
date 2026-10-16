@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.42.0`
+Documentation version: `v3.42.1`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -11,7 +11,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 
 ## What the app does
 
-- Explore the isolated [Beta research laboratory](docs/BETA_LAB.md): nine guided experiments covering market regimes, historical analogs, stress, start-date sensitivity, reordered return paths, recovery duration, interval calibration, local research briefs, and sourced frontier ideas. Beta appears before Settings in the Dock and can be removed with `WORTHWARD_BETA_ENABLED=0`.
+- Explore the isolated [Beta research laboratory](docs/BETA_LAB.md): ten guided experiments covering market regimes, historical analogs, stress, start-date sensitivity, reordered return paths, recovery duration, interval calibration, the Buy Analysis committee, local research briefs, and sourced frontier ideas. Beta appears before Settings in the Dock and can be removed with `WORTHWARD_BETA_ENABLED=0`.
 
 - Compare up to 5 tickers over the same window on a normalized return basis
 - Use `Ticker comparison` to compare original price scales for up to 5 tickers or historical market-cap series for up to 10 tickers. Price mode can overlay an OHLCV-derived estimated cost distribution on the right side of each price canvas; hovering a price cross-section updates every profile to the cumulative estimate from the selected range start through the shared vertical guide. This remains a historical volume-profile estimate, not shareholder-level holding data. Market-cap series use same-date daily FX closes for non-USD listings while retaining USD and New York wall time; direct Yahoo shares-out recovery, SEC company facts, and filing-level XBRL preserve access to authoritative share history when a provider transport omits or rate-limits it. The unified Market cap canvas keeps absolute USD values and uses a logarithmic Y axis only when positive values span at least a 6:1 ratio; narrower peer groups stay linear, and nonpositive unknown-history placeholders render as gaps rather than false zero market caps.
@@ -56,6 +56,12 @@ The supported launch and test workflows use host Python `3.13` or newer.
 Direct `python3` commands must resolve to Python `3.13` or newer.
 The helper scripts use the first supported `python3` or `python` on PATH.
 There is no upper version limit or pinned interpreter path.
+
+Keep the host interpreter on a maintained security patch. For the additional
+proxy-tunnel invalid-character safeguards described in the
+[urllib3 changelog](https://urllib3.readthedocs.io/en/stable/changelog.html),
+Python 3.13 and 3.14 require at least `3.13.14` and `3.14.5`, respectively.
+Upgrading the dependencies alone does not patch the Python standard library.
 
 ## Quick start
 
@@ -329,7 +335,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   The Backtest-wide `Show trade details` switch defaults off for every strategy, including DCA. Turning it off hides the trade markers and equity comparison subplot, gives the price subplot the released space while retaining its time axis, and disables the `Transactions` history option in favor of `Metrics`; it is a display preference and never changes strategy computation or the result cache. The history surface remembers the user's most recent `Metrics`, `Price field`, or `Transactions` choice in browser-local storage and restores it after a strategy change or reload whenever that view is available. An explicit Price Field training run still opens its requested result view first.
   Every choice control in every Backtest strategy parameter panel shares one compact menu contract: the trigger padding, label overflow behavior, page-level menu positioning, and option styling all reuse Leveraged Rotation `Return window`.
 
-  The long Bayesian contract immediately below is retained as historical release prose. The current implementation version is v1.26.0; its accepted probability-grid geometry remains unchanged. Direction diagnostics exclude flat executable returns and neutral 50/50 forecasts; empty samples are reported as unavailable rather than 0%.
+  The long Bayesian contract immediately below is retained as historical release prose. The current implementation version is v1.35.0; its accepted probability-grid geometry remains unchanged. Direction diagnostics exclude flat executable returns and neutral 50/50 forecasts; empty samples are reported as unavailable rather than 0%.
 
   Bayesian `Auto` execution coordinates independent causal walk-forward origins across the shared bounded CPU executor and an available Apple MPS or CUDA device; without an accelerator it uses the CPU executor. The same process layer serves independent kNN/Lorentzian predictions and Futu (HK) PDF parsing; it caps nested BLAS threads, preserves deterministic input order, and falls back to an ordered thread pool when process execution is unavailable. I/O probes and Longbridge fetches remain thread-parallel, while cash replay, stateful SuperTrend recurrences, and signal finite-state machines remain serial by design because their ordering is part of the causal contract. The presentation reports the effective executor and worker count; explicit GPU execution remains device-parallel and restarts cleanly on CPU after a runtime failure.
 
@@ -338,7 +344,7 @@ There is no Node.js build step, Docker setup, or alternate app runner in this re
   The historical paragraph above retains its original v1.22.0 label for compatibility; its Auto scheduler wording is superseded by the v1.23.0 execution contract stated above.
   The rendered cell-size target is derived from the trailing three-month data density on the current chart. Other available ranges reuse that target when the integer trading-day lattice permits it; when exact matching is impossible, the renderer chooses the smallest complete slot that does not undershoot the three-month target. For direct-horizon neural models, this integer-day quantization controls only legible overview spacing: the 20 columns still represent learned horizons 1 through 20 in both hover and detail. Autoregressive Price Fields retain the quantized multi-day horizon stride. Chart boundaries remain authoritative for hover, while the detail panel's separate complete-row geometry is authoritative for its own contained grid; the 20-column density, 4 px floor, and existing strategy row limits remain shared.
 
-  The current implementation version is strategy v1.26.0. Its `Auto` walk-forward scheduler coordinates the shared CPU executor with an available GPU as described above; when remote market access is explicitly disabled, the strategy reads the existing local daily store and marks Longbridge-only factors unavailable instead of failing the Backtest page. The v1.26.0 executable-target, dynamic multi-step, prior-scaling, factor-evidence, and scoring contract is stated above. Factor metadata now separates provider status, latest-origin eligibility, and actual latest-origin selection. The historical v1.21.0 release note remains only as a compatibility record.
+  The current implementation version is strategy v1.35.0. Its `Auto` walk-forward scheduler coordinates the shared CPU executor with an available GPU as described above; when remote market access is explicitly disabled, the strategy reads the existing local daily store and marks Longbridge-only factors unavailable instead of failing the Backtest page. The v1.26.0 executable-target, dynamic multi-step, prior-scaling, factor-evidence, and scoring contract is stated above. Factor metadata now separates provider status, latest-origin eligibility, and actual latest-origin selection. The historical v1.21.0 release note remains only as a compatibility record.
 
 - `Grid Trading`
   Select Grid Trading directly from Backtest. Its private parameter panel is generated from `strategies/algorithms/strategy_grid_trading.py` and opens through the shared tune control with Current holding, Shares per grid trade, Minimum holding, Maximum holding, Rise %, and Fall %. Each buy or sell is capped at the configured share quantity; its automatic default is the whole-share result of Initial cash divided by ten times the initial price. Current holding represents shares already owned when the simulation starts; Initial cash remains available for later grid purchases, while the first marked value of those shares and the cash together define starting equity and the all-in benchmark. The legacy `/workspaces/grid-trading` URL redirects here with Grid Trading preselected.
@@ -421,9 +427,13 @@ market-store key.
 - Persisted data is trimmed to the latest 6 months of trading days
 - Used when local `1m` data exists for the selected ticker
 
-Longbridge is optional for every market-data view. Daily history, intraday charts,
-and extended-hours comparisons use `yfinance` by default. When configured,
-Investment realtime quotes use Longbridge first for US overnight, pre-market,
+Longbridge is optional for standard comparison views and Investment valuation.
+Their daily history, intraday charts, and extended-hours comparisons use
+`yfinance` by default. Price Field strategies that declare `longbridge-cli`
+require that provider during normal operation. Their local-store fallback is
+enabled only when remote market access is explicitly disabled; it requires
+existing local daily history and marks Longbridge-only factors unavailable.
+When configured, Investment realtime quotes use Longbridge first for US overnight, pre-market,
 regular, and post-market sessions. Overnight values require Longbridge because
 Yahoo does not expose that session. During the overnight window, a machine
 without a usable Longbridge quote keeps the latest `yfinance` post-market close

@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.3.4 */
 import {
     expect,
     test,
@@ -14,6 +14,12 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
+
+function settingsFeedbackCookieValue(payload) {
+    // Match the quoted JSON cookie value emitted by Flask's set_cookie().
+    return JSON.stringify(JSON.stringify(payload));
+}
+
 test('switches Broker access between IBKR and Longbridge OAuth without credential fields', async ({page}) => {
     await page.goto('/settings/broker-access');
 
@@ -114,7 +120,7 @@ test('resolves Longbridge OAuth notice into verified connection feedback', async
     });
     await page.context().addCookies([{
         name: 'worthward_settings_feedback',
-        value: JSON.stringify({
+        value: settingsFeedbackCookieValue({
             notice: 'Longbridge authorization opened in your browser. Complete it there, then return here and test the connection.',
             longbridge_oauth_pending: '1',
         }),
@@ -191,7 +197,7 @@ test('stops Longbridge OAuth polling when the status service returns a JSON 503 
     });
     await page.context().addCookies([{
         name: 'worthward_settings_feedback',
-        value: JSON.stringify({longbridge_oauth_pending: '1'}),
+        value: settingsFeedbackCookieValue({longbridge_oauth_pending: '1'}),
         url: `${baseURL}/settings/broker-access`,
     }]);
 
@@ -211,7 +217,7 @@ test('reports a sustained Longbridge OAuth status connection failure', async ({p
     });
     await page.context().addCookies([{
         name: 'worthward_settings_feedback',
-        value: JSON.stringify({longbridge_oauth_pending: '1'}),
+        value: settingsFeedbackCookieValue({longbridge_oauth_pending: '1'}),
         url: `${baseURL}/settings/broker-access`,
     }]);
 

@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.1.1`
+Documentation version: `v1.1.2`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -50,6 +50,11 @@ domain route tests. New code and browser tests must use canonical URLs.
   normalizing or removing them.
 - Tracked logo assets are the only logo inputs copied into the isolated E2E
   runtime. Machine-local logo caches are not fixtures.
+- `market_store/logos/QQQI.svg` (asset `v1.0.0`) embeds the unmodified
+  [official NEOS raster](https://neosfunds.com/wp-content/themes/HVM-ALTERA/img/assets/neos-logo.png)
+  in a square viewport that crops out its N without stretching it. QQQI is
+  pinned so logo refresh and cache clearing preserve this source asset; the
+  SVG takes precedence over an older machine-local PNG.
 
 ## Retired unsafe entrypoints
 
