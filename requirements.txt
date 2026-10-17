@@ -20,7 +20,7 @@ protobuf==6.33.5
 Pygments==2.21.0
 requests==2.34.2
 setuptools==84.0.0
-soupsieve==2.10
+soupsieve==3.0.3
 Werkzeug==3.1.9
 
 # Bayesian and LSTM Apple Silicon/CUDA acceleration. The application still
