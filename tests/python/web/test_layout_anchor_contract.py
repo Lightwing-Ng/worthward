@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.5
+Code version: v0.25.6
 """
 
 from pathlib import Path
@@ -1102,7 +1102,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.5.1",
+        "investment-layout-v1.5.2",
         "preferOverviewMinimum: () => !isProbabilityHistoryViewActive(),",
         "preferHistoryMinimum: isProbabilityHistoryViewActive,",
         "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
@@ -1174,7 +1174,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
             f"{_css_code_version(ASSET_ROOT / 'js/backtest/chart-controller.js')}"
         ),
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.7.2",
+        "-backtest-layout-v0.7.3",
     ):
         assert fragment in base_template
 

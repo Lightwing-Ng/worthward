@@ -1,4 +1,4 @@
-/* Code version: v1.81.3 */
+/* Code version: v1.82.0 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -42,6 +42,12 @@
         minmax(var(--investment-history-min-height), 1fr);
     align-items: stretch;
     margin-bottom: 0;
+}
+
+.investment-workspace-header[data-investment-stock-chart-minimum] {
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
 }
 
 @media (min-width: 768px) {
@@ -2650,6 +2656,14 @@
     z-index: 0;
 }
 
+#stock_panel .investment-stock-details-price-chart-card {
+    container-type: inline-size;
+}
+
+#stock_panel .investment-stock-details-price-chart-shell {
+    min-height: calc(100cqw * 9 / 16);
+}
+
 .investment-stock-details-price-chart-stage {
     position: relative;
     z-index: 0;
@@ -2715,6 +2729,22 @@
     grid-row: 1;
     align-self: center;
     width: 100%;
+}
+
+.investment-stock-ticker-field,
+.investment-stock-ticker-field > .backtest-shared-select-combobox {
+    min-width: 0;
+    width: 100%;
+}
+
+.investment-stock-ticker-trigger {
+    width: 100%;
+    text-align: left;
+}
+
+.investment-stock-ticker-trigger > .ticker-identity-row {
+    width: 100%;
+    min-height: 0;
 }
 
 .investment-stock-details-metrics {

@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 (() => {
     const create = (context) => {
         const {
@@ -61,6 +61,7 @@
                 || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "strategy"
                 || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-import-broker"
                 || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-transfer"
+                || String(field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-stock-ticker"
                 || field.classList.contains("investment-import-broker-field")
             )
         );
@@ -89,7 +90,8 @@
             if (!shouldPortalSharedSelectDropdown(field)
                 || (!field.closest("[data-trade-strategy-panel]")
                     && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "strategy"
-                    && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "investment-transfer")
+                    && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "investment-transfer"
+                    && String(field.dataset.sharedSelectKind || "").trim().toLowerCase() !== "investment-stock-ticker")
                 || !(dropdown instanceof HTMLElement)) return;
             const host = dropdown.parentElement;
             if (!(host instanceof HTMLElement) || !host.matches("[data-shared-select-overlay]")) return;
@@ -309,7 +311,8 @@
             const isInsideStrategyPanel = Boolean(trigger.closest("[data-trade-strategy-panel]"));
             const isTradeStrategyField = String(parts.field.dataset.sharedSelectKind || "").trim().toLowerCase() === "strategy";
             const isInvestmentTransfer = String(parts.field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-transfer";
-            if (isInsideImportForm || isInsideStrategyPanel || isTradeStrategyField || isInvestmentTransfer) {
+            const isInvestmentStockTicker = String(parts.field.dataset.sharedSelectKind || "").trim().toLowerCase() === "investment-stock-ticker";
+            if (isInsideImportForm || isInsideStrategyPanel || isTradeStrategyField || isInvestmentTransfer || isInvestmentStockTicker) {
                 // Portal constrained menus above clipped form containers before positioning them.
                 portalSharedSelectDropdown(field, dropdown);
                 const dropdownGap = 4;

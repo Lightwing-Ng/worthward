@@ -1,7 +1,9 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
+ * - Changed: Header and body share the scoped percentage column tokens.
+ * - Fixed: Unavailable summary labels retain their semantic layout boundaries.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -360,9 +362,9 @@ function renderHoldingsTable(
                             </span>
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cumulative P&amp;L</span>
-                                ${hasPnlUnavailable ? runtime.renderWorkspaceMetricValueContent(pnlCoverageLabel) : runtime.renderInvestmentLiveValue('summary_cumulative_pnl', cumulativePnl, {
+                                ${runtime.renderInvestmentLiveValue('summary_cumulative_pnl', hasPnlUnavailable ? null : cumulativePnl, {
                                     className: `trade-metric-value investment-stock-details-metric-value investment-holdings-live-value${cumulativePnlClass}`,
-                                    formatter: (nextValue) => runtime.formatSignedHoldingsMoney(nextValue),
+                                    formatter: (nextValue) => hasPnlUnavailable ? pnlCoverageLabel : runtime.formatSignedHoldingsMoney(nextValue),
                                     useSplitValue: true,
                                 })}
                             </span>
@@ -381,7 +383,11 @@ function renderHoldingsTable(
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        <span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${runtime.renderWorkspaceMetricValueContent(hasPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(totalRealizedPnl))}</span>
+                        ${hasPnlUnavailable ? runtime.renderInvestmentLiveValue('summary_realized_pnl', null, {
+                            className: 'trade-metric-value investment-stock-details-metric-value',
+                            formatter: () => pnlCoverageLabel,
+                            useSplitValue: true,
+                        }) : `<span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${runtime.renderWorkspaceMetricValueContent(runtime.formatHoldingsMoney(totalRealizedPnl))}</span>`}
                         ${!hasPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_realized_pnl',
                             '',
@@ -392,9 +398,9 @@ function renderHoldingsTable(
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${hasPnlUnavailable ? runtime.renderWorkspaceMetricValueContent(pnlCoverageLabel) : runtime.renderInvestmentLiveValue('summary_unrealized_pnl', totalUnrealizedPnl, {
+                        ${runtime.renderInvestmentLiveValue('summary_unrealized_pnl', hasPnlUnavailable ? null : totalUnrealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
-                            formatter: (nextValue) => runtime.formatHoldingsMoney(nextValue),
+                            formatter: (nextValue) => hasPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
                         ${!hasPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
@@ -415,15 +421,15 @@ function renderHoldingsTable(
         `;
         const holdingsColumnGroupHtml = `
             <colgroup>
-                <col style="width: 8%;">
-                <col style="width: 32%;">
-                <col style="width: 10%;">
-                <col style="width: 10%;">
-                <col style="width: 10%;">
-                <col style="width: 10%;">
-                <col style="width: 7%;">
-                <col style="width: 7%;">
-                <col style="width: 6%;">
+                <col style="width: var(--investment-holdings-col-no-width);">
+                <col style="width: var(--investment-holdings-col-ticker-width);">
+                <col style="width: var(--investment-holdings-col-average-price-width);">
+                <col style="width: var(--investment-holdings-col-last-price-width);">
+                <col style="width: var(--investment-holdings-col-position-width);">
+                <col style="width: var(--investment-holdings-col-market-value-width);">
+                <col style="width: var(--investment-holdings-col-realized-width);">
+                <col style="width: var(--investment-holdings-col-unrealized-width);">
+                <col style="width: var(--investment-holdings-col-allocation-width);">
             </colgroup>
         `;
 

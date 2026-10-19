@@ -1,7 +1,8 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
  * - Changed: A view or range selection moves its pill first and renders the view or
  *   chart after the pill's first frame; a direct view change cancels a pending selection.
  * - Added: Shared modals explicitly select fixed loading or measured progress
@@ -356,6 +357,9 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
         }
 
         const previousInvestmentView = runtime.state.activeInvestmentView;
+        if (previousInvestmentView === 'stock_details' && normalizedNextView !== 'stock_details') {
+            runtime.closeInvestmentStockTickerSelect();
+        }
         const isMetricsHistoryScopeChanging = previousInvestmentView === 'metrics'
             || normalizedNextView === 'metrics';
 

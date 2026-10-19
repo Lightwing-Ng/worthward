@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.5 */
 import {
     expect,
     test,
@@ -926,8 +926,9 @@ test('keeps China Merchants Bank KOL income in CNY while valuing it in USD', asy
     await expect(rewardRow).not.toContainText('21,511.90');
 });
 
-test('aligns Holdings Market value and clips fixed table layers at every supported width', async ({page}) => {
+test('keeps Investment price and money groups equal and aligns the shared table grid at every supported width', async ({page}) => {
     await mockInvestmentReadApis(page, {
+        startingCash: 10_058.00,
         transactions: [
             {
                 ledger_no: 1,
@@ -936,9 +937,9 @@ test('aligns Holdings Market value and clips fixed table layers at every support
                 type: 'buy',
                 ticker: 'SGOV',
                 currency: 'USD',
-                quantity: 10,
+                quantity: 100,
                 price: 100.58,
-                amount: -1_005.80,
+                amount: -10_058.00,
             },
         ],
         priceHistoryByTicker: {
@@ -950,16 +951,24 @@ test('aligns Holdings Market value and clips fixed table layers at every support
     });
     await page.goto('/trade/investment');
     await page.locator('label[for="investment_view_holdings"]').click();
+    const holdingsAllocation = page.locator(
+        '#investment_holdings_panel .investment-holdings-table-scroll > [data-table-body] tr[data-investment-holdings-ticker="SGOV"] [data-investment-live-field="position_weight"]',
+    );
 
     for (const viewport of [
-        {width: 856, height: 769},
+        {width: 390, height: 844},
+        {width: 894, height: 844},
         {width: 1_024, height: 863},
         {width: 1_440, height: 960},
     ]) {
         await page.setViewportSize(viewport);
-        await page.evaluate(() => new Promise((resolve) => {
-            requestAnimationFrame(() => requestAnimationFrame(resolve));
-        }));
+        await expect(holdingsAllocation).toHaveText('100.00%');
+        await page.evaluate(async () => {
+            await document.fonts.ready;
+            await new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            });
+        });
         await expect.poll(() => page.evaluate(() => {
             const holdingsHeader = document.querySelector(
                 '#investment_holdings_panel .investment-holdings-table[data-table-header] thead tr:first-child',
@@ -968,26 +977,33 @@ test('aligns Holdings Market value and clips fixed table layers at every support
                 '#history_table_wrap .investment-history-table[data-table-header] thead tr',
             );
             const holdingsRow = document.querySelector(
-                '#investment_holdings_panel tr[data-investment-holdings-ticker="SGOV"]',
+                '#investment_holdings_panel .investment-holdings-table-scroll > [data-table-body] tr[data-investment-holdings-ticker="SGOV"]',
             );
             const historyRow = document.querySelector('#investment_history tr[data-investment-history-row]');
             if (!holdingsHeader || !historyHeader || !holdingsRow || !historyRow) return null;
 
-            const holdingsHeaderCell = holdingsHeader.cells.item(5);
-            const historyHeaderCell = historyHeader.cells.item(8);
-            if (!holdingsHeaderCell || !historyHeaderCell) return null;
-
-            const holdingsHeaderRect = holdingsHeaderCell.getBoundingClientRect();
-            const historyHeaderRect = historyHeaderCell.getBoundingClientRect();
+            const readTerminalHeaderRect = (header, bodyRow) => {
+                const shell = header.closest('.scrollable-data-table-shell');
+                if (!shell) return null;
+                const bodyRect = bodyRow.cells.item(bodyRow.cells.length - 1).getBoundingClientRect();
+                const headerRect = header.cells.item(header.cells.length - 1).getBoundingClientRect();
+                const trailingTrackWidth = Math.max(0, shell.getBoundingClientRect().right - bodyRect.right);
+                return {left: headerRect.left, right: headerRect.right - trailingTrackWidth};
+            };
+            const holdingsAllocationHeaderRect = readTerminalHeaderRect(holdingsHeader, holdingsRow);
+            const historyEquityHeaderRect = readTerminalHeaderRect(historyHeader, historyRow);
+            if (!holdingsAllocationHeaderRect || !historyEquityHeaderRect) return null;
             const headerCenterDelta = Math.abs(
-                (holdingsHeaderRect.left + holdingsHeaderRect.right)
-                - (historyHeaderRect.left + historyHeaderRect.right),
+                (holdingsAllocationHeaderRect.left + holdingsAllocationHeaderRect.right)
+                - (historyEquityHeaderRect.left + historyEquityHeaderRect.right),
             ) / 2;
-            const leftDelta = Math.abs(holdingsHeaderRect.left - historyHeaderRect.left);
-            const rightDelta = Math.abs(holdingsHeaderRect.right - historyHeaderRect.right);
+            const leftDelta = Math.abs(holdingsAllocationHeaderRect.left - historyEquityHeaderRect.left);
+            const rightDelta = Math.abs(holdingsAllocationHeaderRect.right - historyEquityHeaderRect.right);
             return Math.max(headerCenterDelta, leftDelta, rightDelta);
-        }), {message: `Holdings/history Market value edges at ${viewport.width}px`}).toBeLessThanOrEqual(1);
-        const alignment = await page.evaluate(() => {
+        }), {message: `Holdings Allocation/history Equity edges at ${viewport.width}px`}).toBeLessThanOrEqual(1);
+        const readAlignment = () => page.evaluate(() => {
+            if (!window.WORTHWARD_INVESTMENT_DATA
+                || document.querySelector('#workspace_modal_overlay')?.hidden !== true) return null;
             const holdingsHeader = document.querySelector(
                 '#investment_holdings_panel .investment-holdings-table[data-table-header] thead tr:first-child',
             );
@@ -995,18 +1011,40 @@ test('aligns Holdings Market value and clips fixed table layers at every support
                 '#history_table_wrap .investment-history-table[data-table-header] thead tr',
             );
             const holdingsRow = document.querySelector(
-                '#investment_holdings_panel tr[data-investment-holdings-ticker="SGOV"]',
+                '#investment_holdings_panel .investment-holdings-table-scroll > [data-table-body] tr[data-investment-holdings-ticker="SGOV"]',
             );
             const historyRow = document.querySelector('#investment_history tr[data-investment-history-row]');
-            const holdingsHeaderRect = holdingsHeader.cells.item(5).getBoundingClientRect();
-            const historyHeaderRect = historyHeader.cells.item(8).getBoundingClientRect();
-            const holdingsValueCell = holdingsRow.cells.item(5);
-            const historyValueCell = historyRow.cells.item(8);
+            if (!holdingsHeader || !historyHeader || !holdingsRow || !historyRow) return null;
+            const holdingsMarketValueCell = holdingsRow.cells.item(5);
+            const historyAmountCell = historyRow.cells.item(6);
+            const holdingsAllocationBodyRect = holdingsRow.cells.item(8).getBoundingClientRect();
+            const historyEquityBodyRect = historyRow.cells.item(10).getBoundingClientRect();
             const holdingsSummaryRow = holdingsHeader.closest('table')?.tHead?.rows.item(1);
-            const holdingsValueStyle = getComputedStyle(holdingsValueCell);
-            const historyValueStyle = getComputedStyle(historyValueCell);
+            const holdingsMarketValueStyle = getComputedStyle(holdingsMarketValueCell);
+            const historyAmountStyle = getComputedStyle(historyAmountCell);
             const holdingsShell = holdingsHeader.closest('.investment-holdings-table-shell');
+            const historyShell = historyHeader.closest('.investment-history-table-shell');
+            if (!holdingsShell || !historyShell) return null;
+            const holdingsTrailingTrackWidth = Math.max(
+                0,
+                holdingsShell.getBoundingClientRect().right - holdingsAllocationBodyRect.right,
+            );
+            const historyTrailingTrackWidth = Math.max(
+                0,
+                historyShell.getBoundingClientRect().right - historyEquityBodyRect.right,
+            );
+            const holdingsAllocationHeaderRect = holdingsHeader.cells.item(8).getBoundingClientRect();
+            const historyEquityHeaderRect = historyHeader.cells.item(10).getBoundingClientRect();
+            const holdingsAllocationHeaderRight = holdingsAllocationHeaderRect.right - holdingsTrailingTrackWidth;
+            const historyEquityHeaderRight = historyEquityHeaderRect.right - historyTrailingTrackWidth;
             const holdingsScroll = holdingsShell?.querySelector('.investment-holdings-table-scroll');
+            const measuredHeaderHeight = Number.parseFloat(
+                holdingsShell?.style.getPropertyValue('--scrollable-data-table-header-height'),
+            );
+            const renderedHeaderHeight = holdingsHeader.closest('table')?.getBoundingClientRect().height ?? 0;
+            if (!Number.isFinite(measuredHeaderHeight) || measuredHeaderHeight <= 0
+                || renderedHeaderHeight <= 0
+                || Math.abs(measuredHeaderHeight - renderedHeaderHeight) > 1) return null;
             const holdingsBodyTable = holdingsScroll?.querySelector('.investment-holdings-table');
             const holdingsBodyRows = holdingsBodyTable?.tBodies.item(0)?.rows;
             const lastBodyRow = holdingsBodyRows?.item((holdingsBodyRows.length || 1) - 1);
@@ -1016,21 +1054,113 @@ test('aligns Holdings Market value and clips fixed table layers at every support
                 );
                 return value?.getBoundingClientRect().right ?? 0;
             };
+            const readBodyColumns = (row) => {
+                const cells = Array.from(row.cells, (cell) => cell.getBoundingClientRect());
+                const left = cells[0]?.left ?? 0;
+                const width = (cells[cells.length - 1]?.right ?? left) - left;
+                return {
+                    percentages: cells.map((cell) => cell.width / width * 100),
+                    internalBoundaries: cells.slice(0, -1).map((cell) => cell.right),
+                };
+            };
+            const holdingsColumns = readBodyColumns(holdingsRow);
+            const historyColumns = readBodyColumns(historyRow);
+            const readTextRects = (cell) => {
+                const textRects = [];
+                const textWalker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+                while (textWalker.nextNode()) {
+                    if (!textWalker.currentNode.textContent.trim()) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(textWalker.currentNode);
+                    textRects.push(...Array.from(range.getClientRects(), (rect) => ({
+                        left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
+                    })));
+                }
+                return textRects;
+            };
+            const readColumnGeometry = (header, row, label, columnIndex, trailingTrackWidth = 0) => {
+                const bodyCell = row.cells.item(columnIndex);
+                const bodyRect = bodyCell.getBoundingClientRect();
+                const headerCell = header.cells.item(columnIndex);
+                const headerRect = headerCell.getBoundingClientRect();
+                return {
+                    label,
+                    bodyWidth: bodyRect.width,
+                    bodyCellBounds: {
+                        left: bodyRect.left, right: bodyRect.right,
+                        top: bodyRect.top, bottom: bodyRect.bottom,
+                    },
+                    bodyTextRects: readTextRects(bodyCell),
+                    headerCellBounds: {
+                        left: headerRect.left, right: headerRect.right - trailingTrackWidth,
+                        top: headerRect.top, bottom: headerRect.bottom,
+                    },
+                    headerTextRects: readTextRects(headerCell),
+                    headerWidth: headerRect.width - trailingTrackWidth,
+                    headerBodyLeftDelta: Math.abs(headerRect.left - bodyRect.left),
+                    headerBodyRightDelta: Math.abs(headerRect.right - trailingTrackWidth - bodyRect.right),
+                };
+            };
+            const holdingsPriceColumns = [
+                ['Average price', 2],
+                ['Last price', 3],
+            ].map(([label, columnIndex]) => readColumnGeometry(holdingsHeader, holdingsRow, label, columnIndex));
+            const holdingsMoneyColumns = [
+                ['Market value', 5],
+                ['Realized P&L', 6],
+                ['Unrealized P&L', 7],
+            ].map(([label, columnIndex]) => readColumnGeometry(holdingsHeader, holdingsRow, label, columnIndex));
+            const historyMoneyColumns = [
+                ['Amount', 6],
+                ['Market value', 8],
+                ['Cash', 9],
+                ['Equity', 10],
+            ].map(([label, columnIndex]) => readColumnGeometry(
+                historyHeader,
+                historyRow,
+                label,
+                columnIndex,
+                // The last header cell also covers the reserved scrollbar track.
+                columnIndex === historyRow.cells.length - 1 ? historyTrailingTrackWidth : 0,
+            ));
+            const allocationCell = holdingsRow.cells.item(holdingsRow.cells.length - 1);
+            const allocationCellRect = allocationCell.getBoundingClientRect();
+            const allocationTextRects = readTextRects(allocationCell);
             return {
-                headerCenterDelta: Math.abs(
-                    (holdingsHeaderRect.left + holdingsHeaderRect.right)
-                    - (historyHeaderRect.left + historyHeaderRect.right),
-                ) / 2,
-                leftDelta: Math.abs(holdingsHeaderRect.left - historyHeaderRect.left),
-                rightDelta: Math.abs(holdingsHeaderRect.right - historyHeaderRect.right),
-                textAlignMatches: (
-                    holdingsValueStyle.textAlign === 'right'
-                    && historyValueStyle.textAlign === 'right'
-                ),
-                paddingMatches: (
-                    holdingsValueStyle.paddingInlineStart === historyValueStyle.paddingInlineStart
-                    && holdingsValueStyle.paddingInlineEnd === historyValueStyle.paddingInlineEnd
-                ),
+                columns: {holdings: holdingsColumns, history: historyColumns},
+                holdingsPriceColumns,
+                holdingsMoneyColumns,
+                historyMoneyColumns,
+                allocationTextGeometry: {
+                    cell: {
+                        left: allocationCellRect.left, right: allocationCellRect.right,
+                        top: allocationCellRect.top, bottom: allocationCellRect.bottom,
+                    },
+                    text: allocationTextRects,
+                },
+                sharedInternalBoundaryCount: holdingsColumns.internalBoundaries.filter((boundary) => (
+                    historyColumns.internalBoundaries.some((candidate) => Math.abs(boundary - candidate) <= 1)
+                )).length,
+                holdingsAllocationToHistoryEquity: {
+                    headerCenterDelta: Math.abs(
+                        (holdingsAllocationHeaderRect.left + holdingsAllocationHeaderRight)
+                        - (historyEquityHeaderRect.left + historyEquityHeaderRight),
+                    ) / 2,
+                    leftDelta: Math.abs(holdingsAllocationHeaderRect.left - historyEquityHeaderRect.left),
+                    rightDelta: Math.abs(holdingsAllocationHeaderRight - historyEquityHeaderRight),
+                    bodyLeftDelta: Math.abs(holdingsAllocationBodyRect.left - historyEquityBodyRect.left),
+                    bodyRightDelta: Math.abs(holdingsAllocationBodyRect.right - historyEquityBodyRect.right),
+                },
+                moneyCellStyles: {
+                    textAlignMatches: (
+                        holdingsMarketValueStyle.textAlign === 'right'
+                        && historyAmountStyle.textAlign === 'right'
+                    ),
+                    paddingMatches: (
+                        holdingsMarketValueStyle.paddingInlineStart === historyAmountStyle.paddingInlineStart
+                        && holdingsMarketValueStyle.paddingInlineEnd === historyAmountStyle.paddingInlineEnd
+                    ),
+                },
                 summaryValueRightEdges: [5, 6, 7, 8].map((cellIndex) => ({
                     summary: getValueRightEdge(holdingsSummaryRow?.cells.item(cellIndex)),
                     body: getValueRightEdge(holdingsRow.cells.item(cellIndex)),
@@ -1077,11 +1207,116 @@ test('aligns Holdings Market value and clips fixed table layers at every support
                     : null,
             };
         });
-        expect(alignment.leftDelta).toBeLessThanOrEqual(1);
-        expect(alignment.rightDelta).toBeLessThanOrEqual(1);
-        expect(alignment.headerCenterDelta).toBeLessThanOrEqual(1);
-        expect(alignment.textAlignMatches).toBe(true);
-        expect(alignment.paddingMatches).toBe(true);
+        let alignment = null;
+        await expect.poll(async () => {
+            alignment = await readAlignment();
+            return alignment !== null;
+        }, {message: `Loaded and measured Holdings table at ${viewport.width}px`}).toBe(true);
+        const sharedAllocationEquityGrid = alignment.holdingsAllocationToHistoryEquity;
+        expect(sharedAllocationEquityGrid.leftDelta).toBeLessThanOrEqual(1);
+        expect(sharedAllocationEquityGrid.rightDelta).toBeLessThanOrEqual(1);
+        expect(sharedAllocationEquityGrid.headerCenterDelta).toBeLessThanOrEqual(1);
+        expect(sharedAllocationEquityGrid.bodyLeftDelta).toBeLessThanOrEqual(1);
+        expect(sharedAllocationEquityGrid.bodyRightDelta).toBeLessThanOrEqual(1);
+        expect(alignment.moneyCellStyles.textAlignMatches).toBe(true);
+        expect(alignment.moneyCellStyles.paddingMatches).toBe(true);
+        for (const [group, columns, expectedCount] of [
+            ['Holdings prices', alignment.holdingsPriceColumns, 2],
+            ['Holdings money', alignment.holdingsMoneyColumns, 3],
+        ]) {
+            expect(columns).toHaveLength(expectedCount);
+            const bodyWidths = columns.map((column) => column.bodyWidth);
+            const headerWidths = columns.map((column) => column.headerWidth);
+            expect(Math.max(...bodyWidths) - Math.min(...bodyWidths),
+                `equal ${group} body widths at ${viewport.width}px`).toBeLessThanOrEqual(1);
+            expect(Math.max(...headerWidths) - Math.min(...headerWidths),
+                `equal ${group} header widths at ${viewport.width}px`).toBeLessThanOrEqual(1);
+            columns.forEach((column) => {
+                expect(column.bodyWidth, `${group} ${column.label} has a positive rendered width`)
+                    .toBeGreaterThan(0);
+                expect(column.headerBodyLeftDelta,
+                    `${group} ${column.label} header/body left edge at ${viewport.width}px`)
+                    .toBeLessThanOrEqual(1);
+                expect(column.headerBodyRightDelta,
+                    `${group} ${column.label} header/body right edge at ${viewport.width}px`)
+                    .toBeLessThanOrEqual(1);
+                for (const [layer, textRects, cellBounds] of [
+                    ['header', column.headerTextRects, column.headerCellBounds],
+                    ['body', column.bodyTextRects, column.bodyCellBounds],
+                ]) {
+                    expect(textRects.length, `${group} ${column.label} ${layer} renders text at ${viewport.width}px`)
+                        .toBeGreaterThan(0);
+                    textRects.forEach((rect) => {
+                        expect(rect.left, `${group} ${column.label} ${layer} left ink edge at ${viewport.width}px`)
+                            .toBeGreaterThanOrEqual(cellBounds.left - 1);
+                        expect(rect.right, `${group} ${column.label} ${layer} right ink edge at ${viewport.width}px`)
+                            .toBeLessThanOrEqual(cellBounds.right + 1);
+                        expect(rect.top, `${group} ${column.label} ${layer} top ink edge at ${viewport.width}px`)
+                            .toBeGreaterThanOrEqual(cellBounds.top - 1);
+                        expect(rect.bottom, `${group} ${column.label} ${layer} bottom ink edge at ${viewport.width}px`)
+                            .toBeLessThanOrEqual(cellBounds.bottom + 1);
+                    });
+                }
+            });
+        }
+        expect(Math.min(...alignment.holdingsMoneyColumns.map((column) => column.bodyWidth)),
+            `Holdings money columns remain wider than price columns at ${viewport.width}px`)
+            .toBeGreaterThan(Math.max(...alignment.holdingsPriceColumns.map((column) => column.bodyWidth)) + 1);
+        expect(alignment.historyMoneyColumns).toHaveLength(4);
+        const historyMoneyBodyWidths = alignment.historyMoneyColumns.map((column) => column.bodyWidth);
+        const historyMoneyHeaderWidths = alignment.historyMoneyColumns.map((column) => column.headerWidth);
+        expect(Math.max(...historyMoneyBodyWidths) - Math.min(...historyMoneyBodyWidths),
+            `equal history money body widths at ${viewport.width}px`).toBeLessThanOrEqual(1);
+        expect(Math.max(...historyMoneyHeaderWidths) - Math.min(...historyMoneyHeaderWidths),
+            `equal history money header widths excluding the trailing track at ${viewport.width}px`)
+            .toBeLessThanOrEqual(1);
+        alignment.historyMoneyColumns.forEach((column) => {
+            expect(column.bodyWidth, `${column.label} has a positive rendered width`).toBeGreaterThan(0);
+            expect(column.bodyTextRects.length, `${column.label} renders text at ${viewport.width}px`)
+                .toBeGreaterThan(0);
+            column.bodyTextRects.forEach((rect) => {
+                expect(rect.left, `${column.label} left ink edge at ${viewport.width}px`)
+                    .toBeGreaterThanOrEqual(column.bodyCellBounds.left - 1);
+                expect(rect.right, `${column.label} right ink edge at ${viewport.width}px`)
+                    .toBeLessThanOrEqual(column.bodyCellBounds.right + 1);
+                expect(rect.top, `${column.label} top ink edge at ${viewport.width}px`)
+                    .toBeGreaterThanOrEqual(column.bodyCellBounds.top - 1);
+                expect(rect.bottom, `${column.label} bottom ink edge at ${viewport.width}px`)
+                    .toBeLessThanOrEqual(column.bodyCellBounds.bottom + 1);
+            });
+            expect(column.headerBodyLeftDelta, `${column.label} header/body left edge at ${viewport.width}px`)
+                .toBeLessThanOrEqual(1);
+            expect(column.headerBodyRightDelta, `${column.label} header/body right edge at ${viewport.width}px`)
+                .toBeLessThanOrEqual(1);
+        });
+        for (const [table, columns] of Object.entries(alignment.columns)) {
+            expect(columns.percentages).toHaveLength(table === 'holdings' ? 9 : 11);
+            const roundedPercentages = columns.percentages.map((percentage) => Math.round(percentage));
+            columns.percentages.forEach((percentage, index) => {
+                const roundedPercentage = roundedPercentages[index];
+                expect(percentage, `${table} column ${index + 1} has a positive width`).toBeGreaterThan(0);
+                expect(Math.abs(percentage - roundedPercentage), `${table} column ${index + 1} percentage rounding`)
+                    .toBeLessThanOrEqual(0.1);
+                expect(roundedPercentage % 2 === 0 || roundedPercentage % 5 === 0,
+                    `${table} column ${index + 1} percentage is divisible by 2 or 5`).toBe(true);
+            });
+            expect(roundedPercentages.reduce((total, percentage) => total + percentage, 0),
+                `${table} column percentages total 100`).toBe(100);
+        }
+        expect(alignment.sharedInternalBoundaryCount, `shared internal column boundaries at ${viewport.width}px`)
+            .toBeGreaterThanOrEqual(3);
+        const allocationGeometry = alignment.allocationTextGeometry;
+        expect(allocationGeometry.text.length, `100.00% renders text at ${viewport.width}px`).toBeGreaterThan(0);
+        allocationGeometry.text.forEach((rect) => {
+            expect(rect.left, `100.00% left ink edge at ${viewport.width}px`)
+                .toBeGreaterThanOrEqual(allocationGeometry.cell.left - 1);
+            expect(rect.right, `100.00% right ink edge at ${viewport.width}px`)
+                .toBeLessThanOrEqual(allocationGeometry.cell.right + 1);
+            expect(rect.top, `100.00% top ink edge at ${viewport.width}px`)
+                .toBeGreaterThanOrEqual(allocationGeometry.cell.top - 1);
+            expect(rect.bottom, `100.00% bottom ink edge at ${viewport.width}px`)
+                .toBeLessThanOrEqual(allocationGeometry.cell.bottom + 1);
+        });
         alignment.summaryValueRightEdges.forEach(({summary, body}, index) => {
             expect(Math.abs(summary - body), `Holdings column ${index + 6} right edge`).toBeLessThanOrEqual(1);
         });

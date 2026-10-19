@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -850,6 +850,7 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             const panel = document.querySelector('#stock_panel').getBoundingClientRect();
             const donut = document.querySelector('.investment-stock-details-donut-card').getBoundingClientRect();
             return {
+                width: rect.width,
                 height: rect.height,
                 insideCard: rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1,
                 insidePanel: rect.top >= panel.top - 1 && rect.bottom <= panel.bottom + 1,
@@ -858,8 +859,39 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             };
         });
         expect(layout.height).toBeGreaterThanOrEqual(199);
+        expect(layout.height).toBeGreaterThanOrEqual((layout.width * 9 / 16) - 1);
         expect(layout.insideCard).toBe(true);
-        expect(layout.insidePanel).toBe(true);
+        if (viewportWidth > 767) {
+            expect(layout.insidePanel).toBe(true);
+        } else {
+            const scrollReachability = await canvas.evaluate((element) => {
+                const panel = document.querySelector('#stock_panel');
+                const previousScrollTop = panel.scrollTop;
+                const reachEdge = (edge) => {
+                    const canvasRect = element.getBoundingClientRect();
+                    const panelRect = panel.getBoundingClientRect();
+                    panel.scrollTop += edge === 'top'
+                        ? canvasRect.top - panelRect.top
+                        : canvasRect.bottom - panelRect.bottom;
+                    const nextCanvasRect = element.getBoundingClientRect();
+                    const nextPanelRect = panel.getBoundingClientRect();
+                    const position = edge === 'top' ? nextCanvasRect.top : nextCanvasRect.bottom;
+                    return position >= nextPanelRect.top - 1 && position <= nextPanelRect.bottom + 1;
+                };
+                const topReachable = reachEdge('top');
+                const bottomReachable = reachEdge('bottom');
+                panel.scrollTop = previousScrollTop;
+                return {
+                    topReachable,
+                    bottomReachable,
+                    overflow: panel.scrollHeight - panel.clientHeight,
+                    overflowY: getComputedStyle(panel).overflowY,
+                };
+            });
+            expect(scrollReachability.topReachable).toBe(true);
+            expect(scrollReachability.bottomReachable).toBe(true);
+            if (scrollReachability.overflow > 1) expect(scrollReachability.overflowY).toBe('auto');
+        }
         expect(layout.donutOverlaps).toBe(false);
 
         const hoverPoint = await canvas.evaluate((element) => {

@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.160.0
+ * Code version: v2.161.0
+ * - Added: Shared ticker selection and responsive Investment table and chart bounds.
  * - Changed: Credit-card paste automatically previews the compact activity table.
  * - Changed: HSBC cash and credit-card pages share the existing paste field.
  * - Added: HSBC credit-card preview and import use an independent card ledger.
@@ -10,7 +11,7 @@
  * - Changed: Loads dated HSBC cash that keeps native foreign balances on their
  *   own component dates and retires same-currency settlement corrections.
  * - Changed: Loads HSBC tax-lot attestation for untimestamped Portfolio pastes.
- * - Changed: Loads the pill-first range-transfer v1.1.0 and stock-history-filters v1.2.0.
+ * - Changed: Loads the pill-first range-transfer v1.1.0 and stock-history-filters v1.2.1.
  * - Changed: Loads HSBC settlement consumers with either-side and optional fees.
  * - Changed: Loads canonical circular-action sizing for import height.
  * - Added: Initial Holdings loading displays four measured completed steps
@@ -81,8 +82,8 @@ import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-ch
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.2.0';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.2.2';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
-import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.1.2';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.0';
+import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.2.0';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.0.1';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.2.0';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.0';
 import {
@@ -92,7 +93,7 @@ import {
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.0';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.2.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.2.0';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.2.1';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.5.4';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.2';
 
@@ -172,7 +173,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.5.1';
+} from './investment/layout.js?v=investment-layout-v1.5.2';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -197,7 +198,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.160.0',
+    entry: 'v2.161.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
