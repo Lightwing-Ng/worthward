@@ -1,10 +1,10 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.5.1
+ * Code version: v1.5.2
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.1';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.2';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -180,6 +180,23 @@ export function bindInvestmentSectionResizer({
             reportChromeHeight + headerHeight + firstDataRowHeight + 1,
         );
     };
+    const getStockDetailsMinimumHeight = (baselineMinimum) => {
+        if (isStackedLayout()) return 0;
+        const panel = reportCard.querySelector('#stock_panel:not([hidden])');
+        const card = panel?.querySelector('.investment-stock-details-price-chart-card');
+        const shell = card?.querySelector('.investment-stock-details-price-chart-shell');
+        if (!isVisibleElement(panel) || !isVisibleElement(card) || !isVisibleElement(shell)) return 0;
+
+        const reportRect = reportCard.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const shellRect = shell.getBoundingClientRect();
+        // The shell can already exceed a compressed card, so measure the chrome
+        // above it rather than subtracting its height from the current report.
+        const chromeHeight = Math.max(0, shellRect.top - reportRect.top)
+            + Math.max(0, reportRect.bottom - cardRect.bottom)
+            + readPixelProperty(card, 'padding-bottom');
+        return Math.max(baselineMinimum, Math.ceil(chromeHeight + (shellRect.width * 9 / 16)));
+    };
     const getOverviewMinimumHeight = (baselineMinimum) => {
         const holdingsMinimumHeight = getHoldingsMinimumHeight(baselineMinimum);
         const declaredContentMinimum = readPixelProperty(
@@ -309,15 +326,34 @@ export function bindInvestmentSectionResizer({
         removeInlineStyleIfPresent(workspaceHeader, '--investment-overview-track');
         removeInlineStyleIfPresent(workspaceHeader, '--investment-overview-min-height');
         removeInlineStyleIfPresent(workspaceHeader, '--investment-history-min-height');
+        workspaceHeader.removeAttribute('data-investment-stock-chart-minimum');
     };
     const getRange = () => {
+        const stockDetailsActive = !isStackedLayout() && isVisibleElement(
+            reportCard.querySelector('#stock_panel:not([hidden])'),
+        );
+        if (stockDetailsActive && !workspaceHeader.hasAttribute('data-investment-stock-chart-minimum')) {
+            workspaceHeader.setAttribute('data-investment-stock-chart-minimum', '');
+        } else if (!stockDetailsActive && workspaceHeader.hasAttribute('data-investment-stock-chart-minimum')) {
+            workspaceHeader.removeAttribute('data-investment-stock-chart-minimum');
+        }
         const availableHeight = getAvailableTrackHeight();
         const baselineMinimum = Math.min(getBaselineMinimumHeight(), availableHeight / 2);
-        const range = resolveInvestmentTrackRange({
+        const stockDetailsMinimum = getStockDetailsMinimumHeight(baselineMinimum);
+        const overviewMinimum = Math.max(getOverviewMinimumHeight(baselineMinimum), stockDetailsMinimum);
+        const historyMinimum = getHistoryMinimumHeight(baselineMinimum);
+        // A short desktop scrolls the workspace instead of flattening the stock
+        // chart or removing the history table's minimum visible rows.
+        const range = stockDetailsMinimum > 0 ? {
+            minimum: overviewMinimum,
+            layoutMinimum: overviewMinimum,
+            maximum: Math.max(overviewMinimum, availableHeight - historyMinimum),
+            historyMinimum,
+        } : resolveInvestmentTrackRange({
             availableHeight,
             baselineMinimum,
-            desiredOverviewMinimum: getOverviewMinimumHeight(baselineMinimum),
-            desiredHistoryMinimum: getHistoryMinimumHeight(baselineMinimum),
+            desiredOverviewMinimum: overviewMinimum,
+            desiredHistoryMinimum: historyMinimum,
             preferOverviewMinimum: resolveBooleanOption(preferOverviewMinimum),
             preferHistoryMinimum: resolveBooleanOption(preferHistoryMinimum),
         });

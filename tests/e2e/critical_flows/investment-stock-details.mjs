@@ -1,4 +1,4 @@
-/* Code version: v1.2.4 */
+/* Code version: v1.2.6 */
 import {
     expect,
     test,
@@ -47,6 +47,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         return source.match(/Code version: (v[0-9.]+)/)[1];
     };
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
+    const currentLayoutVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/layout.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
     const currentPaginationVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/pagination.js');
     const currentRealtimeVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/realtime.js');
@@ -58,7 +59,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         chartOrbit: 'v1.39.0',
         dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.10.0',
-        layout: 'v1.5.1',
+        layout: currentLayoutVersion,
         pagination: currentPaginationVersion,
         realtime: currentRealtimeVersion,
         numericDisplay: currentNumericDisplayVersion,
@@ -240,6 +241,8 @@ test('uses the Neo stock-details composition without chart or donut collisions',
             rangeBottom: rangeRect.bottom,
             chartTop: chartRect.top,
             chartBottom: chartRect.bottom,
+            canvasWidth: canvasRect.width,
+            canvasHeight: canvasRect.height,
             canvasBottom: canvasRect.bottom,
             chartCardTop: chartCardRect.top,
             chartCardBottom: chartCardRect.bottom,
@@ -271,6 +274,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(geometry).not.toBeNull();
     expect(Math.abs(geometry.identityTop - geometry.rangeTop)).toBeLessThanOrEqual(1);
     expect(geometry.rangeBottom).toBeLessThanOrEqual(geometry.chartTop);
+    expect(geometry.canvasHeight).toBeGreaterThanOrEqual(geometry.canvasWidth * 9 / 16 - 1);
     expect(Math.abs(geometry.chartBottom - geometry.canvasBottom)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCardTop - geometry.identityTop)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCardBottom - geometry.metricsBottom)).toBeLessThanOrEqual(1);
@@ -290,6 +294,10 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(geometry.logoContained).toBe(true);
 
     await page.setViewportSize({width: 430, height: 900});
+    await expect.poll(() => priceChartCanvas.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.height - rect.width * 9 / 16;
+    })).toBeGreaterThanOrEqual(-1);
     await expect.poll(() => page.evaluate(() => {
         const shell = document.querySelector('#stock_panel .investment-stock-details-donut-shell')
             ?.getBoundingClientRect();
@@ -315,6 +323,204 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(Math.abs(mobileDonutGeometry.frameWidth - mobileDonutGeometry.frameHeight)).toBeLessThanOrEqual(1);
     expect(mobileDonutGeometry.frameWidth - mobileDonutGeometry.donutDiameter).toBeLessThanOrEqual(50);
 });
+
+for (const viewport of [
+    {width: 1_024, height: 863},
+    {width: 390, height: 844},
+]) {
+    test(`switches current and closed Stock details tickers through Shared select at ${viewport.width}px`, async ({page}) => {
+        const tickers = [
+            'AAPL', 'AMD', 'AMZN', 'ASML', 'AVGO', 'BA', 'BABA', 'BAC',
+            'BOXX', 'C', 'CAT', 'COIN', 'COST', 'CRM', 'CRWD', 'CSCO',
+            'CVX', 'DIS', 'DRAM', 'EUV', 'GOOGL', 'GS', 'HD', 'IBM',
+            'INTC', 'JNJ', 'JPM', 'KO', 'LLY', 'MA', 'META', 'MSFT',
+            'MU', 'NFLX', 'NKE', 'NVDA', 'ORCL', 'PEP', 'PFE', 'PLTR',
+            'QQQ', 'QQQI', 'SHOP', 'SPY', 'TSLA', 'TSM', 'UNH', 'V',
+        ];
+        const openTickers = new Set(['AAPL', 'DRAM', 'MSFT', 'QQQI']);
+        const transactions = [];
+        const expectedByTicker = new Map();
+        const priceHistoryByTicker = {};
+        const appendTransaction = (transaction) => {
+            const ledgerNo = transactions.length + 1;
+            const datetime = new Date(Date.UTC(2026, 6, 10, 0, ledgerNo)).toISOString();
+            transactions.push({
+                ledger_no: ledgerNo, currency: 'USD', ...transaction,
+                date: datetime.slice(0, 10), datetime,
+            });
+            return ledgerNo;
+        };
+        tickers.forEach((ticker, index) => {
+            const buyPrice = ticker === 'EUV' ? 20 : ticker === 'BOXX' ? 100 : ticker === 'QQQI' ? 50 : 100 + index;
+            const sellPrice = ticker === 'EUV' ? 24 : buyPrice + 1;
+            const quantity = ticker === 'EUV' ? 4 : ticker === 'BOXX' ? 3 : 2;
+            const ledgerNos = [appendTransaction({
+                broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker,
+                quantity, price: buyPrice, amount: -quantity * buyPrice,
+            })];
+            if (!openTickers.has(ticker)) {
+                ledgerNos.push(appendTransaction({
+                    broker: 'ibkr', date: '2026-07-11', type: 'sell', ticker,
+                    quantity, price: sellPrice, amount: quantity * sellPrice,
+                }));
+            }
+            if (ticker === 'QQQI') {
+                ledgerNos.push(appendTransaction({
+                    broker: 'hsbc', date: '2026-07-11', type: 'buy', ticker,
+                    quantity: 1, price: 52, amount: -52,
+                }));
+            }
+            const lastClose = ticker === 'QQQI' ? 52 : sellPrice + 1;
+            priceHistoryByTicker[ticker] = [
+                {date: '2026-07-10', close: buyPrice},
+                {date: '2026-07-11', close: sellPrice},
+                {date: '2026-07-12', close: lastClose},
+            ];
+            expectedByTicker.set(ticker, {
+                ledgerNos,
+                position: openTickers.has(ticker) ? String(quantity + (ticker === 'QQQI' ? 1 : 0)) : '-',
+                realizedPnl: openTickers.has(ticker) ? 0 : quantity * (sellPrice - buyPrice),
+                lastClose,
+            });
+        });
+        await mockInvestmentReadApis(page, {
+            brokers: ['ibkr', 'hsbc'],
+            startingCash: 25_000,
+            transactions,
+            priceHistoryByTicker,
+            tickerProfiles: Object.fromEntries(tickers.map((ticker) => [ticker, {
+                ticker,
+                company_name: `${ticker} fixture investment`,
+                logo_url: `/market-store/logos/${ticker}.svg`,
+            }])),
+        });
+        await page.setViewportSize(viewport);
+        await page.goto('/trade/investment?view=stock-details&ticker=QQQI&range=1y');
+        const panel = page.locator('#stock_panel');
+        const identity = panel.locator('.investment-stock-details-identity');
+        const field = identity.locator('[data-shared-select-field][data-shared-select-kind="investment-stock-ticker"]');
+        const native = field.locator('[data-investment-stock-ticker-select]');
+        const trigger = field.locator('[data-shared-select-trigger]');
+        const canvas = panel.locator('.investment-stock-details-price-chart-canvas');
+        await expect(native).toHaveValue('QQQI');
+        await expect(native).toBeHidden();
+        const documentTimeOrigin = await page.evaluate(() => performance.timeOrigin);
+        const currentMenu = async () => {
+            const menuId = await trigger.getAttribute('aria-controls');
+            expect(menuId).toBeTruthy();
+            return page.locator(`#${menuId}`);
+        };
+        const metricValue = (label) => panel.locator('.investment-stock-details-metric-card')
+            .filter({has: page.getByText(label, {exact: true})})
+            .locator('.trade-metric-value').first();
+        const expectSelectedTicker = async (ticker) => {
+            const expected = expectedByTicker.get(ticker);
+            await expect(native).toHaveValue(ticker);
+            await expect(identity.locator('.ticker-identity-symbol')).toHaveText(ticker);
+            await expect(page.locator('#investment_stock_details_range_1y')).toBeChecked();
+            await expect.poll(() => {
+                const url = new URL(page.url());
+                return ['view', 'ticker', 'range'].map((name) => url.searchParams.get(name));
+            }).toEqual(['stock-details', ticker, '1y']);
+            await expect.poll(() => canvas.evaluate((element) => (
+                window.Chart?.getChart?.(element)?.data?.datasets?.[0]?.label || ''
+            ))).toBe(`${ticker} close`);
+            await expect.poll(() => canvas.evaluate((element) => (
+                window.Chart?.getChart?.(element)?.data?.datasets?.[0]?.data?.filter(Number.isFinite).at(-1)
+            ))).toBe(expected.lastClose);
+            await expect(metricValue('Position')).toHaveText(expected.position);
+            await expect.poll(() => metricValue('Realized P&L').evaluate((element) => (
+                Number(element.textContent.replace(/[,$\s]/g, ''))
+            ))).toBe(expected.realizedPnl);
+            await expect.poll(() => page.locator('#investment_stock_details tr[data-investment-stock-detail-ledger]')
+                .evaluateAll((rows) => rows.map((row) => Number(row.dataset.investmentStockDetailLedger))
+                    .sort((left, right) => left - right)))
+                .toEqual([...expected.ledgerNos].sort((left, right) => left - right));
+            expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentTimeOrigin);
+        };
+        await expectSelectedTicker('QQQI');
+
+        await trigger.click();
+        let menu = await currentMenu();
+        await expect(menu).toBeVisible();
+        const options = menu.locator('[role="option"][data-value]:not([data-value=""])');
+        await expect(options).toHaveCount(48);
+        const optionValues = await options.evaluateAll((elements) => elements.map((element) => element.dataset.value));
+        expect(new Set(optionValues).size).toBe(48);
+        expect(optionValues).toEqual([...tickers].sort((left, right) => left.localeCompare(right, 'en-US', {numeric: true})));
+        openTickers.forEach((ticker) => expect(optionValues).toContain(ticker));
+        await expect(options.filter({hasText: /^QQQI/})).toHaveCount(1);
+        const menuGeometry = await menu.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const overflow = element.scrollHeight - element.clientHeight;
+            element.scrollTop = element.scrollHeight;
+            return {
+                overflow,
+                scrollTop: element.scrollTop,
+                remaining: element.scrollHeight - element.clientHeight - element.scrollTop,
+                left: rect.left, right: rect.right,
+                viewportWidth: window.innerWidth,
+            };
+        });
+        expect(menuGeometry.overflow).toBeGreaterThan(0);
+        expect(menuGeometry.scrollTop).toBeGreaterThan(0);
+        expect(menuGeometry.remaining).toBeLessThanOrEqual(1);
+        expect(menuGeometry.left).toBeGreaterThanOrEqual(-1);
+        expect(menuGeometry.right).toBeLessThanOrEqual(menuGeometry.viewportWidth + 1);
+        await expect(options.last()).toBeInViewport();
+        await menu.locator('[role="option"][data-value="EUV"]').click();
+        await expectSelectedTicker('EUV');
+        await expect(await currentMenu()).toBeHidden();
+
+        await trigger.press('ArrowDown');
+        menu = await currentMenu();
+        await expect(menu).toBeVisible();
+        await expect(menu.locator('[role="option"][aria-selected="true"][data-value="EUV"]')).toBeFocused();
+        const keyboardOrder = await menu.locator('[role="option"][data-value]')
+            .evaluateAll((elements) => elements.map((element) => element.dataset.value));
+        const targetIndex = keyboardOrder.indexOf('BOXX');
+        expect(targetIndex).toBeGreaterThanOrEqual(0);
+        await page.keyboard.press('Home');
+        for (let index = 0; index < targetIndex; index += 1) await page.keyboard.press('ArrowDown');
+        await expect(menu.locator('[role="option"][data-value="BOXX"]')).toBeFocused();
+        await expect(native).toHaveValue('EUV');
+        await page.keyboard.press('Enter');
+        await expectSelectedTicker('BOXX');
+
+        await page.goBack();
+        await expectSelectedTicker('EUV');
+        await page.goForward();
+        await expectSelectedTicker('BOXX');
+
+        await trigger.press('ArrowDown');
+        menu = await currentMenu();
+        await expect(menu).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(menu).toBeHidden();
+        await expect(trigger).toBeFocused();
+        await expect(native).toHaveValue('BOXX');
+        await trigger.click();
+        menu = await currentMenu();
+        await expect(menu).toBeVisible();
+        await page.locator('[data-layout-role="title-rail"] .report-heading').click();
+        await expect(menu).toBeHidden();
+        await expectSelectedTicker('BOXX');
+
+        await page.locator('label[for="investment_view_holdings"]').click();
+        await expect(panel).toBeHidden();
+        await page.locator('label[for="investment_view_stock_details"]').click();
+        await expect(panel).toBeVisible();
+        await trigger.click();
+        menu = await currentMenu();
+        await expect(menu).toBeVisible();
+        await page.goBack();
+        await expect(panel).toBeHidden();
+        await expect(menu).toBeHidden();
+        await expect(page.locator('[data-shared-select-overlay] #investment_stock_ticker_dropdown')).toHaveCount(0);
+        await page.goForward();
+        await expectSelectedTicker('BOXX');
+    });
+}
 
 for (const viewport of [
     {width: 996, height: 801},
@@ -751,7 +957,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.81.3';
+            && url.searchParams.get('v') === '1.82.0';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');

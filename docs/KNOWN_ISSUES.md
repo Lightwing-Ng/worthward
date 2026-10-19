@@ -1,5 +1,56 @@
 # Known issues and operating constraints
 
+Stock details ticker selector, 19 Oct 2026: the identity block uses the
+existing Shared select control to switch between all current and historical
+holdings in the loaded ledger. Candidates are deduplicated by canonical ticker
+and ordered by display ticker; the current selection retains its cached ticker
+identifier. Options show the ticker, company name, and available logo. The
+viewport-bounded menu uses the existing keyboard controller and overlay host
+so the chart panel cannot clip it. Selecting a ticker updates the existing
+metrics, price chart, history, and URL in place, preserves the selected range,
+and returns focus to the new trigger. Browser Back and Forward restore the
+selector, metrics, chart, and history together. Rerendering the panel removes
+its old menu before constructing another selector; leaving Stock details also
+dismisses the portaled menu.
+
+Stock price chart compression limit, 19 Oct 2026: Stock details preserves a
+minimum canvas height of 9/16 of its CSS width. The section resizer includes
+the chart's range controls and surrounding report chrome in its lower bound,
+including after entering the view or changing the available width. Both drag
+and keyboard endpoints use that bound. On a short desktop, the workspace
+scrolls vertically rather than compressing the chart or hiding the history
+table's minimum rows. Narrow layouts retain their existing panel scrolling
+and the same canvas ratio floor. Overview and Holdings keep their existing
+resize limits.
+
+Investment column grid, 19 Oct 2026: the main Holdings table uses
+4/34/8/8/8/10/10/10/8 percent columns; transaction history uses
+4/4/10/6/36/4/8/4/8/8/8. Each table totals 100%, and each allocation is a
+multiple of 2% or 5%. Holdings Average price and Last price share an 8% price
+width token. Its Market value, Realized P&L, and Unrealized P&L share a
+separate 10% money width token. Amount, Market value, Cash, and Equity in
+transaction history retain one 8% width token and matching 1 px horizontal
+cell padding. Cash and Equity were previously 12% and 14%. Shared interior
+boundaries are 4%, 72%, and 92%; Holdings Market value and history Amount
+share their 72% right edge, and Holdings allocation aligns with history Equity
+at 92–100%. The two Holdings width groups preserve readable prices and P&L
+without forcing all five columns to one width. Numeric columns stay
+compact while Ticker and Description absorb extra text space. Both tables
+use an 850 px minimum width, reduced from 1,080 px; narrower panes retain
+bounded horizontal scrolling. Header/body column tokens have one CSS source,
+while the existing table controller still accounts for scrollbars and scroll
+offsets. Stock details and community-share column allocations remain scoped
+separately.
+
+Holdings summary text containment, 19 Oct 2026: unavailable P&L totals now
+wrap inside their summary cells instead of inheriting the non-wrapping numeric
+layout and covering adjacent Market value amounts. An unavailable cumulative
+total spans the summary grid's value and allocation slots. Numeric formatting,
+coverage status, and ledger calculations retain their existing contracts. The
+Holdings and transaction-history tables share a readable minimum width and
+bounded horizontal scrolling, preserving aligned header and body columns.
+The history shell clips its fixed header while the table scrolls horizontally.
+
 HSBC credit-card routing, 14 Oct 2026: card pages sent through cash validation
 previously produced a missing-available-balance error. The first account-page
 field in HSBC Copy/paste now recognizes card pages and automatically runs a
@@ -1049,7 +1100,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.279.1`
+Documentation version: `v1.280.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
