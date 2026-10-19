@@ -1,4 +1,4 @@
-/* Code version: v1.1.6 */
+/* Code version: v1.1.7 */
 import {
     expect,
     test,
@@ -1161,6 +1161,21 @@ test('keeps Investment price and money groups equal with elastic identity column
             const summaryIdentityRect = summaryIdentityCell.getBoundingClientRect();
             const summaryMetricRows = Array.from(summaryIdentityCell.querySelectorAll('.investment-holdings-summary-metric-row'));
             const summaryMetricTextRects = summaryMetricRows.flatMap(readTextRects);
+            const summaryNumericRightEdges = [
+                'summary_cash_balance',
+                'summary_cash_equivalents',
+                'summary_total_equity',
+                'summary_cumulative_pnl',
+            ].map((field) => {
+                const node = summaryIdentityCell.querySelector(`[data-investment-live-field="${field}"]`);
+                const text = node ? readTextRects(node) : [];
+                return {
+                    field,
+                    value: node?.getAttribute('data-investment-live-number'),
+                    textCount: text.length,
+                    right: Math.max(...text.map((rect) => rect.right)),
+                };
+            });
             const summaryMetricTextOverlaps = summaryMetricRows.flatMap((row) => {
                 const children = Array.from(row.children, readTextRects);
                 return children.flatMap((rects, index) => children.slice(index + 1).flatMap((otherRects) => (
@@ -1210,6 +1225,7 @@ test('keeps Investment price and money groups equal with elastic identity column
                 holdingsPriceColumns,
                 holdingsMoneyColumns,
                 historyMoneyColumns,
+                summaryNumericRightEdges,
                 summaryIdentityTextGeometry: {
                     cell: {
                         left: summaryIdentityRect.left, right: summaryIdentityRect.right,
@@ -1461,6 +1477,16 @@ test('keeps Investment price and money groups equal with elastic identity column
         });
         expect(alignment.sharedInternalBoundaryCount, `shared internal column boundaries at ${viewport.width}px`)
             .toBeGreaterThanOrEqual(3);
+        const summaryNumbers = alignment.summaryNumericRightEdges;
+        expect(summaryNumbers).toHaveLength(4);
+        const totalEquityRight = summaryNumbers.find(({field}) => field === 'summary_total_equity').right;
+        summaryNumbers.forEach(({field, value, textCount, right}) => {
+            expect(value, `${field} has a numeric value at ${scenario}`).not.toBeNull();
+            expect(Number.isFinite(Number(value)), `${field} is finite at ${scenario}`).toBe(true);
+            expect(textCount, `${field} renders numeric text at ${scenario}`).toBeGreaterThan(0);
+            expect(Math.abs(right - totalEquityRight), `${field} aligns with the summary amount column at ${scenario}`)
+                .toBeLessThanOrEqual(1);
+        });
         const summaryGeometry = alignment.summaryIdentityTextGeometry;
         expect(summaryGeometry.text.length, `summary identity metrics render text at ${scenario}`).toBeGreaterThan(0);
         expect(summaryGeometry.overlapCount, `summary labels and values do not overlap at ${scenario}`).toBe(0);

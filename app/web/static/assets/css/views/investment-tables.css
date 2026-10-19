@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -882,7 +882,7 @@
         white-space: normal;
     }
 
-    #investment_holdings_panel .investment-holdings-summary-row .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"] {
+    #investment_holdings_panel .investment-holdings-summary-row .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"]:not([data-investment-live-number]) {
         grid-column: 1 / -1;
     }
 }
