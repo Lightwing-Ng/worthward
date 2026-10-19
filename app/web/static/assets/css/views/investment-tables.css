@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.1 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -175,7 +175,7 @@
 
 #investment_holdings_panel .investment-holdings-table,
 #history_table_wrap .investment-history-table {
-    min-width: 850px;
+    min-width: 656px;
 }
 
 #history_table_wrap.investment-history-table-shell {
@@ -192,7 +192,7 @@
 #history_table_wrap.investment-history-table-shell,
 #history_table_wrap .investment-history-table[data-table-header],
 #history_table_wrap .investment-history-table-scroll {
-    /* Matching border boxes preserve the shared percentage grid at every width. */
+    /* Matching border boxes preserve the shared column grid at every width. */
     border: 0;
 }
 
@@ -634,19 +634,29 @@
     --investment-holdings-col-allocation-width: 6%;
 }
 
+#investment_holdings_panel .investment-holdings-table-shell,
+#history_table_wrap.investment-history-table-shell {
+    container-type: inline-size;
+}
+
+#investment_holdings_panel .investment-holdings-table,
+#history_table_wrap .investment-ledger-table {
+    /* Bound the shared grid so identity columns absorb the remaining width. */
+    --investment-table-grid-unit: clamp(16px, 2cqi, 20px);
+}
+
 #investment_holdings_panel .investment-holdings-table {
-    /* Both ledgers share the 4%, 72%, and 92% interior grid lines. */
-    --investment-holdings-price-column-width: 8%;
-    --investment-holdings-money-column-width: 10%;
-    --investment-holdings-col-no-width: 4%;
-    --investment-holdings-col-ticker-width: 34%;
+    --investment-holdings-price-column-width: calc(var(--investment-table-grid-unit) * 4);
+    --investment-holdings-money-column-width: calc(var(--investment-table-grid-unit) * 5);
+    --investment-holdings-col-no-width: calc(var(--investment-table-grid-unit) * 2);
+    --investment-holdings-col-ticker-width: auto;
     --investment-holdings-col-average-price-width: var(--investment-holdings-price-column-width);
     --investment-holdings-col-last-price-width: var(--investment-holdings-price-column-width);
-    --investment-holdings-col-position-width: 8%;
+    --investment-holdings-col-position-width: calc(var(--investment-table-grid-unit) * 4);
     --investment-holdings-col-market-value-width: var(--investment-holdings-money-column-width);
     --investment-holdings-col-realized-width: var(--investment-holdings-money-column-width);
     --investment-holdings-col-unrealized-width: var(--investment-holdings-money-column-width);
-    --investment-holdings-col-allocation-width: 8%;
+    --investment-holdings-col-allocation-width: calc(var(--investment-table-grid-unit) * 4);
 }
 
 .investment-holdings-table th:nth-child(1),
@@ -855,6 +865,33 @@
 
 #investment_holdings_panel .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"]:not([data-investment-live-number]) {
     grid-column: 2 / -1;
+}
+
+#investment_holdings_panel .investment-holdings-summary-ticker-body {
+    container: investment-holdings-summary / inline-size;
+}
+
+/* Matches the investment-summary-compact-max breakpoint registry entry. */
+@container investment-holdings-summary (max-width: 260px) {
+    .investment-holdings-summary-metrics {
+        grid-template-columns: minmax(0, 1fr) var(--investment-holdings-allocation-badge-inline-size);
+    }
+
+    .investment-holdings-summary-metrics .investment-holdings-summary-metric-label {
+        grid-column: 1 / -1;
+        white-space: normal;
+    }
+
+    #investment_holdings_panel .investment-holdings-summary-row .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"] {
+        grid-column: 1 / -1;
+    }
+}
+
+/* Matches the investment-summary-stack-max breakpoint registry entry. */
+@container investment-holdings-summary (max-width: 128px) {
+    .investment-holdings-summary-metrics {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .investment-holdings-allocation-badge {
@@ -2167,16 +2204,15 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 #history_table_wrap .investment-ledger-table {
-    /* Keep numeric columns compact; long descriptions use the remaining space. */
-    --investment-ledger-money-column-width: 8%;
-    --investment-col-broker-width: 4%;
-    --investment-col-no-width: 4%;
-    --investment-col-time-width: 10%;
-    --investment-col-type-width: 6%;
-    --investment-col-description-width: 36%;
-    --investment-col-currency-width: 4%;
+    --investment-ledger-money-column-width: calc(var(--investment-table-grid-unit) * 4);
+    --investment-col-broker-width: calc(var(--investment-table-grid-unit) * 2);
+    --investment-col-no-width: calc(var(--investment-table-grid-unit) * 2);
+    --investment-col-time-width: calc(var(--investment-table-grid-unit) * 5);
+    --investment-col-type-width: calc(var(--investment-table-grid-unit) * 3);
+    --investment-col-description-width: auto;
+    --investment-col-currency-width: calc(var(--investment-table-grid-unit) * 2);
     --investment-col-amount-width: var(--investment-ledger-money-column-width);
-    --investment-col-commission-width: 4%;
+    --investment-col-commission-width: calc(var(--investment-table-grid-unit) * 2);
     --investment-col-market-value-width: var(--investment-ledger-money-column-width);
     --investment-col-cash-width: var(--investment-ledger-money-column-width);
     --investment-col-equity-width: var(--investment-ledger-money-column-width);
