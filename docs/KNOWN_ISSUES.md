@@ -1,5 +1,11 @@
 # Known issues and operating constraints
 
+Holdings summary amount alignment, 19 Oct 2026: numeric Cumulative P&L
+uses the same amount column as Cash, Cash equivalents, and Total equity at
+every summary width. Only unavailable status text spans the compact summary
+row, preserving readable wrapping without moving numeric values into the
+allocation-badge column.
+
 Elastic Investment identity columns, 19 Oct 2026: the main Holdings Ticker
 and Transaction history Description columns absorb the space left by a shared
 grid with a 16px floor and 20px cap per unit. The price pair, Holdings money
@@ -1115,7 +1121,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.281.0`
+Documentation version: `v1.281.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
