@@ -1,5 +1,20 @@
 # Known issues and operating constraints
 
+Elastic Investment identity columns, 19 Oct 2026: the main Holdings Ticker
+and Transaction history Description columns absorb the space left by a shared
+grid with a 16px floor and 20px cap per unit. The price pair, Holdings money
+trio, and history money quartet keep their respective equal widths; the shared
+leading and trailing grid anchors remain aligned. Identity columns have no
+fixed percentage. The two tables fit an 869px viewport in either sidebar state;
+viewports narrower than the 656px table floor retain horizontal scrolling.
+The two summary container thresholds are registered as
+`investment-summary-compact-max` (260px) and `investment-summary-stack-max`
+(128px) in the shared responsive registry. Narrow Holdings summaries place
+labels above values and allocation badges so
+the summary remains readable when the identity column contracts. The standard
+fixed-header controller measures untransformed layout height, preventing the
+sidebar scale animation from leaving a stale header offset after resizing.
+
 Stock details ticker selector, 19 Oct 2026: the identity block uses the
 existing Shared select control to switch between all current and historical
 holdings in the loaded ledger. Candidates are deduplicated by canonical ticker
@@ -1100,7 +1115,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.280.0`
+Documentation version: `v1.281.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

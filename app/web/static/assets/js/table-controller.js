@@ -1,7 +1,7 @@
 /**
  * Standard scrollable table alignment controller.
  *
- * Code version: v1.0.4
+ * Code version: v1.0.5
  */
 (function bootstrapStandardTableController(globalScope) {
     "use strict";
@@ -206,7 +206,8 @@
             setInlineStyleIfChanged(shell, BORDER_COMPENSATION_PROPERTY, `${trailingTrackWidth > 0 ? 1 : 0}px`);
             if (scrollbarProperty) setInlineStyleIfChanged(shell, scrollbarProperty, `${scrollbarWidth}px`);
             syncColumnWidths(headerTable, bodyTable, trailingTrackWidth);
-            const headerHeight = headerTable.getBoundingClientRect().height;
+            // Layout offsets must exclude the sidebar's temporary scale animation.
+            const headerHeight = headerTable.offsetHeight;
             if (headerHeight > 0) {
                 setInlineStyleIfChanged(shell, HEADER_HEIGHT_PROPERTY, `${roundUpToDevicePixel(headerHeight)}px`);
             }

@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.2.10."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.3.0."""
 
 from __future__ import annotations
 
@@ -24,6 +24,8 @@ EXPECTED_REGISTRY = {
     "pagination-compact-max": 320,
     "pagination-tiny-max": 280,
     "investment-date-grid-max": 560,
+    "investment-summary-compact-max": 260,
+    "investment-summary-stack-max": 128,
     "portfolio-donut-max": 430,
     "sidebar-toggle-tight-max": 500,
     "live-pin-tight-max": 420,

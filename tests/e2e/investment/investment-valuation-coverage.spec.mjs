@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.0.4 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
@@ -98,7 +98,7 @@ test('missing interest FX invalidates P&L even when every stock is calculable', 
     await expect(holdings.locator('[data-pnl-coverage]')).toHaveAttribute('title', 'Cash-flow FX unavailable');
 });
 
-for (const width of [894, 390]) {
+for (const width of [894, 869, 390]) {
     test(`partial Holdings totals stay within their columns at ${width}px`, async ({page}) => {
         await page.setViewportSize({width, height: 844});
         await loadHoldings(page, {foreignCash: true, cashType: 'credit_interest'});
@@ -144,6 +144,8 @@ for (const width of [894, 390]) {
                     field: node.dataset.investmentLiveField,
                     cell: bounds(node.closest('td')),
                     grid: grid ? bounds(grid) : null,
+                    compact: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length < 3 : false,
+                    gridColumn: getComputedStyle(node).gridColumn,
                     label: label ? bounds(label) : null,
                     text: textBounds(node),
                 };
@@ -194,10 +196,14 @@ for (const width of [894, 390]) {
             layout.statuses.forEach((status) => {
                 assertContainedText(status.text, status.cell, status.field);
                 if (status.grid) assertContainedText(status.text, status.grid, `${status.field} grid`);
+                if (status.compact && status.field === 'summary_cumulative_pnl') {
+                    expect(status.gridColumn, 'compact Cumulative P&L spans the summary width').toBe('1 / -1');
+                }
                 status.text.forEach((rect) => {
                     if (status.label) {
-                        expect(rect.left, `${status.field} clears its label`)
-                            .toBeGreaterThanOrEqual(status.label.right - 1);
+                        const overlapWidth = Math.min(rect.right, status.label.right) - Math.max(rect.left, status.label.left);
+                        const overlapHeight = Math.min(rect.bottom, status.label.bottom) - Math.max(rect.top, status.label.top);
+                        expect(overlapWidth > 1 && overlapHeight > 1, `${status.field} overlaps its label`).toBe(false);
                     }
                     layout.market.text.forEach((marketRect) => {
                         const overlapWidth = Math.min(rect.right, marketRect.right) - Math.max(rect.left, marketRect.left);

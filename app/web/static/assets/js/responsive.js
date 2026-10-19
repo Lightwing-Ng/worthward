@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 (() => {
     const root = document.documentElement;
     const fallbackValues = Object.freeze({
@@ -13,6 +13,8 @@
         paginationCompactMax: 320,
         paginationTinyMax: 280,
         investmentDateGridMax: 560,
+        investmentSummaryCompactMax: 260,
+        investmentSummaryStackMax: 128,
         portfolioDonutMax: 430,
         sidebarToggleTightMax: 500,
         livePinTightMax: 420,
@@ -70,6 +72,14 @@
         investmentDateGridMax: readCssPixel(
             "--responsive-breakpoint-investment-date-grid-max",
             fallbackValues.investmentDateGridMax,
+        ),
+        investmentSummaryCompactMax: readCssPixel(
+            "--responsive-breakpoint-investment-summary-compact-max",
+            fallbackValues.investmentSummaryCompactMax,
+        ),
+        investmentSummaryStackMax: readCssPixel(
+            "--responsive-breakpoint-investment-summary-stack-max",
+            fallbackValues.investmentSummaryStackMax,
         ),
         portfolioDonutMax: readCssPixel(
             "--responsive-breakpoint-portfolio-donut-max",
