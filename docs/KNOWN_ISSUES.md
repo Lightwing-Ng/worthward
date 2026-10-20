@@ -1,5 +1,15 @@
 # Known issues and operating constraints
 
+HSBC composite-paste settlement carry-forward, 20 Oct 2026: importing the
+cash-account, Portfolio, and Order Status pages together now retains the
+hidden cash settlement evidence, as cash-only imports already do. The merge
+can reconcile an older provisional order even when it is absent from the
+latest visible Order Status page. Matching still requires the existing
+account, reference, currency, posting identity, and ambiguity checks; the
+strict retained-evidence amount-conflict guard is unchanged. Settled orders
+leave the pending-cash projection, and principal and fee postings retain
+their separate immutable evidence.
+
 Holdings summary amount alignment, 19 Oct 2026: numeric Cumulative P&L
 uses the same amount column as Cash, Cash equivalents, and Total equity at
 every summary width. Only unavailable status text spans the compact summary
@@ -1121,7 +1131,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.281.1`
+Documentation version: `v1.281.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
