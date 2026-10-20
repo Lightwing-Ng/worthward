@@ -1,5 +1,19 @@
 # Known issues and operating constraints
 
+Cold ticker discovery and first submission, 20 Oct 2026: shared workspace
+validation distinguishes confirmed symbols, malformed or duplicate input,
+and unresolved discovery. Empty or nonexact suggestions and lookup failures
+leave a well-formed input neutral and let the same submission resolve actual
+comparison data, so a first DYNF or FELC entry does not need a second attempt.
+Only exact discovery matches or successfully rendered comparison data confirm
+the ticker. An input-local unresolved marker avoids repeating discovery in
+the same submission without adding a positive cache entry; editing the symbol
+clears that marker and stale error or pending state. Stale discovery responses
+cannot overwrite or submit a newly edited symbol, while explicitly equivalent
+market suffixes retain canonical confirmation. Duplicate and malformed symbols
+remain invalid, and unavailable history retains the existing server error.
+Live Trading validation and order authorization keep their separate owner.
+
 HSBC composite-paste settlement carry-forward, 20 Oct 2026: importing the
 cash-account, Portfolio, and Order Status pages together now retains the
 hidden cash settlement evidence, as cash-only imports already do. The merge
@@ -1131,7 +1145,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.281.2`
+Documentation version: `v1.281.3`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

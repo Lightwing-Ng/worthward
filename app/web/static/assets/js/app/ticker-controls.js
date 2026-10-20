@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 (() => {
     const create = (context) => {
         const {
@@ -102,6 +102,9 @@
             const selectedTicker = sanitizeTicker(input.dataset.symbol || "");
             const validatedTicker = sanitizeTicker(input.dataset.validatedTicker || "");
             const pendingTicker = sanitizeTicker(input.dataset.validationTicker || "");
+            if (input.dataset.unresolvedTicker !== currentTicker) {
+                input.dataset.unresolvedTicker = "";
+            }
             if (!currentTicker || (selectedTicker && selectedTicker !== currentTicker)) {
                 input.dataset.logoUrl = "";
                 input.dataset.symbol = "";
@@ -110,9 +113,11 @@
             if (!currentTicker || (validatedTicker && validatedTicker !== currentTicker)) {
                 input.dataset.validatedTicker = "";
                 input.dataset.validatedKnown = "";
+                input.dataset.unknown = "";
             }
             if (!currentTicker || (pendingTicker && pendingTicker !== currentTicker)) {
                 input.dataset.validationTicker = "";
+                setTickerValidationPending(input, false);
             }
             if (!currentTicker) {
                 input.dataset.unknown = "";
@@ -123,9 +128,10 @@
 
         const rememberValidatedTicker = (input, ticker, isKnown) => {
             if (!input) return;
+            input.dataset.unresolvedTicker = "";
             input.dataset.validatedTicker = ticker || "";
             input.dataset.validatedKnown = isKnown ? "1" : "0";
-            if (ticker) tickerValidationCache.set(ticker, isKnown);
+            if (ticker && isKnown) tickerValidationCache.set(ticker, true);
         };
 
         const seedTickerValidationState = () => {
@@ -140,6 +146,7 @@
             });
         };
 
+        // Null means discovery is inconclusive; the comparison must resolve actual data availability.
         const validateTickerExistence = async (input, {preferFresh = false} = {}) => {
             if (!input) return false;
             const value = syncTickerIdentityState(input, sanitizeTicker(input.value.trim()));
@@ -186,29 +193,35 @@
                 return isKnown;
             }
 
+            if (!preferFresh && input.dataset.unresolvedTicker === value) return null;
+
+            const keepUnresolved = () => {
+                input.dataset.unresolvedTicker = value;
+                input.dataset.unknown = "";
+                setTickerValidationPending(input, false);
+                validateTickerInput(input);
+                return null;
+            };
+            const isCurrentRequest = () => {
+                const currentTicker = sanitizeTicker(input.value.trim());
+                return (input.dataset.validationTicker === value && currentTicker === value)
+                    || (input.dataset.validatedKnown === "1"
+                        && input.dataset.validatedTicker === currentTicker
+                        && tickersExplicitlyEquivalent(currentTicker, value)
+                        && tickersExplicitlyEquivalent(value, currentTicker));
+            };
             setTickerValidationPending(input, true);
             input.dataset.validationTicker = value;
             try {
                 const {payload} = await fetchTickerSearchResults(value, {limit: 5});
+                if (!isCurrentRequest()) return false;
                 const isKnown = Boolean(payload.find((item) => tickersExplicitlyEquivalent(item?.symbol || "", value)));
-                if (input.dataset.validationTicker === value) {
-                    input.dataset.unknown = isKnown ? "" : "1";
-                    if (isKnown) {
-                        applyExactTickerMatch(input, payload, value);
-                    } else {
-                        rememberValidatedTicker(input, value, false);
-                        setTickerValidationPending(input, false);
-                        validateTickerInput(input);
-                    }
-                }
-                return isKnown;
+                if (!isKnown) return keepUnresolved();
+                applyExactTickerMatch(input, payload, value);
+                return true;
             } catch (_error) {
-                if (input.dataset.validationTicker === value) {
-                    rememberValidatedTicker(input, value, input.dataset.unknown !== "1");
-                    setTickerValidationPending(input, false);
-                    validateTickerInput(input);
-                }
-                return input.dataset.unknown !== "1";
+                if (!isCurrentRequest()) return false;
+                return keepUnresolved();
             }
         };
 
@@ -219,7 +232,7 @@
             return results.every((item, index) => {
                 const input = inputs[index];
                 if (!sanitizeTicker(input.value.trim())) return !input.required;
-                return item && input.checkValidity() && input.dataset.unknown !== "1";
+                return item !== false && input.checkValidity() && input.dataset.unknown !== "1";
             });
         };
 
@@ -1092,7 +1105,7 @@
             const querySuggestions = async (rawValue, {limit = 5, preserveUnknown = false} = {}) => {
                 const queryValue = sanitizeTicker(String(rawValue || "").trim());
                 if (!queryValue) {
-                    if (!preserveUnknown) setUnknown(false);
+                    if (!preserveUnknown) clearUnknown();
                     await showRecentItems();
                     return;
                 }
@@ -1106,24 +1119,19 @@
                         || sanitizeTicker(input.value.trim()) !== queryValue
                     ) return;
                     if (!Array.isArray(payload) || !payload.length) {
-                        if (!preserveUnknown) setUnknown(true);
                         closePanel();
                         return;
                     }
                     if (!preserveUnknown) {
-                        const exactMatch = Boolean(applyExactTickerMatch(input, payload, queryValue));
-                        tickerValidationCache.set(queryValue, exactMatch);
-                        input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
-                        validateTickerInput(input);
+                        applyExactTickerMatch(input, payload, queryValue);
                     }
                     renderItems(payload);
                 } catch (_error) {
                     closePanel();
                 }
             };
-            const setUnknown = (flag) => {
-                input.dataset.unknown = flag ? "1" : "";
-                if (flag && input.value.trim()) tickerValidationCache.set(sanitizeTicker(input.value.trim()), false);
+            const clearUnknown = () => {
+                input.dataset.unknown = "";
                 validateTickerInput(input);
             };
             const syncActiveSuggestion = () => {
@@ -1190,7 +1198,7 @@
                     closePanel();
                     return;
                 }
-                setUnknown(false);
+                clearUnknown();
                 const groups = [
                     {key: "recent", title: "Recent"},
                     {key: "local", title: "Local"},
@@ -1246,6 +1254,7 @@
                 if (isPortfolioView) requestWorkspaceChartTransition("ticker-edit");
                 else if (!(isBacktestView || isDcaView)) clearWorkspaceChartTransitionRequest();
                 hideTickerValidationTooltip(input);
+                input.dataset.unknown = "";
                 syncTickerIdentityState(input, sanitizeTicker(input.value.trim()));
                 syncTickerInputDecoration(input);
                 syncOneDayExtendedHoursSwitch();
@@ -1257,7 +1266,7 @@
                         window.clearTimeout(autocompleteTimer);
                         autocompleteTimer = 0;
                     }
-                    setUnknown(false);
+                    clearUnknown();
                     await showRecentItems();
                     return;
                 }
@@ -1285,16 +1294,12 @@
                             requestId,
                         });
                         if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
-                        if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
                         if (!payload.length) {
-                            setUnknown(true);
                             closePanel();
                             return;
                         }
-                        const exactMatch = Boolean(applyExactTickerMatch(input, payload, query));
-                        if (query) tickerValidationCache.set(query, exactMatch);
-                        input.dataset.unknown = exactMatch ? "" : input.dataset.unknown;
-                        validateTickerInput(input);
+                        // Suggestions can be incomplete; only an exact match confirms a ticker.
+                        applyExactTickerMatch(input, payload, query);
                         renderItems(payload);
                     } catch (error) {
                         reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search request failed", {
@@ -1341,7 +1346,7 @@
                     await querySuggestions(input.value.trim(), {preserveUnknown: true});
                     return;
                 }
-                setUnknown(false);
+                clearUnknown();
                 await showRecentItems();
             });
             input.addEventListener("click", async () => {
@@ -1352,14 +1357,14 @@
                     await querySuggestions(input.value.trim(), {preserveUnknown: true});
                     return;
                 }
-                setUnknown(false);
+                clearUnknown();
                 await showRecentItems();
             });
             input.addEventListener("blur", () => {
                 window.setTimeout(closePanel, 120);
                 if (input.dataset.composing === "1") return;
-                void validateTickerExistence(input, {preferFresh: true}).then((isKnown) => {
-                    if (isKnown) finalizeTickerLoad("ticker-change");
+                void validateTickerExistence(input, {preferFresh: true}).then((result) => {
+                    if (result !== false) finalizeTickerLoad("ticker-change");
                 });
             });
             input.addEventListener("keydown", (event) => {
