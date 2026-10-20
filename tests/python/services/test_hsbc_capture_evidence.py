@@ -1,10 +1,12 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
 import hashlib
 import base64
+from copy import deepcopy
+from decimal import Decimal
 
 import pytest
 
@@ -272,6 +274,122 @@ def test_composite_usd_coverage_is_not_rejected_by_later_hkd_posting():
     )
     assert p["summary"]["cash_ledger_balance_as_of"] == "2026-07-13"
     assert p["summary"]["hsbc_snapshot"]["cash_latest_post_date"] == "2026-07-13"
+
+
+@pytest.fixture
+def composite_with_older_unsettled_sell(monkeypatch):
+    monkeypatch.setattr(
+        investment_import, "_load_local_private_investment_evidence", lambda: {}
+    )
+    portfolio, orders, _ = (
+        InvestmentImportFixtureMixin._synthetic_hsbc_paste_snapshot()
+    )
+    portfolio = portfolio.replace("DRAM", "ALFA").replace(
+        "ROUNDHILL MEMORY", "ANONYMOUS FUND"
+    )
+    orders = orders.replace("DRAM", "ALFA").replace(
+        "ROUNDHILL MEMORY", "ANONYMOUS FUND"
+    )
+    existing = reconciliation.build_investment_payload_from_hsbc_pasted_text(
+        portfolio_text=portfolio,
+        order_status_text=orders.replace("14 Jul 2026 U.S. ET", "13 Jul 2026 U.S. ET"),
+        cash_account_text=_cash(
+            [("12 Jul 2026", "CREDIT INTEREST", "1000.00", "1000.00")],
+            balance="1000.00",
+        ),
+    )
+    incoming = reconciliation.build_investment_payload_from_hsbc_pasted_text(
+        portfolio_text=portfolio,
+        order_status_text=orders.replace("S-1", "P-2").replace("Sell", "Buy"),
+        cash_account_text=_cash(
+            [
+                ("15 Jul 2026", "REF S1001 SEC", "0.01", "1062.48"),
+                ("15 Jul 2026", "REF S1001 SEC", "62.49", "1062.49"),
+                ("12 Jul 2026", "CREDIT INTEREST", "1000.00", "1000.00"),
+            ],
+            balance="1062.48",
+        ),
+    )
+    return existing, incoming
+
+
+def test_composite_cash_settles_older_order_absent_from_visible_order_page(
+    composite_with_older_unsettled_sell,
+):
+    existing, incoming = composite_with_older_unsettled_sell
+    assert all(
+        row.get("source", {}).get("order_id") != "S-1"
+        for row in incoming["transactions"]
+    )
+    evidence = incoming["hsbc_cash_settlement_evidence"]
+    assert len(evidence) == 2
+    assert all(row["exclude_from_holdings_replay"] for row in evidence)
+
+    merged = investment_import.merge_investment_payloads(existing, incoming)
+    (sell,) = [row for row in merged["transactions"] if row["type"] == "sell"]
+    source = sell["source"]
+    assert source["execution_price_status"] == "final_settled"
+    assert not source.get("cash_replay_pending_settlement")
+    assert Decimal(source["cash_settlement_amount_raw"]) == Decimal("62.49")
+    assert Decimal(sell["commission_raw"]) == Decimal("-0.01")
+    assert Decimal(source["cash_settlement_balance_after_raw"]) == Decimal("1062.48")
+    assert sum(
+        Decimal(posting["amount_raw"])
+        for posting in source["cash_settlement_postings"]
+    ) == Decimal("62.48")
+    summary = merged["broker_summaries"]["hsbc"]
+    assert summary["hsbc_pending_settlement_order_count"] == 1
+    assert Decimal(summary["hsbc_pending_settlement_cash"]) == Decimal("-61")
+    assert Decimal(summary["hsbc_broker_cash_estimate"]) == Decimal("1001.48")
+    assert len([row for row in merged["transactions"] if row["type"] == "buy"]) == 1
+
+    repeated = investment_import.merge_investment_payloads(merged, incoming)
+    assert len(repeated["transactions"]) == len(merged["transactions"])
+    assert [
+        row for row in repeated["transactions"] if row["type"] in {"buy", "sell"}
+    ] == [row for row in merged["transactions"] if row["type"] in {"buy", "sell"}]
+    assert [row["net_amount_raw"] for row in repeated["transactions"]] == [
+        row["net_amount_raw"] for row in merged["transactions"]
+    ]
+    assert repeated["hsbc_cash_settlement_evidence"] == merged[
+        "hsbc_cash_settlement_evidence"
+    ]
+    repeated_summary = repeated["broker_summaries"]["hsbc"]
+    for key in (
+        "hsbc_pending_settlement_order_count",
+        "hsbc_pending_settlement_cash",
+        "hsbc_broker_cash_estimate",
+    ):
+        assert repeated_summary[key] == summary[key]
+
+
+@pytest.mark.parametrize("invalidity", ["wrong_account", "ambiguous_principal"])
+def test_composite_older_order_settlement_rejects_unowned_or_ambiguous_cash(
+    composite_with_older_unsettled_sell,
+    invalidity,
+):
+    existing, incoming = composite_with_older_unsettled_sell
+    evidence = incoming["hsbc_cash_settlement_evidence"]
+    if invalidity == "wrong_account":
+        for row in evidence:
+            row["account"] = "000-888888-888"
+            row["source"]["account_number"] = "000-888888-888"
+    else:
+        principal = deepcopy(next(row for row in evidence if row["type"] == "deposit"))
+        principal["source"].update(
+            source_sequence_sha256="a" * 64,
+            source_file_sha256="a" * 64,
+        )
+        evidence.append(principal)
+
+    merged = investment_import.merge_investment_payloads(existing, incoming)
+    (sell,) = [row for row in merged["transactions"] if row["type"] == "sell"]
+    assert sell["source"]["cash_replay_pending_settlement"] is True
+    assert not sell["source"].get("cash_settlement_postings")
+    assert Decimal(sell["net_amount_raw"]) == Decimal("61")
+    assert merged["broker_summaries"]["hsbc"][
+        "hsbc_pending_settlement_order_count"
+    ] == 2
 
 
 def _statement_text(include_usd):

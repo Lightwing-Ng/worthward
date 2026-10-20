@@ -1,6 +1,8 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.6.1
+Code version: v0.7.0
+- Fixed: Composite cash pastes retain hidden settlement postings so merges can
+  reconcile older orders absent from the current visible Order Status page.
 - Fixed: Settlement repair uses bounded identity-matched fees and shared staged
   economics, reports skip reasons, and falls back to usable pasted evidence
   without allowing another order owner to reuse the same reference.
@@ -934,6 +936,11 @@ def build_investment_payload_from_hsbc_pasted_text(
             account=account,
             snapshot_report=snapshot_report,
         ),
+        "hsbc_cash_settlement_evidence": [
+            deepcopy(record)
+            for record in cash_records
+            if record.get("exclude_from_holdings_replay")
+        ],
         "transactions": transactions,
     }
     payload["summary"]["position_snapshot_authoritative"] = True
