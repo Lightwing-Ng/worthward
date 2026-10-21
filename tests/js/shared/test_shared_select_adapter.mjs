@@ -1,4 +1,4 @@
-/* Shared select adapter state-mirroring tests. Code version: v1.0.2 */
+/* Shared select adapter state-mirroring tests. Code version: v1.1.0 */
 
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -231,4 +231,32 @@ test('commits an empty value to exactly one native option', () => {
     assert.equal(duplicateEmptyOption.getAttribute('selected'), null);
     assert.equal(readyOption.selected, false);
     assert.equal(readyOption.defaultSelected, false);
+});
+
+
+test('updates optional selected descriptions and clears them for options without metadata', () => {
+    const adapter = createAdapter();
+    const {field, select, trigger} = fixture();
+    const description = new FakeHTMLElement();
+    trigger.querySelector = (selector) => selector === '[data-shared-select-trigger-description]'
+        ? description : null;
+    select.options[0].dataset.description = 'First company';
+    select.options[1].dataset.description = 'Second company';
+
+    adapter.syncSharedSelectTriggerLabel(field);
+    assert.equal(description.textContent, 'First company');
+    assert.equal(description.title, 'First company');
+    assert.equal(description.hidden, false);
+
+    select.value = select.options[1].value;
+    adapter.syncSharedSelectTriggerLabel(field);
+    assert.equal(description.textContent, 'Second company');
+    assert.equal(description.title, 'Second company');
+    assert.equal(description.hidden, false);
+
+    select.value = select.options[2].value;
+    adapter.syncSharedSelectTriggerLabel(field);
+    assert.equal(description.textContent, '');
+    assert.equal(description.title, '');
+    assert.equal(description.hidden, true);
 });

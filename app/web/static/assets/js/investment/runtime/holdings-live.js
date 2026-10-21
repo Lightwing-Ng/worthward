@@ -1,7 +1,7 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
  * - Fixed: The Stock-details ticker selector preserves the Holdings order.
  * - Added: The shared ticker selector includes current and historical holdings.
  * - Fixed: Unavailable live labels do not expose a numeric zero.
@@ -1355,7 +1355,7 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         runtime.investmentStockDetailsPanel.innerHTML = `
             <div class="investment-stock-details-overview">
                 <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
-                    <div class="backtest-shared-select-field investment-stock-ticker-field" data-shared-select-field data-shared-select-kind="investment-stock-ticker">
+                    <div class="backtest-shared-select-field investment-stock-ticker-field" data-shared-select-field data-shared-select-kind="investment-stock-ticker" data-shared-select-variant="rounded">
                         <select id="investment_stock_ticker" class="backtest-shared-select-native" data-investment-stock-ticker-select hidden aria-hidden="true" tabindex="-1">
                             ${renderInvestmentStockTickerOptions(tickerProfiles, activeTicker)}
                         </select>
@@ -1363,12 +1363,14 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
                             <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger investment-stock-ticker-trigger"
                                 data-shared-select-trigger data-shared-select-title="Choose a ticker" aria-haspopup="listbox" aria-expanded="false"
                                 aria-controls="investment_stock_ticker_dropdown" aria-label="Choose a ticker: ${runtime.escapeHtml(displayTicker)}">
-                                <span class="ticker-identity-row">
-                                    ${identityLogoMarkup}
-                                    ${identityLogoPlaceholderMarkup}
-                                    <span class="ticker-identity-copy">
-                                        <span class="suggestion-symbol ticker-identity-symbol trade-strategy-trigger-label" data-shared-select-trigger-label>${runtime.escapeHtml(displayTicker)}</span>
-                                        ${runtime.renderInvestmentTickerIdentityNameHtml(companyName)}
+                                <span class="ticker-identity-row backtest-shared-select-content">
+                                    <span class="trade-strategy-dropdown-media-slot">
+                                        ${identityLogoMarkup}
+                                        ${identityLogoPlaceholderMarkup}
+                                    </span>
+                                    <span class="ticker-identity-copy trade-strategy-dropdown-copy">
+                                        <span class="ticker-identity-symbol trade-strategy-dropdown-title trade-strategy-trigger-label" data-shared-select-trigger-label>${runtime.escapeHtml(displayTicker)}</span>
+                                        <span class="ticker-identity-name trade-strategy-dropdown-desc" data-shared-select-trigger-description title="${runtime.escapeHtml(companyName)}"${companyName ? '' : ' hidden'}>${runtime.escapeHtml(companyName)}</span>
                                     </span>
                                 </span>
                             </button>
