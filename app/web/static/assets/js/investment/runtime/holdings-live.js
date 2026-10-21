@@ -1,7 +1,8 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: The Stock-details ticker selector preserves the Holdings order.
  * - Added: The shared ticker selector includes current and historical holdings.
  * - Fixed: Unavailable live labels do not expose a numeric zero.
  * - Fixed: Current Holdings includes authoritative positions-only accounts.
@@ -1075,8 +1076,6 @@ function renderInvestmentStockTickerOptions(tickerProfiles, activeTicker) {
             }
         });
         return Array.from(tickersByCanonical.values())
-            .sort((left, right) => runtime.formatInvestmentTickerForDisplay(left)
-                .localeCompare(runtime.formatInvestmentTickerForDisplay(right), 'en-US', {numeric: true}))
             .map((ticker) => {
                 const displayTicker = runtime.formatInvestmentTickerForDisplay(ticker);
                 const companyName = runtime.resolveInvestmentTickerCompanyName(tickerProfiles, ticker);

@@ -1,4 +1,4 @@
-/* Code version: v1.2.6 */
+/* Code version: v1.2.7 */
 import {
     expect,
     test,
@@ -343,7 +343,7 @@ for (const viewport of [
         const priceHistoryByTicker = {};
         const appendTransaction = (transaction) => {
             const ledgerNo = transactions.length + 1;
-            const datetime = new Date(Date.UTC(2026, 6, 10, 0, ledgerNo)).toISOString();
+            const datetime = new Date(Date.parse(`${transaction.date}T00:00:00Z`) + ledgerNo * 60_000).toISOString();
             transactions.push({
                 ledger_no: ledgerNo, currency: 'USD', ...transaction,
                 date: datetime.slice(0, 10), datetime,
@@ -360,7 +360,7 @@ for (const viewport of [
             })];
             if (!openTickers.has(ticker)) {
                 ledgerNos.push(appendTransaction({
-                    broker: 'ibkr', date: '2026-07-11', type: 'sell', ticker,
+                    broker: 'ibkr', date: ticker === 'EUV' ? '2026-07-12' : '2026-07-11', type: 'sell', ticker,
                     quantity, price: sellPrice, amount: quantity * sellPrice,
                 }));
             }
@@ -382,6 +382,12 @@ for (const viewport of [
                 realizedPnl: openTickers.has(ticker) ? 0 : quantity * (sellPrice - buyPrice),
                 lastClose,
             });
+        });
+        transactions.sort((left, right) => left.datetime.localeCompare(right.datetime));
+        transactions.forEach((transaction, index) => { transaction.ledger_no = index + 1; });
+        expectedByTicker.forEach((expected, ticker) => {
+            expected.ledgerNos = transactions.filter((transaction) => transaction.ticker === ticker)
+                .map((transaction) => transaction.ledger_no);
         });
         await mockInvestmentReadApis(page, {
             brokers: ['ibkr', 'hsbc'],
@@ -439,6 +445,9 @@ for (const viewport of [
             expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentTimeOrigin);
         };
         await expectSelectedTicker('QQQI');
+        const holdingsTickerOrder = await page.locator('#investment_holdings_panel [data-table-scroll] [data-table-body] tr[data-investment-holdings-ticker]')
+            .evaluateAll((rows) => rows.map((row) => row.dataset.investmentHoldingsTicker));
+        expect(holdingsTickerOrder.slice(0, 5)).toEqual(['MSFT', 'DRAM', 'AAPL', 'QQQI', 'EUV']);
 
         await trigger.click();
         let menu = await currentMenu();
@@ -447,7 +456,7 @@ for (const viewport of [
         await expect(options).toHaveCount(48);
         const optionValues = await options.evaluateAll((elements) => elements.map((element) => element.dataset.value));
         expect(new Set(optionValues).size).toBe(48);
-        expect(optionValues).toEqual([...tickers].sort((left, right) => left.localeCompare(right, 'en-US', {numeric: true})));
+        expect(optionValues).toEqual(holdingsTickerOrder);
         openTickers.forEach((ticker) => expect(optionValues).toContain(ticker));
         await expect(options.filter({hasText: /^QQQI/})).toHaveCount(1);
         const menuGeometry = await menu.evaluate((element) => {
