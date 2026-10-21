@@ -1,4 +1,4 @@
-{# Code version: v1.8.0 #}
+{# Code version: v1.9.0 #}
 {% from "_macros.html" import render_style_token_table with context %}
 {% from "_macros.html" import render_segmented_control with context %}
     <section class="style-token-shell" data-style-token-shell>
@@ -431,6 +431,32 @@
                                     </button>
                                     {% endfor %}
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% elif row.sample_kind == "shared-select-rounded" %}
+                    <div class="style-token-shared-select-shell" data-style-token-shared-select-rounded-demo>
+                        <div class="field backtest-shared-select-field" data-shared-select-field data-shared-select-kind="style-token-demo" data-shared-select-variant="rounded">
+                            <label class="sr-only" for="style_token_shared_select_rounded">{{ translate_ui(row.sample_title) }}</label>
+                            <div class="trade-strategy-row backtest-shared-select-row">
+                                <select id="style_token_shared_select_rounded" class="trade-strategy-native-select backtest-shared-select-native" hidden aria-hidden="true" tabindex="-1">
+                                    {% for option in row.sample_options %}
+                                    <option value="{{ option.value }}" data-description="{{ option.description }}" data-icon-url="/market-store/logos/{{ option.value }}.svg" data-icon-alt="{{ option.value }} logo"{% if option.value == row.sample_value %} selected{% endif %}>{{ option.label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger" data-shared-select-trigger aria-haspopup="listbox" aria-expanded="false" aria-controls="style_token_shared_select_rounded_menu" aria-label="{{ translate_ui(row.sample_title) }}: {{ row.sample_button }}">
+                                    <span class="backtest-shared-select-content">
+                                        <span class="trade-strategy-dropdown-media-slot">
+                                            <span class="trade-strategy-dropdown-media-placeholder" data-shared-select-trigger-placeholder aria-hidden="true" hidden></span>
+                                            <img class="trade-strategy-dropdown-media" src="/market-store/logos/GOOGL.svg" alt="GOOGL logo" data-shared-select-trigger-logo>
+                                        </span>
+                                        <span class="trade-strategy-dropdown-copy">
+                                            <span class="trade-strategy-dropdown-title trade-strategy-trigger-label" data-shared-select-trigger-label>{{ row.sample_button }}</span>
+                                            <span class="trade-strategy-dropdown-desc" data-shared-select-trigger-description>Alphabet Inc.</span>
+                                        </span>
+                                    </span>
+                                </button>
+                                <div id="style_token_shared_select_rounded_menu" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" hidden aria-label="{{ translate_ui(row.sample_title) }}"></div>
                             </div>
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-"""Focused Shared select presentation contract tests. Code version: v1.1.3."""
+"""Focused Shared select presentation contract tests. Code version: v1.1.4."""
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ def test_shared_select_tokens_publish_material_geometry_and_chevron_contract() -
         "--shared-select-shadow-hover: var(--frosted-glass-shadow-hover);",
         "--shared-select-blur: var(--frosted-glass-blur);",
         "--shared-select-control-height: 30px;",
+        "--shared-select-rounded-radius: 10px;",
         "--shared-select-trigger-padding-inline-end: 36px;",
         "--shared-select-dropdown-max-width: var(--layout-control-width);",
         "--shared-select-option-min-height: 36px;",
@@ -48,6 +49,7 @@ def test_shared_select_tokens_publish_material_geometry_and_chevron_contract() -
         assert declaration in tokens_css
 
     for token_name in (
+        "--shared-select-rounded-radius",
         "--shared-select-trigger-material",
         "--shared-select-trigger-material-hover",
         "--shared-select-dropdown-material",

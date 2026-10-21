@@ -1,6 +1,6 @@
 """Pure Settings design-token presentation builders.
 
-Code version: v1.37.2
+Code version: v1.38.0
 """
 
 from __future__ import annotations
@@ -468,6 +468,30 @@ def build_style_token_rows(
                 {
                     "name": "Shared select filter",
                     "target_id": style_token_id("Shared select filter"),
+                },
+            ],
+        },
+        {
+            "id": style_token_id("Shared select rounded rectangle"),
+            "name": "Shared select rounded rectangle",
+            "sample_kind": "shared-select-rounded",
+            "sample_title": "Choose a ticker",
+            "sample_copy": "",
+            "sample_button": "GOOGL",
+            "sample_value": "GOOGL",
+            "sample_options": [
+                {"value": "GOOGL", "label": "GOOGL", "description": "Alphabet Inc."},
+                {"value": "AAPL", "label": "AAPL", "description": "Apple Inc."},
+            ],
+            "tokens": [px_token("--shared-select-rounded-radius", 10, 0)],
+            "related_styles": [
+                {
+                    "name": "Shared select filter",
+                    "target_id": style_token_id("Shared select filter"),
+                },
+                {
+                    "name": "Shared select dropdown",
+                    "target_id": style_token_id("Shared select dropdown"),
                 },
             ],
         },

@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.3.1`
+Documentation version: `v1.3.2`
 
 This is the public entrypoint for shared visual and interaction work. A private
 sibling synchronization ledger may exist in a maintainer checkout, but it is not
@@ -61,14 +61,26 @@ using `aria-haspopup="listbox"`, `aria-expanded`, and `aria-controls`; its menu
 uses `role="listbox"`, and each focusable choice uses `role="option"` plus
 `aria-selected`. The adapter mirrors the native select's disabled state to the
 trigger and field, and mirrors each native option's hidden or disabled state to
-its enhanced option. The trigger is 30 px high, options are at least 36 px high, and
-an in-flow dropdown stays within both its parent and the 384 px shared control
-width. The trigger and standard dropdown use the semantic Shared select Frosted
+its enhanced option. The default pill trigger is 30 px high, and options are at
+least 36 px high. An in-flow dropdown stays within both its parent and the
+384 px shared control width. The trigger and standard dropdown use the semantic Shared select Frosted
 Glass material tokens. The closed chevron points right and the open chevron points
 down through the shared -90-degree and zero-degree rotation tokens. The menu uses
 the approved 62%-opacity theme-adaptive base and 56%-to-16% highlight gradient;
 `--shared-select-dropdown-surface-opacity` owns its opacity without changing the
 general Frosted Glass or trigger material. Reduced-motion behavior is preserved.
+
+The opt-in `data-shared-select-variant="rounded"` field keeps that same adapter,
+material, and interaction contract while giving its trigger a 10 px
+`--shared-select-rounded-radius` and content-driven `height: auto`. Its padding
+and minimum height reuse the option geometry tokens. A selected identity reuses
+the option content's 20 px logo and title/description metrics, including wrapping
+within the available width. Different trigger and menu widths can produce
+different intrinsic heights; never impose a fixed-height equality between them.
+Stock details uses this variant, and Style tokens catalogs it as
+`Shared select rounded rectangle` beside the unchanged standard Period specimen.
+AgenticContext and neoMe remain pending consumers until their adaptations and
+verification are recorded in the central ledger.
 
 Product-owned portaled selectors keep their existing viewport-aware 420 px cap.
 That exception includes Strategy, investment import broker, investment transfer,
