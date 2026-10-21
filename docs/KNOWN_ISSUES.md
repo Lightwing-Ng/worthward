@@ -1,5 +1,11 @@
 # Known issues and operating constraints
 
+Stock details ticker order, 21 Oct 2026: the ticker selector preserves the
+Holdings summary order instead of applying an alphabetical sort. Open positions
+appear first in descending absolute market value, followed by closed positions
+in descending close-date order with the existing ticker tie-breaker. Canonical
+ticker deduplication and the selected ticker's market-suffix alias are retained.
+
 Cold ticker discovery and first submission, 20 Oct 2026: shared workspace
 validation distinguishes confirmed symbols, malformed or duplicate input,
 and unresolved discovery. Empty or nonexact suggestions and lookup failures
@@ -48,7 +54,7 @@ sidebar scale animation from leaving a stale header offset after resizing.
 Stock details ticker selector, 19 Oct 2026: the identity block uses the
 existing Shared select control to switch between all current and historical
 holdings in the loaded ledger. Candidates are deduplicated by canonical ticker
-and ordered by display ticker; the current selection retains its cached ticker
+and follow the Holdings order; the current selection retains its cached ticker
 identifier. Options show the ticker, company name, and available logo. The
 viewport-bounded menu uses the existing keyboard controller and overlay host
 so the chart panel cannot clip it. Selecting a ticker updates the existing
@@ -1145,7 +1151,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.281.3`
+Documentation version: `v1.281.4`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
