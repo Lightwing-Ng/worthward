@@ -1,5 +1,17 @@
 # Known issues and operating constraints
 
+HSBC Red statement reconciliation and rewards, 21 Oct 2026: the local
+`scripts/reconcile_hsbc_credit_card.py` maintenance entrypoint previews PDF/CSV
+bundles and saves only through the separate card-ledger service after an
+explicit `--commit` and backup. The browser clipboard input still accepts
+account-page text only. File evidence retains raw bytes and explicit account
+scope, statement balance and RewardCash continuity, separate posting dates,
+and cross-source aliases. Dated statement credit balances must not be
+interpreted as unsigned liabilities or replace a selected webpage snapshot.
+Metrics now includes posted RewardCash in Rewards, separately from KOL
+rewards. This disclosure does not add investment cash, equity, or P&L, and
+missing card or conversion evidence remains unavailable.
+
 Stock details ticker order, 21 Oct 2026: the ticker selector preserves the
 Holdings summary order instead of applying an alphabetical sort. Open positions
 appear first in descending absolute market value, followed by closed positions
@@ -120,8 +132,8 @@ navigation and payment descriptions in a cash page remain valid.
 HSBC credit-card import, 14 Oct 2026: the first HSBC Copy/paste account field
 accepts the full English HKD card-page text and keeps card liability,
 repayments, RewardCash offsets,
-and pending authorizations in a separate card ledger. It does not accept
-credit-card PDF/CSV files or infer a complete monthly statement from the visible
+and pending authorizations in a separate card ledger. The browser input does
+not accept credit-card PDF/CSV files or infer a complete monthly statement from the visible
 transaction window. Unknown or ambiguous copied rows block import rather than
 guessing their direction. Pending matching cannot establish a cancellation
 from an absent row. Same-date identities can be promoted automatically;
@@ -1151,7 +1163,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.281.4`
+Documentation version: `v1.282.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

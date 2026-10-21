@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
+ * - Added: Read-only RewardCash appears only in the selected Metrics rewards card.
  * - Changed: Shared HSBC account input enables only its detected import path.
  * - Fixed: Pending-trade Metrics uses current multicurrency Total equity.
  * - Changed: Import height reads the canonical responsive circular-action size.
@@ -432,6 +433,9 @@ function renderInvestmentMetricsPanel({
                 mapInvestmentMetricRowsToGlobalLedgerNos(resolvedHoldingsSummaryMetrics, scopedTransactions),
                 mapInvestmentMetricRowsToGlobalLedgerNos(resolvedBrokerBenefitMetrics, scopedTransactions),
             ];
+        metricsToRender[2] = runtime.getMetricsRewardDisclosureMetrics(
+            metricsToRender[2], scopedTransactions, {brokerCode: selectedBrokerCode},
+        );
         runtime.removeInvestmentMetricTooltips();
         metricsPanel.innerHTML = renderFundingMetricCards(
             metricsToRender[0],

@@ -1,6 +1,7 @@
 """Verify the credit-card HTTP boundary with independent temporary ledgers.
 
-Code version: v1.0.1
+Code version: v1.0.2
+- Added: Committed card rewards are read back for immediate Metrics refresh.
 - Fixed: Legacy mode rejection directs users to the unified account-page field.
 """
 
@@ -80,6 +81,10 @@ def test_credit_card_import_round_trip_and_repeat_keep_investment_separate(card_
     first = client.post("/api/credit-cards/hsbc/import", json=request, headers=headers)
     assert first.status_code == 200
     assert first.get_json()["committed"]
+    rewards = first.get_json()["credit_card_rewards"]
+    assert rewards["status"] == "complete"
+    assert sorted(row["amount"] for row in rewards["transactions"]) == ["15.00", "25.00"]
+    assert all(set(row) == {"id", "date", "amount", "currency"} for row in rewards["transactions"])
     before = ledger.read_bytes()
     replay = client.post("/api/credit-cards/hsbc/import", json=request, headers=headers)
     assert replay.status_code == 200

@@ -1,11 +1,16 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.2.0
-- Changed: Reject non-investment HSBC import modes and direct credit-card
-  requests to the unified Copy/paste account-page field and explicit Preview.
+Code version: v0.3.0
+- Added: Fresh card rewards disclosure outside the investment ledger cache.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+
+from app.web.runtime_domains.investment.credit_cards import (
+    read_credit_card_reward_payload,
+)
 
 
 def build_investment_import_context(context: dict[str, object]) -> dict[str, object]:
@@ -125,6 +130,18 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
 
     write_investment_transactions_cache = context["write_investment_transactions_cache"]
 
+    def with_credit_card_rewards(payload):
+        return {
+            **payload,
+            "credit_card_rewards": read_credit_card_reward_payload(
+                context.get(
+                    "CREDIT_CARD_STORE_PATH",
+                    Path(INVESTMENT_STORE_PATH).parent / "credit_cards.json",
+                ),
+                build_investment_fx_rate_history_payload,
+            ),
+        }
+
     def investment_page():
         query_string = request.query_string.decode().strip()
         target_path = build_trade_path("investment")
@@ -146,7 +163,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
         if not investment_store_exists(INVESTMENT_STORE_PATH):
             invalidate_investment_transactions_cache()
             response = jsonify(
-                {
+                with_credit_card_rewards({
                     "transactions": [],
                     "ticker_profiles": {},
                     "price_history_by_ticker": {},
@@ -161,7 +178,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                     "realtime_quotes": [],
                     "section_freshness": build_investment_section_freshness({}),
                     "success": True,
-                }
+                })
             )
             report_fetch_abort_debug_event(
                 "E",
@@ -211,7 +228,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                     "status": "hit",
                     "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
                 }
-                response = jsonify(cached_data)
+                response = jsonify(with_credit_card_rewards(cached_data))
                 report_fetch_abort_debug_event(
                     "E",
                     "runtime.py:investment_get_transactions",
@@ -304,7 +321,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                             price_store_fingerprints=price_store_fingerprints,
                             payload=cacheable_data,
                         )
-            response = jsonify(data)
+            response = jsonify(with_credit_card_rewards(data))
             report_fetch_abort_debug_event(
                 "E",
                 "runtime.py:investment_get_transactions",

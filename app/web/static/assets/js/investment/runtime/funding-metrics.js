@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.2.2
+ * Code version: v1.3.0
+ * - Added: Metrics-only card RewardCash disclosure without changing investment P&L.
  * - Fixed: Current broker metrics request their explicit snapshot scope.
  * - Changed: Holdings metrics expose the ticker summaries behind their realized
  *   total so historical chart hover can reuse the same attribution.
@@ -838,6 +839,68 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         };
     }
 
+function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {brokerCode = 'all'} = {}) {
+        const metrics = brokerBenefitMetrics && typeof brokerBenefitMetrics === 'object'
+            ? brokerBenefitMetrics : {};
+        const details = [...(Array.isArray(metrics.couponAndCashRewardDetails)
+            ? metrics.couponAndCashRewardDetails : [])];
+        let income = Number(metrics.couponAndCashRewardIncome ?? 0);
+        let unavailable = !Number.isFinite(income);
+        let creditCardRewardIncome = 0;
+        const normalizedBroker = String(brokerCode || 'all').trim().toLowerCase();
+        if (normalizedBroker === 'all' || normalizedBroker === 'hsbc') {
+            const rewards = window.WORTHWARD_INVESTMENT_DATA?.credit_card_rewards;
+            if (rewards?.status !== 'complete' || !Array.isArray(rewards?.transactions)) {
+                unavailable = true;
+                details.push({label: 'RewardCash', value: 'Unavailable'});
+            } else {
+                let cardUnavailable = false;
+                const baseCurrency = runtime.getInvestmentBaseCurrency();
+                const fxTimeline = runtime.buildInvestmentFxRateTimeline(transactions, baseCurrency);
+                const cardFxTimeline = {...fxTimeline, ratesByCurrency: {...fxTimeline.ratesByCurrency}};
+                Object.entries(rewards.fx_rate_history_by_currency || {}).forEach(([currency, history]) => {
+                    const values = {...(history?.values || {}), ...(fxTimeline.ratesByCurrency?.[currency]?.values || {})};
+                    cardFxTimeline.ratesByCurrency[currency] = {dates: Object.keys(values).sort(), values};
+                });
+                const nativeTotals = new Map();
+                const seenIds = new Set();
+                rewards.transactions.forEach((row) => {
+                    if (seenIds.has(row?.id)) return;
+                    const amount = Number(row?.amount);
+                    if (!row?.id || row.currency !== 'HKD' || !(amount > 0)
+                        || !Number.isFinite(amount) || !/^\d{4}-\d{2}-\d{2}$/.test(row?.date || '')) {
+                        cardUnavailable = true;
+                        return;
+                    }
+                    seenIds.add(row.id);
+                    nativeTotals.set(row.currency, (nativeTotals.get(row.currency) || 0) + amount);
+                    const converted = runtime.convertAmountToBaseCurrency(
+                        amount, row.currency, row.date, cardFxTimeline, baseCurrency,
+                    );
+                    if (!Number.isFinite(converted)) cardUnavailable = true;
+                    creditCardRewardIncome += converted;
+                });
+                nativeTotals.forEach((amount, currency) => details.push({
+                    label: `RewardCash · ${currency}`,
+                    value: runtime.formatAmountWithCurrency(amount, currency, {showUsdSymbol: false}),
+                    valueClass: getSignedMetricClass(amount),
+                }));
+                if (cardUnavailable && nativeTotals.size) {
+                    details.push({label: 'RewardCash conversion', value: 'Unavailable'});
+                }
+                income += creditCardRewardIncome;
+                unavailable = unavailable || cardUnavailable;
+            }
+        }
+        return {
+            ...metrics,
+            rewardDisclosureIncome: unavailable ? NaN : income,
+            rewardDisclosureUnavailable: unavailable,
+            rewardDisclosureDetails: details,
+            creditCardRewardIncome,
+        };
+    }
+
 function renderMetricValueCopy(metric, valueClass) {
         const value = metric?.value || '--';
         if (metric?.liveField) {
@@ -1318,6 +1381,7 @@ function getUsdFundingMetrics(transactions) {
         classifyBrokerBenefitTransaction,
         getStockGrantBenefitMetrics,
         getBrokerBenefitMetrics,
+        getMetricsRewardDisclosureMetrics,
         renderMetricValueCopy,
         formatInvestmentMetricTooltipRowLabel,
         renderMetricValueWithTooltip,

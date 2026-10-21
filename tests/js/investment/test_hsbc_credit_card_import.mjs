@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -66,6 +66,8 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
     const elements = new Map();
     const documentBefore = globalThis.document;
     const fetchBefore = globalThis.fetch;
+    const windowBefore = globalThis.window;
+    globalThis.window = {WORTHWARD_INVESTMENT_DATA: {transactions: [{id: 'investment-kept'}]}};
     globalThis.document = {
         getElementById: (id) => {
             if (!elements.has(id)) elements.set(id, new Element());
@@ -74,7 +76,7 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
         createElement: () => new Element(),
     };
     globalThis.fetch = fetcher;
-    t.after(() => { globalThis.document = documentBefore; globalThis.fetch = fetchBefore; });
+    t.after(() => { globalThis.document = documentBefore; globalThis.fetch = fetchBefore; globalThis.window = windowBefore; });
     const runtime = {
         state: {investmentImportSession: {state: 'ready'}, investmentImportInFlight: false, hsbcPasteValidation: {state: 'idle', ready: false, fieldStatus: {}}},
         mode: 'paste', broker: 'hsbc', HSBC_PASTE_CHUNK_MARKER: CHUNK_MARKER,
@@ -87,6 +89,8 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
         describeInvestmentImportSessionFailure: () => 'Session unavailable.',
         buildInvestmentRequestOptions: (options) => ({...options, headers: {...options.headers, 'X-CSRF-Token': 'test-token'}}),
         syncImportValidationState: () => {},
+        metricRefreshes: 0,
+        renderInvestmentMetricsPanel() { this.metricRefreshes += 1; },
         syncHsbcPasteDisplaySummaries: () => {},
         resetHsbcPasteValidation() { this.state.hsbcPasteValidation = {state: 'idle', ready: false, fieldStatus: {}}; },
         setImportFeedback(message) { this.feedback = message; },
@@ -252,9 +256,10 @@ test('a failed preview retries once on an explicit identical re-paste but never 
 test('commit sends shared card text and digest once, then displays persisted rows and retains drafts', async (t) => {
     const requests = [];
     const savedRow = {...fixture().transactions[0], description: 'Persisted purchase', status: 'posted'};
+    const rewards = {status: 'complete', transactions: [{id: 'reward-fresh', amount: '25.00'}]};
     const {runtime, elements} = setup(t, async (url, options) => {
         requests.push({url, options});
-        return response({...fixture(), merged_transactions: [savedRow]});
+        return response({...fixture(), merged_transactions: [savedRow], credit_card_rewards: rewards});
     });
     runtime.hsbcPortfolioTextInput.value = 'Existing Portfolio';
     runtime.hsbcOrderStatusTextInput.value = 'Existing Order Status';
@@ -273,6 +278,8 @@ test('commit sends shared card text and digest once, then displays persisted row
     assert.equal(elements.get('hsbc_credit_card_results').hidden, false);
     assert.equal(elements.get('hsbc_credit_card_rows').children[0].children[2].textContent, 'Persisted purchase');
     assert.match(elements.get('hsbc_credit_card_status').textContent, /read back/);
+    assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}], credit_card_rewards: rewards});
+    assert.equal(runtime.metricRefreshes, 1);
 });
 
 test('changing shared input during session refresh prevents a captured commit', async (t) => {
@@ -300,13 +307,15 @@ test('new card text entered during a commit previews afterward without another w
     const commit = runtime.importHsbcCreditCard();
     await settle();
     changeInput(runtime, cardPage.replace('4,850.50', '4,000.00'));
-    commitResponse.resolve(response({...fixture(), merged_transactions: []}));
+    commitResponse.resolve(response({...fixture(), merged_transactions: [], credit_card_rewards: {status: 'complete', transactions: []}}));
     await commit;
     await settle();
     assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import', '/api/credit-cards/hsbc/preview']);
     assert.equal(runtime.isHsbcCreditCardReady(), true);
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
     assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
+    assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
+    assert.equal(runtime.metricRefreshes, 0);
 });
 
 test('an uncertain failed commit needs an explicit re-paste and fresh preview before retry', async (t) => {
@@ -322,6 +331,8 @@ test('an uncertain failed commit needs an explicit re-paste and fresh preview be
     await runtime.importHsbcCreditCard();
     await settle();
     assert.equal(urls.length, 2);
+    assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
+    assert.equal(runtime.metricRefreshes, 0);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Paste the page again to preview/);
     runtime.syncHsbcCreditCardInput({retry: true});

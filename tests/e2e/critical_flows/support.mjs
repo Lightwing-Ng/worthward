@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -176,6 +176,7 @@ export const mockInvestmentReadApis = async (page, {
     summary = {},
     brokerSummaries = {},
     positionSnapshot = null,
+    creditCardRewards = {status: 'complete', transactions: [], fx_rate_history_by_currency: {}},
 } = {}) => {
     const readTransactions = () => (
         typeof transactions === 'function' ? transactions() : transactions
@@ -213,6 +214,7 @@ export const mockInvestmentReadApis = async (page, {
                 summary,
                 broker_summaries: brokerSummaries,
                 position_snapshot: positionSnapshot,
+                credit_card_rewards: creditCardRewards,
                 realtime_quotes: readRealtimeQuotes(),
                 section_freshness: {},
             }),

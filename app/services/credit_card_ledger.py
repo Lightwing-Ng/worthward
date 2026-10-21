@@ -1,8 +1,8 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.0.0
-- Added: Read-only previews, conservative pending reconciliation, and locked
-  atomic persistence with immutable, hash-verified source evidence.
+Code version: v1.1.0
+- Added: Atomic PDF/CSV bundle reconciliation with retained original bytes,
+  verified account bindings, dated statements, and exact-date evidence matching.
 """
 
 from __future__ import annotations
@@ -109,6 +109,13 @@ def _validate_transaction(row: Any) -> None:
 def _validate_source(source: Any) -> None:
     if not isinstance(source, dict) or not isinstance(source.get("text"), str):
         raise ValueError("Credit-card source evidence is malformed.")
+    if source.get("format"):
+        from app.services.hsbc_credit_card_files import (
+            parse_hsbc_credit_card_file_source,
+        )
+
+        parse_hsbc_credit_card_file_source(source)
+        return
     if hashlib.sha256(source["text"].encode("utf-8")).hexdigest() != source.get(
         "sha256"
     ):
@@ -131,12 +138,25 @@ def _validate_ledger(ledger: Any) -> dict[str, Any]:
             or source.get("account_id") not in ledger["accounts"]
         ):
             raise ValueError("Invalid credit-card source ownership.")
-        parsed = _parse_capture(source["text"])
+        parsed = _parse_source(source)
         if parsed["account_id"] != source["account_id"]:
             raise ValueError(
                 "Credit-card source account differs from its retained text."
             )
         parsed_sources[digest] = parsed
+    for digest, source in ledger["sources"].items():
+        if source.get("format") != "transaction_csv":
+            continue
+        binding = source.get("binding_source_sha256")
+        if (
+            binding == digest
+            or binding not in parsed_sources
+            or ledger["sources"][binding].get("format") == "transaction_csv"
+            or parsed_sources[binding]["account_id"] != source["account_id"]
+        ):
+            raise ValueError(
+                "The credit-card CSV has no verified full-account binding."
+            )
     aliases: set[str] = set()
     for account_id, account in ledger["accounts"].items():
         if not _HASH.fullmatch(account_id) or not isinstance(account, dict):
@@ -154,13 +174,23 @@ def _validate_ledger(ledger: Any) -> dict[str, Any]:
                 or capture.get("sequence") != sequence
             ):
                 raise ValueError("Invalid credit-card snapshot provenance.")
-            _validate_snapshot(capture.get("snapshot"))
             parsed = parsed_sources[capture["source_sha256"]]
+            if capture.get("snapshot") is not None:
+                _validate_snapshot(capture["snapshot"])
             if capture["snapshot"] != parsed["snapshot"]:
                 raise ValueError("Credit-card snapshot differs from its retained text.")
-        if account["snapshot"] != history[-1]["snapshot"]:
+            if capture.get("snapshot_as_of") != parsed.get("snapshot_as_of"):
+                raise ValueError(
+                    "Credit-card statement date differs from its original file."
+                )
+            if capture.get("statement_summary") != parsed.get("statement_summary"):
+                raise ValueError(
+                    "Credit-card statement summary differs from its original file."
+                )
+        selected = _select_snapshot_capture(history, parsed_sources)
+        if account["snapshot"] != selected["snapshot"]:
             raise ValueError("Credit-card snapshot does not match its latest capture.")
-        latest = parsed_sources[history[-1]["source_sha256"]]
+        latest = parsed_sources[selected["source_sha256"]]
         if any(
             account.get(field) != latest[field]
             for field in ("account_last4", "account_name", "currency")
@@ -198,25 +228,49 @@ def _validate_ledger(ledger: Any) -> dict[str, Any]:
                 for item in parsed_sources[digest]["transactions"]
                 if item["id"] in row_aliases
             ]
-            if not matched:
+            if len(matched) != 1:
                 raise ValueError(
-                    "Credit-card transaction is absent from a claimed source."
+                    "Credit-card source rows must preserve transaction multiplicity."
                 )
             evidence.extend(matched)
         if set(row_aliases) != {item["id"] for item in evidence}:
             raise ValueError(
                 "Credit-card transaction identities differ from their retained text."
             )
+        if any(
+            item["transaction_date"] != row["transaction_date"]
+            or _match_key({**item, "account_id": row["account_id"]}) != _match_key(row)
+            for item in evidence
+        ):
+            raise ValueError("Credit-card corroborating rows differ economically.")
         expected_status = (
             "posted"
             if any(item["status"] == "posted" for item in evidence)
             else "pending"
         )
         fields = set(_TRANSACTION_FIELDS) - {"id", "account_id"}
+        fields.update(
+            field
+            for field in (
+                "post_date",
+                "source_row_number",
+                "source_line_number",
+                "original_currency",
+                "original_amount",
+            )
+            if field in row
+        )
         if row["status"] != expected_status or not any(
-            all(row[field] == item[field] for field in fields) for item in evidence
+            all(row[field] == item.get(field) for field in fields) for item in evidence
         ):
             raise ValueError("Credit-card transaction differs from its retained text.")
+        post_dates = sorted(
+            {item["post_date"] for item in evidence if item.get("post_date")}
+        )
+        if row.get("post_dates", []) != post_dates:
+            raise ValueError(
+                "Credit-card post dates differ from their source evidence."
+            )
     if aliases != {
         row["id"]
         for source in parsed_sources.values()
@@ -251,6 +305,10 @@ def _public_transaction(row: dict[str, Any]) -> dict[str, Any]:
         "[card number redacted]",
         result["description"],
     )
+    if row.get("post_dates"):
+        result["post_dates"] = row["post_dates"]
+    elif row.get("post_date"):
+        result["post_dates"] = [row["post_date"]]
     return result
 
 
@@ -324,10 +382,48 @@ def _parse_capture(text: str) -> dict[str, Any]:
     return capture
 
 
+def _parse_source(source: dict[str, Any]) -> dict[str, Any]:
+    if source.get("format"):
+        from app.services.hsbc_credit_card_files import (
+            parse_hsbc_credit_card_file_source,
+        )
+
+        return parse_hsbc_credit_card_file_source(source)
+    return _parse_capture(source["text"])
+
+
+def _select_snapshot_capture(
+    history: list[dict[str, Any]],
+    parsed_sources: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    # Importing historical statements never replaces a user's visible page snapshot.
+    pages = [
+        item
+        for item in history
+        if not parsed_sources[item["source_sha256"]]["source"].get("format")
+    ]
+    if pages:
+        return pages[-1]
+    statements = [item for item in history if item.get("snapshot") is not None]
+    if not statements:
+        raise ValueError(
+            "A credit-card account needs a verified page or statement snapshot."
+        )
+    return max(
+        statements, key=lambda item: (item.get("snapshot_as_of", ""), item["sequence"])
+    )
+
+
 def _match_key(row: dict[str, Any]) -> tuple[Any, ...]:
     description = " ".join(
         unicodedata.normalize("NFKC", row["description"]).upper().split()
     )
+    if row["kind"] == "repayment" and description == "IFS PAYMENT - THANK YOU":
+        description = "PAYMENT - THANK YOU"
+    elif row["kind"] == "purchase" and description.startswith("APPLEPAY "):
+        description = description[len("APPLEPAY ") :]
+    elif row["kind"] == "rewardcash" and description.startswith("PAY W/RC "):
+        description = description[len("PAY W/RC ") :]
     return (
         row["account_id"],
         row["card_last4"],
@@ -368,6 +464,28 @@ def _merge_capture(
     matches = {
         row["id"]: aliases[row["id"]] for row in incoming if row["id"] in aliases
     }
+    if capture["source"].get("format") or any(
+        merged["sources"][source].get("format")
+        for row in existing.values()
+        for source in row["source_sha256s"]
+    ):
+        consumed = set(matches.values())
+        for row in incoming:
+            if row["id"] in matches:
+                continue
+            compatible = [
+                key
+                for key, old in existing.items()
+                if key not in consumed
+                and old["transaction_date"] == row["transaction_date"]
+                and _match_key(old) == _match_key(row)
+            ]
+            if compatible:
+                key = min(
+                    compatible, key=lambda value: (existing[value]["occurrence"], value)
+                )
+                matches[row["id"]] = key
+                consumed.add(key)
     candidates = {
         row["id"]: [key for key, old in existing.items() if _cross_date_match(row, old)]
         for row in incoming
@@ -392,6 +510,11 @@ def _merge_capture(
                     **row,
                     "capture_ids": [row["id"]],
                     "source_sha256s": [digest],
+                    **(
+                        {"post_dates": [row["post_date"]]}
+                        if row.get("post_date")
+                        else {}
+                    ),
                 }
                 counts["added_count"] += 1
                 continue
@@ -400,6 +523,10 @@ def _merge_capture(
                 old["capture_ids"].append(row["id"])
             if digest not in old["source_sha256s"]:
                 old["source_sha256s"].append(digest)
+            if row.get("post_date"):
+                old["post_dates"] = sorted(
+                    set(old.get("post_dates", [])) | {row["post_date"]}
+                )
             if old["status"] == "pending" and row["status"] == "posted":
                 old.update({**row, "id": key})
                 counts["promoted_count"] += 1
@@ -413,22 +540,36 @@ def _merge_capture(
                 "captured_at": captured_at,
             }
             account = merged["accounts"].setdefault(account_id, {"captures": []})
-            account.update(
-                {
-                    "account_id": account_id,
-                    "account_last4": capture["account_last4"],
-                    "account_name": capture["account_name"],
-                    "currency": capture["currency"],
-                    "snapshot": deepcopy(capture["snapshot"]),
-                    "captured_at": captured_at,
-                }
-            )
             account["captures"].append(
                 {
                     "sequence": len(account["captures"]) + 1,
                     "source_sha256": digest,
                     "captured_at": captured_at,
                     "snapshot": deepcopy(capture["snapshot"]),
+                    **(
+                        {"snapshot_as_of": capture["snapshot_as_of"]}
+                        if capture.get("snapshot_as_of")
+                        else {}
+                    ),
+                    **(
+                        {"statement_summary": deepcopy(capture["statement_summary"])}
+                        if capture.get("statement_summary")
+                        else {}
+                    ),
+                }
+            )
+            parsed_sources = {
+                key: _parse_source(source) for key, source in merged["sources"].items()
+            }
+            selected = _select_snapshot_capture(account["captures"], parsed_sources)
+            account.update(
+                {
+                    "account_id": account_id,
+                    "account_last4": capture["account_last4"],
+                    "account_name": capture["account_name"],
+                    "currency": capture["currency"],
+                    "snapshot": deepcopy(selected["snapshot"]),
+                    "captured_at": selected["captured_at"],
                 }
             )
         _validate_ledger(merged)
@@ -446,8 +587,12 @@ def _merge_capture(
             "name": capture["account_name"],
             "currency": capture["currency"],
         },
-        "snapshot": _public_snapshot(capture["snapshot"]),
-        "capture_snapshot": _public_snapshot(capture["snapshot"]),
+        "snapshot": _public_snapshot(capture["snapshot"])
+        if capture["snapshot"] is not None
+        else None,
+        "capture_snapshot": _public_snapshot(capture["snapshot"])
+        if capture["snapshot"] is not None
+        else None,
         "merged_snapshot": _public_snapshot(merged["accounts"][account_id]["snapshot"])
         if account_id in merged["accounts"]
         else None,
@@ -535,3 +680,178 @@ def commit_hsbc_credit_card_import(text: str, path: Path) -> dict[str, Any]:
             "snapshot": _public_snapshot(account["snapshot"]),
             "transactions": rows,
         }
+
+
+def _file_captures(
+    files: list[Path],
+    ledger: dict[str, Any],
+    account_number: str | None,
+) -> list[dict[str, Any]]:
+    from app.services.hsbc_credit_card_files import (
+        capture_hsbc_credit_card_file,
+        normalize_card_account,
+    )
+
+    if not files:
+        raise ValueError("Supply at least one HSBC credit-card file.")
+    inputs = [(Path(item), Path(item).read_bytes()) for item in files]
+    if any(path.suffix.lower() not in {".pdf", ".csv"} for path, _ in inputs):
+        raise ValueError("Only HSBC credit-card PDF and CSV files are supported.")
+    captures = [
+        capture_hsbc_credit_card_file(raw, path.name)
+        for path, raw in inputs
+        if path.suffix.lower() == ".pdf"
+    ]
+    accounts = {capture["account_id"] for capture in captures}
+    if len(accounts) > 1:
+        raise ValueError(
+            "An HSBC card file bundle must belong to one complete account."
+        )
+    number = (
+        normalize_card_account(account_number) if account_number is not None else None
+    )
+    if (
+        number
+        and accounts
+        and hashlib.sha256(number.encode()).hexdigest() not in accounts
+    ):
+        raise ValueError(
+            "The HSBC card file bundle differs from its explicit account scope."
+        )
+    if not number and captures:
+        full_numbers = {
+            normalize_card_account(value)
+            for capture in captures
+            for value in re.findall(
+                r"(?<!\d)\d{4} \d{4} \d{4} \d{4}(?!\d)", capture["source"]["text"]
+            )
+        }
+        if len(full_numbers) != 1:
+            raise ValueError(
+                "The HSBC card file bundle has no unambiguous full account."
+            )
+        number = full_numbers.pop()
+    csv_inputs = [(path, raw) for path, raw in inputs if path.suffix.lower() == ".csv"]
+    if csv_inputs:
+        if number is None:
+            raise ValueError(
+                "An accountless card CSV needs a complete verified account scope."
+            )
+        account_id = hashlib.sha256(number.encode()).hexdigest()
+        bindings = [
+            capture["source"]["sha256"]
+            for capture in captures
+            if capture["account_id"] == account_id
+        ] or [
+            digest
+            for digest, source in ledger["sources"].items()
+            if source["account_id"] == account_id
+            and source.get("format") != "transaction_csv"
+        ]
+        if not bindings:
+            raise ValueError(
+                "The card CSV account must be proven by a retained page or statement."
+            )
+        for path, raw in csv_inputs:
+            capture = capture_hsbc_credit_card_file(
+                raw,
+                path.name,
+                account_number=number,
+                binding_source_sha256=bindings[0],
+            )
+            prior = ledger["sources"].get(capture["source"]["sha256"])
+            if prior is not None:
+                if prior["account_id"] != account_id:
+                    raise ValueError(
+                        "The retained card CSV is already bound to a different account."
+                    )
+                # Replaying one byte-identical source retains its original binding.
+                capture = _parse_source(prior)
+            captures.append(capture)
+    return captures
+
+
+def _merge_file_captures(
+    before: dict[str, Any],
+    captures: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    merged = before
+    files = []
+    counts = {"added_count": 0, "promoted_count": 0, "duplicate_count": 0}
+    warnings = []
+    ready = True
+    for capture in captures:
+        merged, item = _merge_capture(merged, capture)
+        files.append(
+            {
+                "filename": capture["source"]["filename"],
+                "format": capture["source"]["format"],
+                "source_sha256": capture["source"]["sha256"],
+                "snapshot_as_of": capture.get("snapshot_as_of"),
+                "capture_snapshot": item["capture_snapshot"],
+                "capture_summary": item["capture_summary"],
+                "summary": {key: item["summary"][key] for key in counts},
+                "source_already_imported": item["source_already_imported"],
+            }
+        )
+        for key in counts:
+            counts[key] += item["summary"][key]
+        warnings.extend(item["warnings"])
+        ready = ready and item["ready"]
+        if not ready:
+            break
+    account_id = captures[0]["account_id"]
+    rows = [
+        row
+        for row in merged["transactions"].values()
+        if row["account_id"] == account_id
+    ]
+    account = merged["accounts"].get(account_id)
+    return merged, {
+        "ready": ready,
+        "review_required": not ready,
+        "account": _public_account(account) if account else None,
+        "snapshot": _public_snapshot(account["snapshot"]) if account else None,
+        "merged_snapshot": _public_snapshot(account["snapshot"]) if account else None,
+        "files": files,
+        "input_file_count": len(captures),
+        "input_row_count": sum(len(capture["transactions"]) for capture in captures),
+        "unique_transaction_count": len(rows),
+        "transactions": [_public_transaction(row) for row in rows],
+        "summary": {**_summary(rows), **counts},
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
+def preview_hsbc_credit_card_files(
+    files: list[Path],
+    path: Path,
+    *,
+    account_number: str | None = None,
+) -> dict[str, Any]:
+    """Verify a real-file bundle and reconcile in memory without writing anything."""
+    before = load_credit_card_ledger(Path(path))
+    captures = _file_captures(files, before, account_number)
+    _, result = _merge_file_captures(before, captures)
+    return result
+
+
+def commit_hsbc_credit_card_files(
+    files: list[Path],
+    path: Path,
+    *,
+    account_number: str | None = None,
+) -> dict[str, Any]:
+    """Commit an entire verified file bundle atomically under the normal ledger lock."""
+    path = Path(path)
+    with _write_lock(path):
+        before = load_credit_card_ledger(path)
+        captures = _file_captures(files, before, account_number)
+        merged, result = _merge_file_captures(before, captures)
+        if not result["ready"]:
+            return {**result, "committed": False}
+        if merged != before:
+            _atomic_write(path, merged)
+        if load_credit_card_ledger(path) != merged:
+            raise ValueError("Credit-card file-bundle readback verification failed.")
+        return {**result, "committed": True}

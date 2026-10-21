@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.138.0`
+Documentation version: `v1.139.0`
 
 ## HSBC credit-card boundary
 
@@ -11,8 +11,9 @@ read routes are `/api/credit-cards/hsbc/preview`,
 `/api/credit-cards/hsbc/import`, and `/api/credit-cards/hsbc`. POST routes use
 the existing same-origin session CSRF boundary. Preview is read-only; commit
 reparses the supplied source and serializes atomic replacement and readback
-under one ledger lock. Neither route uses the investment commit, market-data,
-valuation, or investment-cache pipeline.
+under one ledger lock. Neither route uses the investment commit, valuation,
+or investment-cache pipeline. Preview performs no market-data reads; a
+successful import may read dated FX for its separate Rewards disclosure.
 
 The parser accepts complete English HKD credit-card account pages. It retains
 the source text and SHA-256 digest, uses the full normalized account number's
@@ -42,6 +43,35 @@ The product-specific UI reuses existing controls and table primitives without
 changing shared typography or layout contracts. Editing the text or switching
 the import mode invalidates a preview; reading saved records cannot enable an
 import. A successful import displays the card ledger's persisted readback.
+
+The local maintenance entrypoint `scripts/reconcile_hsbc_credit_card.py` accepts
+English HSBC Red statement PDFs and posted HKD transaction CSVs through
+`preview_hsbc_credit_card_files` and `commit_hsbc_credit_card_files`. The bundle
+commits atomically under the same card-ledger lock. Each file retains its raw
+bytes, SHA-256 digest, parser version, extracted text, and extracted-text
+digest. Reads reparse the original bytes. CSV account ownership is explicitly
+bound to a full account identity proven by retained non-CSV evidence. The
+browser continues to accept only complete account-page text.
+
+Statement transaction date and posting date remain separate. Each statement
+must reconcile its opening balance and transaction liability deltas to its
+signed closing balance, including `CR` credit balances. RewardCash opening,
+earned, adjusted, redeemed, and closing amounts must also reconcile. These
+dated statement facts do not replace the selected webpage snapshot; CSVs
+have no balance snapshot. Cross-source matching preserves source-row aliases
+and occurrence multiplicity while normalizing only supported payment and
+Apple Pay description differences. Ambiguous matches fail closed.
+
+The investment transactions GET adds a fresh, privacy-safe
+`credit_card_rewards` disclosure after reading its investment cache. This
+object remains outside the persisted investment cache and investment
+transaction collection. Only posted RewardCash rows are included. Its FX
+history is nested in the disclosure and merged into a local Metrics-only
+conversion timeline. HSBC and All Metrics include the card amount in
+`Rewards`; other broker scopes exclude it. Native HKD totals remain visible
+in the breakdown if required conversion evidence is unavailable. Original
+investment benefit fields still own realized P&L, cash, and equity; the card
+disclosure never enters those calculations or investment ledger navigation.
 
 ## Import evidence and replay audit boundaries
 

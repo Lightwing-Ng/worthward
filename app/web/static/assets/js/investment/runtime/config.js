@@ -1,7 +1,8 @@
 /**
  * Investment workspace immutable configuration.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Added: Rewards disclosure includes card RewardCash separately from KOL income.
  * - Added: Extracted bounded metadata and metric definitions from the entry.
  */
 
@@ -110,18 +111,18 @@ export function createInvestmentRuntimeConfig(runtime) {
     config.BROKER_BENEFIT_METRIC_DEFINITIONS = [
         {
             key: 'coupon-rebates-cash-rewards',
-            label: 'Coupon rebates / Cash rewards',
-            summary: 'Imported coupon rebates and cash rewards converted to the workspace base currency using each ledger date’s FX rate. FX conversion does not add a provisional marker. The converted contribution is included in P&L once.',
-            valueKey: 'couponAndCashRewardIncome',
+            label: 'Rewards',
+            summary: 'Coupon rebates, cash rewards, and posted card RewardCash converted at each activity date’s FX rate. Card RewardCash is a separate rewards disclosure and does not change investment cash, equity, or P&L. KOL rewards remain separate.',
+            valueKey: 'rewardDisclosureIncome',
             rowsKey: 'couponAndCashRewardRows',
-            detailsKey: 'couponAndCashRewardDetails',
+            detailsKey: 'rewardDisclosureDetails',
             renderMode: 'breakdown',
-            formatValue: (metrics) => runtime.formatAmountWithCurrency(
-                metrics?.couponAndCashRewardIncome,
+            formatValue: (metrics) => metrics?.rewardDisclosureUnavailable ? 'Unavailable' : runtime.formatAmountWithCurrency(
+                metrics?.rewardDisclosureIncome,
                 runtime.getInvestmentBaseCurrency(),
                 { showUsdSymbol: false },
             ),
-            valueClass: (metrics) => runtime.getSignedMetricClass(metrics?.couponAndCashRewardIncome),
+            valueClass: (metrics) => metrics?.rewardDisclosureUnavailable ? '' : runtime.getSignedMetricClass(metrics?.rewardDisclosureIncome),
         },
         {
             key: 'kol-rewards',
