@@ -1,4 +1,4 @@
-/* Code version: v0.50.0 */
+/* Code version: v0.51.0 */
 :root {
 	color-scheme: var(--color-scheme);
 	/*
@@ -486,6 +486,7 @@
 	--scrollable-data-table-summary-border: var(--frosted-glass-border);
 	--scrollable-data-table-summary-shadow: var(--frosted-glass-shadow);
 	--scrollable-data-table-summary-blur: var(--frosted-glass-blur);
+	--shared-select-rounded-radius: 10px;
 	--shared-select-dropdown-padding: 10px;
 	--shared-select-dropdown-radius: var(--radius-soft);
 	--shared-select-dropdown-max-width: var(--layout-control-width);

@@ -1,4 +1,4 @@
-/* Code version: v1.8.5 */
+/* Code version: v1.8.6 */
 import {expect, test} from '@playwright/test';
 
 async function expectFieldTitle(locator) {
@@ -62,7 +62,7 @@ for (const width of [1024, 800, 390]) {
         await page.goto('/settings/style-tokens');
         await expect(page.locator('#workspace-article, #primary-inverted-button')).toHaveCount(0);
         await expect(page.getByText('Shared parameters and strategy actions', {exact: true})).toHaveCount(0);
-        const controls = page.locator('.style-token-shared-select-shell .trade-strategy-select, .style-token-stepper-input');
+        const controls = page.locator('.style-token-shared-select-shell [data-shared-select-field]:not([data-shared-select-variant="rounded"]) .trade-strategy-select, .style-token-stepper-input');
         await expect(controls).toHaveCount(3);
         for (const control of await controls.all()) await expect(control).toHaveCSS('height', '30px');
         const secondary = page.locator('#secondary-button .style-token-demo > button');

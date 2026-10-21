@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.6.3`
+Documentation version: `v1.6.4`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -95,6 +95,16 @@ theme-background surface. The trigger and general Frosted Glass material are
 unchanged. The shared current-color chevron uses the same right-closed,
 down-expanded states as Collapse. Explicitly opaque strategy-parameter adapters
 retain their existing local surface rather than changing the standard menu.
+
+Shared select trigger geometry belongs to `components/forms.css` and its tokens
+in `foundation/tokens.css`. The default remains a 30px pill. A field with
+`data-shared-select-variant="rounded"` opts into the 10px
+`--shared-select-rounded-radius`, automatic height, and option padding and
+minimum-height tokens. Its selected logo/title/description content reuses the
+option metrics; wrapping follows the available width rather than a fixed height.
+Stock details and the `Shared select rounded rectangle` catalog specimen consume
+this reusable variant. Keep product CSS focused on placement instead of
+reimplementing its trigger geometry.
 
 - Put design tokens, globals, and cross-cutting primitives in `foundation/`.
 - Put app shell and structural layout rules in `layout/`.

@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.24.1`
+Documentation version: `v1.24.2`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -34,9 +34,10 @@ The Collapse specimen has no placeholder explanatory paragraph.
   agenticContext's intrinsic-width glass-chip primitive: fit-content width,
   maximum 100%, right alignment, pill radius, and shared hover/disabled states.
   Product labels may differ; do not stretch the button to fill its specimen cell.
-- Shared select dropdown and filter triggers use
+- Default Shared select dropdown and filter pill triggers use
   `--shared-select-control-height: 30px` at all existing breakpoints. This does not
-  change the separate 36px Agent session-control rail.
+  change the separate 36px Agent session-control rail. The explicit rounded
+  variant uses content-driven height and does not redefine that default token.
 - The Worthward Style tokens Shared select and Strategy tuning specimens use a
   preview-column container query for two display tiers: the 384px control token
   below a 640px column and the 640px content token at or above it. Below 384px,
@@ -252,10 +253,20 @@ implements this complete contract.
   through -90-degree and zero-degree rotations, using the shared 180ms
   standard easing. Reduced motion removes that transition. The affordance is a distinct
   mask or pseudo-element so a material `background` declaration cannot erase it.
-- The trigger is 30px high with a pill radius. The menu opens 4px from the trigger, uses
+- The default trigger is 30px high with a pill radius. The menu opens 4px from the trigger, uses
   10px padding and the shared soft radius, and is bounded by
   `min(360px, 55vh)`. Options are at least 36px high with `9px 10px` padding and a pill
   radius. Standard field and menu width is `min(parent inline size, 384px)`.
+- A field may explicitly opt into `data-shared-select-variant="rounded"`. Its
+  trigger uses `--shared-select-rounded-radius: 10px`, `height: auto`, and the
+  option padding and minimum-height tokens while preserving the trailing chevron
+  clearance. The selected identity and option content share a 20px logo and the
+  same title/description metrics. Content wraps within its own available width,
+  so unequal trigger and menu widths may produce different intrinsic heights.
+  This variant does not change the default pill or option shape, shared material,
+  native-select authority, or keyboard behavior. Stock details opts in, and Style
+  tokens catalogs `Shared select rounded rectangle` beside the standard Period
+  specimen.
 - The field and its ordinary ancestors stay paint-visible. When a known clipping or
   modal owner requires a body portal, the adapter measures the trigger, uses fixed
   positioning inside a pointer-transparent overlay, preserves the same inline width

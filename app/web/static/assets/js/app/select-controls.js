@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 (() => {
     const create = (context) => {
         const {
@@ -186,6 +186,7 @@
             if (!(select instanceof HTMLSelectElement) || !(trigger instanceof HTMLButtonElement) || !(triggerLabel instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
                 return null;
             }
+            const triggerDescription = trigger.querySelector("[data-shared-select-trigger-description]");
             const triggerLogo = trigger.querySelector("[data-shared-select-trigger-logo]");
             const triggerPlaceholder = trigger.querySelector("[data-shared-select-trigger-placeholder]");
             return {
@@ -193,6 +194,7 @@
                 select,
                 trigger,
                 triggerLabel,
+                triggerDescription: triggerDescription instanceof HTMLElement ? triggerDescription : null,
                 dropdown,
                 triggerLogo: triggerLogo instanceof HTMLImageElement ? triggerLogo : null,
                 triggerPlaceholder: triggerPlaceholder instanceof HTMLElement ? triggerPlaceholder : null,
@@ -421,6 +423,16 @@
             if (parts.triggerLabel.textContent !== nextLabel) parts.triggerLabel.textContent = nextLabel;
             if (parts.triggerLabel.dataset.fallbackLabel !== nextLabel) {
                 parts.triggerLabel.dataset.fallbackLabel = nextLabel;
+            }
+            if (parts.triggerDescription) {
+                const description = String(selectedOption?.dataset.description || "").trim();
+                if (parts.triggerDescription.textContent !== description) {
+                    parts.triggerDescription.textContent = description;
+                }
+                parts.triggerDescription.hidden = !description;
+                if (parts.triggerDescription.title !== description) {
+                    parts.triggerDescription.title = description;
+                }
             }
             const configuredTitle = String(parts.trigger.dataset.sharedSelectTitle || "").trim();
             const nextTitle = configuredTitle || nextLabel;
