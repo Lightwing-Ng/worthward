@@ -1,6 +1,7 @@
 """HTTP boundary for the independent HSBC credit-card ledger.
 
-Code version: v1.0.0
+Code version: v1.1.0
+- Added: Read-only RewardCash disclosure separate from investment accounting.
 """
 
 from __future__ import annotations
@@ -24,6 +25,36 @@ from app.web.request_security import validate_local_browser_write_request
 LOGGER = logging.getLogger(__name__)
 CREDIT_CARD_STORE_PATH = SETTINGS_STORE_DIR / "credit_cards.json"
 MAX_CREDIT_CARD_TEXT_BYTES = 1_048_576
+
+
+def read_credit_card_reward_payload(path: Path, build_fx_history) -> dict:
+    """Read posted RewardCash and its dated FX without projecting card cash flows."""
+    try:
+        ledger = read_credit_card_ledger(path)
+        rows = [
+            {
+                "id": row["id"],
+                "date": row["transaction_date"],
+                "currency": row["currency"],
+                "amount": row["amount"],
+            }
+            for row in ledger["transactions"]
+            if row["kind"] == "rewardcash" and row["status"] == "posted"
+        ]
+        return {
+            "status": "complete",
+            "transactions": rows,
+            "fx_rate_history_by_currency": build_fx_history(rows) if rows else {},
+            "warnings": [],
+        }
+    except (OSError, RuntimeError, ValueError):
+        LOGGER.exception("The credit-card rewards could not be read safely")
+        return {
+            "status": "unavailable",
+            "transactions": [],
+            "fx_rate_history_by_currency": {},
+            "warnings": ["Credit-card rewards are unavailable; check the card ledger."],
+        }
 
 
 def build_credit_card_context(context: dict[str, object]) -> dict[str, object]:
@@ -75,6 +106,11 @@ def build_credit_card_context(context: dict[str, object]) -> dict[str, object]:
                         "error": "Review the ambiguous credit-card records before importing.",
                     },
                     400,
+                )
+            if commit:
+                result["credit_card_rewards"] = read_credit_card_reward_payload(
+                    ledger_path,
+                    context.get("build_investment_fx_rate_history_payload", lambda rows: {}),
                 )
             return respond({"success": True, **result, "committed": commit})
         except RequestEntityTooLarge:

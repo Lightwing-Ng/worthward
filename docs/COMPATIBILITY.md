@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.1.2`
+Documentation version: `v1.2.0`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -82,6 +82,16 @@ Before deleting a compatibility candidate:
 4. Add or retain an explicit redirect regression.
 5. Update this matrix, Architecture or Known Issues as appropriate.
 6. Run the focused domain tests and the complete quality gate.
+
+## HSBC card file evidence compatibility
+
+The local HSBC Red PDF/CSV maintenance importer retains original file bytes in
+the independent card ledger. Importing and verifying retained PDF evidence
+requires Poppler's `pdftotext` on `PATH`; a later read must be able to reparse
+the original PDF. An unavailable extractor keeps the card ledger unreadable
+and the Metrics card rewards disclosure unavailable rather than trusting
+unverified extracted text. The existing browser input remains a clipboard
+account-page importer.
 
 ## GPU training interpreter compatibility
 

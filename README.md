@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.42.1`
+Documentation version: `v3.43.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -620,7 +620,18 @@ credit-card account page into the first account-page field. The same panel
 automatically previews purchases, repayments, RewardCash offsets, and pending
 authorizations in a compact six-column table. Review the entries before
 selecting Import now; saved entries are read back after that explicit import. The credit-card parser accepts HKD webpage text;
-credit-card PDF and CSV imports are not supported.
+the browser input does not accept credit-card PDF or CSV files.
+
+For local statement reconciliation, run
+`python3 scripts/reconcile_hsbc_credit_card.py /path/to/card-files` to preview
+English HSBC Red statement PDFs and posted HKD transaction CSVs. An explicit
+`--commit` saves through the separate card ledger service and creates a
+timestamped backup first. `--expected-ledger-sha256` can bind the commit to a
+reviewed ledger fingerprint. Include a same-account PDF in each CLI bundle
+containing CSV files. A CSV has no account number; the service API can also
+bind it to retained non-CSV evidence with an explicit full account number.
+An account suffix alone is insufficient. PDF import and subsequent
+source verification require Poppler's `pdftotext` executable on `PATH`.
 
 The first Copy/paste field recognizes complete cash or credit-card account
 pages. A detected card page starts a read-only preview; recognition never imports
@@ -636,6 +647,17 @@ RewardCash offsets reduce it. Pending authorizations stay outside posted totals.
 The bank's displayed balance, current amount due, minimum payment, due date,
 and RewardCash balance remain separate source facts; a visible transaction
 window is not a complete statement and cannot reconstruct its opening balance.
+Statement imports retain their dated signed balances and RewardCash summaries
+without replacing the selected webpage snapshot. Original file bytes and
+their hashes remain available for verification. Overlapping file and webpage
+rows share one transaction, retain each source identity, and can promote an
+exact same-date pending purchase to posted.
+
+Metrics includes posted card RewardCash in `Rewards`, separately from
+`KOL rewards`, with its native HKD amount in the breakdown and conversion at
+each activity date's exchange rate. This card disclosure does not change
+investment cash, equity, or P&L. Missing card evidence or required FX is shown
+as unavailable rather than as a zero reward.
 
 Repeated and overlapping captures are merged by account, card, transaction
 identity, and occurrence. A later posted record replaces a same-date pending

@@ -1,6 +1,7 @@
 /**
  * HSBC credit-card automatic preview, isolated import, and ledger readback.
- * Code version: v1.2.0
+ * Code version: v1.3.0
+ * - Added: Successful card imports refresh the Metrics rewards disclosure.
  * - Changed: Complete account-page pastes preview automatically before explicit import.
  */
 
@@ -207,6 +208,13 @@ export function createHsbcCreditCardImportRuntime(runtime) {
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.error || 'Credit-card import failed.');
             if (!current(epoch, text)) return;
+            if (result.credit_card_rewards && typeof result.credit_card_rewards === 'object') {
+                window.WORTHWARD_INVESTMENT_DATA = {
+                    ...window.WORTHWARD_INVESTMENT_DATA,
+                    credit_card_rewards: result.credit_card_rewards,
+                };
+                runtime.renderInvestmentMetricsPanel?.();
+            }
             state.result = null;
             state.text = '';
             renderResult(result, 'imported');

@@ -1,4 +1,4 @@
-/* Code version: v1.1.7 */
+/* Code version: v1.1.8 */
 import {
     expect,
     test,
@@ -44,7 +44,7 @@ test('keeps Investment Metrics disclosures current, readable, and viewport-safe'
     await expect(metricsPanel.getByText(/offshore/i)).toHaveCount(0);
 
     const rewardsCard = metricsPanel.locator('.trade-metric-card').filter({
-        has: page.getByText('Coupon rebates / Cash rewards', {exact: true}),
+        has: page.getByText('Rewards', {exact: true}),
     });
     await expect(rewardsCard).toHaveCount(1);
     await expect(rewardsCard.locator('.trade-metric-value')).toHaveText('35.00');
@@ -60,7 +60,7 @@ test('keeps Investment Metrics disclosures current, readable, and viewport-safe'
     await expect(rewardsTrigger).toHaveCSS('opacity', '1');
     await rewardsTrigger.click();
     await expect(rewardsTrigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(rewardsTrigger).toHaveAttribute('aria-label', 'Hide Coupon rebates / Cash rewards details');
+    await expect(rewardsTrigger).toHaveAttribute('aria-label', 'Hide Rewards details');
     await expect(rewardsBreakdown).toBeVisible();
     await expect(rewardsBreakdown).toContainText('Coupon rebates · HKD');
     await expect(rewardsBreakdown).toContainText('HKD 78.00');

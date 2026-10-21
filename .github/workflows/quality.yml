@@ -46,6 +46,12 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Install PDF evidence extractor
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y poppler-utils
+          pdftotext -v
+
       - name: Run the complete quality gate
         run: WORTHWARD_PYTHON="$(command -v python)" ./scripts/check.sh
 

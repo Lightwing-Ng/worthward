@@ -1,6 +1,31 @@
 # Testing guide
 
-Documentation version: `v1.98.0`
+Documentation version: `v1.99.0`
+
+## HSBC card file reconciliation and Rewards
+
+The file parser and ledger tests use anonymous statement and CSV factories
+and temporary stores. They cover raw-source verification, full-account CSV
+binding, signed balance and RewardCash reconciliation, separate posting dates,
+occurrence-aware overlap, pending promotion, atomic bundle failure, and
+bidirectional file/page idempotence. The CLI defaults to preview and creates
+a backup before an explicitly requested commit.
+
+Run the dedicated Python suites with `python3 -B -m pytest -q
+ tests/python/services/test_hsbc_credit_card_files.py
+ tests/python/services/test_credit_card_ledger.py
+ tests/python/web/test_credit_card_routes.py
+ tests/python/web/test_credit_card_reward_metrics.py`.
+
+`node --test tests/js/investment/test_credit_card_reward_metrics.mjs
+ tests/js/investment/test_hsbc_credit_card_import.mjs` verifies dated FX,
+broker scoping, duplicate disclosures, unavailable evidence, and successful
+versus failed or stale import responses. `./scripts/test_e2e.sh
+ tests/e2e/investment/credit-card-reward-metrics.spec.mjs` covers desktop and
+narrow Rewards breakdowns, missing FX, and immediate import refresh. Card
+Rewards remain outside investment cash, equity, and realized P&L; KOL rewards
+retain their separate category. All browser writes use intercepted anonymous
+fixtures and the supported isolated port 8699.
 
 ## HSBC credit-card verification
 
