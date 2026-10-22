@@ -1,7 +1,8 @@
 /**
  * Investment workspace immutable configuration.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Added: Cash-only debit-card rewards retain signed income without commissions.
  * - Added: Rewards disclosure includes card RewardCash separately from KOL income.
  * - Added: Extracted bounded metadata and metric definitions from the entry.
  */
@@ -47,6 +48,7 @@ export function createInvestmentRuntimeConfig(runtime) {
         'fx_translation_pnl',
         'deposit',
         'kol_reward',
+        'cash_reward',
         'grant',
         'withdrawal',
         'virtual_balance_reset',
@@ -112,7 +114,7 @@ export function createInvestmentRuntimeConfig(runtime) {
         {
             key: 'coupon-rebates-cash-rewards',
             label: 'Rewards',
-            summary: 'Coupon rebates, cash rewards, and posted card RewardCash converted at each activity date’s FX rate. Card RewardCash is a separate rewards disclosure and does not change investment cash, equity, or P&L. KOL rewards remain separate.',
+            summary: 'Coupon rebates, cash rewards, debit-card cashback, and posted card RewardCash converted at each activity date’s FX rate. Card RewardCash is a separate rewards disclosure and does not change investment cash, equity, or P&L. KOL rewards remain separate.',
             valueKey: 'rewardDisclosureIncome',
             rowsKey: 'couponAndCashRewardRows',
             detailsKey: 'rewardDisclosureDetails',

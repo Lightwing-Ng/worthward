@@ -1,6 +1,6 @@
 """Tests for the generic typed manual-workbook import.
 
-Code version: v0.12.1
+Code version: v0.12.2
 """
 
 from __future__ import annotations
@@ -300,6 +300,7 @@ class ZirconHkImportTests(unittest.TestCase):
             ),
             transaction(21, "virtual_deposit", net_amount_raw="25"),
             transaction(22, "virtual_withdrawal", net_amount_raw="-25"),
+            transaction(23, "cash_reward", net_amount_raw="2"),
         ]
 
         workbook_bytes = build_standard_investment_xlsx(transactions)

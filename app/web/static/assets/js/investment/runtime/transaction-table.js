@@ -1,7 +1,8 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.5.4
+ * Code version: v1.6.0
+ * - Added: Cash rewards preserve signed cash deltas and their normalized display type.
  * - Fixed: Same-day settlement balances retain their exact cash-account scope.
  * - Fixed: Loads pending history cash with the dated foreign-currency basis.
  * - Changed: Loads the history projection whose dated native-currency
@@ -36,7 +37,7 @@
  * - Added: Isolated the primary transaction replay from the workspace entry.
  */
 
-import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.4.2';
+import {createInvestmentHistoryProjectionRuntime} from './history-projection.js?v=investment-history-projection-v1.4.3';
 
 export function normalizeInvestmentAuthoritativeCashBoundaryAmount(value) {
     const numericValue = Number(value);
@@ -421,7 +422,7 @@ async function renderTransactionTable(transactions, {
             let cashDelta = 0;
             if (txn.normalized !== undefined) {
                 cashDelta += amount;
-            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl'].includes(normalizedType)) {
+            } else if (['forex_trade', 'adjustment', 'fx_translation_pnl', 'cash_reward'].includes(normalizedType)) {
                 cashDelta += amount;
             } else if (normalizedType === 'deposit' || normalizedType === 'virtual_deposit' || normalizedType === 'sell' || normalizedType === 'dividend'
                 || normalizedType === 'credit_interest' || normalizedType === 'payment_in_lieu') {
@@ -891,6 +892,7 @@ async function renderTransactionTable(transactions, {
             const brokerCashByCurrency = runtime.cloneCashLedgerBalances(brokerLedgerState.cashBalances);
             const processedTxn = {
                 ...txn,
+                type: normalizedType === 'cash_reward' ? 'cash_reward' : txn.type,
                 cash_balance_evidence_conflict: hasDirectCashEvidenceConflict,
                 broker: brokerCode,
                 ledger_no: processedIndex + 1,

@@ -1,6 +1,21 @@
 # Testing guide
 
-Documentation version: `v1.99.0`
+Documentation version: `v1.100.0`
+
+## HSBC debit-card cashback
+
+Anonymous parser, normalization, identity, and replay tests exercise standard
+and campaign rewards in USD, HKD, and CNH bank accounts, retained currency
+aliases, signed reversals, and legacy classifications. Reimport must preserve
+occurrence multiplicity and economic identity without changing other cash rows.
+
+`node --test tests/js/investment/test_hsbc_debit_card_reward_metrics.mjs`
+verifies dated FX, native-currency breakdowns, KOL and interest separation,
+external-funding exclusion, and current/historical realized P&L counted once.
+Missing FX must retain native evidence and make converted totals unavailable.
+`./scripts/test_e2e.sh tests/e2e/investment/hsbc-debit-card-rewards.spec.mjs`
+checks the rendered Rewards and ledger behavior with intercepted anonymous
+fixtures at desktop and narrow widths. No test writes to production stores.
 
 ## HSBC card file reconciliation and Rewards
 

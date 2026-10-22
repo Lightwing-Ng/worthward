@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Added: Signed debit-card cashback and campaign rewards with native-currency details.
  * - Added: Metrics-only card RewardCash disclosure without changing investment P&L.
  * - Fixed: Current broker metrics request their explicit snapshot scope.
  * - Changed: Holdings metrics expose the ticker summaries behind their realized
@@ -115,8 +116,10 @@ function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
         safeTransactions.forEach((txn) => {
             const benefitType = classifyBrokerBenefitTransaction(txn);
             if (benefitType) {
-                const amount = Math.abs(runtime.getTransactionAmount(txn));
-                if (amount > 1e-9) {
+                const signedAmount = runtime.getTransactionAmount(txn);
+                const amount = benefitType.startsWith('debit_card_cashback_') || benefitType === 'cash_reward_signed'
+                    ? signedAmount : Math.abs(signedAmount);
+                if (Math.abs(amount) > 1e-9) {
                     const currency = runtime.formatTransactionCurrency(txn) || baseCurrency;
                     const sourceAmount = benefitType === 'coupon_hkd_notional' ? 100 : amount;
                     const sourceCurrency = benefitType === 'coupon_hkd_notional' ? 'HKD' : currency;
@@ -550,6 +553,9 @@ function getLatestInvestmentMetricPrice(ticker, latestPrices) {
     }
 
 function classifyBrokerBenefitTransaction(txn) {
+        const cashbackCategory = runtime.getHsbcDebitCardCashbackCategory?.(txn);
+        if (cashbackCategory) return `debit_card_cashback_${cashbackCategory}`;
+        if (runtime.getNormalizedTransactionType(txn) === 'cash_reward') return 'cash_reward_signed';
         if (!runtime.isKolRewardTransaction(txn)) return '';
         const broker = String(txn?.broker || '').trim().toLowerCase();
         const description = String(txn?.description || '').trim();
@@ -711,6 +717,7 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         const couponRebateUsdRowSet = new Set();
         const cashRewardHkdRowSet = new Set();
         const cashRewardUsdRowSet = new Set();
+        const cashRewardRowSet = new Set();
         const kolRewardRowSet = new Set();
         const couponAndCashRewardRowSet = new Set();
         const couponAndCashRewardDetailsByKey = new Map();
@@ -725,7 +732,10 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             const normalizedCurrency = String(currency || baseCurrency).trim().toUpperCase() || baseCurrency;
             const normalizedSourceAmount = Number(sourceAmount);
             const normalizedConvertedAmount = Number(convertedAmount);
-            if (!Number.isFinite(normalizedSourceAmount) || !Number.isFinite(normalizedConvertedAmount)) return;
+            if (!Number.isFinite(normalizedSourceAmount)) {
+                couponAndCashRewardIncome = NaN;
+                return;
+            }
             couponAndCashRewardIncome += normalizedConvertedAmount;
             hasNonUsdCouponAndCashRewardSource = (
                 hasNonUsdCouponAndCashRewardSource || normalizedCurrency !== 'USD'
@@ -744,8 +754,11 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         sortedTransactions.forEach(({ txn, ledgerNo }) => {
             const benefitType = classifyBrokerBenefitTransaction(txn);
             if (!benefitType) return;
-            const amount = Math.abs(runtime.getTransactionAmount(txn));
-            if (!(amount > 1e-9)) return;
+            const isDebitCardCashback = benefitType.startsWith('debit_card_cashback_');
+            const isSignedCashReward = isDebitCardCashback || benefitType === 'cash_reward_signed';
+            const signedAmount = runtime.getTransactionAmount(txn);
+            const amount = isSignedCashReward ? signedAmount : Math.abs(signedAmount);
+            if (!(Math.abs(amount) > 1e-9)) return;
             const currency = runtime.formatTransactionCurrency(txn) || baseCurrency;
             const ledgerDate = runtime.normalizeLedgerDate(txn?.date);
             hasNonUsdRewardSource = hasNonUsdRewardSource || currency !== 'USD';
@@ -771,16 +784,17 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
                 fxTimeline,
                 baseCurrency,
             );
-            const isCashReward = benefitType === 'cash_reward';
+            const isCashReward = benefitType === 'cash_reward' || isSignedCashReward;
             const usesUsdBucket = benefitType === 'coupon_usd' || sourceCurrency === 'USD';
             hasNonUsdRewardSource = hasNonUsdRewardSource || sourceCurrency !== 'USD';
 
             if (isCashReward) {
                 cashRewardIncome += convertedAmount;
+                cashRewardRowSet.add(ledgerNo);
                 if (usesUsdBucket) {
                     cashRewardUsd += sourceAmount;
                     cashRewardUsdRowSet.add(ledgerNo);
-                } else {
+                } else if (!isSignedCashReward || sourceCurrency === 'HKD') {
                     cashRewardHkd += sourceAmount;
                     cashRewardHkdRowSet.add(ledgerNo);
                 }
@@ -796,7 +810,7 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             }
 
             recordCouponAndCashReward({
-                category: isCashReward ? 'cash_reward' : 'coupon_rebate',
+                category: isDebitCardCashback ? benefitType : isCashReward ? 'cash_reward' : 'coupon_rebate',
                 currency: sourceCurrency,
                 sourceAmount,
                 convertedAmount,
@@ -804,15 +818,22 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             });
         });
 
+        const rewardCategoryLabels = {
+            coupon_rebate: 'Coupon rebates',
+            cash_reward: 'Cash rewards',
+            debit_card_cashback_standard: 'Debit-card cashback',
+            debit_card_cashback_campaign: 'Debit-card campaign rewards',
+        };
+        const rewardCategoryOrder = Object.keys(rewardCategoryLabels);
         const couponAndCashRewardDetails = Array.from(couponAndCashRewardDetailsByKey.values())
             .sort((left, right) => {
-                const leftCategoryOrder = left.category === 'coupon_rebate' ? 0 : 1;
-                const rightCategoryOrder = right.category === 'coupon_rebate' ? 0 : 1;
+                const leftCategoryOrder = rewardCategoryOrder.indexOf(left.category);
+                const rightCategoryOrder = rewardCategoryOrder.indexOf(right.category);
                 if (leftCategoryOrder !== rightCategoryOrder) return leftCategoryOrder - rightCategoryOrder;
                 return left.currency.localeCompare(right.currency);
             })
             .map((detail) => ({
-                label: `${detail.category === 'coupon_rebate' ? 'Coupon rebates' : 'Cash rewards'} · ${detail.currency}`,
+                label: `${rewardCategoryLabels[detail.category]} · ${detail.currency}`,
                 value: runtime.formatAmountWithCurrency(detail.sourceAmount, detail.currency, { showUsdSymbol: false }),
                 valueClass: getSignedMetricClass(detail.sourceAmount),
             }));
@@ -832,6 +853,7 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             couponAndCashRewardDetails,
             couponRebateHkdRows: Array.from(couponRebateHkdRowSet),
             couponRebateUsdRows: Array.from(couponRebateUsdRowSet),
+            cashRewardRows: Array.from(cashRewardRowSet),
             cashRewardHkdRows: Array.from(cashRewardHkdRowSet),
             cashRewardUsdRows: Array.from(cashRewardUsdRowSet),
             kolRewardRows: Array.from(kolRewardRowSet),

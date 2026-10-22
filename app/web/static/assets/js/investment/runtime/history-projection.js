@@ -1,7 +1,7 @@
 /**
  * Investment transaction-history cash projection and broker-boundary helpers.
  *
- * Code version: v1.4.2
+ * Code version: v1.4.3
  * - Fixed: Intervening cash rebases outstanding settlement accruals once.
  * - Fixed: Pending HSBC history keeps each row's native foreign cash and
  *   converts it once beside the USD boundary and signed pending amount.
@@ -15,7 +15,7 @@
 
 import {
     createHsbcHistoryEvidenceUtils,
-} from './history-evidence.js?v=investment-history-evidence-v1.1.0';
+} from './history-evidence.js?v=investment-history-evidence-v1.2.0';
 import {
     createHsbcOpeningCashCorroborationMatcher,
 } from './history-cash-corroboration.js?v=investment-history-cash-corroboration-v1.0.1';
