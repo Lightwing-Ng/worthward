@@ -1,4 +1,4 @@
-/* Code version: v1.2.7 */
+/* Code version: v1.2.8 */
 import {
     expect,
     test,
@@ -966,7 +966,7 @@ test('uses the standard green token logo for money-market Stock details identity
     await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.82.0';
+            && url.searchParams.get('v') === '1.82.1';
     }))).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');

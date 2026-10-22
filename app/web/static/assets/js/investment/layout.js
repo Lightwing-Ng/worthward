@@ -1,10 +1,11 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.5.2
+ * Code version: v1.5.3
+ * - Fixed: Keep Stock-details effects visible until real workspace scrolling is required.
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.2';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.3';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -327,6 +328,7 @@ export function bindInvestmentSectionResizer({
         removeInlineStyleIfPresent(workspaceHeader, '--investment-overview-min-height');
         removeInlineStyleIfPresent(workspaceHeader, '--investment-history-min-height');
         workspaceHeader.removeAttribute('data-investment-stock-chart-minimum');
+        workspaceHeader.removeAttribute('data-investment-workspace-scrollable');
     };
     const getRange = () => {
         const stockDetailsActive = !isStackedLayout() && isVisibleElement(
@@ -342,6 +344,13 @@ export function bindInvestmentSectionResizer({
         const stockDetailsMinimum = getStockDetailsMinimumHeight(baselineMinimum);
         const overviewMinimum = Math.max(getOverviewMinimumHeight(baselineMinimum), stockDetailsMinimum);
         const historyMinimum = getHistoryMinimumHeight(baselineMinimum);
+        const needsWorkspaceScroll = stockDetailsActive
+            && overviewMinimum + historyMinimum > availableHeight + 1;
+        if (needsWorkspaceScroll && !workspaceHeader.hasAttribute('data-investment-workspace-scrollable')) {
+            workspaceHeader.setAttribute('data-investment-workspace-scrollable', '');
+        } else if (!needsWorkspaceScroll && workspaceHeader.hasAttribute('data-investment-workspace-scrollable')) {
+            workspaceHeader.removeAttribute('data-investment-workspace-scrollable');
+        }
         // A short desktop scrolls the workspace instead of flattening the stock
         // chart or removing the history table's minimum visible rows.
         const range = stockDetailsMinimum > 0 ? {
