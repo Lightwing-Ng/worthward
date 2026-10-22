@@ -1,7 +1,8 @@
 """
 Generic manual investment XLSX template and import parser.
 
-Code version: v0.13.2
+Code version: v0.14.0
+- Added: Standard workbooks retain cash rewards and signed reversals as their own type.
 """
 
 from __future__ import annotations
@@ -88,6 +89,7 @@ ZIRCON_HK_TYPE_LABELS: dict[str, str] = {
     "Adjustment": "adjustment",
     "Grant": "grant",
     "KOL reward": "kol_reward",
+    "Cash reward": "cash_reward",
     "Forex trade component": "forex_trade_component",
     "FX translation P&L": "fx_translation_pnl",
     "Transfer In": "transfer_in",
@@ -170,7 +172,7 @@ _NEGATIVE_CASH_TYPES = {
 _REQUIRED_CASH_TYPES = (
     _POSITIVE_CASH_TYPES
     | _NEGATIVE_CASH_TYPES
-    | {"forex_trade_component", "fx_translation_pnl"}
+    | {"cash_reward", "forex_trade_component", "fx_translation_pnl"}
 )
 _FORMULA_PREFIXES = ("=",)
 

@@ -1,6 +1,7 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.5.0
+Code version: v0.6.0
+- Added: Verified bank cashback and reversals remain distinct from interest.
 - Changed: Credit-card pages fail before investment cash parsing and direct
   users to the first HSBC Copy/paste field and explicit Preview.
 - Fixed: Pasted cash evidence periods include visible zero-net postings even
@@ -42,6 +43,10 @@ from app.services.investment.importing.support import (
 import app.services.investment.importing.basics as _ii_basics
 
 import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
+from app.services.investment.importing.brokers.hsbc.rewards import (
+    hsbc_cash_reward_direction,
+)
 
 import app.services.investment.importing.merge.identity as _ii_merge_identity
 
@@ -1332,6 +1337,9 @@ def _classify_hsbc_cash_account_transaction(
     upper_description = description.upper()
     if HSBC_EXPLICIT_FOREX_TRANSACTION_PATTERN.search(description):
         return "forex_trade_component"
+    reward_direction = hsbc_cash_reward_direction(description)
+    if reward_direction and signed_amount * reward_direction > ZERO:
+        return "cash_reward"
     if signed_amount > ZERO and upper_description.startswith(
         HSBC_CORPORATE_EVENT_PAYMENT_PREFIX
     ):
@@ -1545,6 +1553,9 @@ def _infer_hsbc_cash_account_direction_from_description(description: str) -> int
         return -1
     if settlement_reference.startswith("S-"):
         return 1
+    reward_direction = hsbc_cash_reward_direction(normalized_description)
+    if reward_direction:
+        return reward_direction
     if (
         upper_description in {"USD CLEARING CHEQUE", "DEPOSIT"}
         or upper_description.startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX)

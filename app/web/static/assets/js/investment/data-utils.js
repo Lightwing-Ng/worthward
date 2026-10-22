@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.122.0
+ * Code version: v1.123.0
+ * - Added: Strict signed HSBC debit-card cashback classification and realized income.
  * - Changed: Resolves dated account snapshots, cash anchors, and cost-conserving replay.
  * - Fixed: Reconstructed transfers conserve residual lot basis and later P&L.
  * - Added: Exposes explicit native ending balances, their per-currency
@@ -245,7 +246,7 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.3.2';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.4.0';
 import {
     createInvestmentInterestAccrualUtils,
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
@@ -260,7 +261,7 @@ import {
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.3.0';
 import {
     createInvestmentTransactionPresentationUtils,
-} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.4.1';
+} from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.5.0';
 
 export const INVESTMENT_REPLAY_ORDER_SYMBOL = Symbol('investmentReplayOrder');
 
@@ -634,6 +635,7 @@ export function createInvestmentDataUtils({
         getLongbridgeHkCashEquivalentSyntheticTicker,
         isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
+        getHsbcDebitCardCashbackCategory,
         getTransactionAmount,
         getInvestmentInternalTransferAggregateBridgeAmount,
         getInvestmentInternalTransferAggregateBridgeDelta,
@@ -660,6 +662,7 @@ export function createInvestmentDataUtils({
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
         sumKolRewardRealizedIncomeInBaseCurrency,
+        sumCashRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         addCashLedgerDelta,
         addInvestmentCashScopeDelta,
@@ -778,6 +781,7 @@ export function createInvestmentDataUtils({
         getLongbridgeHkCashEquivalentSyntheticTicker,
         isUsmartHkFractionalSharesTransaction,
         getNormalizedTransactionType,
+        getHsbcDebitCardCashbackCategory,
         getTransactionAmount,
         getInvestmentInternalTransferAggregateBridgeAmount,
         getInvestmentInternalTransferAggregateBridgeDelta,
@@ -804,6 +808,7 @@ export function createInvestmentDataUtils({
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
         sumKolRewardRealizedIncomeInBaseCurrency,
+        sumCashRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
         addCashLedgerDelta,
         addInvestmentCashScopeDelta,
@@ -814,7 +819,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.122.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.123.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

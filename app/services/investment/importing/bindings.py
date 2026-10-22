@@ -1,6 +1,7 @@
 """Investment import domain: bindings.
 
-Code version: v0.3.0
+Code version: v0.4.0
+- Added: Standard imports normalize evidenced HSBC bank cashback types.
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ import app.services.investment.importing.brokers.bochk as _ii_bochk
 import app.services.investment.importing.brokers.futuhk as _ii_futuhk
 
 import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
+from app.services.investment.importing.brokers.hsbc.rewards import (
+    canonicalize_hsbc_cash_reward_record,
+)
 
 import app.services.investment.importing.merge.identity as _ii_merge_identity
 
@@ -76,6 +81,7 @@ def normalize_investment_payload_tickers(payload: dict[str, Any]) -> dict[str, A
                 or _normalize_text(source.get("file_kind")) == "boc_hk_statement_pdf"
             )
             if is_hsbc_payload or record_broker == "hsbc":
+                canonicalize_hsbc_cash_reward_record(txn, broker=payload_broker)
                 raw_currency = _normalize_text(txn.get("currency")).upper()
                 normalized_currency = _ii_merge_identity._normalize_hsbc_currency_code(
                     raw_currency

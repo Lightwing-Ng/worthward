@@ -1,6 +1,7 @@
 """Investment import domain: merge identity.
 
-Code version: v0.3.3
+Code version: v0.4.0
+- Added: Evidenced HSBC cashback retains legacy cash-row merge identity.
 - Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
   is recorded as corroboration instead of a conflicting sequence-digest alias.
 - Fixed: HSBC dividend fallback identity requires exact account, currency,
@@ -34,6 +35,11 @@ import app.services.investment.importing.basics as _ii_basics
 import app.services.investment.importing.brokers.bochk as _ii_bochk
 
 import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
+from app.services.investment.importing.brokers.hsbc.rewards import (
+    hsbc_cash_reward_identity_description,
+    is_hsbc_cash_reward_record,
+)
 
 import app.services.investment.importing.brokers.ibkr.parsers as _ii_ibkr
 
@@ -460,9 +466,13 @@ def _hsbc_cash_account_identity_key(
         if upper_description.startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX)
         else normalized_type
     )
+    is_cash_reward = is_hsbc_cash_reward_record(record)
+    if is_cash_reward:
+        identity_type = "cash_reward"
+        upper_description = hsbc_cash_reward_identity_description(record.get("description"))
     description_based_cash_rows = upper_description.startswith(
         "CASH REBATE"
-    ) or upper_description.startswith("MDC P ")
+    ) or upper_description.startswith("MDC P ") or is_cash_reward
     if description_based_cash_rows:
         return (
             "hsbc",
@@ -510,6 +520,9 @@ def _hsbc_cash_cross_source_identity_key(record: dict[str, Any]) -> tuple[str, .
     )
     date_token = _normalize_text(record.get("date"))
     normalized_type = _normalize_text(record.get("type")).lower()
+    is_cash_reward = is_hsbc_cash_reward_record(record)
+    if is_cash_reward:
+        normalized_type = "cash_reward"
     currency = _normalize_text(record.get("currency")).upper()
     amount_token = _ii_basics._normalize_decimal_identity_token(
         record.get("net_amount_raw")
@@ -518,6 +531,8 @@ def _hsbc_cash_cross_source_identity_key(record: dict[str, Any]) -> tuple[str, .
         source.get("balance_after_raw")
     )
     description = _normalize_whitespace(record.get("description")).upper()
+    if is_cash_reward:
+        description = hsbc_cash_reward_identity_description(description)
     if (
         not account
         or not date_token
@@ -960,6 +975,7 @@ def _merge_hsbc_cash_account_records(
                 "debit_interest": 2,
                 "dividend": 3,
                 "kol_reward": 3,
+                "cash_reward": 3,
             }
             current_priority = semantic_priorities.get(
                 _normalize_text(current.get("type")).lower(),

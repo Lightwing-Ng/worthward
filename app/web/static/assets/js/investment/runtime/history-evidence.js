@@ -1,7 +1,8 @@
 /**
  * HSBC history evidence normalization and immutable-identity helpers.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Added: Signed cash rewards retain direct HSBC cash-balance evidence.
  * - Changed: A pasted USD Savings row may restate its producer order with a
  *   legacy `chronological` marker when its row and ledger sequence agree.
  * - Fixed: Evidence dates require the producer's exact ISO day and monetary
@@ -412,6 +413,11 @@ export function createHsbcHistoryEvidenceUtils(runtime, context) {
             || (negativeCashTypes.has(normalizedType) && amount.value < 0)
             || (
                 normalizedType === 'forex_trade_component'
+                && amount.value !== 0
+            )
+            || (
+                normalizedType === 'cash_reward'
+                && amount.value !== null
                 && amount.value !== 0
             )
         );
