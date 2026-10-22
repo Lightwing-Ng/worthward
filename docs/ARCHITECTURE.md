@@ -1,6 +1,31 @@
 # Architecture guide
 
-Documentation version: `v1.139.0`
+Documentation version: `v1.140.0`
+
+## HSBC debit-card cashback boundary
+
+Supported HSBC bank-cash evidence classifies standard `CASH REBATE 0055`
+credits, the negative `CASH REBATE REV 0055` reversal, and the named
+`REFUND P HSBCPCLOTRANSIT` and `REFUND P MEITUAN REBATE` campaign credits as
+`cash_reward`. The classifier requires the HSBC cash source, account type,
+currency, description, and amount direction to agree. USD, HKD, and offshore
+RMB accounts retain their native currency and existing currency aliases.
+Unknown merchant refunds, unrelated rebates, and KOL records are excluded.
+
+Import normalization and replay identity use the supported economic category
+rather than an old interest/deposit/withdrawal label, so reimporting verified
+legacy cashback does not create another transaction. The browser applies the
+same recognition in memory to existing saved rows. Neither this compatibility
+path nor opening Metrics writes or migrates the production ledger.
+
+Bank cashback keeps its signed cash amount, is excluded from external funding,
+and contributes to realized P&L exactly once. Its ordinary and campaign totals
+are disclosed separately by native currency in Rewards; they remain separate
+from KOL income and the independent credit-card RewardCash disclosure. Income
+conversion uses each ledger date's FX. Missing conversion evidence keeps native
+amounts and ledger navigation available while the converted Rewards and affected
+P&L totals remain unavailable. Reversal classification never proves a link to
+one particular purchase or campaign.
 
 ## HSBC credit-card boundary
 

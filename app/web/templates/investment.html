@@ -1,4 +1,6 @@
-{# Code version: v1.78.2
+{# Code version: v1.79.1
+   Fixed: Loads Stock-details control effect containment.
+   Added: Loads signed HSBC debit-card cashback recognition.
    Changed: Loads the Metrics-only card RewardCash disclosure.
    Fixed: Stock-details ticker options follow the Holdings order.
    Changed: Cash and credit cards share the HSBC account-page paste field. #}
@@ -960,5 +962,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.162.2') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.163.1') }}"></script>
 {% endblock %}

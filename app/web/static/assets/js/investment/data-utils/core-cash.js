@@ -1,7 +1,8 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.3.2
+ * Code version: v1.4.0
+ * - Added: HSBC debit-card cashback keeps signed cash-reward semantics apart from KOL income.
  * - Added: Explicit per-currency ending balances are native cash anchors,
  *   each dated by its own component post date and converted once.
  * - Changed: Loads HSBC evidence that accepts a legacy pasted USD Savings
@@ -17,7 +18,7 @@
 
 import {
     createHsbcHistoryEvidenceUtils,
-} from '../runtime/history-evidence.js?v=investment-history-evidence-v1.1.0';
+} from '../runtime/history-evidence.js?v=investment-history-evidence-v1.2.0';
 
 export function createInvestmentCoreCashUtils(runtime) {
     const formatTransactionCurrency = (...args) => runtime.formatTransactionCurrency(...args);
@@ -32,6 +33,11 @@ export function createInvestmentCoreCashUtils(runtime) {
         getHsbcCashEvidenceState,
         getHsbcStructuredPostingPhysicalEvidenceIdentity,
         hasConsistentHsbcStructuredSettlementAliases,
+        isHsbcCashFileKindAccountCompatible,
+        isHsbcCashFileKindCurrencyCompatible,
+        isKnownHsbcCashFileKind,
+        normalizeHsbcCashAccountType: normalizeHsbcDebitCashAccountType,
+        normalizeHsbcCashCurrency,
         normalizeHsbcDecimalText,
         normalizeHsbcEvidenceDate,
     } = createHsbcHistoryEvidenceUtils(runtime, {baseCurrency: 'USD'});
@@ -82,7 +88,51 @@ export function createInvestmentCoreCashUtils(runtime) {
     });
 
     function getNormalizedTransactionType(txn) {
-        return String(txn?.type || '').replace(/\s+/g, '_').toLowerCase();
+        const normalizedType = String(txn?.type || '').trim().replace(/\s+/g, '_').toLowerCase();
+        return getHsbcDebitCardCashbackCategory(txn) ? 'cash_reward' : normalizedType;
+    }
+
+    function getHsbcDebitCardCashbackCategory(txn) {
+        const source = txn?.source && typeof txn.source === 'object' ? txn.source : {};
+        const rawType = String(txn?.type || '').trim().replace(/\s+/g, '_').toLowerCase();
+        if (!['cash_reward', 'deposit', 'withdrawal', 'credit_interest', 'debit_interest'].includes(rawType)
+            || String(txn?.ticker || '').trim()
+            || String(source.transaction_type_raw || '').trim().toUpperCase() === 'KOL') return '';
+        const brokers = [txn?.broker, source.broker].filter((value) => String(value || '').trim())
+            .map((value) => String(value).trim().toLowerCase());
+        if (!brokers.length || brokers.some((broker) => broker !== 'hsbc')) return '';
+        const fileKind = String(source.file_kind || '').trim().toLowerCase();
+        if (!isKnownHsbcCashFileKind(fileKind)) return '';
+        const currencies = [txn?.currency, txn?.normalized?.currency, source.currency, source.statement_currency_raw]
+            .filter((value) => String(value || '').trim()).map(normalizeHsbcCashCurrency);
+        const currency = currencies[0];
+        if (!currency || currencies.some((value) => value !== currency)
+            || !isHsbcCashFileKindCurrencyCompatible(fileKind, currency)) return '';
+        const accountTypes = [txn?.account_type, source.account_type]
+            .filter((value) => String(value || '').trim())
+            .map((value) => normalizeHsbcDebitCashAccountType(value, currency));
+        if (!accountTypes.length || accountTypes.some((value) => !value || value !== accountTypes[0])
+            || !isHsbcCashFileKindAccountCompatible(fileKind, currency, accountTypes[0])) return '';
+        const amountValues = [txn?.normalized?.net_amount, txn?.amount, txn?.cash, txn?.net_amount_raw]
+            .filter((value) => value !== undefined && value !== null && String(value).trim() !== '');
+        if (!amountValues.length || amountValues.some((value) => (
+            !['string', 'number'].includes(typeof value)
+            || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(String(value).trim())
+        ))) return '';
+        const amounts = amountValues.map(Number);
+        const amount = amounts[0];
+        if (!Number.isFinite(amount) || amount === 0
+            || amounts.some((value) => !Number.isFinite(value) || Math.abs(value - amount) > 1e-9)) return '';
+        const description = String(txn?.description || '').trim().replace(/\s+/g, ' ').toUpperCase();
+        const dateSuffix = '(?: \\(\\d{1,2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\\d{2}\\))?';
+        if (new RegExp(`^CASH REBATE 0055${dateSuffix}(?: (?:CREDIT AS ADVISED|DEP[A-Z0-9]+-\\d+))?$`).test(description)) {
+            return amount > 0 ? 'standard' : '';
+        }
+        if (new RegExp(`^CASH REBATE REV 0055${dateSuffix}(?: DEBIT AS ADVISED)?$`).test(description)) {
+            return amount < 0 ? 'standard' : '';
+        }
+        return amount > 0 && new RegExp(`^REFUND P (?:HSBCPCLOTRANSIT|MEITUAN REBATE)${dateSuffix}(?: CREDIT AS ADVISED)?$`).test(description)
+            ? 'campaign' : '';
     }
 
     const CASH_DEPOSIT_TYPES = new Set(['deposit', 'virtual_deposit']);
@@ -1002,6 +1052,23 @@ export function createInvestmentCoreCashUtils(runtime) {
         }, 0);
     }
 
+    function sumCashRewardRealizedIncomeInBaseCurrency(
+        transactions,
+        fxTimeline,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        return (Array.isArray(transactions) ? transactions : []).reduce((total, txn) => {
+            if (getNormalizedTransactionType(txn) !== 'cash_reward') return total;
+            return total + convertAmountToBaseCurrency(
+                getTransactionAmount(txn),
+                formatTransactionCurrency(txn) || baseCurrency,
+                normalizeLedgerDate(txn?.date),
+                fxTimeline,
+                baseCurrency,
+            );
+        }, 0);
+    }
+
     function getTickerQuoteCurrency(ticker) {
         const normalizedTicker = normalizeInvestmentTicker(ticker);
         if (!normalizedTicker) return INVESTMENT_BASE_CURRENCY;
@@ -1445,6 +1512,7 @@ export function createInvestmentCoreCashUtils(runtime) {
         CASH_DEPOSIT_TYPES,
         CASH_WITHDRAWAL_TYPES,
         getNormalizedTransactionType,
+        getHsbcDebitCardCashbackCategory,
         isCashDepositType,
         isCashWithdrawalType,
         getTransactionQuantity,
@@ -1487,6 +1555,7 @@ export function createInvestmentCoreCashUtils(runtime) {
         getInvestmentBaseCurrency,
         isKolRewardTransaction,
         sumKolRewardRealizedIncomeInBaseCurrency,
+        sumCashRewardRealizedIncomeInBaseCurrency,
         getTickerQuoteCurrency,
         createCashLedger,
         createCashLedgerFromBalances,

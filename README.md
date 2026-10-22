@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.43.0`
+Documentation version: `v3.44.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -612,6 +612,23 @@ remain explicitly provisional.
   proceeds row or deducted twice from an already-net amount.
 - Account validation is opt-in through local environment variables. No account
   number, balance, position quantity, or order reference is documented here.
+
+### HSBC debit-card cashback
+
+HSBC bank-cash records recognize standard debit-card cashback and the supported
+transit and Meituan campaign rewards in USD, CNH, and HKD accounts. Posted
+cashback uses the distinct `cash_reward` type. Existing records imported as
+interest, deposits, or withdrawals are recognized in memory from the same
+verified account context and supported description; this does not rewrite the
+saved ledger by itself.
+
+Metrics includes these amounts in `Rewards`, with separate ordinary and
+campaign breakdowns in each native currency. A negative cashback reversal
+reduces the ordinary cashback total. Each row enters bank cash once and
+realized P&L once, using the activity date's FX for income, without becoming
+KOL income, interest, or an external deposit. Missing FX leaves the aggregate
+unavailable while retaining its native amounts. Generic merchant refunds and
+unrecognized promotions retain their original treatment.
 
 ### HSBC credit-card import
 

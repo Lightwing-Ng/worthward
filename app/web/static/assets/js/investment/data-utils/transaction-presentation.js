@@ -1,7 +1,8 @@
 /**
  * Transaction presentation, lot-scope, and replay-order utilities.
  *
- * Code version: v1.4.1
+ * Code version: v1.5.0
+ * - Added: HSBC cash-reward ordering keeps the original credit or reversal sign.
  * - Fixed: HSBC replay ordering shares the complete direct-cash evidence
  *   boundary and cannot be influenced by malformed producer metadata.
  * - Fixed: Cash replay ordering rejects conflicting aliases, invalid calendar
@@ -581,6 +582,7 @@ export function createInvestmentTransactionPresentationUtils(runtime) {
         const fileKind = String(txn?.source?.file_kind || '').trim().toLowerCase();
         const normalizedType = getNormalizedTransactionType(txn);
         if (['hsbc_usd_account_text', 'hsbc_multi_currency_cash_account_text', 'hsbc_statement_cash'].includes(fileKind)) {
+            if (normalizedType === 'cash_reward') return getTransactionCashSortAmount(txn) < 0 ? 2 : 0;
             if (isCashDepositType(normalizedType) || normalizedType === 'credit_interest') return 0;
             if (isCashWithdrawalType(normalizedType) || normalizedType === 'debit_interest') return 2;
             return 3;

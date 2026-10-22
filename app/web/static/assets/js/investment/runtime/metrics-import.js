@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.5.0
+ * Code version: v1.6.0
+ * - Added: Include all signed cash-reward currencies in reward-ledger navigation.
  * - Added: Read-only RewardCash appears only in the selected Metrics rewards card.
  * - Changed: Shared HSBC account input enables only its detected import path.
  * - Fixed: Pending-trade Metrics uses current multicurrency Total equity.
@@ -232,6 +233,7 @@ function getBrokerRewardLedgerRows(brokerBenefitMetrics) {
         return Array.from(new Set([
             ...(Array.isArray(brokerBenefitMetrics?.couponRebateHkdRows) ? brokerBenefitMetrics.couponRebateHkdRows : []),
             ...(Array.isArray(brokerBenefitMetrics?.couponRebateUsdRows) ? brokerBenefitMetrics.couponRebateUsdRows : []),
+            ...(Array.isArray(brokerBenefitMetrics?.cashRewardRows) ? brokerBenefitMetrics.cashRewardRows : []),
             ...(Array.isArray(brokerBenefitMetrics?.cashRewardHkdRows) ? brokerBenefitMetrics.cashRewardHkdRows : []),
             ...(Array.isArray(brokerBenefitMetrics?.cashRewardUsdRows) ? brokerBenefitMetrics.cashRewardUsdRows : []),
             ...(Array.isArray(brokerBenefitMetrics?.kolRewardRows) ? brokerBenefitMetrics.kolRewardRows : []),

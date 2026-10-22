@@ -8,6 +8,17 @@ workspace scrolling, mobile panel scrolling, and local chart/table viewports
 retain their existing ownership; no negative margins or extra page width are
 used to manufacture effect space.
 
+HSBC debit-card cashback, 22 Oct 2026: supported ordinary cashback, its signed
+reversals, and named transit/Meituan campaign credits are recognized across
+USD, CNH, and HKD cash accounts. Historical interest/deposit/withdrawal labels
+receive an in-memory compatibility classification; the original ledger is not
+rewritten by this feature. Rewards separates ordinary and campaign amounts in
+their native currencies. Cashback is actual bank cash income, with one realized
+P&L contribution and no external-funding or KOL attribution. Missing dated FX
+retains native detail and makes affected totals unavailable. Unrecognized
+refunds or promotions are not inferred to be rewards, and no transaction-level
+purchase linkage is inferred from a rebate description alone.
+
 HSBC Red statement reconciliation and rewards, 21 Oct 2026: the local
 `scripts/reconcile_hsbc_credit_card.py` maintenance entrypoint previews PDF/CSV
 bundles and saves only through the separate card-ledger service after an
@@ -1171,7 +1182,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.282.1`
+Documentation version: `v1.283.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
