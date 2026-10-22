@@ -1,4 +1,4 @@
-/* Code version: v1.82.0 */
+/* Code version: v1.82.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -44,7 +44,7 @@
     margin-bottom: 0;
 }
 
-.investment-workspace-header[data-investment-stock-chart-minimum] {
+.investment-workspace-header[data-investment-workspace-scrollable] {
     overflow-x: hidden;
     overflow-y: auto;
     scrollbar-gutter: stable;
@@ -2620,6 +2620,16 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+}
+
+@media (min-width: 768px) {
+    /* Effect hosts must not become extra clipping or scrolling viewports. */
+    .investment-view-surface[data-active-view="stock_details"],
+    .investment-view-surface[data-active-view="stock_details"] > .investment-view-surface-body,
+    .investment-view-surface[data-active-view="stock_details"] #stock_panel,
+    .investment-view-surface[data-active-view="stock_details"] .investment-stock-details-overview {
+        overflow: visible;
+    }
 }
 
 .investment-stock-details-identity,

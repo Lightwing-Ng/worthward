@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.162.1
+ * Code version: v2.162.2
+ * - Fixed: Stock-details layout releases effects outside non-scrolling wrappers.
  * - Changed: Load the Metrics-only card RewardCash disclosure modules.
  * - Fixed: Loads Stock-details ticker options in the Holdings order.
  * - Added: Shared ticker selection and responsive Investment table and chart bounds.
@@ -175,7 +176,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.5.2';
+} from './investment/layout.js?v=investment-layout-v1.5.3';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -200,7 +201,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.162.1',
+    entry: 'v2.162.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
