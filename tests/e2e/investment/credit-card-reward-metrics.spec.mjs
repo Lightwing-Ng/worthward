@@ -1,8 +1,11 @@
-/* Code version: v1.0.4
- * Intercepted card rewards never enter a persistent store or investment cash.
+/* Code version: v1.1.0
+ * Intercepted RewardCash joins current rewards and P&L without changing bank cash.
  */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
+
+const holdingsRewards = (page) => page.locator('#investment_holdings_panel .investment-holdings-table-scroll [data-investment-broker-rewards-row]');
+const holdingsRewardValue = (page) => holdingsRewards(page).locator('td').nth(6).locator('.trade-metric-value');
 
 const mockRewards = async (page, {missingFx = false} = {}) => mockInvestmentReadApis(page, {
     startingCash: 0,
@@ -40,6 +43,7 @@ for (const width of [1280, 390]) {
         await expect(rewards.locator('.trade-metric-value')).toHaveText('5.00');
         const kol = panel.locator('.trade-metric-card').filter({has: page.getByText('KOL rewards', {exact: true})});
         await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
+        await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('+15.00');
         await rewards.hover();
         await rewards.locator('[data-investment-metric-breakdown-trigger]').click();
         await expect(rewards.locator('.investment-stock-details-metric-breakdown')).toBeVisible();
@@ -50,18 +54,24 @@ for (const width of [1280, 390]) {
         await expect(history).toHaveCount(2);
         await page.locator('label[for="investment_view_holdings"]').click();
         const holdings = page.locator('#investment_holdings_panel:not([hidden])');
+        await expect(holdingsRewards(page)).toContainText('Rewards');
+        await expect(holdingsRewardValue(page)).toHaveText('15.00');
         await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).toHaveText('1,030.00');
         await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('1,030.00');
-        const realizedPnl = holdings.locator('.investment-holdings-summary-row td').nth(6)
-            .locator('.trade-metric-value').first();
-        await expect(realizedPnl).toHaveText('10.00');
+        for (const field of ['summary_realized_pnl', 'summary_cumulative_pnl']) {
+            await expect(holdings.locator(`[data-investment-live-field="${field}"]`))
+                .toHaveAttribute('data-investment-live-number', '15');
+        }
         await page.goto('/trade/investment?view=metrics&metrics-broker=ibkr&broker=ibkr');
         await expect(page.locator('#investment_metrics_panel [data-metric-key="coupon-rebates-cash-rewards"] .trade-metric-value')).toHaveText('0.00');
+        await expect(page.locator('#investment_metrics_panel [data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('0.00');
+        // Holdings remains the all-broker aggregate when the history filter changes.
+        await expect(holdingsRewardValue(page)).toHaveText('15.00');
         expect(errors).toEqual([]);
     });
 }
 
-test('missing card FX leaves investment P&L available and native RewardCash visible', async ({page}) => {
+test('missing card FX marks current rewards and P&L unavailable while preserving cash and native RewardCash', async ({page}) => {
     await mockRewards(page, {missingFx: true});
     await page.goto('/trade/investment?view=metrics&metrics-broker=hsbc&broker=hsbc');
     const panel = page.locator('#investment_metrics_panel');
@@ -70,7 +80,19 @@ test('missing card FX leaves investment P&L available and native RewardCash visi
     await rewards.hover();
     await rewards.locator('[data-investment-metric-breakdown-trigger]').click();
     await expect(rewards).toContainText('HKD 40.00');
-    await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('+10.00');
+    await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('Unavailable');
+    await expect(holdingsRewardValue(page)).toHaveText('Unavailable');
+    const holdings = page.locator('#investment_holdings_panel');
+    for (const field of ['summary_realized_pnl', 'summary_cumulative_pnl']) {
+        await expect(holdings.locator(`[data-investment-live-field="${field}"]`)).toHaveText(/^(?:Unavailable|Partial · total unavailable)$/);
+        await expect(holdings.locator(`[data-investment-live-field="${field}"]`))
+            .not.toHaveAttribute('data-investment-live-number', /./);
+    }
+    await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).toHaveText('1,030.00');
+    await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('1,030.00');
+    await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(2);
+    await page.goto('/trade/investment?view=metrics&metrics-broker=ibkr&broker=ibkr');
+    await expect(page.locator('#investment_metrics_panel [data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('0.00');
 });
 
 test('card import refreshes Rewards in place only after success and preserves KOL without investment reloads', async ({page}) => {
@@ -148,6 +170,8 @@ PAY w/RC SAMPLE SHOP HK
     const kol = panel.locator('.trade-metric-card').filter({has: page.getByText('KOL rewards', {exact: true})});
     await expect(rewards.locator('.trade-metric-value')).toHaveText('5.00');
     await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
+    await expect(holdingsRewardValue(page)).toHaveText('15.00');
+    await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('+15.00');
     const investmentBefore = await page.evaluate(() => JSON.stringify(window.WORTHWARD_INVESTMENT_DATA.transactions));
     const rewardsBefore = await page.evaluate(() => JSON.stringify(window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards));
     await page.locator('#toggle_form_button').click();
@@ -167,6 +191,8 @@ PAY w/RC SAMPLE SHOP HK
     await expect(submit).toBeDisabled();
     await expect(rewards.locator('.trade-metric-value')).toHaveText('5.00');
     await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
+    await expect(holdingsRewardValue(page)).toHaveText('15.00');
+    await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('+15.00');
     expect(await page.evaluate(() => JSON.stringify(window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards))).toBe(rewardsBefore);
     await paste.click();
     await expect(submit).toBeEnabled();
@@ -175,6 +201,16 @@ PAY w/RC SAMPLE SHOP HK
     await expect(submit).toBeDisabled();
     await expect(rewards.locator('.trade-metric-value')).toHaveText('7.50');
     await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
+    await expect(holdingsRewardValue(page)).toHaveText('17.50');
+    await expect(panel.locator('[data-metric-key="realized-pnl"] .trade-metric-value')).toHaveText('+17.50');
+    const holdings = page.locator('#investment_holdings_panel');
+    for (const field of ['summary_realized_pnl', 'summary_cumulative_pnl']) {
+        await expect(holdings.locator(`[data-investment-live-field="${field}"]`))
+            .toHaveAttribute('data-investment-live-number', '17.5');
+    }
+    await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).toHaveText('1,030.00');
+    await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('1,030.00');
+    await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(2);
     await page.locator('#investment_import_close_button').click();
     await expect(page.locator('#transaction_form_container')).toBeHidden();
     await rewards.hover();

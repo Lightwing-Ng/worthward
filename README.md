@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.44.0`
+Documentation version: `v3.45.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -670,11 +670,17 @@ their hashes remain available for verification. Overlapping file and webpage
 rows share one transaction, retain each source identity, and can promote an
 exact same-date pending purchase to posted.
 
-Metrics includes posted card RewardCash in `Rewards`, separately from
-`KOL rewards`, with its native HKD amount in the breakdown and conversion at
-each activity date's exchange rate. This card disclosure does not change
-investment cash, equity, or P&L. Missing card evidence or required FX is shown
-as unavailable rather than as a zero reward.
+Holdings `Rewards` includes posted RewardCash redemption offsets alongside
+coupon rebates, cash rewards, and KOL rewards. Metrics includes the same card
+amount in `Rewards`, separately from `KOL rewards`, with its native HKD amount
+in the breakdown. Each card activity is converted at its own date's exchange
+rate and contributes once to realized and cumulative P&L. Historical P&L
+includes only RewardCash dated on or before the selected point. Statement
+earned and closing balances remain separate facts, not additional redemptions.
+Missing card evidence or required FX makes affected rewards and P&L totals
+unavailable rather than zero. All and HSBC scopes include the card amount;
+other broker scopes exclude it. Card rewards do not change investment cash,
+equity, positions, or the asset-value curve.
 
 Repeated and overlapping captures are merged by account, card, transaction
 identity, and occurrence. A later posted record replaces a same-date pending
@@ -683,8 +689,11 @@ authorization with the same identity once. Possible matches posted within
 review instead of guessing. An authorization without a confirmed posting stays
 pending; its absence never establishes cancellation. Raw
 source text is retained locally with its SHA-256 digest; browser responses show
-only masked account identity. Preview performs no writes, and card imports
-never alter investment cash, holdings, or returns.
+only masked account identity. Preview performs no writes. A successful card
+import reads locally cached dated FX without waiting for a remote exchange-rate
+refresh, then immediately refreshes Holdings, Metrics, and Overview P&L from
+existing investment data. Missing cached FX preserves the saved card entries
+and native rewards without inventing a converted total.
 
 ### HSBC statement import
 

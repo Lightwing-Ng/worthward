@@ -1,13 +1,15 @@
 """HTTP boundary for the independent HSBC credit-card ledger.
 
-Code version: v1.1.0
-- Added: Read-only RewardCash disclosure separate from investment accounting.
+Code version: v1.2.0
+- Fixed: Card commits return with cached dated FX instead of awaiting a provider.
 """
 
 from __future__ import annotations
 
+from bisect import bisect_right
 import hashlib
 import logging
+import math
 from pathlib import Path
 
 from flask import jsonify, request
@@ -19,12 +21,38 @@ from app.services.credit_card_ledger import (
     preview_hsbc_credit_card_import,
     read_credit_card_ledger,
 )
+from app.services.market.market_cap import FX_RATE_SPECS, load_fx_history
 from app.web.request_security import validate_local_browser_write_request
 
 
 LOGGER = logging.getLogger(__name__)
 CREDIT_CARD_STORE_PATH = SETTINGS_STORE_DIR / "credit_cards.json"
 MAX_CREDIT_CARD_TEXT_BYTES = 1_048_576
+
+
+def _cached_credit_card_fx_history(rows: list[dict]) -> dict:
+    """Select existing authoritative closes at or before each reward date."""
+    histories = {}
+    for currency in sorted({row["currency"] for row in rows} & FX_RATE_SPECS.keys()):
+        values = {}
+        for row in load_fx_history(currency).itertuples(index=False):
+            rate = float(row.UsdPerUnit)
+            if math.isfinite(rate) and rate > 0:
+                values[row.Date.date().isoformat()] = 1.0 / rate
+        dates = sorted(values)
+        selected = {}
+        for row in rows:
+            if row["currency"] != currency:
+                continue
+            index = bisect_right(dates, row["date"]) - 1
+            if index >= 0:
+                selected[dates[index]] = values[dates[index]]
+        if selected:
+            histories[currency] = {
+                "dates": sorted(selected),
+                "values": {day: selected[day] for day in sorted(selected)},
+            }
+    return histories
 
 
 def read_credit_card_reward_payload(path: Path, build_fx_history) -> dict:
@@ -110,7 +138,7 @@ def build_credit_card_context(context: dict[str, object]) -> dict[str, object]:
             if commit:
                 result["credit_card_rewards"] = read_credit_card_reward_payload(
                     ledger_path,
-                    context.get("build_investment_fx_rate_history_payload", lambda rows: {}),
+                    _cached_credit_card_fx_history,
                 )
             return respond({"success": True, **result, "committed": commit})
         except RequestEntityTooLarge:

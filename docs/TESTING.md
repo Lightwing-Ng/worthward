@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.100.0`
+Documentation version: `v1.101.0`
 
 ## HSBC debit-card cashback
 
@@ -32,15 +32,33 @@ Run the dedicated Python suites with `python3 -B -m pytest -q
  tests/python/web/test_credit_card_routes.py
  tests/python/web/test_credit_card_reward_metrics.py`.
 
+The Rewards contract as of 23 Oct 2026 includes posted card RewardCash
+redemption offsets in Holdings Rewards and current realized and cumulative
+P&L. Metrics keeps card RewardCash within Rewards and KOL rewards separate.
+Tests must preserve investment transactions, cash, NAV, positions, and the
+asset-value curve; the independent card ledger is not merged into investment
+persistence. Statement earned and closing balances do not create more income.
+
 `node --test tests/js/investment/test_credit_card_reward_metrics.mjs
- tests/js/investment/test_hsbc_credit_card_import.mjs` verifies dated FX,
-broker scoping, duplicate disclosures, unavailable evidence, and successful
-versus failed or stale import responses. `./scripts/test_e2e.sh
+ tests/js/investment/test_hsbc_credit_card_import.mjs` covers combined rewards
+counted once, date-specific FX, All and HSBC inclusion, other broker exclusion,
+duplicate identities, and unavailable evidence. Historical `asOfDate` checks
+exclude later card activity. Import checks require one unified rewards refresh
+after a successful current response, no refresh after failure or a stale
+response, and the legacy Metrics-only refresh fallback. The import response
+tests must also prove cached FX does not call a remote provider after commit;
+missing cache evidence keeps saved entries and native rewards readable.
+
+`./scripts/test_e2e.sh
  tests/e2e/investment/credit-card-reward-metrics.spec.mjs` covers desktop and
-narrow Rewards breakdowns, missing FX, and immediate import refresh. Card
-Rewards remain outside investment cash, equity, and realized P&L; KOL rewards
-retain their separate category. All browser writes use intercepted anonymous
-fixtures and the supported isolated port 8699.
+narrow Rewards breakdowns, matching Holdings and current P&L totals, missing
+FX, unchanged cash and equity, and immediate import refresh without another
+investment request. Overview checks cover historical cutoff and invalidation
+of current and historical P&L caches while preserving equity points. All browser
+writes use intercepted anonymous fixtures and the supported isolated port 8699.
+These are verification requirements; they do not record a completed run on
+the current PR worktree. Any earlier dated results apply to their named
+snapshots and must not be treated as a complete gate result for this change.
 
 ## HSBC credit-card verification
 

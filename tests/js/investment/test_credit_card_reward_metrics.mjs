@@ -1,5 +1,5 @@
-/* Code version: v1.0.0
- * Card RewardCash is a Metrics disclosure outside investment replay and P&L.
+/* Code version: v1.1.0
+ * Posted RewardCash joins realized reward income outside investment cash replay.
  */
 import assert from 'node:assert/strict';
 import {afterEach, beforeEach, test} from 'node:test';
@@ -66,7 +66,7 @@ test('RewardCash is converted by date and disclosed separately from KOL rewards'
     assert.match(disclosure.rewardDisclosureDetails[0].value, /40\.00/);
     assert.deepEqual(benefit, original);
     assert.deepEqual(runtime.getBrokerRewardLedgerRows(disclosure), [2]);
-    assert.equal(runtime.getBrokerRewardRealizedIncome(disclosure), 10);
+    assert.ok(Math.abs(runtime.getBrokerRewardRealizedIncome(disclosure) - (10 + 40 / 7.8)) < 1e-10);
     const html = runtime.renderMetricCards(runtime.BROKER_BENEFIT_METRIC_DEFINITIONS.slice(0, 1), disclosure);
     assert.match(html, />Rewards</);
     assert.match(html, /RewardCash · HKD/);
@@ -88,7 +88,7 @@ test('Card rewards enter All and HSBC Metrics and stay outside other broker scop
     }
 });
 
-test('Adding card RewardCash leaves Holdings cash, equity, realized and historical P&L unchanged', () => {
+test('Posted RewardCash increases realized and cumulative P&L while preserving cash, equity, and ledger rows', () => {
     const runtime = makeRuntime();
     const investmentData = structuredClone(window.WORTHWARD_INVESTMENT_DATA);
     const benefits = runtime.getBrokerBenefitMetrics(transactions, {}, 1010);
@@ -96,11 +96,16 @@ test('Adding card RewardCash leaves Holdings cash, equity, realized and historic
     const historicalBefore = runtime.getInvestmentHistoricalRealizedPnl(transactions, []);
     const disclosure = runtime.getMetricsRewardDisclosureMetrics(benefits, transactions, {brokerCode: 'hsbc'});
     const after = runtime.getHoldingsSummaryMetrics(transactions, {}, 1010, disclosure, {brokerCode: 'hsbc'});
-    assert.deepEqual(after, before);
-    assert.equal(after.cash, 1010);
-    assert.equal(after.totalEquity, 1010);
-    assert.equal(after.totalRealizedPnl, 10);
+    assert.ok(Math.abs(after.totalRealizedPnl - before.totalRealizedPnl - 40 / 7.8) < 1e-10);
+    assert.ok(Math.abs(after.cumulativePnl - before.cumulativePnl - 40 / 7.8) < 1e-10);
+    assert.equal(after.totalUnrealizedPnl, before.totalUnrealizedPnl);
+    assert.equal(after.cash, before.cash);
+    assert.equal(after.totalEquity, before.totalEquity);
+    assert.deepEqual(after.realizedPnlRows, before.realizedPnlRows);
+    assert.deepEqual(after.tickerSummaries, before.tickerSummaries);
     assert.equal(runtime.getInvestmentHistoricalRealizedPnl(transactions, []), historicalBefore);
+    assert.ok(Math.abs(runtime.getInvestmentHistoricalRealizedPnl(transactions, [], {asOfDate: '2026-10-12'})
+        - after.totalRealizedPnl) < 1e-10);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, investmentData);
     assert.deepEqual(runtime.buildInvestmentFxRateTimeline(transactions).ratesByCurrency.HKD, undefined);
 });
@@ -116,11 +121,21 @@ test('Missing dated FX or a damaged card ledger shows Unavailable and preserves 
     assert.ok(Number.isNaN(disclosure.rewardDisclosureIncome));
     assert.match(disclosure.rewardDisclosureDetails[0].value, /40\.00/);
     assert.equal(runtime.BROKER_BENEFIT_METRIC_DEFINITIONS[0].formatValue(disclosure), 'Unavailable');
-    assert.equal(runtime.getBrokerRewardRealizedIncome(disclosure), 10);
+    assert.ok(Number.isNaN(runtime.getBrokerRewardRealizedIncome(disclosure)));
+    assert.equal(disclosure.creditCardRewardUnavailable, true);
+    const summary = runtime.getHoldingsSummaryMetrics(transactions, {}, 1010, disclosure, {brokerCode: 'hsbc'});
+    assert.equal(summary.totalRealizedPnl, null);
+    assert.equal(summary.cumulativePnl, null);
+    assert.equal(summary.pnlUnavailable, true);
+    assert.equal(summary.creditCardRewardUnavailable, true);
+    assert.equal(summary.investmentPnlUnavailable, false);
+    assert.equal(summary.cash, 1010);
+    assert.equal(summary.totalEquity, 1010);
     window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards = {status: 'unavailable', transactions: []};
     disclosure = runtime.getMetricsRewardDisclosureMetrics(benefits, transactions);
     assert.equal(disclosure.rewardDisclosureUnavailable, true);
     assert.equal(disclosure.rewardDisclosureDetails[0].value, 'Unavailable');
+    assert.ok(Number.isNaN(runtime.getBrokerRewardRealizedIncome(disclosure)));
     assert.equal(runtime.getMetricsRewardDisclosureMetrics(benefits, transactions, {brokerCode: 'schwab'}).rewardDisclosureUnavailable, false);
 });
 
@@ -129,4 +144,78 @@ test('RewardCash duplicate IDs do not inflate the Metrics disclosure', () => {
     window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.transactions.push({...rewardRows[0]});
     const metrics = runtime.getMetricsRewardDisclosureMetrics({}, transactions);
     assert.ok(Math.abs(metrics.rewardDisclosureIncome - 40 / 7.8) < 1e-10);
+});
+
+test('Repeated aggregation and switching broker scope do not duplicate card income', () => {
+    const runtime = makeRuntime();
+    const benefits = runtime.getBrokerBenefitMetrics(transactions, {}, 1010);
+    const once = runtime.getMetricsRewardDisclosureMetrics(benefits, transactions);
+    const twice = runtime.getMetricsRewardDisclosureMetrics(once, transactions);
+    assert.deepEqual(twice, once);
+    assert.deepEqual(runtime.getBrokerRewardLedgerRows(twice), [2]);
+    const otherBroker = runtime.getMetricsRewardDisclosureMetrics(twice, transactions, {brokerCode: 'ibkr'});
+    assert.equal(otherBroker.creditCardRewardIncome, 0);
+    assert.equal(otherBroker.creditCardRewardUnavailable, false);
+    assert.equal(runtime.getBrokerRewardRealizedIncome(otherBroker), 10);
+    assert.deepEqual(otherBroker.rewardDisclosureDetails, []);
+});
+
+test('Historical RewardCash enters on each activity date using only its applicable dated FX', () => {
+    const runtime = makeRuntime();
+    window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.fx_rate_history_by_currency = {
+        HKD: {dates: ['2026-09-18', '2026-10-12'], values: {'2026-09-18': 7.5, '2026-10-12': 8}},
+    };
+    for (const [asOfDate, expected] of [
+        ['2026-09-17', 10], ['2026-09-18', 12], ['2026-10-11', 12], ['2026-10-12', 15.125],
+    ]) {
+        assert.equal(runtime.getInvestmentHistoricalRealizedPnl(transactions, [], {asOfDate}), expected);
+    }
+    assert.equal(runtime.getInvestmentHistoricalRealizedPnl(transactions, [], {
+        asOfDate: '2026-10-12', brokerCode: 'ibkr',
+    }), 10);
+    const current = runtime.getMetricsRewardDisclosureMetrics({}, transactions);
+    assert.equal(current.creditCardRewardIncome, 5.125);
+});
+
+test('Missing later card FX does not invalidate dates before that reward was posted', () => {
+    const runtime = makeRuntime();
+    window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.transactions = [{...rewardRows[1]}];
+    window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.fx_rate_history_by_currency = {};
+    const earlier = runtime.getMetricsRewardDisclosureMetrics({}, transactions, {asOfDate: '2026-10-11'});
+    assert.equal(earlier.creditCardRewardIncome, 0);
+    assert.equal(earlier.rewardDisclosureUnavailable, false);
+    assert.deepEqual(earlier.rewardDisclosureDetails, []);
+    assert.equal(runtime.getInvestmentHistoricalRealizedPnl(transactions, [], {asOfDate: '2026-10-11'}), 10);
+    assert.ok(Number.isNaN(runtime.getInvestmentHistoricalRealizedPnl(transactions, [], {asOfDate: '2026-10-12'})));
+});
+
+test('Empty posted card rewards add zero while unavailable card data does not become zero', () => {
+    const runtime = makeRuntime();
+    window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.transactions = [];
+    const empty = runtime.getMetricsRewardDisclosureMetrics({}, transactions);
+    assert.equal(empty.creditCardRewardIncome, 0);
+    assert.equal(empty.creditCardRewardUnavailable, false);
+    window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.status = 'unavailable';
+    const unavailable = runtime.getMetricsRewardDisclosureMetrics({}, transactions);
+    assert.ok(Number.isNaN(unavailable.creditCardRewardIncome));
+    assert.equal(unavailable.creditCardRewardUnavailable, true);
+    const otherBroker = runtime.getMetricsRewardDisclosureMetrics(unavailable, transactions, {brokerCode: 'schwab'});
+    assert.equal(otherBroker.creditCardRewardIncome, 0);
+    assert.equal(otherBroker.rewardDisclosureUnavailable, false);
+});
+
+test('Damaged posted reward records fail closed instead of producing partial realized income', () => {
+    const runtime = makeRuntime();
+    const benefits = runtime.getBrokerBenefitMetrics(transactions, {}, 1010);
+    for (const damaged of [
+        {...rewardRows[1], id: ''}, {...rewardRows[1], date: ''},
+        {...rewardRows[1], amount: 'unknown'}, {...rewardRows[1], currency: 'USD'},
+    ]) {
+        window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards.transactions = [{...rewardRows[0]}, damaged];
+        const metrics = runtime.getMetricsRewardDisclosureMetrics(benefits, transactions);
+        assert.equal(metrics.creditCardRewardUnavailable, true);
+        assert.ok(Number.isNaN(metrics.creditCardRewardIncome));
+        assert.ok(Number.isNaN(runtime.getBrokerRewardRealizedIncome(metrics)));
+        assert.deepEqual(runtime.getBrokerRewardLedgerRows(metrics), [2]);
+    }
 });

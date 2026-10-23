@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.5.0 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -91,6 +91,8 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
         syncImportValidationState: () => {},
         metricRefreshes: 0,
         renderInvestmentMetricsPanel() { this.metricRefreshes += 1; },
+        rewardViewRefreshes: 0,
+        refreshInvestmentRewardViews() { this.rewardViewRefreshes += 1; },
         syncHsbcPasteDisplaySummaries: () => {},
         resetHsbcPasteValidation() { this.state.hsbcPasteValidation = {state: 'idle', ready: false, fieldStatus: {}}; },
         setImportFeedback(message) { this.feedback = message; },
@@ -279,7 +281,21 @@ test('commit sends shared card text and digest once, then displays persisted row
     assert.equal(elements.get('hsbc_credit_card_rows').children[0].children[2].textContent, 'Persisted purchase');
     assert.match(elements.get('hsbc_credit_card_status').textContent, /read back/);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}], credit_card_rewards: rewards});
+    assert.equal(runtime.rewardViewRefreshes, 1);
+    assert.equal(runtime.metricRefreshes, 0);
+});
+
+test('a successful import falls back to the Metrics refresh when combined reward views are unavailable', async (t) => {
+    const rewards = {status: 'complete', transactions: []};
+    const {runtime} = setup(t, async (url) => response(url.endsWith('/import')
+        ? {...fixture(), merged_transactions: [], credit_card_rewards: rewards}
+        : fixture()));
+    delete runtime.refreshInvestmentRewardViews;
+    await settle();
+    await runtime.importHsbcCreditCard();
+    assert.equal(runtime.rewardViewRefreshes, 0);
     assert.equal(runtime.metricRefreshes, 1);
+    assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards, rewards);
 });
 
 test('changing shared input during session refresh prevents a captured commit', async (t) => {
@@ -315,6 +331,7 @@ test('new card text entered during a commit previews afterward without another w
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
     assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
+    assert.equal(runtime.rewardViewRefreshes, 0);
     assert.equal(runtime.metricRefreshes, 0);
 });
 
@@ -333,6 +350,7 @@ test('an uncertain failed commit needs an explicit re-paste and fresh preview be
     assert.equal(urls.length, 2);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
     assert.equal(runtime.metricRefreshes, 0);
+    assert.equal(runtime.rewardViewRefreshes, 0);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Paste the page again to preview/);
     runtime.syncHsbcCreditCardInput({retry: true});

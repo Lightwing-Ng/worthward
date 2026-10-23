@@ -1,9 +1,11 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
+ * - Changed: Posted RewardCash joins current and dated realized reward income
+ *   while investment cash, equity, and ledger rows remain independent.
  * - Added: Signed debit-card cashback and campaign rewards with native-currency details.
- * - Added: Metrics-only card RewardCash disclosure without changing investment P&L.
+ * - Added: Independent card RewardCash disclosure with its own dated FX evidence.
  * - Fixed: Current broker metrics request their explicit snapshot scope.
  * - Changed: Holdings metrics expose the ticker summaries behind their realized
  *   total so historical chart hover can reuse the same attribution.
@@ -96,7 +98,11 @@ function classifyInvestmentRealizedCashFlow(txn) {
         return '';
     }
 
-function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
+function getInvestmentHistoricalRealizedPnl(
+        transactions,
+        tickerSummaries,
+        {asOfDate = '', brokerCode = 'all'} = {},
+    ) {
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
         // Historical hover is an as-of replay. Current broker position/performance
@@ -163,7 +169,10 @@ function getInvestmentHistoricalRealizedPnl(transactions, tickerSummaries) {
             ),
             0,
         );
-        return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl;
+        const creditCardRewardIncome = asOfDate
+            ? getMetricsRewardDisclosureMetrics({}, safeTransactions, {brokerCode, asOfDate}).creditCardRewardIncome
+            : 0;
+        return holdingsRealizedPnl + brokerRewardRealizedPnl + standaloneCashRealizedPnl + creditCardRewardIncome;
     }
 
 function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitMetrics) {
@@ -195,7 +204,7 @@ function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitM
         };
         const realizedPnlRowSet = new Set(runtime.getBrokerRewardLedgerRows(brokerBenefitMetrics));
         let standaloneCashRealizedPnl = 0;
-        let conversionIncomplete = false;
+        let conversionIncomplete = !Number.isFinite(categoryAmounts.cashRewards);
 
         const recordCategoryAmount = (key, value, ledgerNo) => {
             const numericValue = Number(value);
@@ -400,6 +409,14 @@ function getHoldingsSummaryMetrics(
             resolvedBrokerBenefitMetrics,
         );
         const pnlCoverage = runtime.getInvestmentAggregatePnlCoverage(tickerSummaries);
+        const creditCardRewardUnavailable = resolvedBrokerBenefitMetrics.creditCardRewardUnavailable === true;
+        const investmentRealizedAttribution = creditCardRewardUnavailable
+            ? getRealizedPnlAttribution(safeTransactions, tickerSummaries, {
+                ...resolvedBrokerBenefitMetrics, creditCardRewardIncome: 0,
+            })
+            : realizedPnlAttribution;
+        const investmentPnlUnavailable = pnlCoverage.status !== 'complete'
+            || !Number.isFinite(investmentRealizedAttribution.totalRealizedPnl);
         if (!Number.isFinite(realizedPnlAttribution.totalRealizedPnl)) {
             pnlCoverage.cashFlowFxUnavailable = true;
             pnlCoverage.status = pnlCoverage.completeCount > 0 ? 'partial' : 'unavailable';
@@ -407,7 +424,7 @@ function getHoldingsSummaryMetrics(
         const pnlUnavailable = pnlCoverage.status !== 'complete'
             || !Number.isFinite(realizedPnlAttribution.totalRealizedPnl);
         const totalRealizedPnl = pnlUnavailable ? null : realizedPnlAttribution.totalRealizedPnl;
-        const totalUnrealizedPnl = pnlUnavailable
+        const totalUnrealizedPnl = investmentPnlUnavailable
             ? null
             : tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
         const cumulativePnl = pnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
@@ -484,11 +501,13 @@ function getHoldingsSummaryMetrics(
             cumulativePnl,
             pnlUnavailable,
             pnlCoverage,
+            creditCardRewardUnavailable,
+            investmentPnlUnavailable,
             tickerSummaries,
             realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
             realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
-            unrealizedPnlRows: pnlUnavailable ? [] : unrealizedPnlRows,
-            unrealizedPnlDetails: pnlUnavailable ? [] : unrealizedPnlDetails,
+            unrealizedPnlRows: investmentPnlUnavailable ? [] : unrealizedPnlRows,
+            unrealizedPnlDetails: investmentPnlUnavailable ? [] : unrealizedPnlDetails,
             cumulativePnlRows: pnlUnavailable ? [] : Array.from(new Set([
                 ...realizedPnlRows,
                 ...unrealizedPnlRows,
@@ -861,7 +880,11 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         };
     }
 
-function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {brokerCode = 'all'} = {}) {
+function getMetricsRewardDisclosureMetrics(
+        brokerBenefitMetrics,
+        transactions,
+        {brokerCode = 'all', asOfDate = ''} = {},
+    ) {
         const metrics = brokerBenefitMetrics && typeof brokerBenefitMetrics === 'object'
             ? brokerBenefitMetrics : {};
         const details = [...(Array.isArray(metrics.couponAndCashRewardDetails)
@@ -869,11 +892,14 @@ function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {
         let income = Number(metrics.couponAndCashRewardIncome ?? 0);
         let unavailable = !Number.isFinite(income);
         let creditCardRewardIncome = 0;
+        let creditCardRewardUnavailable = false;
+        const cutoffDate = runtime.normalizeLedgerDate(asOfDate);
         const normalizedBroker = String(brokerCode || 'all').trim().toLowerCase();
         if (normalizedBroker === 'all' || normalizedBroker === 'hsbc') {
             const rewards = window.WORTHWARD_INVESTMENT_DATA?.credit_card_rewards;
-            if (rewards?.status !== 'complete' || !Array.isArray(rewards?.transactions)) {
+            if ((asOfDate && !cutoffDate) || rewards?.status !== 'complete' || !Array.isArray(rewards?.transactions)) {
                 unavailable = true;
+                creditCardRewardUnavailable = true;
                 details.push({label: 'RewardCash', value: 'Unavailable'});
             } else {
                 let cardUnavailable = false;
@@ -888,9 +914,12 @@ function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {
                 const seenIds = new Set();
                 rewards.transactions.forEach((row) => {
                     if (seenIds.has(row?.id)) return;
+                    const rowDate = runtime.normalizeLedgerDate(row?.date);
+                    if (cutoffDate && rowDate && rowDate > cutoffDate) return;
                     const amount = Number(row?.amount);
                     if (!row?.id || row.currency !== 'HKD' || !(amount > 0)
-                        || !Number.isFinite(amount) || !/^\d{4}-\d{2}-\d{2}$/.test(row?.date || '')) {
+                        || !Number.isFinite(amount) || !rowDate
+                        || !/^\d{4}-\d{2}-\d{2}$/.test(row?.date || '')) {
                         cardUnavailable = true;
                         return;
                     }
@@ -911,6 +940,7 @@ function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {
                     details.push({label: 'RewardCash conversion', value: 'Unavailable'});
                 }
                 income += creditCardRewardIncome;
+                creditCardRewardUnavailable = cardUnavailable;
                 unavailable = unavailable || cardUnavailable;
             }
         }
@@ -919,7 +949,8 @@ function getMetricsRewardDisclosureMetrics(brokerBenefitMetrics, transactions, {
             rewardDisclosureIncome: unavailable ? NaN : income,
             rewardDisclosureUnavailable: unavailable,
             rewardDisclosureDetails: details,
-            creditCardRewardIncome,
+            creditCardRewardIncome: creditCardRewardUnavailable ? NaN : creditCardRewardIncome,
+            creditCardRewardUnavailable,
         };
     }
 

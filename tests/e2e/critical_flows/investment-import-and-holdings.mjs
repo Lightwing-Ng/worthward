@@ -1,4 +1,4 @@
-/* Code version: v1.3.3 */
+/* Code version: v1.3.4 */
 import {
     expect,
     test,
@@ -1974,8 +1974,8 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     await expect(bodyRows).toHaveCount(14);
     const rewardRow = bodyRows.last();
     await expect(rewardRow).toHaveAttribute('data-investment-broker-rewards-row', '');
-    await expect(rewardRow.locator('.ticker-identity-symbol')).toHaveText('Broker rewards');
-    await expect(rewardRow.locator('.ticker-identity-name')).toHaveText('Coupons, cash rewards & KOL rewards');
+    await expect(rewardRow.locator('.ticker-identity-symbol')).toHaveText('Rewards');
+    await expect(rewardRow.locator('.ticker-identity-name')).toHaveText('Coupons, cash rewards, KOL rewards & RewardCash');
     await expect(rewardRow.locator('.investment-broker-reward-token-logo')).toHaveCSS(
         'background-color',
         'rgb(22, 163, 74)',
