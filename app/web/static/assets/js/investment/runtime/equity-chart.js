@@ -1,7 +1,9 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.3.1
+ * Code version: v1.4.0
+ * - Changed: Posted RewardCash joins current and dated historical realized P&L.
+ * - Added: Card imports refresh reward views without changing asset chart points.
  * - Fixed: Canonical realized baseline dates survive later boundary replay.
  * - Changed: Overview x-axis labels use the shared pixel-space date layout and
  *   never show a time of day, including the hover date label.
@@ -104,10 +106,10 @@ function updateDashboardWithEquity(
         }
         runtime.setInvestmentSharedChartDateRange(dashboardChartPoints);
         const fundingMetrics = runtime.getUsdFundingMetrics(processed);
-        const brokerBenefitMetrics = runtime.getBrokerBenefitMetrics(
+        const brokerBenefitMetrics = runtime.getMetricsRewardDisclosureMetrics(
+            runtime.getBrokerBenefitMetrics(aggregateTransactions, mergedLatestPrices, AGGREGATE_TOTAL_EQUITY),
             aggregateTransactions,
-            mergedLatestPrices,
-            AGGREGATE_TOTAL_EQUITY,
+            {brokerCode: 'all'},
         );
         const holdingsSummaryMetrics = runtime.getHoldingsSummaryMetrics(
             aggregateTransactions,
@@ -171,6 +173,45 @@ function updateDashboardWithEquity(
         return dashboardChartPoints;
     }
 
+function refreshInvestmentRewardViews() {
+        const current = runtime.getInvestmentHoldingsRealtimeState();
+        if (!current) {
+            runtime.state.investmentChartRealizedPnlTimelineKey = null;
+            runtime.state.investmentChartPnlMetricsByPoint = new WeakMap();
+            runtime.renderInvestmentMetricsPanel?.();
+            return;
+        }
+        const aggregateTransactions = runtime.getInvestmentAggregateOnlyTransactions(
+            runtime.state.investmentRawTransactionsCache,
+        );
+        const latestPrices = runtime.state.investmentLatestPricesCache;
+        const brokerBenefitMetrics = runtime.getMetricsRewardDisclosureMetrics(
+            runtime.getBrokerBenefitMetrics(aggregateTransactions, latestPrices, current.totalEquity),
+            aggregateTransactions,
+            {brokerCode: 'all'},
+        );
+        const holdingsSummaryMetrics = runtime.getHoldingsSummaryMetrics(
+            aggregateTransactions, latestPrices, current.totalEquity, brokerBenefitMetrics,
+            {brokerCode: 'all', currentCash: current.aggregateCash},
+        );
+        refreshInvestmentChartPnlState(holdingsSummaryMetrics);
+        const holdingsPanel = document.getElementById('investment_holdings_panel');
+        if (holdingsPanel instanceof HTMLElement) {
+            holdingsPanel.innerHTML = runtime.renderHoldingsTable(
+                current.summaries, window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {},
+                current.totalEquity, current.aggregateCash,
+                {brokerBenefitMetrics, holdingsSummaryMetrics},
+            );
+            runtime.attachHoldingsTableAlignmentSync(holdingsPanel);
+            runtime.bindHoldingsLogoFallbacks(holdingsPanel);
+            runtime.bindHoldingsHistoryInteractions(holdingsPanel);
+            runtime.bindHoldingsStockDetailsLinks(holdingsPanel);
+        }
+        runtime.renderInvestmentMetricsPanel({
+            holdingsSummaryMetrics, brokerBenefitMetrics, totalEquity: current.totalEquity, latestPrices,
+        });
+    }
+
 function roundInvestmentChartCurrencyValue(value) {
         const normalizedValue = runtime.getOptionalInvestmentNumber(value);
         if (normalizedValue === null) return null;
@@ -206,29 +247,35 @@ function refreshInvestmentChartPnlState(holdingsSummaryMetrics = null) {
         const pnlUnavailable = holdingsSummaryMetrics?.pnlUnavailable === true;
         const realizedPnl = runtime.getOptionalInvestmentNumber(holdingsSummaryMetrics?.totalRealizedPnl);
         const unrealizedPnl = runtime.getOptionalInvestmentNumber(holdingsSummaryMetrics?.totalUnrealizedPnl);
+        const investmentPnlUnavailable = holdingsSummaryMetrics?.creditCardRewardUnavailable === true
+            ? holdingsSummaryMetrics?.investmentPnlUnavailable === true : pnlUnavailable;
         setInvestmentCurrentChartPnlMetrics(
             pnlUnavailable ? null : realizedPnl,
-            pnlUnavailable ? null : unrealizedPnl,
+            investmentPnlUnavailable ? null : unrealizedPnl,
         );
         const timelineRealizedPnl = pnlUnavailable ? null : realizedPnl;
         const timelineKey = runtime.state.investmentChartRealizedPnlTimelineKey;
         const rawTransactions = runtime.state.investmentRawTransactionsCache;
+        const creditCardRewards = typeof window === 'undefined'
+            ? undefined : window.WORTHWARD_INVESTMENT_DATA?.credit_card_rewards;
         if (
             timelineKey
             && timelineKey.total === timelineRealizedPnl
             && timelineKey.rawTransactions === rawTransactions
+            && timelineKey.creditCardRewards === creditCardRewards
         ) return;
         runtime.state.investmentChartRealizedPnlTimelineKey = {
             total: timelineRealizedPnl,
             rawTransactions,
+            creditCardRewards,
         };
-        runtime.state.investmentChartRealizedPnlTimeline = timelineRealizedPnl === null
-            ? null
-            : buildInvestmentChartRealizedPnlTimeline(holdingsSummaryMetrics?.tickerSummaries);
+        runtime.state.investmentChartRealizedPnlTimeline = buildInvestmentChartRealizedPnlTimeline(
+            holdingsSummaryMetrics?.tickerSummaries,
+        );
         runtime.state.investmentChartPnlMetricsByPoint = new WeakMap();
     }
 
-function buildInvestmentChartRealizedPnlTimeline(tickerSummaries = []) {
+function buildInvestmentChartRealizedPnlTimeline(tickerSummaries) {
         // Historical hover must agree with Holdings: every ticker contributes
         // exactly its Holdings realized P&L, split across the dates on which it
         // was realized. Per-sale reconstruction dates are used as-is. An undated
@@ -236,7 +283,7 @@ function buildInvestmentChartRealizedPnlTimeline(tickerSummaries = []) {
         // to the scope's last disposal on or before the baseline as-of date,
         // the latest date by which that realized amount must have occurred. It
         // is never dated to the performance artifact's own as-of date.
-        if (!Array.isArray(tickerSummaries) || !tickerSummaries.length) return null;
+        if (!Array.isArray(tickerSummaries)) return null;
         const disposalDates = new Map();
         const addDisposalDate = (key, date) => {
             if (!disposalDates.has(key)) disposalDates.set(key, []);
@@ -411,7 +458,9 @@ function buildInvestmentHistoricalChartPnlMetrics(pointRecord) {
         const timelineRealizedPnl = getInvestmentChartTimelineRealizedPnl(pointDate);
         const realizedPnl = timelineRealizedPnl === null
             ? null
-            : timelineRealizedPnl + runtime.getInvestmentHistoricalRealizedPnl(pointTransactions, []);
+            : timelineRealizedPnl + runtime.getInvestmentHistoricalRealizedPnl(
+                pointTransactions, [], {asOfDate: pointDate, brokerCode: 'all'},
+            );
         const openPositions = tickerSummaries.filter((summary) => summary?.hasOpenPosition);
         const unrealizedComplete = openPositions.every((summary) => (
             summary?.pnlUnavailable !== true
@@ -1802,6 +1851,7 @@ function formatEventType(type) {
 
     return {
         updateDashboardWithEquity,
+        refreshInvestmentRewardViews,
         roundInvestmentChartCurrencyValue,
         buildInvestmentChartPnlMetrics,
         setInvestmentCurrentChartPnlMetrics,

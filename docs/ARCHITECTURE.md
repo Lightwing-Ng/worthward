@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.140.0`
+Documentation version: `v1.141.0`
 
 ## HSBC debit-card cashback boundary
 
@@ -21,7 +21,7 @@ path nor opening Metrics writes or migrates the production ledger.
 Bank cashback keeps its signed cash amount, is excluded from external funding,
 and contributes to realized P&L exactly once. Its ordinary and campaign totals
 are disclosed separately by native currency in Rewards; they remain separate
-from KOL income and the independent credit-card RewardCash disclosure. Income
+from KOL income and credit-card RewardCash attribution. Income
 conversion uses each ledger date's FX. Missing conversion evidence keeps native
 amounts and ledger navigation available while the converted Rewards and affected
 P&L totals remain unavailable. Reversal classification never proves a link to
@@ -37,17 +37,21 @@ read routes are `/api/credit-cards/hsbc/preview`,
 the existing same-origin session CSRF boundary. Preview is read-only; commit
 reparses the supplied source and serializes atomic replacement and readback
 under one ledger lock. Neither route uses the investment commit, valuation,
-or investment-cache pipeline. Preview performs no market-data reads; a
-successful import may read dated FX for its separate Rewards disclosure.
+or investment-cache pipeline. Preview performs no market-data reads. A
+successful import builds its Rewards response from locally cached dated FX
+only; it must not fetch market data after saving the card ledger or delay the
+save response for a remote exchange-rate request. Missing local FX preserves
+native HKD rewards and leaves their converted value unavailable.
 
 The parser accepts complete English HKD credit-card account pages. It retains
 the source text and SHA-256 digest, uses the full normalized account number's
 digest for account scope, and exposes only the last four digits in browser
 responses. Duplicated account-number accessibility text is normalized before
 identity construction. Purchases, repayments, and RewardCash offsets remain
-distinct. Pending authorizations have no posted liability delta; confirmed
-repayments and RewardCash offsets reduce liability without becoming investment
-income. Unknown descriptions or incomplete rows fail closed when copied text
+distinct. Pending authorizations have no posted liability delta. Confirmed
+repayments and RewardCash offsets reduce card liability; only posted RewardCash
+offsets enter the separate rewards-income aggregation described below.
+Unknown descriptions or incomplete rows fail closed when copied text
 does not preserve a reliable amount direction.
 
 Transaction identity includes account, card, date, normalized description,
@@ -90,13 +94,29 @@ Apple Pay description differences. Ambiguous matches fail closed.
 The investment transactions GET adds a fresh, privacy-safe
 `credit_card_rewards` disclosure after reading its investment cache. This
 object remains outside the persisted investment cache and investment
-transaction collection. Only posted RewardCash rows are included. Its FX
-history is nested in the disclosure and merged into a local Metrics-only
-conversion timeline. HSBC and All Metrics include the card amount in
-`Rewards`; other broker scopes exclude it. Native HKD totals remain visible
-in the breakdown if required conversion evidence is unavailable. Original
-investment benefit fields still own realized P&L, cash, and equity; the card
-disclosure never enters those calculations or investment ledger navigation.
+transaction collection. Only posted RewardCash redemption offsets are included;
+statement earned and closing balances do not create additional income rows.
+Its FX history is nested in the disclosure and merged into a local conversion
+timeline without changing the investment transaction FX timeline. Every card
+row uses its own activity date's FX and deduplicates by its retained identity.
+
+Holdings `Rewards` combines investment-ledger coupon, cash, and KOL rewards
+with the card amount. HSBC and All Metrics include the card amount in `Rewards`
+while retaining KOL as a separate metric; other broker scopes exclude card
+RewardCash. The card contribution enters current realized and cumulative P&L
+once, without changing the original investment benefit fields. Historical
+P&L passes an explicit `asOfDate` and includes only card rows on or before
+that date. Later redemptions cannot alter an earlier point. Missing card or
+dated FX evidence leaves native HKD detail visible and makes affected converted
+rewards and P&L totals unavailable instead of showing a partial total.
+
+The card ledger remains independent: its activity never becomes an investment
+cash transaction or investment ledger navigation target. Card rewards do not
+change investment cash, NAV, positions, or the asset-value curve. A successful
+card import replaces only the fresh disclosure and immediately refreshes
+Holdings, Metrics, and the Overview current and historical P&L caches from
+existing investment data. A failed or stale import preserves the previous
+disclosure and derived views; no investment reload or write is required.
 
 ## Import evidence and replay audit boundaries
 

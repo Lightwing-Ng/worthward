@@ -1,9 +1,11 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.6.0
+ * Code version: v1.7.0
+ * - Changed: Shared posted RewardCash aggregation feeds Rewards and realized
+ *   P&L, with missing card FX isolated from verified investment unrealized P&L.
  * - Added: Include all signed cash-reward currencies in reward-ledger navigation.
- * - Added: Read-only RewardCash appears only in the selected Metrics rewards card.
+ * - Added: Read-only RewardCash respects the selected broker reward scope.
  * - Changed: Shared HSBC account input enables only its detected import path.
  * - Fixed: Pending-trade Metrics uses current multicurrency Total equity.
  * - Changed: Import height reads the canonical responsive circular-action size.
@@ -114,11 +116,19 @@ function bindInvestmentHoverContainerPersistence(container) {
         });
     }
 
+function isInvestmentMetricPnlUnavailable(definition, metricValues) {
+        if (!/pnl/i.test(String(definition?.key || ''))) return false;
+        if (definition?.key === 'unrealized-pnl' && metricValues?.creditCardRewardUnavailable === true) {
+            return metricValues?.investmentPnlUnavailable === true;
+        }
+        return metricValues?.pnlUnavailable === true;
+    }
+
 function renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPrefix = '' } = {}) {
         const metricLabel = String(definition?.label || 'Metric');
         const metricKey = keyPrefix ? `${keyPrefix}-${definition?.key || 'metric'}` : (definition?.key || 'metric');
         const breakdownId = `investment_metric_breakdown_${String(metricKey).replace(/[^a-z0-9_-]/gi, '_')}`;
-        const pnlUnavailable = metricValues?.pnlUnavailable === true && /pnl/i.test(String(definition?.key || ''));
+        const pnlUnavailable = isInvestmentMetricPnlUnavailable(definition, metricValues);
         const details = !pnlUnavailable && Array.isArray(metricValues?.[definition?.detailsKey])
             ? metricValues[definition.detailsKey]
             : [];
@@ -136,7 +146,7 @@ function renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPref
         const liveNumber = definition?.liveNumberKey
             ? metricValues?.[definition.liveNumberKey]
             : metricValues?.[definition?.valueKey];
-        const valueMarkup = definition?.liveField && !pnlUnavailable
+        const valueMarkup = definition?.liveField && (!pnlUnavailable || metricValues?.creditCardRewardUnavailable === true)
             ? runtime.renderInvestmentLiveValue(definition.liveField, liveNumber, {
                 className: `trade-metric-value investment-stock-details-metric-value${valueClass ? ` ${valueClass}` : ''}`,
                 formatter: () => value,
@@ -193,7 +203,7 @@ function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } =
             if (definition?.renderMode === 'breakdown') {
                 return renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPrefix });
             }
-            const pnlUnavailable = metricValues?.pnlUnavailable === true && /pnl/i.test(String(definition?.key || ''));
+            const pnlUnavailable = isInvestmentMetricPnlUnavailable(definition, metricValues);
             return `
                 <div class="trade-metric-card trade-metric-card--value-align-end">
                     <span class="trade-metric-label">${definition.label}</span>
@@ -211,7 +221,7 @@ function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } =
                             : (definition.valueClass || '')),
                         summary: definition.summary,
                         rows: pnlUnavailable ? [] : metricValues?.[definition.rowsKey],
-                        liveField: pnlUnavailable ? '' : definition.liveField,
+                        liveField: pnlUnavailable && metricValues?.creditCardRewardUnavailable !== true ? '' : definition.liveField,
                         liveNumber: pnlUnavailable ? null : (definition.liveNumberKey
                             ? metricValues?.[definition.liveNumberKey]
                             : metricValues?.[definition.valueKey]),
@@ -226,6 +236,7 @@ function getBrokerRewardRealizedIncome(brokerBenefitMetrics) {
             Number(brokerBenefitMetrics?.couponRebateIncome ?? 0)
             + Number(brokerBenefitMetrics?.cashRewardIncome ?? 0)
             + Number(brokerBenefitMetrics?.kolRewardIncome ?? 0)
+            + Number(brokerBenefitMetrics?.creditCardRewardIncome ?? 0)
         );
     }
 
@@ -413,9 +424,12 @@ function renderInvestmentMetricsPanel({
             : isAllBrokersSelected
                 ? runtime.getLatestDashboardEquity(runtime.state.investmentProcessedTransactionsCache, runtime.state.investmentChartPointsCache)
                 : getInvestmentBrokerSummaryTotalEquity(selectedBrokerCode);
-        const resolvedBrokerBenefitMetrics = isAllBrokersSelected && brokerBenefitMetrics
+        const baseBrokerBenefitMetrics = isAllBrokersSelected && brokerBenefitMetrics
             ? brokerBenefitMetrics
             : runtime.getBrokerBenefitMetrics(scopedTransactions, mergedLatestPrices, resolvedTotalEquity);
+        const resolvedBrokerBenefitMetrics = runtime.getMetricsRewardDisclosureMetrics(
+            baseBrokerBenefitMetrics, scopedTransactions, {brokerCode: selectedBrokerCode},
+        );
         const resolvedHoldingsSummaryMetrics = isAllBrokersSelected && holdingsSummaryMetrics
             ? holdingsSummaryMetrics
             : runtime.getHoldingsSummaryMetrics(
@@ -435,9 +449,6 @@ function renderInvestmentMetricsPanel({
                 mapInvestmentMetricRowsToGlobalLedgerNos(resolvedHoldingsSummaryMetrics, scopedTransactions),
                 mapInvestmentMetricRowsToGlobalLedgerNos(resolvedBrokerBenefitMetrics, scopedTransactions),
             ];
-        metricsToRender[2] = runtime.getMetricsRewardDisclosureMetrics(
-            metricsToRender[2], scopedTransactions, {brokerCode: selectedBrokerCode},
-        );
         runtime.removeInvestmentMetricTooltips();
         metricsPanel.innerHTML = renderFundingMetricCards(
             metricsToRender[0],

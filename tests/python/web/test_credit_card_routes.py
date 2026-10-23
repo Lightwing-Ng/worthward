@@ -1,7 +1,7 @@
 """Verify the credit-card HTTP boundary with independent temporary ledgers.
 
-Code version: v1.0.2
-- Added: Committed card rewards are read back for immediate Metrics refresh.
+Code version: v1.1.0
+- Added: Card commits cannot wait for remote FX and retain dated cache semantics.
 - Fixed: Legacy mode rejection directs users to the unified account-page field.
 """
 
@@ -11,6 +11,7 @@ import hashlib
 from pathlib import Path
 
 from flask import Flask
+import pandas as pd
 import pytest
 
 from app.web.runtime_domains.investment import credit_cards
@@ -98,6 +99,64 @@ def test_credit_card_import_round_trip_and_repeat_keep_investment_separate(card_
     assert "SAMPLE CARDHOLDER" not in saved.text
     assert "source_text" not in saved.text
     assert not (ledger.parent / "investment.parquet").exists()
+
+
+@pytest.mark.parametrize("cache_state", ["dated", "empty", "future_only"])
+def test_card_commit_returns_without_remote_fx_and_uses_only_prior_cached_closes(
+    card_client, monkeypatch, cache_state
+):
+    client, headers, ledger = card_client
+    cached = pd.DataFrame(
+        {
+            "Date": pd.to_datetime(["2026-09-17", "2026-10-09", "2026-10-13"]),
+            "UsdPerUnit": [1 / 7.8, 1 / 7.9, 1 / 8.0],
+        }
+    )
+    if cache_state == "empty":
+        cached = cached.iloc[0:0]
+    elif cache_state == "future_only":
+        cached = cached.iloc[2:]
+    calls = []
+
+    def cached_fx(currency):
+        calls.append(currency)
+        return cached
+
+    def remote_fx(_rows):
+        pytest.fail("A persisted card import must not wait for remote FX.")
+
+    monkeypatch.setattr(credit_cards, "load_fx_history", cached_fx)
+    handlers = credit_cards.build_credit_card_context(
+        {
+            "CREDIT_CARD_STORE_PATH": ledger,
+            "build_investment_fx_rate_history_payload": remote_fx,
+        }
+    )
+    client.application.view_functions["credit_card_import"] = handlers[
+        "credit_card_import"
+    ]
+    response = client.post(
+        "/api/credit-cards/hsbc/import",
+        json={"text": hsbc_credit_card_text()},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    result = response.get_json()
+    assert result["success"] and result["committed"]
+    assert len(result["transactions"]) == 11
+    assert len(client.get("/api/credit-cards/hsbc").get_json()["transactions"]) == 11
+    rewards = result["credit_card_rewards"]
+    assert rewards["status"] == "complete"
+    assert sorted(row["amount"] for row in rewards["transactions"]) == ["15.00", "25.00"]
+    assert calls == ["HKD"]
+    if cache_state == "dated":
+        history = rewards["fx_rate_history_by_currency"]["HKD"]
+        assert history["dates"] == ["2026-09-17", "2026-10-09"]
+        assert history["values"] == pytest.approx(
+            {"2026-09-17": 7.8, "2026-10-09": 7.9}
+        )
+    else:
+        assert rewards["fx_rate_history_by_currency"] == {}
 
 
 @pytest.mark.parametrize("endpoint", ["preview", "import"])

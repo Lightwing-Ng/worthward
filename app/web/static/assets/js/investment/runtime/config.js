@@ -1,7 +1,8 @@
 /**
  * Investment workspace immutable configuration.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
+ * - Changed: RewardCash tooltips describe its shared realized-reward scope.
  * - Added: Cash-only debit-card rewards retain signed income without commissions.
  * - Added: Rewards disclosure includes card RewardCash separately from KOL income.
  * - Added: Extracted bounded metadata and metric definitions from the entry.
@@ -114,7 +115,7 @@ export function createInvestmentRuntimeConfig(runtime) {
         {
             key: 'coupon-rebates-cash-rewards',
             label: 'Rewards',
-            summary: 'Coupon rebates, cash rewards, debit-card cashback, and posted card RewardCash converted at each activity date’s FX rate. Card RewardCash is a separate rewards disclosure and does not change investment cash, equity, or P&L. KOL rewards remain separate.',
+            summary: 'Coupon rebates, cash rewards, debit-card cashback, and posted card RewardCash converted at each activity date’s FX rate. Posted RewardCash also enters realized and cumulative P&L without changing investment cash or equity. KOL rewards remain a separate Metrics card.',
             valueKey: 'rewardDisclosureIncome',
             rowsKey: 'couponAndCashRewardRows',
             detailsKey: 'rewardDisclosureDetails',
@@ -191,7 +192,7 @@ export function createInvestmentRuntimeConfig(runtime) {
         {
             key: 'cumulative-pnl',
             label: 'Cumulative P&L',
-            summary: 'Holdings realized P&L plus Holdings unrealized P&L, including converted broker coupon, cash, and KOL rewards. Stock-grant P&L remains attached to its ticker Holdings result.',
+            summary: 'Holdings realized P&L plus Holdings unrealized P&L, including converted coupon, cash, KOL rewards, and posted card RewardCash. Stock-grant P&L remains attached to its ticker Holdings result.',
             valueKey: 'cumulativePnl',
             rowsKey: 'cumulativePnlRows',
             formatValue: (metrics) => runtime.formatSignedHoldingsMoney(metrics?.cumulativePnl),
@@ -202,7 +203,7 @@ export function createInvestmentRuntimeConfig(runtime) {
         {
             key: 'realized-pnl',
             label: 'Realized P&L',
-            summary: 'Realized P&L from Holdings activity, cash rewards, and explicit cash costs. Expand for trading spread, dividends, interest, and fee attribution in USD; a broker-reported reconciliation remains visible whenever authoritative broker performance data cannot be allocated row by row.',
+            summary: 'Realized P&L from Holdings activity, cash rewards, posted card RewardCash, and explicit cash costs. Expand for trading spread, dividends, interest, and fee attribution in USD; a broker-reported reconciliation remains visible whenever authoritative broker performance data cannot be allocated row by row.',
             valueKey: 'totalRealizedPnl',
             rowsKey: 'realizedPnlRows',
             detailsKey: 'realizedPnlDetails',

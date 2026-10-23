@@ -1,5 +1,5 @@
-/* Code version: v1.0.1
- * Debit-card cashback is signed bank cash income; card RewardCash remains disclosure-only.
+/* Code version: v1.1.0
+ * Debit-card cashback and posted card RewardCash join realized reward income.
  */
 import assert from 'node:assert/strict';
 import {afterEach, beforeEach, test} from 'node:test';
@@ -221,7 +221,7 @@ test('explicit cash_reward rows from standard XLSX preserve signed income withou
     assert.equal(runtime.getMetricsRewardDisclosureMetrics(benefits, rows, {brokerCode: 'ibkr'}).rewardDisclosureIncome, 7);
 });
 
-test('credit-card RewardCash changes only disclosure and broker scope excludes bank cashback', () => {
+test('posted card RewardCash joins Rewards and realized P&L while broker scope excludes bank cashback', () => {
     const runtime = makeRuntime();
     const rows = transactions();
     const benefits = runtime.getBrokerBenefitMetrics(rows, {}, 227);
@@ -234,8 +234,8 @@ test('credit-card RewardCash changes only disclosure and broker scope excludes b
         assert.equal(disclosure.rewardDisclosureIncome, 24);
         assert.equal(disclosure.cashRewardIncome, 23);
         assert.equal(disclosure.kolRewardIncome, 3);
-        assert.equal(runtime.getBrokerRewardRealizedIncome(disclosure), 26);
-        assert.equal(runtime.getHoldingsSummaryMetrics(rows, {}, 227, disclosure).totalRealizedPnl, 28);
+        assert.equal(runtime.getBrokerRewardRealizedIncome(disclosure), 27);
+        assert.equal(runtime.getHoldingsSummaryMetrics(rows, {}, 227, disclosure).totalRealizedPnl, 29);
     }
     const unrelated = [{broker: 'ibkr', date: '2026-02-01', type: 'deposit', currency: 'USD', amount: 50}];
     const otherBenefits = runtime.getBrokerBenefitMetrics(unrelated, {}, 50);

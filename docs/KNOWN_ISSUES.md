@@ -1,5 +1,24 @@
 # Known issues and operating constraints
 
+Holdings Rewards aggregation, 23 Oct 2026: `Rewards` includes posted HSBC
+RewardCash redemption offsets alongside coupon, cash, and KOL rewards. Each
+card row uses its own activity date's FX and contributes once to realized and
+cumulative P&L. All and HSBC scopes include the card amount; other broker
+scopes exclude it. Historical as-of P&L includes only card activity on or before
+that date. Missing card or required FX evidence makes affected converted
+rewards and P&L unavailable while retaining native HKD evidence. Card records
+remain in their independent ledger and do not change investment cash, NAV,
+positions, or the asset-value curve. A successful card import refreshes
+Holdings, Metrics, and Overview P&L immediately from existing investment data;
+a failed or stale response preserves the prior views. Statement earned and
+closing RC balances are separate facts, not additional redemption income.
+
+HSBC credit-card import response, 23 Oct 2026: saving card activity previously
+waited for a remote FX refresh while building the Rewards response, after the
+card ledger had already been committed. The import response now reads dated
+FX from the local cache only. Missing cached FX preserves saved card entries
+and native HKD rewards without inventing a converted total.
+
 Stock-details effect clipping, 22 Oct 2026: desktop ticker controls keep their
 shared shadow and focus effects outside the view, body, panel, and overview
 wrappers. The workspace becomes a vertical scroll owner only when the chart
@@ -27,9 +46,10 @@ account-page text only. File evidence retains raw bytes and explicit account
 scope, statement balance and RewardCash continuity, separate posting dates,
 and cross-source aliases. Dated statement credit balances must not be
 interpreted as unsigned liabilities or replace a selected webpage snapshot.
-Metrics now includes posted RewardCash in Rewards, separately from KOL
-rewards. This disclosure does not add investment cash, equity, or P&L, and
-missing card or conversion evidence remains unavailable.
+Metrics includes posted RewardCash in Rewards, separately from KOL rewards.
+The 23 Oct 2026 aggregation contract above extends its P&L attribution while
+preserving independent card persistence and investment cash and valuation.
+Missing card or conversion evidence remains unavailable.
 
 Stock details ticker order, 21 Oct 2026: the ticker selector preserves the
 Holdings summary order instead of applying an alphabetical sort. Open positions
@@ -1182,7 +1202,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.283.1`
+Documentation version: `v1.284.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

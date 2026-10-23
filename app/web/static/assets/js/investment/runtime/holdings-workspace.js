@@ -1,7 +1,8 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
+ * - Changed: Rewards includes posted card RewardCash and exposes missing FX.
  * - Changed: Header and body share the scoped percentage column tokens.
  * - Fixed: Unavailable summary labels retain their semantic layout boundaries.
  * - Added: Extracted from the Investment workspace composition root.
@@ -72,7 +73,11 @@ function renderHoldingsTable(
             `;
         }
         const brokerRewardRealizedIncome = runtime.getBrokerRewardRealizedIncome(brokerBenefitMetrics);
-        const hasBrokerRewardRealizedIncome = Math.abs(brokerRewardRealizedIncome) > 1e-9;
+        const hasBrokerRewardRealizedIncome = !Number.isFinite(brokerRewardRealizedIncome)
+            || Math.abs(brokerRewardRealizedIncome) > 1e-9;
+        const rewardClass = Number.isFinite(brokerRewardRealizedIncome)
+            ? (brokerRewardRealizedIncome >= 0 ? ' investment-holdings-value-positive' : ' investment-holdings-value-negative')
+            : '';
         if (!summaries.length && !hasBrokerRewardRealizedIncome) {
             return `
                 <div class="investment-holdings-table-shell">
@@ -99,6 +104,10 @@ function renderHoldingsTable(
             (normalizedSummaryScope === 'all' && holdingsSummaryMetrics?.pnlUnavailable === true)
             || runtime.isInvestmentAggregatePnlUnavailable(summarySummaries)
         );
+        const hasUnrealizedPnlUnavailable = normalizedSummaryScope === 'all'
+            && holdingsSummaryMetrics?.creditCardRewardUnavailable === true
+            ? holdingsSummaryMetrics.investmentPnlUnavailable === true
+            : hasPnlUnavailable;
         const holdingsRealizedPnl = summarySummaries.reduce(
             (sum, summary) => sum + (
                 Number(runtime.getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
@@ -130,7 +139,7 @@ function renderHoldingsTable(
         const totalRealizedClass = hasPnlUnavailable
             ? ''
             : runtime.getInvestmentHoldingsRealizedToneClass(totalRealizedPnl);
-        const totalUnrealizedClass = hasPnlUnavailable
+        const totalUnrealizedClass = hasUnrealizedPnlUnavailable
             ? ''
             : (totalUnrealizedPnl >= 0
             ? ' investment-holdings-value-positive'
@@ -290,8 +299,8 @@ function renderHoldingsTable(
                             <div class="ticker-identity-row">
                                 <span class="ticker-identity-logo investment-broker-reward-token-logo" aria-hidden="true"></span>
                                 <span class="ticker-identity-copy">
-                                    <span class="suggestion-symbol ticker-identity-symbol">Broker rewards</span>
-                                    <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards &amp; KOL rewards">Coupons, cash rewards &amp; KOL rewards</span>
+                                    <span class="suggestion-symbol ticker-identity-symbol">Rewards</span>
+                                    <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards, KOL rewards &amp; RewardCash">Coupons, cash rewards, KOL rewards &amp; RewardCash</span>
                                 </span>
                             </div>
                         </div>
@@ -300,8 +309,8 @@ function renderHoldingsTable(
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
-                    <td class="investment-holdings-cell investment-holdings-cell-money investment-holdings-value-positive">
-                        <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-value-positive">${runtime.renderWorkspaceMetricValueContent(runtime.formatHoldingsMoney(brokerRewardRealizedIncome))}</span>
+                    <td class="investment-holdings-cell investment-holdings-cell-money${rewardClass}">
+                        <span class="trade-metric-value investment-stock-details-metric-value${rewardClass}" data-investment-rewards-value>${runtime.renderWorkspaceMetricValueContent(Number.isFinite(brokerRewardRealizedIncome) ? runtime.formatHoldingsMoney(brokerRewardRealizedIncome) : 'Unavailable')}</span>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
@@ -383,11 +392,11 @@ function renderHoldingsTable(
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${hasPnlUnavailable ? runtime.renderInvestmentLiveValue('summary_realized_pnl', null, {
-                            className: 'trade-metric-value investment-stock-details-metric-value',
-                            formatter: () => pnlCoverageLabel,
+                        ${runtime.renderInvestmentLiveValue('summary_realized_pnl', hasPnlUnavailable ? null : totalRealizedPnl, {
+                            className: `trade-metric-value investment-stock-details-metric-value${totalRealizedClass}`,
+                            formatter: (nextValue) => hasPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
                             useSplitValue: true,
-                        }) : `<span class="trade-metric-value investment-stock-details-metric-value${totalRealizedClass}">${runtime.renderWorkspaceMetricValueContent(runtime.formatHoldingsMoney(totalRealizedPnl))}</span>`}
+                        })}
                         ${!hasPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_realized_pnl',
                             '',
@@ -398,12 +407,12 @@ function renderHoldingsTable(
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalUnrealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${runtime.renderInvestmentLiveValue('summary_unrealized_pnl', hasPnlUnavailable ? null : totalUnrealizedPnl, {
+                        ${runtime.renderInvestmentLiveValue('summary_unrealized_pnl', hasUnrealizedPnlUnavailable ? null : totalUnrealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
-                            formatter: (nextValue) => hasPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
+                            formatter: (nextValue) => hasUnrealizedPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
-                        ${!hasPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
+                        ${!hasUnrealizedPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_unrealized_pnl',
                             '',
                             totalDailyPnl.unrealized,
