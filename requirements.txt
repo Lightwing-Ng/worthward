@@ -19,7 +19,7 @@ Jinja2==3.1.6
 protobuf==7.36.2
 Pygments==2.21.0
 requests==2.34.2
-setuptools==84.0.0
+setuptools==84.2.1
 soupsieve==3.0.3
 Werkzeug==3.1.9
 
