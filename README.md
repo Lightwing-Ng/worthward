@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.45.0`
+Documentation version: `v3.46.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -606,6 +606,15 @@ remain explicitly provisional.
   manual or statement-backed attribution is preserved verbatim; missing local
   history, a second plausible ticker, or incomplete eligible-share history
   leaves the ticker unresolved instead of guessing.
+- An unresolved corporate-event dividend exposes a ticker dropdown in the
+  Transaction history `Description` cell. Choices come from securities already
+  imported for the same HSBC account and currency, including closed positions.
+  Selecting a ticker records a user-confirmed attribution while preserving the
+  bank description, cash amount, balances, and immutable source evidence. The
+  choice can be corrected or cleared, survives incremental re-imports, and is
+  read back from the saved ledger before the table updates. This confirmation
+  identifies the security only; it does not establish the distribution's tax
+  classification. Exports retain the description without interactive controls.
 - A sell reference can contain separate proceeds and fee postings. Both remain
   attached to the order in ledger sequence; the fee enters commission, cash,
   and realized proceeds exactly once rather than being hidden with the matched

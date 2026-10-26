@@ -1,7 +1,8 @@
 /**
  * History pagination and row rendering.
  *
- * Code version: v1.0.0
+ * Code version: v1.1.0
+ * - Added: Bind user-confirmed HSBC dividend selectors after pagination.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -228,6 +229,7 @@ function renderInvestmentHistoryTableRows(processedTransactions = [], chartPoint
         renderInvestmentHistoryPagination(runtime.state.investmentHistoryVisibleTransactionsCache.length);
         bindInvestmentHistoryChartInteractions(tbody);
         runtime.bindInvestmentHistoryTransferControls(tbody);
+        runtime.bindInvestmentDividendAttributionControls(tbody);
         runtime.attachHistoryTableAlignmentSync(runtime.historyTable);
         if (scrollToTop) {
             resetInvestmentHistoryScrollPosition();

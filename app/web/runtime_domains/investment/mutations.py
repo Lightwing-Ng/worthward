@@ -1,9 +1,11 @@
 """Build the investment mutations web-runtime context.
 
-Code version: v0.2.2
+Code version: v0.3.0
 """
 
 from __future__ import annotations
+
+from app.services.investment.dividend_attribution import update_dividend_attribution
 
 
 def build_investment_mutation_context(context: dict[str, object]) -> dict[str, object]:
@@ -12,6 +14,8 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
     LOGGER = context["LOGGER"]
 
     apply_no_store_headers = context["apply_no_store_headers"]
+
+    build_file_fingerprint = context["build_file_fingerprint"]
 
     build_investment_internal_transfer_binding_index = context[
         "build_investment_internal_transfer_binding_index"
@@ -34,6 +38,8 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
     ]
 
     investment_store_exists = context["investment_store_exists"]
+
+    investment_store_path_for = context["investment_store_path_for"]
 
     is_configured_money_market_ticker = context["is_configured_money_market_ticker"]
 
@@ -394,6 +400,48 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                 }
             ), 500
 
+    def investment_update_dividend_attribution():
+        """Persist one explicit HSBC dividend ticker without changing its cash evidence."""
+        try:
+            security_error = validate_investment_browser_write_request(request)
+            if security_error:
+                response = jsonify({"success": False, "error": security_error})
+                response.status_code = 403
+                return apply_no_store_headers(response)
+            request_payload = request.get_json(silent=True)
+            if not isinstance(request_payload, dict):
+                raise ValueError("A dividend attribution request is required.")
+            if not investment_store_exists(INVESTMENT_STORE_PATH):
+                raise ValueError("No local investment store exists yet.")
+            result = update_investment_store_payload(
+                lambda payload: update_dividend_attribution(
+                    payload,
+                    request_payload.get("record_key"),
+                    request_payload.get("ticker"),
+                ),
+                INVESTMENT_STORE_PATH,
+            )
+            invalidate_investment_transactions_cache()
+            return apply_no_store_headers(jsonify({
+                "success": True,
+                **result,
+                "investment_store_version": str(build_file_fingerprint(
+                    investment_store_path_for(INVESTMENT_STORE_PATH)
+                ).get("mtime_ns", 0)),
+            }))
+        except ValueError as exc:
+            response = jsonify({"success": False, "error": str(exc)})
+            response.status_code = 400
+            return apply_no_store_headers(response)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("Unable to update HSBC dividend attribution")
+            response = jsonify({
+                "success": False,
+                "error": "Unable to update the dividend attribution. Try again later.",
+            })
+            response.status_code = 500
+            return apply_no_store_headers(response)
+
     def investment_get_latest_price():
         """Get the latest closing price for a ticker from local market store."""
         ticker = request.args.get("ticker", "").strip().upper()
@@ -543,5 +591,6 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
         "investment_get_parquet": investment_get_parquet,
         "investment_update_internal_transfer_binding": investment_update_internal_transfer_binding,
         "investment_update_security_transfer_attribution": investment_update_security_transfer_attribution,
+        "investment_update_dividend_attribution": investment_update_dividend_attribution,
         "normalize_investment_intraday_ohlc": normalize_investment_intraday_ohlc,
     }

@@ -1,6 +1,6 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.6.0
+Code version: v1.7.0
 - Added: Independent HSBC credit-card handlers in the explicit runtime schema.
 - Added: Classified Longbridge connection check for the broker authorize action.
 - Added: Investment session-token handler for import dialog readiness.
@@ -645,6 +645,7 @@ class WebRuntime:
     investment_get_realtime_quotes: Any
     investment_update_internal_transfer_binding: Any
     investment_update_security_transfer_attribution: Any
+    investment_update_dividend_attribution: Any
     live_trading_get_positions: Any
     live_trading_submit_order: Any
 
@@ -834,6 +835,9 @@ def build_web_runtime() -> WebRuntime:
     investment_update_security_transfer_attribution = context[
         "investment_update_security_transfer_attribution"
     ]
+    investment_update_dividend_attribution = context[
+        "investment_update_dividend_attribution"
+    ]
     investment_validate_hsbc_pasted_text = context[
         "investment_validate_hsbc_pasted_text"
     ]
@@ -950,6 +954,7 @@ def build_web_runtime() -> WebRuntime:
         investment_update_security_transfer_attribution=(
             investment_update_security_transfer_attribution
         ),
+        investment_update_dividend_attribution=investment_update_dividend_attribution,
         live_trading_get_positions=live_trading_get_positions,
         live_trading_submit_order=live_trading_submit_order,
     )
