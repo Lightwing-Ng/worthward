@@ -1,7 +1,8 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
+ * - Added: HSBC dividend matching in Description, excluded from exports.
  * - Changed: The unresolved HSBC order reference is the sole visible `*`
  *   marker; Cash and Equity retain their explanatory titles without repeating
  *   the same provisional state on every affected history metric.
@@ -393,7 +394,7 @@ function formatInvestmentCurrentCash(value, isApproximate = false) {
         return runtime.formatHoldingsMoney(numericValue);
 }
 
-function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true} = {}) {
+function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true, includeAttributionControls = true} = {}) {
         const description = runtime.formatTransactionDescription(txn);
         const brokerMarketValue = runtime.getOptionalInvestmentNumber(
             txn?.broker_market_value ?? txn?.market_value,
@@ -533,7 +534,9 @@ function renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker = true}
                 </div>
             `
             : '';
-        const descriptionMarkup = securityTransferAttributionMarkup || (transferOptions.length || isIgnoredSource
+        const dividendAttributionMarkup = includeAttributionControls && txn?.dividend_attribution_key
+            ? runtime.renderInvestmentDividendAttributionMarkup(txn) : '';
+        const descriptionMarkup = dividendAttributionMarkup || securityTransferAttributionMarkup || (transferOptions.length || isIgnoredSource
             ? `
                 <div class="investment-transfer-link-shell${isIgnoredSource ? ' is-ignored' : (txn?.manual_internal_transfer_needs_binding ? ' is-unresolved' : ' is-resolved')}">
                     <span class="investment-transfer-link-current">${runtime.escapeHtml(descriptionCurrentText)}</span>
@@ -746,7 +749,7 @@ function buildInvestmentHistoryExportTable(processedTransactions = [], chartPoin
         }
         const tbody = document.createElement('tbody');
         tbody.innerHTML = [...visibleTransactions].reverse().map((txn) => (
-            renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker: false})
+            renderInvestmentHistoryRowMarkup(txn, {includeProvisionalMarker: false, includeAttributionControls: false})
         )).join('');
         table.appendChild(tbody);
         return table;

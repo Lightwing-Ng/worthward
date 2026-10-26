@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.164.0
+ * Code version: v2.165.0
+ * - Added: User-confirmed HSBC dividend tickers in the Description cell.
  * - Fixed: Stock-details layout releases effects outside non-scrolling wrappers.
  * - Added: Signed HSBC debit-card cashback across USD, CNH, and HKD accounts.
  * - Changed: Include posted card RewardCash in Rewards and realized P&L.
@@ -76,6 +77,7 @@
 
 import './loading-indicator.js?v=loading-indicator-v1.0.0';
 import {createInvestmentBindingPaginationRuntime} from './investment/runtime/binding-pagination.js?v=investment-binding-pagination-v1.0.0';
+import {createInvestmentDividendAttributionRuntime} from './investment/runtime/dividend-attribution.js?v=investment-dividend-attribution-v1.0.0';
 import {
     adaptInvestmentImportProcessLists,
     rememberInvestmentImportBroker,
@@ -83,9 +85,9 @@ import {
 } from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.3.0';
 import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.4.0';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.2.0';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.0';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.5.0';
-import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.0.0';
+import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.3.0';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.1.0';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.0';
@@ -202,7 +204,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.164.0',
+    entry: 'v2.165.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -222,6 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const runtime = {state: {}};
     Object.assign(runtime, {
         createInvestmentBindingPaginationRuntime,
+        createInvestmentDividendAttributionRuntime,
         createInvestmentRuntimeConfig,
         createInvestmentEquityChartRuntime,
         createInvestmentExportHistoryRuntime,
@@ -693,6 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     Object.assign(runtime, createInvestmentRangeTransferRuntime(runtime));
     Object.assign(runtime, createInvestmentStockHistoryFilterRuntime(runtime));
     Object.assign(runtime, createInvestmentBindingPaginationRuntime(runtime));
+    Object.assign(runtime, createInvestmentDividendAttributionRuntime(runtime));
     Object.assign(runtime, createInvestmentImportWorkflowRuntime(runtime));
     Object.assign(runtime, createInvestmentExportHistoryRuntime(runtime));
     Object.assign(runtime, createInvestmentShareLinkedHoverRuntime(runtime));

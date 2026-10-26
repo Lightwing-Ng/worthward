@@ -1,12 +1,16 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.3.0
+Code version: v0.4.0
 - Added: Fresh card rewards disclosure outside the investment ledger cache.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+
+from app.services.investment.dividend_attribution import (
+    annotate_dividend_attribution_choices,
+)
 
 from app.web.runtime_domains.investment.credit_cards import (
     read_credit_card_reward_payload,
@@ -228,6 +232,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                     "status": "hit",
                     "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
                 }
+                annotate_dividend_attribution_choices(cached_data)
                 response = jsonify(with_credit_card_rewards(cached_data))
                 report_fetch_abort_debug_event(
                     "E",
@@ -287,6 +292,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                 "status": "miss",
                 "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
             }
+            annotate_dividend_attribution_choices(data)
             price_store_fingerprints = build_investment_price_store_fingerprints(
                 transactions,
                 section_freshness["open_tickers"],

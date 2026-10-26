@@ -1,6 +1,6 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.7.0
+Code version: v0.7.1
 - Fixed: Composite cash pastes retain hidden settlement postings so merges can
   reconcile older orders absent from the current visible Order Status page.
 - Fixed: Settlement repair uses bounded identity-matched fees and shared staged
@@ -135,7 +135,12 @@ def _attribute_hsbc_cash_only_dividends_from_existing_ledger(
                 record,
             )
             and _hsbc_record_account_identity(existing_record) == account_identity
-            and normalize_ticker(_normalize_text(existing_record.get("ticker")))
+            and (
+                normalize_ticker(_normalize_text(existing_record.get("ticker")))
+                or (existing_record.get("source") or {}).get(
+                    "dividend_attribution_user_override"
+                ) is True
+            )
             for existing_record in existing_transactions
         ):
             # Preserve an existing manual or statement-backed attribution verbatim.

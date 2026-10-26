@@ -1,6 +1,6 @@
 """Investment import domain: merge identity.
 
-Code version: v0.4.0
+Code version: v0.4.1
 - Added: Evidenced HSBC cashback retains legacy cash-row merge identity.
 - Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
   is recorded as corroboration instead of a conflicting sequence-digest alias.
@@ -9,6 +9,10 @@ Code version: v0.4.0
 """
 
 from __future__ import annotations
+
+from app.services.investment.dividend_attribution import (
+    preserve_hsbc_dividend_attribution_on_cash_merge as _preserve_hsbc_dividend_attribution_on_cash_merge,
+)
 
 from app.services.investment.importing.support import (
     Any,
@@ -898,39 +902,6 @@ def _is_hsbc_statement_pdf_cash_record(record: dict[str, Any]) -> bool:
     )
 
 
-def _preserve_hsbc_dividend_attribution_on_cash_merge(
-    merged: dict[str, Any],
-    current: dict[str, Any],
-    incoming: dict[str, Any],
-) -> dict[str, Any]:
-    current_description = _normalize_whitespace(current.get("description")).upper()
-    if not current_description.startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX):
-        return merged
-    current_ticker = normalize_ticker(_normalize_text(current.get("ticker")))
-    incoming_ticker = normalize_ticker(_normalize_text(incoming.get("ticker")))
-    if not current_ticker or incoming_ticker:
-        return merged
-
-    source = merged.get("source") if isinstance(merged.get("source"), dict) else {}
-    merged_type = _normalize_text(merged.get("type")).lower()
-    if merged_type != "dividend":
-        merged["type"] = "dividend"
-        source["dividend_classification_preserved_on_incremental_import"] = True
-    if (
-        _normalize_text(source.get("dividend_attribution_status"))
-        == "unavailable_from_hsbc_cash_text"
-    ):
-        source["dividend_attribution_status"] = "preserved_existing_ledger_attribution"
-        source["dividend_attribution_method"] = (
-            _normalize_text(source.get("dividend_attribution_method"))
-            or "existing_hsbc_ledger_identity"
-        )
-        source["dividend_attribution_preserved_on_incremental_import"] = True
-    merged["ticker"] = current_ticker
-    merged["source"] = source
-    return merged
-
-
 def _relocate_hsbc_statement_pdf_corroboration_digest(
     record: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1209,7 +1180,11 @@ def _merge_transaction_records(
         )
         supplemental = current if preferred is incoming else incoming
         return _prune_hsbc_settled_pending_flag(
-            _merge_transaction_records_default(supplemental, preferred)
+            _preserve_hsbc_dividend_attribution_on_cash_merge(
+                _merge_transaction_records_default(supplemental, preferred),
+                current,
+                incoming,
+            )
         )
     if _is_hsbc_cash_account_record(current) and _is_hsbc_cash_account_record(incoming):
         return _prune_hsbc_settled_pending_flag(
@@ -2294,7 +2269,14 @@ def _has_same_hsbc_corporate_event_cash_record(
 
     current_ticker = normalize_ticker(_normalize_text(current.get("ticker")))
     incoming_ticker = normalize_ticker(_normalize_text(incoming.get("ticker")))
-    if current_ticker and incoming_ticker and current_ticker != incoming_ticker:
+    user_override = (
+        current_source.get("dividend_attribution_status") == "user_confirmed"
+        or current_source.get("dividend_attribution_user_override") is True
+    )
+    if (
+        current_ticker and incoming_ticker and current_ticker != incoming_ticker
+        and not user_override
+    ):
         return False
     current_account = _normalize_text(current.get("account")) or _normalize_text(
         current_source.get("account") or current_source.get("account_number")
@@ -2302,6 +2284,22 @@ def _has_same_hsbc_corporate_event_cash_record(
     incoming_account = _normalize_text(incoming.get("account")) or _normalize_text(
         incoming_source.get("account") or incoming_source.get("account_number")
     )
+    if user_override:
+        current_cash_scope = _normalize_hsbc_cash_account_type(
+            current.get("currency"), current_source.get("account_type")
+        )
+        return bool(
+            current_account
+            and current_account == incoming_account
+            and current_description == incoming_description
+            and current_cash_scope
+            and current_cash_scope == _normalize_hsbc_cash_account_type(
+                incoming.get("currency"), incoming_source.get("account_type")
+            )
+            and _decimal_identity_values_match(
+                current.get("net_amount_raw"), incoming.get("net_amount_raw"), tolerance=ZERO
+            )
+        )
     return _ii_basics._accounts_are_compatible(
         "hsbc", current_account, incoming_account
     )
