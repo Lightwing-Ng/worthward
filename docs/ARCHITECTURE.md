@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.141.0`
+Documentation version: `v1.142.0`
 
 ## HSBC debit-card cashback boundary
 
@@ -1236,6 +1236,19 @@ The Investment filled hover badge is also the shared
 `WORTHWARD_CHART_AXIS.drawYAxisValueBadge` primitive. Strategy-specific
 Backtest overlays call that primitive instead of maintaining a second badge
 renderer.
+
+Stock-details personal chips keep display entry prices separate from accounting
+unit costs. A view-local, object-identity-based tracker preserves entry-price
+anchors across matched disposals and basis corrections without changing shared
+position states. Average-cost disposal projects the surviving quantity
+proportionally over the original entry anchors; it does not assert broker tax-lot
+identity. New transaction anchors use the trade-marker rendered-price resolver
+once, with their own historical reference for pre-range entries. Known carried
+basis without original purchase-price evidence remains identified as a cost-basis
+anchor. Snapshots validate original accounting lot quantities and costs before
+applying display anchors, and accounting cost/P&L fields retain the accounting
+basis. Hover changes quantity and profitability without repricing surviving
+entry anchors. The price chart owns its domain; chip anchors never expand it.
 
 Investment Stock details keeps pointer work inside one animation-frame commit.
 The active pointer replaces any earlier uncommitted pointer, so a high-frequency

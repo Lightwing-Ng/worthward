@@ -1,5 +1,48 @@
 # Known issues and operating constraints
 
+Stock-details purchase-price anchors, 28 Oct 2026: chip price levels retain
+an immutable entry-price anchor, using the same rendered-price adjustment as
+buy/sell markers. Fees and later accounting-basis corrections do not move those
+anchors. Matched disposals retain the surviving source-lot anchors; moving-average
+disposals reduce original displayed quantities proportionally instead of replacing
+them with a new average-price level. That proportional survival is a display
+projection, not broker tax-lot evidence. Imported carried basis without original
+purchase-price provenance remains an explicitly labeled cost-basis anchor.
+Accounting cost, average cost, realized P&L, and remaining financial quantities
+continue to come from the unchanged scoped accounting replay. Chips remain clipped
+to the independent stock-price domain and retain the shared price-axis coordinates.
+
+Stock-details allocation labels, 28 Oct 2026: the selected ticker and Cash
+use the Allocation range name/value styles with two-decimal percentages, aligned
+to the left and right edges above the bar. The bar orders the selected ticker,
+other stocks, and cash; other-stock allocation remains in its accessible
+description. The chip plot omits its visible date, total share count,
+and currency while retaining historical snapshot state and its accessible date
+and cost currency.
+
+Stock-details personal chips, 27 Oct 2026: the right column places a compact
+allocation bar above the personal remaining-lot distribution. Its segments are
+the selected ticker, cash, and other stocks, with total equity as the 100%
+denominator. Unknown, negative, or unreconciled components keep the allocation
+unavailable; non-stock NAV adjustments are not relabeled as stocks.
+Chips reuse the price chart's Y scale and absolute
+page coordinates, so each cost occupies the same horizontal line in both
+panes. The price chart determines its domain from its existing price, average
+cost line, trade-marker, and live-price inputs without including chip costs.
+Chips outside that price domain remain in the snapshot but are not painted;
+hovering does not expand the price range. Both
+panes stay side by side at narrow widths. Price-chart
+hover selects the same dated replay snapshot for the chips; pointer exit
+restores the final visible snapshot. Bars show share quantity at each remaining
+cost, use the active cost-matching method, and retain separate broker, account,
+currency, and long/short scopes. Green marks profitable lots and magenta marks
+underwater lots relative to that point's last price. The chip labels show share
+quantity, right-aligned beside each cost level. The last-price reference line
+shares the stock-price horizontal hover guide's solid, muted, 1 px style.
+Unknown or partial cost basis and incompatible currencies keep the
+distribution unavailable. This display projection does not infer market-wide
+ownership or write financial records.
+
 Holdings Rewards aggregation, 23 Oct 2026: `Rewards` includes posted HSBC
 RewardCash redemption offsets alongside coupon, cash, and KOL rewards. Each
 card row uses its own activity date's FX and contributes once to realized and
@@ -1202,7 +1245,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.284.0`
+Documentation version: `v1.285.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

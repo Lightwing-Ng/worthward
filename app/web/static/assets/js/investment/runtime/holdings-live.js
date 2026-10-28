@@ -1,7 +1,9 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Changed: Stock details shows compact total-equity allocation and personal chips.
+ * - Changed: Shared two-row labels omit visible chip date and share metadata.
  * - Changed: Quote updates retain posted RewardCash in reward and P&L totals.
  * - Fixed: Missing card FX withholds combined reward income while preserving
  *   verified investment unrealized P&L and existing cash and equity values.
@@ -1445,8 +1447,30 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
                     ${runtime.renderInvestmentStockDetailsRangeControl()}
                     <div class="investment-stock-details-price-chart-shell" data-investment-stock-price-chart></div>
                 </div>
-                <div class="investment-stock-details-donut-card">
-                    ${runtime.buildInvestmentStockDonutMarkup(tickerSummary, profile)}
+                <div class="investment-stock-details-side-card">
+                    <div class="investment-stock-details-allocation-card" data-investment-stock-allocation data-status="unavailable" data-ticker="${runtime.escapeHtml(activeTicker)}" title="Percentages of total equity.">
+                        <div class="strategy-allocation-labels investment-stock-details-allocation-labels">
+                            <span class="strategy-allocation-label strategy-allocation-label--primary investment-stock-details-allocation-label">
+                                <span class="strategy-allocation-label-name" data-investment-stock-allocation-ticker-label>${runtime.escapeHtml(activeTicker)}</span>
+                                <span class="strategy-allocation-label-value" data-investment-stock-allocation-ticker-value>-</span>
+                            </span>
+                            <span class="strategy-allocation-label strategy-allocation-label--cash investment-stock-details-allocation-label">
+                                <span class="strategy-allocation-label-name" data-investment-stock-allocation-cash-label>Cash</span>
+                                <span class="strategy-allocation-label-value" data-investment-stock-allocation-cash-value>-</span>
+                            </span>
+                        </div>
+                        <div class="strategy-allocation-track investment-stock-details-allocation-bar" data-investment-stock-allocation-bar role="img" aria-label="Total-equity allocation unavailable">
+                            <span class="investment-stock-details-allocation-segment-ticker" data-investment-stock-allocation-ticker style="width: 0%;" aria-hidden="true"></span>
+                            <span class="investment-stock-details-allocation-segment-other" data-investment-stock-allocation-other style="width: 0%;" aria-hidden="true"></span>
+                            <span class="investment-stock-details-allocation-segment-cash" data-investment-stock-allocation-cash style="width: 0%;" aria-hidden="true"></span>
+                        </div>
+                    </div>
+                    <section class="investment-stock-details-chips-card" data-investment-stock-chips data-status="unavailable" aria-label="Personal cost-lot distribution">
+                        <div class="investment-stock-details-chips-plot">
+                            <canvas data-investment-stock-chips-canvas role="img" aria-label="Personal cost history unavailable"></canvas>
+                            <p class="investment-stock-details-chips-empty" data-investment-stock-chips-empty>Cost history unavailable.</p>
+                        </div>
+                    </section>
                 </div>
             </div>
         `;
