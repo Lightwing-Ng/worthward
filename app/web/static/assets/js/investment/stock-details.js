@@ -1,7 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.40.6
+ * Code version: v0.41.0
+ * - Added: Personal chips and immutable entry-price anchors share the price axis.
+ * - Fixed: Historical hover restores the latest allocation and chip snapshot.
  * - Changed: Loads debit-card cashback-aware data utilities.
  * - Fixed: Uses the audited dated cash and realized-basis helpers.
  * - Fixed: Loads residual transfer-basis conservation in data utilities.
@@ -66,10 +68,19 @@ import {
 import {
     createInvestmentStockDetailsMetrics,
 } from './stock-details-metrics.js?v=investment-stock-details-metrics-v1.1.0';
+import {
+    buildInvestmentStockDetailsChipSnapshot,
+    reconcileInvestmentStockDetailsChipAnchors,
+    repriceInvestmentStockDetailsChipSnapshot,
+} from './stock-details-chips.js?v=investment-stock-details-chips-v1.1.0';
+import {
+    applyInvestmentStockDetailsHorizontalGuideStyle,
+    createInvestmentStockDetailsChipChart,
+} from './stock-details-chip-chart.js?v=investment-stock-details-chip-chart-v1.5.1';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.40.6';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.41.0';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
@@ -339,6 +350,8 @@ export function createInvestmentStockDetailsUtils({
         const chartInstance = getInvestmentStockDetailsPriceChartInstance();
         if (chartInstance) {
             const chartCanvas = chartInstance.canvas;
+            chartCanvas?._stockDetailsChipChart?.destroy();
+            if (chartCanvas) chartCanvas._stockDetailsChipChart = null;
             if (chartCanvas?._abortController) {
                 chartCanvas._abortController.abort();
                 chartCanvas._abortController = null;
@@ -488,6 +501,8 @@ export function createInvestmentStockDetailsUtils({
                 const close = Number(tickerPriceMap[date]);
                 return Number.isFinite(close) && close > 0 ? close : null;
             });
+        // Appending the live-date slot does not change the historical window.
+        const latestVisibleHistoryLabel = String(labels[labels.length - 1] || '');
         if (!useIntradayCandles) {
             const liveDateKey = typeof getInvestmentLiveSessionDateKey === 'function'
                 ? getInvestmentLiveSessionDateKey()
@@ -541,7 +556,7 @@ export function createInvestmentStockDetailsUtils({
             allowRealtimeData
             && latestVisibleLabel
             && latestAvailableLabel
-            && latestVisibleLabel === latestAvailableLabel
+            && latestVisibleHistoryLabel === latestAvailableLabel
             && !(normalizedRange === 'auto' && stockDetailsAutoRangeContext?.isOpenPosition === false)
         );
         const getRealtimePulseTarget = () => {
@@ -814,6 +829,7 @@ export function createInvestmentStockDetailsUtils({
             .filter(([date]) => Boolean(date)));
         const stockStates = new Map();
         const renderedStockStates = new Map();
+        const chipPriceAnchorsByState = new WeakMap();
         const getStockDetailScopeKey = (txn) => (
             getTransactionLotScopeKey(txn, normalizedTicker)
             || `ticker:${normalizedTicker}`
@@ -823,6 +839,27 @@ export function createInvestmentStockDetailsUtils({
             return states.get(scopeKey);
         };
         const averagePriceSeries = [];
+        const resolveChipOpeningDisplayPrice = (txn, normalizedType, renderIndex, quantity) => {
+            if (normalizedType === 'grant') return 0;
+            if (!['buy', 'sell', 'dividend_reinvestment'].includes(normalizedType)) return null;
+            const transactionPrice = getTransactionPrice(txn);
+            if (!Number.isFinite(transactionPrice) || transactionPrice <= 0) return null;
+            if (Number.isInteger(renderIndex)) {
+                return resolveTradeMarkerPrice(renderIndex, transactionPrice);
+            }
+            const transactionClose = getIndexedClosePriceOnOrBefore(
+                tickerPriceIndex[normalizedTicker],
+                normalizeLedgerDate(txn?.date),
+            );
+            if (Number.isFinite(transactionClose) && transactionClose > 0) {
+                return adjustTradePriceForRenderedSeries(transactionPrice, transactionClose);
+            }
+            const transactionQuantity = Math.abs(Number(getTransactionQuantity(txn)));
+            return Number.isFinite(quantity) && quantity > 0
+                && Number.isFinite(transactionQuantity) && transactionQuantity > 0
+                ? transactionPrice * transactionQuantity / quantity
+                : transactionPrice;
+        };
         const applyStockDetailsTransactionToStates = (txn, renderIndex = null) => {
             const normalizedType = getNormalizedTransactionType(txn);
             const scopeKey = getStockDetailScopeKey(txn);
@@ -849,6 +886,24 @@ export function createInvestmentStockDetailsUtils({
                 normalizeLedgerDate(txn?.date),
                 {unitPriceOverride: effectiveUnitPrice},
             );
+            const openingDisplayPrice = resolveChipOpeningDisplayPrice(
+                txn, normalizedType, renderIndex, quantity,
+            );
+            const openingOrigin = normalizedType === 'grant'
+                ? 'grant'
+                : normalizedType === 'transfer_in'
+                    ? 'carried-basis'
+                    : openingDisplayPrice !== null ? 'execution' : 'cost-basis';
+            chipPriceAnchorsByState.set(stockState, reconcileInvestmentStockDetailsChipAnchors(
+                chipPriceAnchorsByState.get(stockState),
+                stockState,
+                {
+                    openingDisplayPrice,
+                    openingOrigin,
+                    projectAverage: ['buy', 'sell'].includes(normalizedType)
+                        && stockState.lotMatchingMethod === 'moving_average',
+                },
+            ));
             applyInvestmentTransactionToState(
                 renderedStockState,
                 txn,
@@ -905,6 +960,12 @@ export function createInvestmentStockDetailsUtils({
                     : null,
             );
             stockSnapshotsByDate.set(String(label), {
+                chips: buildInvestmentStockDetailsChipSnapshot(stockStates, {
+                    date: String(label),
+                    price: closeValues[index],
+                    quoteCurrency,
+                    priceAnchorsByState: chipPriceAnchorsByState,
+                }),
                 shares: Number.isFinite(aggregateState.shares) ? aggregateState.shares : 0,
                 close: Number.isFinite(close) ? close : null,
                 averagePrice: Number.isFinite(averagePrice)
@@ -915,6 +976,29 @@ export function createInvestmentStockDetailsUtils({
                 buySellLedgerNos,
             });
         });
+
+        const chipChart = createInvestmentStockDetailsChipChart(
+            investmentStockDetailsPanel.querySelector('[data-investment-stock-chips]'),
+            {resolveTheme: resolveInvestmentTheme, getPriceChart: getInvestmentStockDetailsPriceChartInstance},
+        );
+        let activeChipIndex = labels.length - 1;
+        let activeChipSnapshot = null;
+        const syncChipSnapshot = (index = labels.length - 1) => {
+            activeChipIndex = index;
+            const snapshot = stockSnapshotsByDate.get(String(labels[index]))?.chips;
+            const livePrice = index === labels.length - 1 ? getRealtimePulseTarget()?.price : null;
+            const rawPrice = livePrice ?? closeValues[index];
+            const price = rawPrice === null || rawPrice === undefined ? null : Number(rawPrice);
+            if (!snapshot) return;
+            const sameSource = activeChipSnapshot?.source === snapshot;
+            const nextPrice = Number.isFinite(price) ? price : null;
+            if (sameSource && activeChipSnapshot.price === nextPrice) return;
+            activeChipSnapshot = {source: snapshot, price: nextPrice};
+            chipChart?.render(snapshot.price === nextPrice
+                ? snapshot
+                : repriceInvestmentStockDetailsChipSnapshot(snapshot, nextPrice));
+        };
+        syncChipSnapshot();
 
         const resolvedTheme = resolveInvestmentTheme();
         const applyCanvasAlpha = resolveInvestmentTradeMarkerColorWithAlpha;
@@ -1160,8 +1244,7 @@ export function createInvestmentStockDetailsUtils({
                 const { left, right } = chartArea;
                 chartInstance._activeInvestmentStockDetailsGuideBounds = { left, right, y };
                 ctx.save();
-                ctx.strokeStyle = resolvedTheme.mutedSoft;
-                ctx.lineWidth = 1;
+                applyInvestmentStockDetailsHorizontalGuideStyle(ctx, resolvedTheme);
                 ctx.beginPath();
                 ctx.moveTo(left, y);
                 ctx.lineTo(right, y);
@@ -1361,16 +1444,19 @@ export function createInvestmentStockDetailsUtils({
         const externalTooltipHandler = ({ chart, tooltip }) => {
             const tooltipEl = getOrCreateTooltip();
             if (tooltip.opacity === 0) {
+                const wasTrackingPrice = activeStockDetailsTooltipPresentation !== '';
+                syncChipSnapshot();
                 tooltipEl.classList.remove('is-visible');
                 activeStockDetailsHoverDate = '';
                 activeStockDetailsTooltipPresentation = '';
                 setActiveStockDetailsHoverPointRecord(null);
                 clearInvestmentStockDetailHighlights();
                 clearInvestmentHistoryHighlights();
-                syncInvestmentStockDetailsDonutFromInteraction();
+                syncInvestmentStockDetailsDonutFromInteraction({preferLatest: wasTrackingPrice});
                 return;
             }
             const pointIndex = tooltip.dataPoints?.[0]?.dataIndex ?? -1;
+            syncChipSnapshot(pointIndex);
             const rawDate = labels[pointIndex];
             const parsedDate = parseRawDate(rawDate);
             const snapshot = stockSnapshotsByDate.get(String(rawDate)) || {};
@@ -1491,10 +1577,10 @@ export function createInvestmentStockDetailsUtils({
             const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
             const anchorX = canvasRect.left + tooltip.caretX;
             const anchorY = canvasRect.top + tooltip.caretY;
-            const donutCard = investmentStockDetailsPanel?.querySelector('.investment-stock-details-donut-card');
-            const donutRect = donutCard instanceof HTMLElement ? donutCard.getBoundingClientRect() : null;
-            const rightBoundary = donutRect && donutRect.left > padding
-                ? Math.min(viewportWidth - padding, donutRect.left - gap)
+            const sideCard = investmentStockDetailsPanel?.querySelector('.investment-stock-details-side-card');
+            const sideRect = sideCard instanceof HTMLElement ? sideCard.getBoundingClientRect() : null;
+            const rightBoundary = sideRect && sideRect.left > padding
+                ? Math.min(viewportWidth - padding, sideRect.left - gap)
                 : viewportWidth - padding;
             const roomRight = rightBoundary - anchorX;
             const roomLeft = anchorX - padding;
@@ -1606,9 +1692,14 @@ export function createInvestmentStockDetailsUtils({
                     },
                 },
             },
-            plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin, realtimeEndMarkerPlugin],
+            plugins: [candlestickPlugin, hoverGuidePlugin, xAxisLabelPlugin, tradeMarkerPlugin, realtimeEndMarkerPlugin, {
+                id: 'investmentStockDetailsChipAxisSync',
+                afterDraw(chart) { chipChart?.redraw(chart); },
+            }],
         });
         setInvestmentStockDetailsPriceChartInstance(chartInstance);
+        canvas._stockDetailsChipChart = chipChart;
+        chipChart?.redraw(chartInstance);
         canvas._syncInvestmentStockDetailsTheme = () => {
             Object.assign(resolvedTheme, resolveInvestmentTheme());
             const closeDataset = chartInstance.data?.datasets?.[0];
@@ -1632,6 +1723,7 @@ export function createInvestmentStockDetailsUtils({
                 chartInstance.options.scales.y.ticks.color = resolvedTheme.muted;
             }
             chartInstance.update('none');
+            chipChart?.redraw();
         };
         canvas._syncInvestmentStockDetailsRealtimePulse = () => {
             const yScale = chartInstance.options?.scales?.y;
@@ -1644,6 +1736,7 @@ export function createInvestmentStockDetailsUtils({
             yScale.min = nextYScale.min;
             yScale.max = nextYScale.max;
             chartInstance.update('none');
+            syncChipSnapshot(activeChipIndex);
         };
         const readyScheduler = window.WorthwardMotion?.scheduler;
         if (readyScheduler?.frame) {

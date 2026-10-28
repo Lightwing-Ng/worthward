@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {
     expect,
     test,
@@ -848,14 +848,14 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             const rect = element.getBoundingClientRect();
             const card = element.closest('.investment-stock-details-price-chart-card').getBoundingClientRect();
             const panel = document.querySelector('#stock_panel').getBoundingClientRect();
-            const donut = document.querySelector('.investment-stock-details-donut-card').getBoundingClientRect();
+            const allocation = document.querySelector('[data-investment-stock-allocation]').getBoundingClientRect();
             return {
                 width: rect.width,
                 height: rect.height,
                 insideCard: rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1,
                 insidePanel: rect.top >= panel.top - 1 && rect.bottom <= panel.bottom + 1,
-                donutOverlaps: donut.left < rect.right && donut.right > rect.left
-                    && donut.top < rect.bottom && donut.bottom > rect.top,
+                allocationOverlaps: allocation.left < rect.right && allocation.right > rect.left
+                    && allocation.top < rect.bottom && allocation.bottom > rect.top,
             };
         });
         expect(layout.height).toBeGreaterThanOrEqual(199);
@@ -892,7 +892,7 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             expect(scrollReachability.bottomReachable).toBe(true);
             if (scrollReachability.overflow > 1) expect(scrollReachability.overflowY).toBe('auto');
         }
-        expect(layout.donutOverlaps).toBe(false);
+        expect(layout.allocationOverlaps).toBe(false);
 
         const hoverPoint = await canvas.evaluate((element) => {
             const chart = element._investmentStockDetailsChart;

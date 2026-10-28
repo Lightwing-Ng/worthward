@@ -1,4 +1,4 @@
-/* Code version: v1.2.8 */
+/* Code version: v1.3.0 */
 import {
     expect,
     test,
@@ -14,7 +14,7 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
-test('uses the Neo stock-details composition without chart or donut collisions', async ({page}) => {
+test('uses the Neo stock-details composition without chart or allocation collisions', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
@@ -219,22 +219,24 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         const range = select('.investment-stock-details-range-shell');
         const chartShell = select('.investment-stock-details-price-chart-shell');
         const canvas = select('.investment-stock-details-price-chart-canvas');
-        const donutCard = select('.investment-stock-details-donut-card');
-        const donutShell = select('.investment-stock-details-donut-shell');
-        const donut = select('.investment-stock-details-donut');
-        const logo = select('.investment-stock-details-donut-logo');
+        const sideCard = select('.investment-stock-details-side-card');
+        const allocationCard = select('[data-investment-stock-allocation]');
+        const chipsCard = select('.investment-stock-details-chips-card');
+        const chipsCanvas = select('[data-investment-stock-chips-canvas]');
         if (!identity || !metrics || !chartCard || !range || !chartShell || !canvas
-            || !donutCard || !donutShell || !donut || !logo) return null;
+            || !sideCard || !allocationCard || !chipsCard || !chipsCanvas) return null;
         const identityRect = identity.getBoundingClientRect();
         const metricsRect = metrics.getBoundingClientRect();
         const chartCardRect = chartCard.getBoundingClientRect();
         const rangeRect = range.getBoundingClientRect();
         const chartRect = chartShell.getBoundingClientRect();
         const canvasRect = canvas.getBoundingClientRect();
-        const donutCardRect = donutCard.getBoundingClientRect();
-        const donutShellRect = donutShell.getBoundingClientRect();
-        const donutRect = donut.getBoundingClientRect();
-        const logoRect = logo.getBoundingClientRect();
+        const sideCardRect = sideCard.getBoundingClientRect();
+        const allocationRect = allocationCard.getBoundingClientRect();
+        const chipsCardRect = chipsCard.getBoundingClientRect();
+        const chipsCanvasRect = chipsCanvas.getBoundingClientRect();
+        const chart = window.Chart?.getChart(canvas);
+        const scaleY = chart ? canvasRect.height / chart.height : 1;
         return {
             identityTop: identityRect.top,
             rangeTop: rangeRect.top,
@@ -249,17 +251,16 @@ test('uses the Neo stock-details composition without chart or donut collisions',
             metricsBottom: metricsRect.bottom,
             metricsOverflow: metrics.scrollHeight - metrics.clientHeight,
             metricsOverflowY: getComputedStyle(metrics).overflowY,
-            chartCenterY: chartRect.top + (chartRect.height / 2),
-            donutCenterY: donutRect.top + (donutRect.height / 2),
-            donutDiameter: donutRect.width,
-            donutFrameWidth: donutShellRect.width,
-            donutCardBottom: donutCardRect.bottom,
-            logoContained: (
-                logoRect.left >= donutShellRect.left - 1
-                && logoRect.right <= donutShellRect.right + 1
-                && logoRect.top >= donutShellRect.top - 1
-                && logoRect.bottom <= donutShellRect.bottom + 1
-            ),
+            allocationTop: allocationRect.top,
+            allocationHeight: allocationRect.height,
+            sideCardTop: sideCardRect.top,
+            sideCardBottom: sideCardRect.bottom,
+            chipsTop: chipsCardRect.top,
+            chipsBottom: chipsCardRect.bottom,
+            chipsCanvasTop: chipsCanvasRect.top,
+            chipsCanvasBottom: chipsCanvasRect.bottom,
+            plotTop: chart ? canvasRect.top + chart.chartArea.top * scaleY : null,
+            plotBottom: chart ? canvasRect.top + chart.chartArea.bottom * scaleY : null,
         };
     });
     const verticalAlignmentTolerance = 2.1;
@@ -267,7 +268,7 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     await expect.poll(async () => {
         const currentGeometry = await readGeometry();
         if (!currentGeometry) return Number.POSITIVE_INFINITY;
-        return Math.abs(currentGeometry.chartCenterY - currentGeometry.donutCenterY);
+        return Math.abs(currentGeometry.chartCardBottom - currentGeometry.sideCardBottom);
     }).toBeLessThanOrEqual(verticalAlignmentTolerance);
     const geometry = await readGeometry();
 
@@ -278,20 +279,21 @@ test('uses the Neo stock-details composition without chart or donut collisions',
     expect(Math.abs(geometry.chartBottom - geometry.canvasBottom)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCardTop - geometry.identityTop)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.chartCardBottom - geometry.metricsBottom)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.chartCardBottom - geometry.donutCardBottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.chartCardTop - geometry.sideCardTop)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.chartCardBottom - geometry.sideCardBottom)).toBeLessThanOrEqual(1);
+    expect(geometry.chipsBottom).toBeLessThanOrEqual(geometry.sideCardBottom + 1);
+    expect(Math.abs(geometry.allocationTop - geometry.rangeTop)).toBeLessThanOrEqual(2);
+    expect(geometry.allocationHeight).toBeLessThanOrEqual(64);
+    expect(geometry.chipsCanvasTop).toBeLessThanOrEqual(geometry.plotTop + 1);
+    expect(geometry.chipsCanvasBottom).toBeGreaterThanOrEqual(geometry.plotBottom - 1);
     expect(geometry.metricsOverflowY).toBe('auto');
     // Metrics own a scrollport; a growing metric list must remain reachable
-    // without enlarging or colliding with the neighboring chart and donut.
+    // without enlarging or colliding with the neighboring chart and allocation.
     expect(await page.locator('#stock_panel .investment-stock-details-metrics').evaluate((element) => {
         element.scrollTop = element.scrollHeight;
         return element.scrollHeight - element.clientHeight - element.scrollTop;
     })).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.chartCenterY - geometry.donutCenterY)).toBeLessThanOrEqual(
-        verticalAlignmentTolerance,
-    );
-    expect(geometry.donutDiameter).toBeGreaterThan(120);
-    expect(geometry.donutFrameWidth - geometry.donutDiameter).toBeLessThanOrEqual(50);
-    expect(geometry.logoContained).toBe(true);
+    await expect(page.locator('#stock_panel .investment-stock-details-donut')).toHaveCount(0);
 
     await page.setViewportSize({width: 430, height: 900});
     await expect.poll(() => priceChartCanvas.evaluate((element) => {
@@ -299,29 +301,19 @@ test('uses the Neo stock-details composition without chart or donut collisions',
         return rect.height - rect.width * 9 / 16;
     })).toBeGreaterThanOrEqual(-1);
     await expect.poll(() => page.evaluate(() => {
-        const shell = document.querySelector('#stock_panel .investment-stock-details-donut-shell')
+        const price = document.querySelector('#stock_panel .investment-stock-details-price-chart-card')
             ?.getBoundingClientRect();
-        const logo = document.querySelector('#stock_panel .investment-stock-details-donut-logo')
+        const side = document.querySelector('#stock_panel .investment-stock-details-side-card')
             ?.getBoundingClientRect();
-        return Boolean(shell && logo
-            && logo.left >= shell.left - 1
-            && logo.right <= shell.right + 1
-            && logo.top >= shell.top - 1
-            && logo.bottom <= shell.bottom + 1);
+        const allocation = document.querySelector('#stock_panel [data-investment-stock-allocation]')
+            ?.getBoundingClientRect();
+        return Boolean(price && side && allocation
+            && side.left >= price.right - 1
+            && Math.abs(price.bottom - side.bottom) <= 1
+            && allocation.left >= side.left - 1
+            && allocation.right <= side.right + 1
+            && allocation.height <= 64);
     })).toBe(true);
-    const mobileDonutGeometry = await page.evaluate(() => {
-        const shell = document.querySelector('#stock_panel .investment-stock-details-donut-shell')
-            .getBoundingClientRect();
-        const donut = document.querySelector('#stock_panel .investment-stock-details-donut')
-            .getBoundingClientRect();
-        return {
-            frameWidth: shell.width,
-            frameHeight: shell.height,
-            donutDiameter: donut.width,
-        };
-    });
-    expect(Math.abs(mobileDonutGeometry.frameWidth - mobileDonutGeometry.frameHeight)).toBeLessThanOrEqual(1);
-    expect(mobileDonutGeometry.frameWidth - mobileDonutGeometry.donutDiameter).toBeLessThanOrEqual(50);
 });
 
 for (const viewport of [
@@ -629,7 +621,7 @@ for (const viewport of [
                     rect(metrics),
                     rect(panel.querySelector('.investment-stock-details-price-chart-card')),
                     rect(panel.querySelector('.investment-stock-details-price-chart-shell')),
-                    rect(panel.querySelector('.investment-stock-details-donut-card')),
+                    rect(panel.querySelector('[data-investment-stock-allocation]')),
                     ...cards.flatMap((card) => [
                         rect(card),
                         rect(card.querySelector('.trade-metric-label')),
@@ -963,11 +955,13 @@ test('uses the standard green token logo for money-market Stock details identity
         moneyMarketTickers: [ticker],
     });
     await page.goto(`/trade/investment?ticker=${ticker}#stock_panel`);
-    await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
+    const investmentCssSource = await readFile(new URL('../../../app/web/static/assets/css/views/investment.css', import.meta.url), 'utf8');
+    const investmentCssVersion = investmentCssSource.match(/Code version: v([0-9.]+)/)[1];
+    await expect.poll(() => page.evaluate((version) => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/css/views/investment.css')
-            && url.searchParams.get('v') === '1.82.1';
-    }))).toBe(true);
+            && url.searchParams.get('v') === version;
+    }), investmentCssVersion)).toBe(true);
 
     const tokenLogo = page.locator('#stock_panel .investment-stock-details-identity .investment-cash-equivalent-token-logo');
     await expect(tokenLogo).toHaveCount(1);

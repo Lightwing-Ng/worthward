@@ -1,7 +1,9 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.2.1
+ * Code version: v1.3.0
+ * - Changed: Stock details renders reconciled total-equity allocation percentages.
+ * - Fixed: Price-hover exit restores the latest allocation snapshot.
  * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
  * - Changed: A view or range selection moves its pill first and renders the view or
  *   chart after the pill's first frame; a direct view change cancels a pending selection.
@@ -851,6 +853,129 @@ function buildStockDetailsDonutSegments(pointRecord, tickerSummary, activeTicker
         };
     }
 
+function buildStockDetailsAllocationState(pointRecord, tickerSummary, activeTicker) {
+        const ticker = normalizeInvestmentTicker(activeTicker || tickerSummary?.ticker);
+        const date = String(pointRecord?.date || '');
+        const unknownState = {
+            ticker,
+            date,
+            status: 'unavailable',
+            denominator: null,
+            cashValue: null,
+            tickerValue: null,
+            otherValue: null,
+            cashRatio: null,
+            tickerRatio: null,
+            otherRatio: null,
+        };
+        if (!pointRecord || !ticker) return unknownState;
+        const finiteAmount = (value) => {
+            if (typeof value !== 'number' && typeof value !== 'string') return null;
+            if (typeof value === 'string' && !value.trim()) return null;
+            const number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        };
+        const holdingsMarketValues = Object.prototype.hasOwnProperty.call(pointRecord, 'aggregate_holdings_market_values')
+            ? pointRecord.aggregate_holdings_market_values
+            : pointRecord.holdings_market_values;
+        if (!holdingsMarketValues || typeof holdingsMarketValues !== 'object' || Array.isArray(holdingsMarketValues)) {
+            return unknownState;
+        }
+        const cashKey = ['aggregate_display_cash', 'aggregate_running_cash', 'running_cash']
+            .find((key) => Object.prototype.hasOwnProperty.call(pointRecord, key));
+        const cashValue = finiteAmount(cashKey ? pointRecord[cashKey] : null);
+        const equityKey = Object.prototype.hasOwnProperty.call(pointRecord, 'aggregate_total_equity')
+            ? 'aggregate_total_equity' : 'total_equity';
+        const denominator = finiteAmount(pointRecord[equityKey]);
+        const missingPriceTickers = Array.isArray(pointRecord.missing_price_tickers)
+            ? pointRecord.missing_price_tickers.map(normalizeInvestmentTicker)
+            : [];
+        const hasTickerValue = Object.prototype.hasOwnProperty.call(holdingsMarketValues, ticker);
+        const holdingQuantity = finiteAmount((pointRecord.aggregate_holdings || pointRecord.holdings)?.[ticker]);
+        const tickerValue = hasTickerValue ? finiteAmount(holdingsMarketValues[ticker]) : 0;
+        let otherValue = 0;
+        let hasUnknownOtherValue = false;
+        Object.entries(holdingsMarketValues).forEach(([holdingTicker, value]) => {
+            if (normalizeInvestmentTicker(holdingTicker) === ticker) return;
+            const amount = finiteAmount(value);
+            if (amount === null || amount < 0) hasUnknownOtherValue = true;
+            else otherValue += amount;
+        });
+        if (
+            cashValue === null
+            || tickerValue === null
+            || denominator === null
+            || denominator < 0
+            || cashValue < 0
+            || tickerValue < 0
+            || hasUnknownOtherValue
+            || !Number.isFinite(otherValue)
+            || missingPriceTickers.length > 0
+            || pointRecord.valuation_complete === false
+            || (!hasTickerValue && holdingQuantity !== null && Math.abs(holdingQuantity) > 1e-9)
+        ) {
+            return unknownState;
+        }
+        const componentTotal = cashValue + tickerValue + otherValue;
+        const tolerance = Math.max(1e-6, Math.abs(denominator) * 1e-10);
+        // An accrued-interest or other NAV component is not another stock.
+        // Keep this three-component view unavailable unless its known values
+        // reconcile to the authoritative total equity.
+        if (!Number.isFinite(componentTotal) || Math.abs(componentTotal - denominator) > tolerance) return unknownState;
+        return {
+            ticker,
+            date,
+            status: denominator > 1e-9 ? 'ready' : 'empty',
+            denominator,
+            cashValue,
+            tickerValue,
+            otherValue,
+            cashRatio: denominator > 1e-9 ? cashValue / denominator : null,
+            tickerRatio: denominator > 1e-9 ? tickerValue / denominator : null,
+            otherRatio: denominator > 1e-9 ? otherValue / denominator : null,
+        };
+    }
+
+function renderInvestmentStockDetailsAllocation(pointRecord, tickerSummary) {
+        const card = runtime.investmentStockDetailsPanel?.querySelector('[data-investment-stock-allocation]');
+        const bar = card?.querySelector('[data-investment-stock-allocation-bar]');
+        if (!(card instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
+        runtime.state.stockDetailsDonutAnimationCancel?.();
+        runtime.state.stockDetailsDonutAnimationCancel = null;
+        const allocation = buildStockDetailsAllocationState(pointRecord, tickerSummary);
+        const isReady = allocation.status === 'ready';
+        const formatPercent = (ratio) => new Intl.NumberFormat('en-US', {
+            style: 'percent',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(ratio);
+        card.dataset.status = allocation.status;
+        card.dataset.date = allocation.date;
+        card.dataset.ticker = allocation.ticker;
+        card.dataset.cashRatio = isReady ? String(allocation.cashRatio) : '';
+        card.dataset.tickerRatio = isReady ? String(allocation.tickerRatio) : '';
+        card.dataset.otherRatio = isReady ? String(allocation.otherRatio) : '';
+        card.dataset.denominator = allocation.denominator === null ? '' : String(allocation.denominator);
+        const scopeLabel = 'Percentages of total equity.';
+        const cashText = isReady ? formatPercent(allocation.cashRatio) : '-';
+        const tickerText = isReady ? formatPercent(allocation.tickerRatio) : '-';
+        const otherText = isReady ? formatPercent(allocation.otherRatio) : '-';
+        const cashLabel = card.querySelector('[data-investment-stock-allocation-cash-value]');
+        const tickerLabel = card.querySelector('[data-investment-stock-allocation-ticker-value]');
+        const tickerName = card.querySelector('[data-investment-stock-allocation-ticker-label]');
+        if (cashLabel) cashLabel.textContent = cashText;
+        if (tickerLabel) tickerLabel.textContent = tickerText;
+        if (tickerName) tickerName.textContent = allocation.ticker;
+        [['ticker', allocation.tickerRatio], ['cash', allocation.cashRatio], ['other', allocation.otherRatio]].forEach(([kind, ratio]) => {
+            const segment = card.querySelector(`[data-investment-stock-allocation-${kind}]`);
+            if (segment instanceof HTMLElement) segment.style.width = isReady ? `${ratio * 100}%` : '0%';
+        });
+        card.title = scopeLabel;
+        bar.setAttribute('aria-label', isReady
+            ? `${allocation.ticker} ${tickerText}; Cash ${cashText}; Other stocks ${otherText}. ${scopeLabel}`
+            : `${allocation.status === 'empty' ? 'No equity components.' : 'Allocation unavailable: stock and cash components must reconcile to total equity.'} ${scopeLabel}`);
+    }
+
 function buildStockDetailsDonutState(pointRecord, tickerSummary, profile) {
         const activeTicker = normalizeInvestmentTicker(tickerSummary?.ticker || '');
         const logoUrl = resolveInvestmentLogoUrl(profile, activeTicker || 'stock');
@@ -987,11 +1112,22 @@ function animateStockDetailsDonutTo(nextState) {
 
 function renderInvestmentStockDetailsDonut(pointRecord, tickerSummary, profile) {
         if (!(runtime.investmentStockDetailsPanel instanceof HTMLElement)) return;
+        if (runtime.investmentStockDetailsPanel.querySelector('[data-investment-stock-allocation]')) {
+            renderInvestmentStockDetailsAllocation(pointRecord, tickerSummary);
+            return;
+        }
         animateStockDetailsDonutTo(buildStockDetailsDonutState(pointRecord, tickerSummary, profile));
     }
 
-function syncInvestmentStockDetailsDonutFromInteraction() {
+function syncInvestmentStockDetailsDonutFromInteraction({preferLatest = false} = {}) {
         if (!(runtime.investmentStockDetailsPanel instanceof HTMLElement)) return;
+        if (preferLatest) {
+            runtime.state.activeStockDetailsHoverPointRecord = null;
+            runtime.state.activeChartTooltipPointRecord = null;
+            runtime.state.activeChartTooltipPointIndex = -1;
+            runtime.state.activeHoldingsHoverLedgerNo = 0;
+            runtime.state.activeHoldingsHoverTicker = '';
+        }
         const activeTicker = runtime.ensureSelectedInvestmentStockTicker();
         if (!activeTicker) return;
         const tickerSummary = runtime.state.investmentTickerSummariesCache.find((summary) => normalizeInvestmentTicker(summary?.ticker) === activeTicker) || runtime.createPositionState(activeTicker);
@@ -999,10 +1135,12 @@ function syncInvestmentStockDetailsDonutFromInteraction() {
             window.WORTHWARD_INVESTMENT_DATA?.ticker_profiles || {},
             activeTicker,
         );
-        const pointRecord = runtime.state.activeStockDetailsHoverPointRecord
-            || getActiveInvestmentInteractionPoint()
-            || runtime.state.investmentLatestChartPoint
-            || null;
+        const pointRecord = preferLatest
+            ? runtime.state.investmentLatestChartPoint || null
+            : runtime.state.activeStockDetailsHoverPointRecord
+                || getActiveInvestmentInteractionPoint()
+                || runtime.state.investmentLatestChartPoint
+                || null;
         renderInvestmentStockDetailsDonut(pointRecord, tickerSummary, profile);
     }
 
@@ -1526,6 +1664,8 @@ function isMoneyMarketFundTicker(ticker) {
         scheduleInvestmentStockDetailsDonutSync,
         syncInvestmentDummyDonutFromInteraction,
         buildStockDetailsDonutSegments,
+        buildStockDetailsAllocationState,
+        renderInvestmentStockDetailsAllocation,
         buildStockDetailsDonutState,
         normalizeStockDetailsDonutState,
         buildStockDetailsDonutFill,
