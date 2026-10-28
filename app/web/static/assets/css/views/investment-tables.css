@@ -1,4 +1,4 @@
-/* Code version: v1.4.2 */
+/* Code version: v1.5.0 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -2893,8 +2893,8 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     #stock_panel > .investment-stock-details-overview {
         flex: 0 0 auto;
         min-height: min-content;
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: repeat(4, auto);
+        grid-template-columns: minmax(0, 1fr) minmax(72px, 0.32fr);
+        grid-template-rows: repeat(3, auto);
         height: auto;
         overflow: visible;
     }
@@ -2918,8 +2918,33 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     }
 
     .investment-stock-details-price-chart-card {
+        grid-column: 1;
+        grid-row: 3;
         height: auto;
         padding: 0 4px;
+    }
+
+    #stock_panel .investment-stock-details-identity,
+    #stock_panel .investment-stock-details-metrics {
+        grid-column: 1 / -1;
+    }
+
+    .investment-stock-details-side-card {
+        grid-column: 2;
+        grid-row: 3;
+        height: auto;
+        align-self: stretch;
+    }
+
+    .investment-stock-details-range-shell .segmented-control {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .investment-stock-details-range-shell .segmented-control label {
+        min-width: 0;
+        padding-inline: 4px;
+        font-size: 11px;
     }
 
     .investment-stock-details-range-shell {
