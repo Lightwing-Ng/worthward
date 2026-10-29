@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.142.0`
+Documentation version: `v1.143.0`
 
 ## HSBC debit-card cashback boundary
 
@@ -1791,13 +1791,50 @@ sets of values.
   are not subject to this securities-only filter. An explicit filled-quantity
   column owns the executed quantity; a missing or zero fill never falls back
   to the requested order quantity. Stated amounts must still reconcile.
-- Linked provisional Schwab BUY and SELL trades use the same eligible dates
-  before and after CSV reconciliation: the Hong Kong page date and the actual
-  New York date derived from the complete page timestamp. Time-zone conversion
-  observes daylight-saving rules; the previous date is eligible only when the
-  conversion crosses midnight. Retain the linked official date for compatibility.
-  Exact-fill ambiguity and quantity, price, fee, and net-amount revision guards
-  remain active within this window on repeated imports.
+- Schwab provisional reconciliation reserves unique exact-price executions
+  before considering explicitly evidenced limit-price improvements. Every
+  match is confined to account, ticker, side, currency, absolute quantity,
+  and eligible trade dates. Existing linked executions remain reserved for
+  their own reference. A favorable-price fallback requires structured
+  `order_type=limit`, `execution_status=FILLED`, and `limit_price_raw` equal
+  to the provisional price. Only a lower buy price or a higher sell price is
+  eligible; rows without this evidence remain strict. Multiple eligible fills
+  fail for review rather than selecting the nearest price. A separate
+  legitimate execution is retained as its own transaction.
+- Timed thinkorswim workbook rows require a side- and ticker-consistent
+  `TOS-PAGE-...` reference and matching Hong Kong timestamp. Explicitly
+  user-confirmed date-only Schwab workbook rows use a stable
+  `USER-REPORTED-...` reference, `source_has_intraday_timestamp=False`,
+  `datetime_precision=day`,
+  `execution_evidence_source=user_confirmed_trade_report`, and
+  `requires_manual_official_reconciliation=True`. This path matches exact
+  price and quantity without treating a conventional workbook time as an
+  execution timestamp or creating a synthetic TOS reference.
+- Linked provisional Schwab BUY and SELL trades retain their original
+  eligible dates before and after CSV reconciliation. For timed page rows,
+  these are the Hong Kong page date and the actual converted New York date;
+  conversion observes daylight-saving rules and introduces a previous-day
+  candidate only when it crosses midnight. Day-only rows retain their
+  originally accepted ledger and Hong Kong source dates. Their linked window
+  is reconstructed from the archived manual record only after its provisional
+  reference revalidates against the link, never from an arbitrary saved date
+  list. The native linked date is retained for compatibility. Exact-fill
+  ambiguity and quantity, price, fee, and net-amount revision guards remain
+  active within this same window on repeated imports.
+- An official Schwab match preserves the CSV execution price, fee, net amount,
+  and native date while archiving the superseded manual record, source digest,
+  entered time and precision, eligible dates, and matching method. Both paired
+  CSV artifacts and the original workbook remain immutable evidence. Replaying
+  the original provisional row cannot reclaim another execution or overwrite
+  its authoritative replacement. An eligible paired import first independently
+  replays the native incoming history against its own Positions boundary,
+  then validates the merged scoped ledger. A covered mismatch rejects import.
+  The durable fresh claim is `summary.schwab_merged_positions_validation`;
+  native broker-level validation retains its original evidence scope. Partial
+  native coverage, unsupported split semantics, uncertain time boundaries, and
+  an already selected newer snapshot produce no new merged-validation claim.
+  Newer Positions evidence supplies native account cash; a transaction-only
+  manual import cannot fabricate or clear that balance.
 - CMB Wing Lung email builders retain only explicitly executed quantities and
   prices. A canceled order may contain a real partial execution; its requested
   quantity and limit price are never a fallback for missing execution evidence.

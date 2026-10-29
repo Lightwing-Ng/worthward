@@ -1,6 +1,6 @@
 """Exercise import commit isolation through the production runtime composition.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -68,8 +68,13 @@ def test_concurrent_imports_verify_their_own_committed_snapshot(commit_runtime):
     commit = _compose_commit(context)
     payloads = {
         "first": buy_csv_payload(buys=(("10/13/2026", "52.15", "0"),)),
-        "second": buy_csv_payload(buys=(("10/13/2026", "51.50", "0"),)),
+        "second": buy_csv_payload(
+            buys=(("10/13/2026", "52.15", "0"), ("10/13/2026", "51.50", "0")),
+            positions_time="09:01 AM",
+        ),
     }
+    assert payloads["first"]["position_snapshot"]["DRAM"]["as_of"] == "2026-10-13 09:00:00"
+    assert payloads["second"]["position_snapshot"]["DRAM"]["as_of"] == "2026-10-13 09:01:00"
 
     def run_import(label):
         try:
@@ -101,7 +106,13 @@ def test_concurrent_imports_verify_their_own_committed_snapshot(commit_runtime):
     assert sorted(
         row["price_raw"] for row in persisted["transactions"] if row.get("type") == "buy"
     ) == ["51.50", "52.15"]
-    assert len(persisted["source_artifacts"]) == 3
+    expected_evidence = {
+        item["sha256"]
+        for payload in payloads.values()
+        for item in payload["source_artifacts"]
+    }
+    assert len(expected_evidence) == 4
+    assert {item["sha256"] for item in persisted["source_artifacts"]} == expected_evidence
     storage.verify_investment_source_artifacts(persisted, ledger_path)
     assert commit(payloads["first"])["transactions"] == persisted["transactions"]
 
@@ -134,7 +145,10 @@ def test_failed_import_preserves_prior_ledger_and_releases_lock(
     commit = _compose_commit(context)
     commit(buy_csv_payload())
     original_bytes = ledger_path.read_bytes()
-    incoming = buy_csv_payload(buys=(("10/13/2026", "51.50", "0"),))
+    incoming = buy_csv_payload(
+        buys=(("10/13/2026", "52.15", "0"), ("10/13/2026", "51.50", "0")),
+        positions_time="09:01 AM",
+    )
     if failure == "source_bytes":
         rejected = deepcopy(incoming)
         rejected["source_artifacts"][0]["content_base64"] = "bm90IHRoZSBzb3VyY2U="

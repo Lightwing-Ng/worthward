@@ -1,6 +1,8 @@
 """Reconcile provisional thinkorswim workbook trades with Schwab CSV evidence.
 
-Code version: v0.2.1
+Code version: v0.3.0
+- Added: Exact-first reconciliation for evidenced limit-price improvements and
+  user-confirmed date-only workbook trades, preserving their original evidence.
 - Added: TOS page buys reconcile like sales, matched only against a Schwab CSV
   trade on the same side.
 - Changed: A linked trade blocks only same-side, same-quantity, same-price
@@ -42,7 +44,9 @@ def _record_source(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _record_account(record: dict[str, Any]) -> str:
-    return _normalize_text(record.get("account") or _record_source(record).get("account"))
+    return _normalize_text(
+        record.get("account") or _record_source(record).get("account")
+    )
 
 
 def _trade_side(record: dict[str, Any]) -> str:
@@ -63,13 +67,31 @@ def _provisional_reference(record: dict[str, Any]) -> str:
     if (
         _ii_basics._normalize_broker_code(record.get("broker")) != "schwab"
         or not _trade_side(record)
-        or _normalize_text(source.get("file_kind")) != "manual_investment_xlsx"
+        or _normalize_text(source.get("file_kind"))
+        not in {"manual_investment_xlsx", "zircon_hk_manual_xlsx"}
         or _normalize_text(source.get("source_timezone")) != "Asia/Hong_Kong"
     ):
         return ""
     reference = _normalize_text(source.get("reference_id"))
+    if (
+        reference.upper().startswith("USER-REPORTED-")
+        and source.get("source_has_intraday_timestamp") is False
+        and _normalize_text(source.get("datetime_precision")) == "day"
+        and _normalize_text(source.get("execution_evidence_source"))
+        == "user_confirmed_trade_report"
+        and source.get("requires_manual_official_reconciliation") is True
+        and _record_account(record)
+        and _positive_absolute_decimal(record.get("quantity_raw")) is not None
+        and _positive_absolute_decimal(record.get("price_raw")) is not None
+    ):
+        return reference
     match = _TOS_PAGE_TRADE_REFERENCE.fullmatch(reference)
-    if match is None or match.group("side").lower() != _trade_side(record):
+    if (
+        match is None
+        or match.group("side").lower() != _trade_side(record)
+        or source.get("source_time_defaulted_to_2300") is True
+        or source.get("source_has_intraday_timestamp") is False
+    ):
         return ""
     source_datetime = _normalize_text(source.get("source_datetime_raw"))
     if (
@@ -156,6 +178,9 @@ def _linked_trade_dates(record: dict[str, Any]) -> set[str]:
     )
     match = _TOS_PAGE_TRADE_REFERENCE.fullmatch(reference)
     if match is None:
+        archived = _record_source(record).get("superseded_manual_trade")
+        if isinstance(archived, dict) and _provisional_reference(archived) == reference:
+            return {linked_date, *_eligible_official_dates(archived)}
         return {linked_date}
     try:
         page_datetime = datetime.strptime(
@@ -181,9 +206,7 @@ def _reject_conflicting_linked_csv_trades(
     linked_scopes = {
         (_official_scope(row), frozenset(_linked_trade_dates(row)))
         for _, _, row in official_rows
-        if _normalize_text(
-            _record_source(row).get("superseded_manual_reference_id")
-        )
+        if _normalize_text(_record_source(row).get("superseded_manual_reference_id"))
     }
     for scope, eligible_dates in linked_scopes:
         identities_by_side: dict[tuple[str, ...], dict[int, int]] = defaultdict(
@@ -227,7 +250,12 @@ def _eligible_official_dates(record: dict[str, Any]) -> set[str]:
     ledger_date = _normalize_text(record.get("date"))
     source_date = _normalize_text(source.get("source_datetime_raw"))[:10]
     try:
-        if abs((date.fromisoformat(source_date) - date.fromisoformat(ledger_date)).days) > 1:
+        if (
+            abs(
+                (date.fromisoformat(source_date) - date.fromisoformat(ledger_date)).days
+            )
+            > 1
+        ):
             return {ledger_date}
     except ValueError:
         return {ledger_date}
@@ -237,6 +265,8 @@ def _eligible_official_dates(record: dict[str, Any]) -> set[str]:
 def _official_execution_time_matches(
     manual: dict[str, Any], official: dict[str, Any]
 ) -> bool:
+    if _record_source(manual).get("source_has_intraday_timestamp") is False:
+        return True
     source = _record_source(official)
     if source.get("source_has_intraday_timestamp") is not True:
         return True
@@ -250,13 +280,102 @@ def _official_execution_time_matches(
     return bool(official_datetime and official_datetime in manual_datetimes)
 
 
+def _has_evidenced_limit_price(record: dict[str, Any]) -> bool:
+    source = _record_source(record)
+    return (
+        _normalize_text(source.get("order_type")).lower() == "limit"
+        and _normalize_text(source.get("execution_status")).upper() == "FILLED"
+        and _positive_absolute_decimal(source.get("limit_price_raw"))
+        == _positive_absolute_decimal(record.get("price_raw"))
+    )
+
+
+def _candidate_identities(
+    candidates: list[tuple[int, int, dict[str, Any]]],
+) -> dict[tuple[str, ...], list[tuple[int, int, dict[str, Any]]]]:
+    groups: dict[tuple[str, ...], list[tuple[int, int, dict[str, Any]]]] = defaultdict(
+        list
+    )
+    for candidate in candidates:
+        groups[_official_identity(candidate[2])].append(candidate)
+    return groups
+
+
+def _unique_candidate(
+    candidates: list[tuple[int, int, dict[str, Any]]],
+) -> tuple[tuple[str, ...], list[tuple[int, int, dict[str, Any]]]]:
+    groups = _candidate_identities(candidates)
+    count = sum(
+        max(
+            sum(side == 0 for side, _, _ in rows),
+            sum(side == 1 for side, _, _ in rows),
+        )
+        for rows in groups.values()
+    )
+    if count != 1:
+        raise ValueError(
+            "A provisional Schwab trade has ambiguous broker CSV matches; review the trade before importing."
+        )
+    identity = next(iter(groups))
+    return identity, groups[identity]
+
+
+def _annotate_official_candidates(
+    reference: str,
+    manual: dict[str, Any],
+    candidates: list[tuple[int, int, dict[str, Any]]],
+    method: str,
+    annotated: dict[tuple[int, int], dict[str, Any]],
+) -> None:
+    manual_source = _record_source(manual)
+    for side, index, row in candidates:
+        if not _official_execution_time_matches(manual, row):
+            raise ValueError(
+                "A provisional Schwab trade conflicts with the broker CSV execution time; review the trade before importing."
+            )
+        updated = dict(row)
+        source = dict(_record_source(row))
+        linked_reference = _normalize_text(source.get("superseded_manual_reference_id"))
+        if linked_reference and linked_reference != reference:
+            raise ValueError(
+                "A provisional Schwab trade conflicts with an existing broker CSV reconciliation."
+            )
+        source["superseded_manual_reference_id"] = reference
+        manual_sha = _normalize_text(manual_source.get("source_file_sha256"))
+        if manual_sha:
+            source.setdefault("superseded_manual_source_sha256", manual_sha)
+        source.setdefault(
+            "superseded_manual_source_datetime_raw",
+            _normalize_text(manual_source.get("source_datetime_raw")),
+        )
+        source.setdefault(
+            "superseded_manual_source_timezone",
+            _normalize_text(manual_source.get("source_timezone")),
+        )
+        source.setdefault(
+            "superseded_manual_datetime_precision",
+            _normalize_text(manual_source.get("datetime_precision"))
+            or _normalize_text(manual_source.get("execution_time_precision"))
+            or "intraday",
+        )
+        source.setdefault(
+            "superseded_manual_eligible_dates", sorted(_eligible_official_dates(manual))
+        )
+        source.setdefault("superseded_manual_trade", dict(manual))
+        source.setdefault("schwab_provisional_match_method", method)
+        updated["source"] = source
+        annotated[(side, index)] = updated
+
+
 def reconcile_schwab_provisional_trades(
     existing: list[dict[str, Any]],
     incoming: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
-    """Replace only a unique same-side TOS page trade with its broker CSV row."""
+    """Reserve exact fills before matching explicitly evidenced limit prices."""
     sides = (existing, incoming)
-    provisional_groups: dict[str, list[tuple[int, int, dict[str, Any]]]] = defaultdict(list)
+    provisional_groups: dict[str, list[tuple[int, int, dict[str, Any]]]] = defaultdict(
+        list
+    )
     official_rows: list[tuple[int, int, dict[str, Any]]] = []
     for side, records in enumerate(sides):
         for index, record in enumerate(records):
@@ -270,6 +389,14 @@ def reconcile_schwab_provisional_trades(
     removed: set[tuple[int, int]] = set()
     claimed_official_ids: set[tuple[str, ...]] = set()
     annotated: dict[tuple[int, int], dict[str, Any]] = {}
+    reserved_official_ids = {
+        _official_identity(row): _normalize_text(
+            _record_source(row).get("superseded_manual_reference_id")
+        )
+        for _, _, row in official_rows
+        if _normalize_text(_record_source(row).get("superseded_manual_reference_id"))
+    }
+    pending = []
     for reference, manual_rows in provisional_groups.items():
         signatures = {_provisional_signature(row) for _, _, row in manual_rows}
         if len(signatures) != 1:
@@ -294,14 +421,13 @@ def reconcile_schwab_provisional_trades(
         prior_links = [
             (side, index, row)
             for side, index, row in official_rows
-            if _normalize_text(_record_source(row).get("superseded_manual_reference_id"))
+            if _normalize_text(
+                _record_source(row).get("superseded_manual_reference_id")
+            )
             == reference
         ]
         scoped_indexes = {(side, index) for side, index, _ in scoped_candidates}
-        if any(
-            (side, index) not in scoped_indexes
-            for side, index, _ in prior_links
-        ):
+        if any((side, index) not in scoped_indexes for side, index, _ in prior_links):
             raise ValueError(
                 "A provisional Schwab trade conflicts with an existing broker CSV reconciliation."
             )
@@ -315,62 +441,86 @@ def reconcile_schwab_provisional_trades(
             if _positive_absolute_decimal(row.get("quantity_raw")) == manual_quantity
             and _positive_absolute_decimal(row.get("price_raw")) == manual_price
         ]
+        if not candidates and prior_links:
+            archived_manuals = [
+                _record_source(row).get("superseded_manual_trade")
+                for _, _, row in prior_links
+            ]
+            if all(
+                isinstance(archived, dict)
+                and _provisional_signature(archived) == _provisional_signature(manual)
+                for archived in archived_manuals
+            ):
+                candidates = prior_links
         if not candidates:
-            raise ValueError(
-                "A provisional Schwab trade conflicts with the broker CSV quantity or price; review the trade before importing."
-            )
+            pending.append((reference, manual_rows, scoped_candidates))
+            continue
         candidates = list(
             {
                 (side, index): (side, index, row)
                 for side, index, row in [*candidates, *prior_links]
             }.values()
         )
-        candidates_by_identity: dict[
-            tuple[str, ...], dict[int, list[tuple[int, int, dict[str, Any]]]]
-        ] = defaultdict(lambda: defaultdict(list))
-        for side, index, row in candidates:
-            candidates_by_identity[_official_identity(row)][side].append(
-                (side, index, row)
-            )
-        candidate_count = sum(
-            max(len(by_side.get(0, [])), len(by_side.get(1, [])))
-            for by_side in candidates_by_identity.values()
-        )
-        if candidate_count != 1:
+        official_id, candidates = _unique_candidate(candidates)
+        reserved_reference = reserved_official_ids.get(official_id)
+        if official_id in claimed_official_ids or (
+            reserved_reference and reserved_reference != reference
+        ):
             raise ValueError(
-                "A provisional Schwab trade has ambiguous broker CSV matches; review the trade before importing."
+                "A provisional Schwab trade shares its broker CSV match with another manual trade."
             )
-        official_id = next(iter(candidates_by_identity))
+        claimed_official_ids.add(official_id)
+        _annotate_official_candidates(reference, manual, candidates, "exact", annotated)
+        removed.update((side, index) for side, index, _ in manual_rows)
+
+    improvement_plans = []
+    for reference, manual_rows, scoped_candidates in pending:
+        manual = manual_rows[0][2]
+        if not all(_has_evidenced_limit_price(row) for _, _, row in manual_rows):
+            raise ValueError(
+                "A provisional Schwab trade conflicts with the broker CSV quantity or price; review the trade before importing."
+            )
+        quantity = _positive_absolute_decimal(manual.get("quantity_raw"))
+        limit_price = _positive_absolute_decimal(manual.get("price_raw"))
+        candidates = []
+        for side, index, row in scoped_candidates:
+            identity = _official_identity(row)
+            price = _positive_absolute_decimal(row.get("price_raw"))
+            if (
+                identity in claimed_official_ids
+                or identity in reserved_official_ids
+                or _positive_absolute_decimal(row.get("quantity_raw")) != quantity
+                or price is None
+                or limit_price is None
+            ):
+                continue
+            improves = (
+                price < limit_price
+                if _trade_side(manual) == "buy"
+                else price > limit_price
+            )
+            if improves:
+                candidates.append((side, index, row))
+        if not candidates:
+            raise ValueError(
+                "A provisional Schwab trade conflicts with the broker CSV quantity or price; review the trade before importing."
+            )
+        official_id, candidates = _unique_candidate(candidates)
+        improvement_plans.append((reference, manual_rows, official_id, candidates))
+
+    for reference, manual_rows, official_id, candidates in improvement_plans:
         if official_id in claimed_official_ids:
             raise ValueError(
                 "A provisional Schwab trade shares its broker CSV match with another manual trade."
             )
         claimed_official_ids.add(official_id)
-        if not all(
-            _official_execution_time_matches(manual, row)
-            for _, _, row in candidates
-        ):
-            raise ValueError(
-                "A provisional Schwab trade conflicts with the broker CSV execution time; review the trade before importing."
-            )
-        manual_sha = _normalize_text(
-            _record_source(manual).get("source_file_sha256")
+        _annotate_official_candidates(
+            reference,
+            manual_rows[0][2],
+            candidates,
+            "limit_price_improvement",
+            annotated,
         )
-        for side, index, row in candidates:
-            updated = dict(row)
-            source = dict(_record_source(row))
-            linked_reference = _normalize_text(
-                source.get("superseded_manual_reference_id")
-            )
-            if linked_reference and linked_reference != reference:
-                raise ValueError(
-                    "A provisional Schwab trade conflicts with an existing broker CSV reconciliation."
-                )
-            source["superseded_manual_reference_id"] = reference
-            if manual_sha:
-                source.setdefault("superseded_manual_source_sha256", manual_sha)
-            updated["source"] = source
-            annotated[(side, index)] = updated
         removed.update((side, index) for side, index, _ in manual_rows)
 
     result = []

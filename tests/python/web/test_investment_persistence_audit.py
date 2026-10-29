@@ -1,6 +1,6 @@
 """Protect ledger reads, migrations, and derived-cache boundaries.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -55,7 +55,15 @@ def test_get_never_labels_old_payload_with_new_ledger_version(commit_runtime):
     def concurrent_commit(_tickers):
         if not calls:
             calls.append(True)
-            commit(buy_csv_payload(buys=(("10/13/2026", "51.50", "0"),)))
+            commit(
+                buy_csv_payload(
+                    buys=(
+                        ("10/13/2026", "52.15", "0"),
+                        ("10/13/2026", "51.50", "0"),
+                    ),
+                    positions_time="09:01 AM",
+                )
+            )
         return []
 
     context["ensure_latest_investment_daily_caches"] = concurrent_commit

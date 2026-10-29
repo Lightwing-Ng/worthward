@@ -1,6 +1,7 @@
 """Regression coverage for Schwab CSV reconciliation of provisional TOS trades.
 
-Code version: v0.2.1
+Code version: v0.3.0
+- Changed: Unmatched manual trades fail merged authoritative holdings validation.
 - Added: Overnight TOS page buy coverage and side-aware linkage guards.
 - Added: Same-day and cross-day linkage replay across New York DST boundaries.
 """
@@ -167,6 +168,7 @@ def buy_csv_payload(
     *,
     buys: tuple[tuple[str, str, str], ...] = (("10/13/2026", "52.15", "0"),),
     sales: tuple[tuple[str, str], ...] = (),
+    positions_time: str = "09:00 AM",
 ) -> dict:
     transactions = [
         '"Date","Action","Symbol","Description","Quantity","Price","Fees & Comm","Amount"',
@@ -188,7 +190,7 @@ def buy_csv_payload(
     dram_value = Decimal(held) * Decimal("52.15")
     total = Decimal("20.00") + dram_value + Decimal("100.00")
     positions = [
-        f'"Positions for account {ACCOUNT} as of 09:00 AM ET, 2026/10/13"',
+        f'"Positions for account {ACCOUNT} as of {positions_time} ET, 2026/10/13"',
         "",
         '"Symbol","Description","Qty (Quantity)","Price","Mkt Val (Market Value)","Cost Basis","Asset Type",',
         '"QQQI","QQQI ETF","1","20.00","$20.00","$20.00","ETFs & Closed End Funds",',
@@ -429,9 +431,15 @@ class SchwabProvisionalReconciliationTests(unittest.TestCase):
     def test_unrelated_manual_reference_is_not_superseded(self) -> None:
         unrelated = provisional_payload(reference="manual-sale-1")
         official = paired_csv_payload(include_sale=True)
-        merged = merge_investment_payloads(unrelated, official)
-        sales = [row for row in merged["transactions"] if row["type"] == "sell"]
+        existing, incoming, removed = reconcile_schwab_provisional_trades(
+            unrelated["transactions"], official["transactions"]
+        )
+        self.assertEqual(removed, 0)
+        self.assertEqual(existing, unrelated["transactions"])
+        sales = [row for row in [*existing, *incoming] if row["type"] == "sell"]
         self.assertEqual(len(sales), 2)
+        with self.assertRaisesRegex(ValueError, "Schwab merged holdings"):
+            merge_investment_payloads(unrelated, official)
 
     def test_conflicting_broker_amount_cannot_calibrate_sale(self) -> None:
         with self.assertRaisesRegex(ValueError, "Schwab.*Amount.*reconcile"):
