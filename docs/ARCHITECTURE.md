@@ -1826,13 +1826,17 @@ sets of values.
   entered time and precision, eligible dates, and matching method. Both paired
   CSV artifacts and the original workbook remain immutable evidence. Replaying
   the original provisional row cannot reclaim another execution or overwrite
-  its authoritative replacement. An eligible paired import first independently
+  its authoritative replacement. Reparsed workbook rows recover omitted
+  confirmation metadata only from the same archived workbook digest, sheet,
+  row, scope, and economics. A changed consumed reference or conflicting
+  immutable row fails review. An eligible paired import first independently
   replays the native incoming history against its own Positions boundary,
   then validates the merged scoped ledger. A covered mismatch rejects import.
-  The durable fresh claim is `summary.schwab_merged_positions_validation`;
-  native broker-level validation retains its original evidence scope. Partial
-  native coverage, unsupported split semantics, uncertain time boundaries, and
-  an already selected newer snapshot produce no new merged-validation claim.
+  The durable fresh claim is `summary.schwab_merged_positions_validation`.
+  The fresh result carries its own scope and source instead of inheriting the
+  incoming file's matched flag. Partial native coverage, unsupported split
+  semantics, uncertain time boundaries, and an already selected newer snapshot
+  produce no new merged-validation claim.
   Newer Positions evidence supplies native account cash; a transaction-only
   manual import cannot fabricate or clear that balance.
 - CMB Wing Lung email builders retain only explicitly executed quantities and

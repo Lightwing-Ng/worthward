@@ -3,6 +3,8 @@
 Code version: v0.3.0
 - Added: Exact-first reconciliation for evidenced limit-price improvements and
   user-confirmed date-only workbook trades, preserving their original evidence.
+- Fixed: Original workbook reparses recover consumed references only from
+  matching archived immutable row evidence and unchanged economics.
 - Added: TOS page buys reconcile like sales, matched only against a Schwab CSV
   trade on the same side.
 - Changed: A linked trade blocks only same-side, same-quantity, same-price
@@ -320,6 +322,148 @@ def _unique_candidate(
     return identity, groups[identity]
 
 
+def _manual_workbook_identity(record: dict[str, Any]) -> tuple[str, str, int] | None:
+    source = _record_source(record)
+    if _normalize_text(source.get("file_kind")) not in {
+        "manual_investment_xlsx",
+        "zircon_hk_manual_xlsx",
+    }:
+        return None
+    digest = _normalize_text(source.get("source_file_sha256")).lower()
+    sheet = _normalize_text(source.get("source_sheet"))
+    row_text = _normalize_text(source.get("source_row"))
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", digest)
+        or not sheet
+        or not re.fullmatch(r"[1-9][0-9]*", row_text)
+    ):
+        return None
+    return digest, sheet, int(row_text)
+
+
+def _finite_decimal(value: Any) -> Decimal | None:
+    try:
+        result = Decimal(str(value).strip().replace(",", ""))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return result if result.is_finite() else None
+
+
+def _manual_economics(record: dict[str, Any]) -> tuple[Any, ...] | None:
+    normalized = record.get("normalized")
+    normalized = normalized if isinstance(normalized, dict) else {}
+    values = []
+    for raw, field in (
+        ("quantity_raw", "position_quantity"),
+        ("price_raw", "unit_price"),
+        ("gross_amount_raw", "gross_amount"),
+        ("net_amount_raw", "net_amount"),
+    ):
+        value = _finite_decimal(record.get(raw, normalized.get(field)))
+        if value is None:
+            return None
+        values.append(value)
+    quantity, price, gross, net = values
+    raw_fee = record.get("commission_raw")
+    if raw_fee is None or _normalize_text(raw_fee) == "":
+        magnitude = _finite_decimal(normalized.get("commission", "0"))
+        fee = -abs(magnitude) if magnitude is not None else None
+    else:
+        fee = _finite_decimal(raw_fee)
+    if fee is None:
+        return None
+    defaults = {
+        "position_quantity": quantity,
+        "display_quantity": abs(quantity),
+        "unit_price": price,
+        "gross_amount": gross,
+        "display_amount": abs(gross),
+        "net_amount": net,
+        "accounting_adjustment_amount": net,
+        "commission": abs(fee),
+        "commission_display": abs(fee),
+    }
+    normalized_values = []
+    for field, default in defaults.items():
+        value = _finite_decimal(normalized.get(field, default))
+        if value is None:
+            return None
+        normalized_values.append(value)
+    return (
+        *values,
+        fee,
+        *normalized_values,
+        _normalize_text(normalized.get("side") or _trade_side(record)).lower(),
+        normalized.get("is_cash_flow", False),
+    )
+
+
+def _verified_consumed_manual_replay(
+    record: dict[str, Any],
+    reference: str,
+    linked_rows: list[tuple[int, int, dict[str, Any]]],
+) -> dict[str, Any]:
+    """Recover omitted parser enrichment, never a changed consumed workbook row."""
+    _identity, candidates = _unique_candidate(linked_rows)
+    archives = [
+        _record_source(row).get("superseded_manual_trade") for _, _, row in candidates
+    ]
+    if (
+        all(archive is None for archive in archives)
+        and _TOS_PAGE_TRADE_REFERENCE.fullmatch(reference)
+        and _provisional_reference(record) == reference
+    ):
+        # Older exact TOS links predate the full archive. Their recognized
+        # replay still passes the existing strict execution/revision guards.
+        return record
+    identity = _manual_workbook_identity(record)
+    economics = _manual_economics(record)
+    source = _record_source(record)
+    for (_, _, linked), archived in zip(candidates, archives, strict=True):
+        archived_source = _record_source(archived) if isinstance(archived, dict) else {}
+        valid = (
+            isinstance(archived, dict)
+            and _provisional_reference(archived) == reference
+            and identity is not None
+            and identity == _manual_workbook_identity(archived)
+            and _normalize_text(
+                _record_source(linked).get("superseded_manual_source_sha256")
+            ).lower()
+            == identity[0]
+            and economics is not None
+            and economics == _manual_economics(archived)
+            and _provisional_signature(record) == _provisional_signature(archived)
+            and _ii_basics._normalize_broker_code(record.get("broker"))
+            == _ii_basics._normalize_broker_code(archived.get("broker"))
+            and _normalize_text(record.get("datetime")).replace("T", " ")
+            == _normalize_text(archived.get("datetime")).replace("T", " ")
+            and _normalize_text(source.get("source_datetime_raw")).replace("T", " ")
+            == _normalize_text(archived_source.get("source_datetime_raw")).replace(
+                "T", " "
+            )
+            and _normalize_text(source.get("source_timezone"))
+            == _normalize_text(archived_source.get("source_timezone"))
+        )
+        for field in (
+            "source_has_intraday_timestamp",
+            "datetime_precision",
+            "execution_time_precision",
+            "source_time_defaulted_to_2300",
+            "execution_evidence_source",
+            "requires_manual_official_reconciliation",
+            "order_type",
+            "limit_price_raw",
+            "execution_status",
+        ):
+            if field in source and source[field] != archived_source.get(field):
+                valid = False
+        if not valid:
+            raise ValueError(
+                "A consumed provisional Schwab reference conflicts with its archived manual workbook identity or economics; review before importing."
+            )
+    return archives[0]
+
+
 def _annotate_official_candidates(
     reference: str,
     manual: dict[str, Any],
@@ -379,12 +523,61 @@ def reconcile_schwab_provisional_trades(
     official_rows: list[tuple[int, int, dict[str, Any]]] = []
     for side, records in enumerate(sides):
         for index, record in enumerate(records):
-            reference = _provisional_reference(record)
-            if reference:
-                provisional_groups[reference].append((side, index, record))
             if _official_trade(record):
                 official_rows.append((side, index, record))
     _reject_conflicting_linked_csv_trades(official_rows)
+    linked_by_reference: dict[str, list[tuple[int, int, dict[str, Any]]]] = defaultdict(
+        list
+    )
+    for candidate in official_rows:
+        linked = _normalize_text(
+            _record_source(candidate[2]).get("superseded_manual_reference_id")
+        )
+        if linked:
+            linked_by_reference[linked].append(candidate)
+    consumed_workbook_rows: dict[tuple[str, str, int], set[str]] = defaultdict(set)
+    for reference, linked_rows in linked_by_reference.items():
+        for _, _, linked in linked_rows:
+            archived = _record_source(linked).get("superseded_manual_trade")
+            if (
+                not isinstance(archived, dict)
+                or _provisional_reference(archived) != reference
+            ):
+                continue
+            identity = _manual_workbook_identity(archived)
+            if (
+                identity is not None
+                and _normalize_text(
+                    _record_source(linked).get("superseded_manual_source_sha256")
+                ).lower()
+                == identity[0]
+            ):
+                consumed_workbook_rows[identity].add(reference)
+    for side, records in enumerate(sides):
+        for index, record in enumerate(records):
+            reference = _provisional_reference(record)
+            raw_reference = _normalize_text(_record_source(record).get("reference_id"))
+            manual = record
+            workbook_identity = _manual_workbook_identity(record)
+            consumed_references = consumed_workbook_rows.get(workbook_identity, set())
+            if consumed_references and consumed_references != {raw_reference}:
+                raise ValueError(
+                    "A consumed provisional Schwab reference conflicts with its archived manual workbook identity or economics; review before importing."
+                )
+            if (
+                raw_reference in linked_by_reference
+                and (
+                    _ii_basics._normalize_broker_code(record.get("broker")) == "schwab"
+                    or bool(consumed_references)
+                )
+                and not _official_trade(record)
+            ):
+                manual = _verified_consumed_manual_replay(
+                    record, raw_reference, linked_by_reference[raw_reference]
+                )
+                reference = raw_reference
+            if reference:
+                provisional_groups[reference].append((side, index, manual))
 
     removed: set[tuple[int, int]] = set()
     claimed_official_ids: set[tuple[str, ...]] = set()

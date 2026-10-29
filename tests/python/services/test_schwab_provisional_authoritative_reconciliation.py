@@ -6,18 +6,26 @@ Code version: v1.0.0
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
 
+from openpyxl import load_workbook
 import pytest
 
+from app.services.investment.importing.brokers.zircon_hk import (
+    build_zircon_hk_template_xlsx,
+)
 from app.services.investment.investment_record_basics import (
     build_normalized_transaction_view,
 )
 from app.services.investment.importing.merge.schwab_provisional import (
     reconcile_schwab_provisional_trades,
 )
-from app.services.investment_import import merge_investment_payloads
+from app.services.investment_import import (
+    merge_investment_payloads,
+    parse_investment_payload,
+)
 from tests.python.services.test_schwab_provisional_reconciliation import (
     buy_csv_payload,
     dram_buys,
@@ -533,3 +541,202 @@ def test_unverified_archived_reference_and_saved_date_list_cannot_expand_a_link(
     assert removed == 0
     assert existing[0]["date"] == "2026-10-13"
     assert len([item for item in incoming if item.get("ticker") == "DRAM"]) == 1
+
+
+def _real_day_only_workbook():
+    workbook = load_workbook(BytesIO(build_zircon_hk_template_xlsx()))
+    sheet = workbook["Transactions"]
+    reference = "USER-REPORTED-20261013-DRAM-BUY-6000-5-1"
+    values = [
+        "schwab",
+        "Individual ...001",
+        date(2026, 10, 13),
+        "Buy",
+        "USD",
+        "DRAM",
+        5,
+        60,
+        None,
+        0,
+        "Anonymous date-only purchase",
+        reference,
+    ]
+    for column, value in enumerate(values, 1):
+        sheet.cell(row=2, column=column, value=value)
+    sheet.cell(row=2, column=3).number_format = "yyyy-mm-dd"
+    content = BytesIO()
+    workbook.save(content)
+    return content.getvalue()
+
+
+def _parse_workbook(content):
+    return parse_investment_payload(
+        "zircon_hk",
+        "manual_xlsx",
+        xlsx_bytes=content,
+        filename="anonymous-date-only.xlsx",
+    )
+
+
+def _linked_real_workbook(*, precise_official=False):
+    content = _real_day_only_workbook()
+    confirmed = _parse_workbook(content)
+    confirmed["transactions"][0]["source"].update(
+        source_has_intraday_timestamp=False,
+        datetime_precision="day",
+        execution_evidence_source="user_confirmed_trade_report",
+        requires_manual_official_reconciliation=True,
+    )
+    confirmed["transactions"][0]["commission_raw"] = "0"
+    confirmed["transactions"][0]["normalized"].update(
+        commission="0",
+        commission_display="0",
+    )
+    official = _official_buys("60.00")
+    if precise_official:
+        trade = dram_buys(official)[0]
+        trade["datetime"] = "2026-10-13 08:14:32"
+        trade["source"].update(
+            source_has_intraday_timestamp=True,
+            datetime_precision="second",
+        )
+    return content, merge_investment_payloads(confirmed, official)
+
+
+@pytest.mark.parametrize("manual_first", [False, True])
+@pytest.mark.parametrize("precise_official", [False, True])
+def test_original_date_only_workbook_reparse_reuses_verified_consumed_reference(
+    manual_first,
+    precise_official,
+):
+    content, linked = _linked_real_workbook(precise_official=precise_official)
+    raw_reparse = _parse_workbook(content)
+    source = raw_reparse["transactions"][0]["source"]
+    assert "source_has_intraday_timestamp" not in source
+    assert "datetime_precision" not in source
+    assert "execution_evidence_source" not in source
+    assert "requires_manual_official_reconciliation" not in source
+    assert "commission_raw" not in raw_reparse["transactions"][0]
+    expected = deepcopy(linked["transactions"])
+    left, right = (raw_reparse, linked) if manual_first else (linked, raw_reparse)
+
+    merged = merge_investment_payloads(left, right)
+
+    assert len(dram_buys(merged)) == 1
+    assert merged["transactions"] == expected
+    assert dram_buys(merged)[0]["source"]["file_kind"] == "schwab_csv"
+    repeated = merge_investment_payloads(merged, _parse_workbook(content))
+    assert repeated["transactions"] == expected
+
+
+@pytest.mark.parametrize(
+    ("location", "field", "value"),
+    [
+        ("source", "source_file_sha256", "f" * 64),
+        ("source", "source_file_sha256", "not-a-digest"),
+        ("source", "source_sheet", "Changed"),
+        ("source", "source_row", 3),
+        ("source", "source_row", 0),
+        ("source", "source_row", True),
+        ("source", "reference_id", "USER-REPORTED-CHANGED-REFERENCE"),
+        ("source", "source_datetime_raw", "2026-10-13 22:00:00"),
+        ("source", "source_timezone", "UTC"),
+        ("source", "source_has_intraday_timestamp", True),
+        ("source", "datetime_precision", "second"),
+        ("source", "execution_evidence_source", "unverified"),
+        ("source", "requires_manual_official_reconciliation", False),
+        ("source", "source_time_defaulted_to_2300", False),
+        ("record", "account", "Individual ...002"),
+        ("record", "ticker", "OTHER"),
+        ("record", "currency", "HKD"),
+        ("record", "type", "sell"),
+        ("record", "type", "dividend"),
+        ("record", "broker", "ibkr"),
+        ("record", "quantity_raw", "6"),
+        ("record", "price_raw", "60.01"),
+        ("record", "gross_amount_raw", "-299.99"),
+        ("record", "net_amount_raw", "-300.01"),
+        ("record", "commission_raw", "-0.01"),
+        ("normalized", "net_amount", "-300.01"),
+        ("normalized", "commission", "0.01"),
+        ("normalized", "display_quantity", "6"),
+    ],
+)
+def test_changed_consumed_workbook_identity_or_economics_fails_review(
+    location,
+    field,
+    value,
+):
+    content, linked = _linked_real_workbook()
+    raw_reparse = _parse_workbook(content)
+    record = raw_reparse["transactions"][0]
+    target = record if location == "record" else record[location]
+    target[field] = value
+
+    with pytest.raises(ValueError, match="consumed provisional Schwab reference"):
+        merge_investment_payloads(linked, raw_reparse)
+
+
+def test_new_workbook_and_new_reference_remain_a_distinct_manual_input():
+    content, linked = _linked_real_workbook()
+    distinct = _parse_workbook(content)
+    source = distinct["transactions"][0]["source"]
+    source["source_file_sha256"] = "f" * 64
+    source["reference_id"] = "USER-REPORTED-DISTINCT-INPUT"
+
+    _existing, retained, removed = reconcile_schwab_provisional_trades(
+        linked["transactions"], distinct["transactions"]
+    )
+
+    assert removed == 0
+    assert retained == distinct["transactions"]
+
+
+def test_same_reference_on_distinct_other_broker_workbook_is_not_claimed():
+    content, linked = _linked_real_workbook()
+    distinct = _parse_workbook(content)
+    row = distinct["transactions"][0]
+    row.update(broker="ibkr", account="U00000001")
+    row["source"].update(
+        source_file_sha256="f" * 64,
+        broker="ibkr",
+        account="U00000001",
+    )
+
+    _existing, retained, removed = reconcile_schwab_provisional_trades(
+        linked["transactions"], distinct["transactions"]
+    )
+
+    assert removed == 0
+    assert retained == distinct["transactions"]
+
+
+@pytest.mark.parametrize("invalid_archive", [False, True])
+def test_unverified_consumed_user_report_cannot_recover_missing_parser_enrichment(
+    invalid_archive,
+):
+    content, linked = _linked_real_workbook()
+    source = dram_buys(linked)[0]["source"]
+    if invalid_archive:
+        source["superseded_manual_trade"]["source"]["execution_evidence_source"] = (
+            "unverified"
+        )
+    else:
+        source.pop("superseded_manual_trade")
+    with pytest.raises(ValueError, match="consumed provisional Schwab reference"):
+        merge_investment_payloads(linked, _parse_workbook(content))
+
+
+def test_legacy_recognized_tos_link_without_full_archive_keeps_exact_replay():
+    manual = _limit_buy()
+    official = _official_buys("61.00", fee="0.07")
+    linked = merge_investment_payloads(manual, official)
+    dram_buys(linked)[0]["source"].pop("superseded_manual_trade")
+
+    replayed = merge_investment_payloads(linked, manual)
+
+    assert len(dram_buys(replayed)) == 1
+    assert dram_buys(replayed)[0]["price_raw"] == "61.00"
+    assert dram_buys(replayed)[0]["commission_raw"] == "-0.07"
+    with pytest.raises(ValueError, match="Schwab.*conflicting"):
+        merge_investment_payloads(replayed, _official_buys("61.00", fee="0.08"))

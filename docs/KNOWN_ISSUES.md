@@ -1583,6 +1583,10 @@ is claimed and concurrent layout work remains preserved.
   timestamp precision, eligible dates, and matching method; the manual
   workbook and both official CSV artifacts remain available. Reimporting the
   same official files or the original manual record remains idempotent.
+  An original workbook reparse can recover omitted confirmation metadata only
+  when its archived digest, sheet, row, scope, and economics agree. Reusing a
+  consumed reference with changed evidence or changing the reference on the
+  same immutable workbook row stops import for review.
   For timed page evidence, Hong Kong to New York conversion includes
   daylight-saving rules, and an intraday CSV time must agree with the entered
   or converted timestamp. No previous-day candidate is added when conversion
