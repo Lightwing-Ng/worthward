@@ -1,6 +1,8 @@
 """Investment import domain: merge identity.
 
-Code version: v0.4.1
+Code version: v0.4.2
+- Fixed: Schwab source aliases start with the merged canonical identity so
+  reimporting the same export does not reorder provenance.
 - Added: Evidenced HSBC cashback retains legacy cash-row merge identity.
 - Fixed: A statement PDF that corroborates an HSBC CSV or pasted-text cash row
   is recorded as corroboration instead of a conflicting sequence-digest alias.
@@ -1061,6 +1063,10 @@ def _merge_transaction_records_default(
         from app.services.investment.importing import bindings
 
         aliases = []
+        if _ii_basics._normalize_broker_code(merged.get("broker")) == "schwab":
+            primary = bindings._investment_internal_transfer_source_identity(merged)
+            if isinstance(primary, list) and len(primary) == 6:
+                aliases.append(primary)
         for record in (current, incoming):
             source = record.get("source") or {}
             for alias in [

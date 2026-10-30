@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
@@ -17,6 +17,7 @@ const loadHoldings = async (page, {foreignCash = false, cashType = 'deposit', fx
             price_history_by_ticker: {AAPL: [{date: '2026-01-02', close: 110}], '5.HK': [{date: '2026-01-02', close: 110}]},
             ticker_profiles: {}, money_market_tickers: [], cash_equivalent_tickers: ['5.HK'],
             fx_rate_history_by_currency: fx, ticker_lineage: {}, summary: {}, broker_summaries: {},
+            credit_card_rewards: {status: 'complete', transactions: [], fx_rate_history_by_currency: {}},
             realtime_quotes: [], section_freshness: {},
         }});
     });

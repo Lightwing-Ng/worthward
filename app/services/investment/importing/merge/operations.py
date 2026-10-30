@@ -1,7 +1,7 @@
 """Investment import domain: merge.
 
-Code version: v0.4.2
-- Changed: Call the side-aware Schwab provisional trade reconciliation.
+Code version: v0.5.0
+- Changed: Validate reconciled Schwab holdings against authoritative native evidence.
 """
 
 from __future__ import annotations
@@ -42,6 +42,8 @@ import app.services.investment.importing.merge.identity as _ii_merge_identity
 import app.services.investment.importing.merge.reconciliation as _ii_merge_reconciliation
 
 import app.services.investment.importing.merge.schwab_provisional as _ii_schwab_provisional
+
+import app.services.investment.importing.merge.schwab_position_validation as _ii_schwab_position_validation
 
 import app.services.investment.importing.payload_summaries as _ii_payload_summaries
 
@@ -1513,6 +1515,16 @@ def merge_investment_payloads(
         payload
     )
     _ii_bindings.normalize_investment_payload_tickers(payload)
+    schwab_validation = _ii_schwab_position_validation.validate_merged_schwab_positions(
+        payload, normalized_incoming
+    )
+    if schwab_validation is not None:
+        payload["summary"]["schwab_merged_positions_validation"] = schwab_validation
+        schwab_summary = payload.get("broker_summaries", {}).get("schwab")
+        if isinstance(schwab_summary, dict):
+            schwab_summary["holdings_validation"] = dict(schwab_validation)
+        if _ii_basics._normalize_broker_code(payload.get("broker")) == "schwab":
+            payload["summary"]["holdings_validation"] = dict(schwab_validation)
     payload["summary"]["json_size_bytes"] = len(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     )

@@ -1,6 +1,25 @@
 # Testing guide
 
-Documentation version: `v1.101.0`
+Documentation version: `v1.102.0`
+
+## Schwab authoritative trade reconciliation
+
+The provisional reconciliation suites cover exact-price reservation before
+favorable limit fills, explicitly confirmed date-only manual trades, immutable
+manual evidence archives, stable source aliases, repeated imports, and rejection
+of ambiguous or revised native executions. Original-workbook replay tests
+reparse actual template bytes and require the archived immutable source identity
+and economic fields to agree before suppressing a consumed manual trade. A
+favorable price requires explicit filled-limit evidence; a nearby price alone
+never establishes identity.
+
+The merged-position suite independently verifies the incoming native activity
+against its paired positions snapshot before validating the merged ledger. It
+covers same-account scope, booking-date and precise-time cutoffs, partial native
+history, unsupported splits, newer snapshot boundaries, and atomic rejection of
+an unexplained merged quantity. Commit-concurrency and persistence-audit fixtures
+retain complete native activity through each authoritative snapshot boundary.
+All fixtures are anonymous and use isolated temporary stores.
 
 ## HSBC debit-card cashback
 

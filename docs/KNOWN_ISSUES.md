@@ -1245,7 +1245,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.285.0`
+Documentation version: `v1.286.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
@@ -1558,43 +1558,63 @@ is claimed and concurrent layout work remains preserved.
   confirmation takes precedence in both persisted replay and browser replay.
   A linked dividend or withholding row displays its canonical ticker before
   the preserved broker description.
-- A Schwab buy or sell entered from a thinkorswim page through the manual
-  XLSX workbook is provisional only when its `TOS-PAGE-...-BUY-...` or
-  `TOS-PAGE-...-SELL-...` reference matches the row's Type and its entered
-  timestamp agrees. A later paired Schwab Transactions and Positions
-  import replaces that row only when account, ticker, side, currency, absolute
-  quantity, execution price, and the New York or entered Hong Kong trade date
-  identify one CSV trade on the same side. A buy never supersedes a sale or
-  the reverse. An overnight-session fill entered in Hong Kong time converts to
-  the previous New York evening, while Schwab books it on the next trade date;
-  both dates are eligible. The CSV supplies the final fee and net amount;
-  the workbook and both CSV source artifacts remain available, and the CSV
-  row retains the manual reference. Ambiguous or conflicting candidates stop
-  the import for review. If the CSV omits the trade, the provisional row stays.
-  Once linked, a later CSV that lists same-side trades for that account,
-  ticker, and currency in the eligible date window must retain the original
-  row. A missing original row, a revised quantity, price, date, fee, or net
-  amount, or a second same-side row at the linked quantity and price stops
-  import for manual review instead of adding a trade. A distinct same-side
-  fill at another price is accepted, so repeated full-history exports with
-  several same-size buys on one day still import.
-  A date-only CSV cannot prove whether the page's clock was New York or Hong
-  Kong time; the two-day candidate window is an explicitly inferred attribution
-  supported by a unique exact-price fill. The window contains only one date
-  when the complete Hong Kong timestamp converts to the same New York date;
-  linked validation uses that same conversion, including daylight-saving rules,
-  rather than always adding the previous calendar date. An intraday CSV timestamp must agree
-  with one of those two interpretations.
-  A stated Schwab trade `Amount` must also reconcile with quantity, price, and
-  `Fees & Comm` before its net proceeds are accepted.
-  A transaction-only manual replay cannot clear Schwab cash. Until the next
-  Positions import, a provisional buy adds its shares while Schwab Cash stays
-  at the last Positions balance, so Total equity overstates by the bought
-  shares' market value (a provisional sale understates it by the sold shares'
-  market value). With at least one
-  listed security, an older Positions snapshot cannot roll back newer cash or
-  positions. Cash-only Positions exports still lack an empty-holdings snapshot
-  boundary and need separate reconciliation before they can clear old holdings.
+- Schwab manual workbook trades can be reconciled with a later paired
+  Transactions and Positions export through two explicit evidence paths.
+  A thinkorswim `TOS-PAGE-...-BUY-...` or `TOS-PAGE-...-SELL-...` reference
+  must match the row's Type, ticker, and entered Hong Kong timestamp.
+  A date-only `USER-REPORTED-...` reference instead requires explicit
+  `source_has_intraday_timestamp=False`, `datetime_precision=day`,
+  `execution_evidence_source=user_confirmed_trade_report`, and
+  `requires_manual_official_reconciliation=True` metadata on a Schwab manual
+  workbook row. This path preserves the reported date and any labeled default
+  time; it does not invent a thinkorswim execution timestamp.
+  Matching always stays within account, ticker, side, currency, absolute
+  quantity, and the original eligible trade dates. Unique exact-price fills
+  are reserved before any price-improvement matching, including exact fills
+  belonging to date-only reports and executions already linked to another
+  reference. A remaining price difference is accepted only for an explicitly
+  evidenced limit order: `order_type=limit`, `execution_status=FILLED`, and
+  `limit_price_raw` equal to the manual row's price. A buy must execute below
+  that limit; a sale must execute above it. Legacy rows without that evidence
+  remain strict. Multiple favorable fills remain ambiguous; the importer does
+  not choose the closest price or consume a separate legitimate trade.
+  The official CSV owns the final execution price, fee, and net amount. The
+  linked row retains the original reference, manual record, source digest,
+  timestamp precision, eligible dates, and matching method; the manual
+  workbook and both official CSV artifacts remain available. Reimporting the
+  same official files or the original manual record remains idempotent.
+  An original workbook reparse can recover omitted confirmation metadata only
+  when its archived digest, sheet, row, scope, and economics agree. Reusing a
+  consumed reference with changed evidence or changing the reference on the
+  same immutable workbook row stops import for review.
+  For timed page evidence, Hong Kong to New York conversion includes
+  daylight-saving rules, and an intraday CSV time must agree with the entered
+  or converted timestamp. No previous-day candidate is added when conversion
+  remains on the same date. Date-only reports retain only their original
+  accepted date window. After linkage, that window is recovered from the
+  archived manual record only when its provisional reference still validates;
+  an arbitrary saved date list cannot expand it.
+  Ambiguous or conflicting matches stop import for review. When a later CSV
+  lists same-side activity in a linked account, ticker, currency, and date
+  window, it must retain the original execution. A missing original row,
+  revised quantity, price, date, fee, or net amount, or indistinguishable
+  same-price executions stop import rather than adding a duplicate. Distinct
+  additional fills remain separate transactions. An initial provisional row
+  stays when the CSV has no activity in its eligible scope.
+  A stated Schwab `Amount` must reconcile with Quantity, Price, and
+  `Fees & Comm`. For paired native evidence whose incoming scoped history
+  independently reconciles, a fresh account-scoped holdings result is computed
+  from the merged history and Positions boundary. A mismatch rejects import;
+  the fresh result is stored separately as `schwab_merged_positions_validation`
+  rather than inheriting the incoming file's matched flag. Partial native
+  coverage, unsupported split semantics, uncertain time boundaries, or an
+  already selected newer snapshot do not produce a fresh validation claim.
+  A transaction-only manual import still leaves Cash at the last authoritative
+  Positions balance, so Total equity can remain stale until newer paired
+  evidence supplies native cash and positions. An older Positions snapshot
+  with listed securities cannot roll back newer cash or positions. Cash-only
+  Positions exports still lack an empty-holdings snapshot boundary and need
+  separate reconciliation before they can clear old holdings.
 - An unbound Schwab `Security Transfer` receipt offers only imported source
   `transfer_out` legs from another broker with the same date, ticker, and
   exact quantity; selecting one saves the same manual pair binding as the
