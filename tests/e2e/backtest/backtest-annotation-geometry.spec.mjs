@@ -1,9 +1,9 @@
-/* Backtest annotation regression. Code version: v1.3.2 */
+/* Backtest annotation regression. Code version: v1.3.3 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 for (const width of [1023, 390]) {
-    test(`Backtest annotated controls at ${width}px`, async ({page}) => {
+    test(`Backtest annotated controls at ${width}px`, {tag: '@ml'}, async ({page}) => {
         await page.setViewportSize({width, height: 1404});
         await page.route('**/api/lstm-training', route => route.fulfill({json: {
             success: true, protocol_version: 3, runs: [],

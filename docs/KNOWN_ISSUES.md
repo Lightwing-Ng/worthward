@@ -1,5 +1,22 @@
 # Known issues and operating constraints
 
+Composable verification, 31 Oct 2026: local checks can select Python lint,
+JavaScript syntax, Python units, JavaScript units, and browser tests independently.
+Default checks exclude browsers and tagged local forecasting-model integration;
+tagged model tests require explicit inclusion. `--full` retains complete validation and global
+coverage floors, and CI selects it explicitly. Focused runs preserve global
+coverage reports. See [the testing guide](TESTING.md) for selection examples,
+scope requirements, and the imported critical-flow browser boundary.
+
+Closed-session Holdings quotes, 31 Oct 2026: the Longbridge quote adapter
+previously skipped closed US sessions, leaving Holdings at the regular close
+when Yahoo minute quotes were unavailable. It now reads the latest completed
+NYSE trading day's timestamped post-market quote during closed hours, weekends,
+and holidays. Missing, stale, future-dated, or out-of-session timestamps remain
+ineligible and use the existing Yahoo fallback. These retained quotes value
+current holdings without a live-session indicator or a change to daily history,
+broker cash, or investment records.
+
 Stock-details purchase-price anchors, 28 Oct 2026: chip price levels retain
 an immutable entry-price anchor, using the same rendered-price adjustment as
 buy/sell markers. Fees and later accounting-basis corrections do not move those
@@ -1245,7 +1262,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.0`
+Documentation version: `v1.286.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-"""ResearchSession Backtest CRPS skill boundaries. Code version: v1.0.0."""
+"""ResearchSession Backtest CRPS skill boundaries. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -95,6 +95,7 @@ def test_crps_objective_requires_21_sessions_in_every_scored_window(monkeypatch)
         _session(monkeypatch, first=200)
 
 
+@pytest.mark.ml
 def test_crps_objective_accepts_exactly_21_sessions_and_rejects_20(monkeypatch):
     # 139 requested sessions yield scored windows of 21, 21, and 28 sessions.
     session = _session(monkeypatch, first=len(DATES) - 139)
@@ -112,6 +113,7 @@ def test_crps_objective_accepts_exactly_21_sessions_and_rejects_20(monkeypatch):
         _session(monkeypatch, first=len(DATES) - 138)
 
 
+@pytest.mark.ml
 def test_crps_window_sees_only_fold_rows_and_a_bundle_clipped_at_the_fold(
     monkeypatch,
 ):
@@ -155,6 +157,7 @@ def test_crps_window_sees_only_fold_rows_and_a_bundle_clipped_at_the_fold(
         assert fold["coverage_pct"] == 100.0
 
 
+@pytest.mark.ml
 def test_full_window_reloads_the_chosen_params_and_keeps_the_session(monkeypatch):
     loads = []
     session = _session(monkeypatch, loads=loads)
@@ -187,6 +190,7 @@ def test_full_window_reloads_the_chosen_params_and_keeps_the_session(monkeypatch
         returns.evaluate_full_window(chosen)
 
 
+@pytest.mark.ml
 def test_incomplete_distribution_evidence_fails_closed_and_restores_the_bundle(
     monkeypatch,
 ):
@@ -209,6 +213,7 @@ def test_incomplete_distribution_evidence_fails_closed_and_restores_the_bundle(
     assert session.strategy._warmup_bundle is original
 
 
+@pytest.mark.ml
 def test_return_objectives_keep_their_existing_window_contract(monkeypatch):
     session = _session(monkeypatch, objective="risk_adjusted_return")
     fold = session.evaluate_window(

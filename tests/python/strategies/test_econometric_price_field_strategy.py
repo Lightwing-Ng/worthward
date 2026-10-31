@@ -1,4 +1,4 @@
-"""Econometric Price Field strategy adapters. Code version: v1.0.1."""
+"""Econometric Price Field strategy adapters. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -145,6 +145,7 @@ def test_load_requests_ohlcv_warmup_for_the_fit_and_drift_windows(strategy_id, p
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_visible_forecasts_use_the_warmup_bundle(strategy_id):
     result, visible = _warm_run(strategy_id)
     diagnostics = result.presentation["diagnostics"]
@@ -163,6 +164,7 @@ def test_visible_forecasts_use_the_warmup_bundle(strategy_id):
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_presentation_is_builtin_json_and_matches_the_browser_contract(strategy_id):
     result, visible = _warm_run(strategy_id)
     presentation = result.presentation
@@ -202,6 +204,7 @@ def test_presentation_is_builtin_json_and_matches_the_browser_contract(strategy_
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_backtest_reports_a_complete_distribution_headline(strategy_id):
     result, _ = _warm_run(strategy_id)
     summary = run_single_ticker_backtest(result, 10000.0, execution_mode="next_open", interval="1d")["summary"]
@@ -212,6 +215,7 @@ def test_backtest_reports_a_complete_distribution_headline(strategy_id):
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_short_history_without_warmup_forecasts_from_row_sixty(strategy_id):
     strategy = instantiate_strategy(strategy_id)
     params = {**strategy.get_startup_params(), "use_drift": False, "use_intraday_range": False,
@@ -227,6 +231,7 @@ def test_short_history_without_warmup_forecasts_from_row_sixty(strategy_id):
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_factor_switches_change_the_forecasts_as_documented(strategy_id):
     strategy = instantiate_strategy(strategy_id)
     defaults = strategy.get_startup_params()
@@ -251,6 +256,7 @@ def test_factor_switches_change_the_forecasts_as_documented(strategy_id):
     assert not np.allclose(ranged[60:], drift_on[STD_COLUMNS].to_numpy()[60:])
 
 
+@pytest.mark.ml
 def test_score_driven_multiplier_maps_onto_the_close_only_fallback():
     strategy = instantiate_strategy("score-driven-price-field")
     frame = _history(200)
@@ -264,6 +270,7 @@ def test_score_driven_multiplier_maps_onto_the_close_only_fallback():
     np.testing.assert_allclose(narrower, 0.75 * fallback, rtol=1e-12, equal_nan=True)
 
 
+@pytest.mark.ml
 def test_crps_learning_parameters_reach_the_combiner():
     strategy = instantiate_strategy("crps-learning-price-field")
     frame = _history(260)
@@ -305,6 +312,7 @@ def _start_run(strategy_id: str, first_row: int):
 
 
 @pytest.mark.parametrize("strategy_id", ("har-range-price-field", "score-driven-price-field"))
+@pytest.mark.ml
 def test_session_forecasts_do_not_depend_on_where_the_loaded_history_starts(strategy_id):
     means, stds, result = _start_run(strategy_id, START_LATEST_ROW)
     assert np.isfinite(stds).all()
@@ -321,6 +329,7 @@ def test_session_forecasts_do_not_depend_on_where_the_loaded_history_starts(stra
 
 @pytest.mark.parametrize("use_intraday_range", (True, False), ids=("range", "close-only"))
 @pytest.mark.parametrize("strategy_id", ("har-range-price-field", "score-driven-price-field"))
+@pytest.mark.ml
 def test_requested_warmup_covers_the_variance_floor_history(strategy_id, use_intraday_range):
     """Exactly the requested warmup already fixes every visible forecast: extra older bars, which move
     the 252-session variance floors of rows before the earliest fit, change nothing. Close-only squared
@@ -349,6 +358,7 @@ def test_requested_warmup_covers_the_variance_floor_history(strategy_id, use_int
 
 
 @pytest.mark.parametrize("strategy_id", ("rough-volatility-price-field", "crps-learning-price-field"))
+@pytest.mark.ml
 def test_expanding_model_state_moves_little_with_the_loaded_start(strategy_id):
     """Frozen specification: the Rough Volatility log-variance mean and the CRPS Learning weights
     accumulate from the first loaded bar, so an earlier start moves forecasts slightly."""
@@ -375,6 +385,7 @@ FIRST_FORECAST_ORIGIN = {"har-range-price-field": 22, "score-driven-price-field"
 
 @pytest.mark.parametrize("case", BOUND_CASES, ids=("no-prior", "shortest", "upper", "lower", "longest"))
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_parameter_bounds_forecast_cleanly(strategy_id, case):
     strategy = instantiate_strategy(strategy_id)
     params = strategy.get_startup_params()
@@ -397,6 +408,7 @@ def _statuses(result) -> list[tuple[str, str, str, bool]]:
 
 
 @pytest.mark.parametrize("strategy_id", IDS)
+@pytest.mark.ml
 def test_factor_status_reports_whether_the_forecast_uses_the_input(strategy_id):
     strategy = instantiate_strategy(strategy_id)
     defaults = strategy.get_startup_params()
@@ -425,6 +437,7 @@ def test_factor_status_reports_whether_the_forecast_uses_the_input(strategy_id):
     assert disabled.presentation["factor_selection"]["selected"] == []
 
 
+@pytest.mark.ml
 def test_score_driven_skips_warmup_fits_without_changing_visible_outputs(monkeypatch):
     result, visible = _warm_run("score-driven-price-field")
     scale = result.presentation["econometric"]["scale"]

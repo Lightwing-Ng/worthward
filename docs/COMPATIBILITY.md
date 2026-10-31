@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.2.0`
+Documentation version: `v1.2.1`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -81,7 +81,8 @@ Before deleting a compatibility candidate:
 3. Preserve the canonical feature and query-state conversion.
 4. Add or retain an explicit redirect regression.
 5. Update this matrix, Architecture or Known Issues as appropriate.
-6. Run the focused domain tests and the complete quality gate.
+6. Run the affected domain and compatibility checks using the scope rules in
+   [`TESTING.md`](TESTING.md); select `--full` when complete validation is warranted.
 
 ## HSBC card file evidence compatibility
 

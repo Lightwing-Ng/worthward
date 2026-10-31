@@ -1,4 +1,4 @@
-"""Econometric Price Field model contracts. Code version: v1.0.1."""
+"""Econometric Price Field model contracts. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -48,6 +48,7 @@ def forecast(model: str, frame, *, use_range: bool = True, use_drift: bool = Tru
 
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
 @pytest.mark.parametrize("model", tuple(MODELS))
+@pytest.mark.ml
 def test_forecast_rows_ignore_every_bar_after_their_origin(model, use_range):
     original = clustered_ohlc_random_walk(220)
     changed = original.copy()
@@ -67,6 +68,7 @@ def test_forecast_rows_ignore_every_bar_after_their_origin(model, use_range):
 
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
 @pytest.mark.parametrize("model", tuple(MODELS))
+@pytest.mark.ml
 def test_short_history_with_bad_bars_is_finite_from_the_documented_origin(model, use_range):
     frame = clustered_ohlc_random_walk(160, zero_range_rows=(40, 41, 90), missing_open_rows=(55, 120))
     result = forecast(model, frame, use_range=use_range)
@@ -110,6 +112,7 @@ def test_drift_matches_a_hand_computed_sharpe_posterior():
 
 @pytest.mark.parametrize("zero_close", (False, True), ids=("clean", "zero-close"))
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
+@pytest.mark.ml
 def test_har_regression_matches_naive_ridge_least_squares(use_range, zero_close):
     frame = clustered_ohlc_random_walk(420)
     if zero_close:
@@ -141,6 +144,7 @@ def test_har_regression_matches_naive_ridge_least_squares(use_range, zero_close)
             assert variance[o, horizon - 1] == pytest.approx(expected, rel=1e-12)
 
 
+@pytest.mark.ml
 def test_har_ordinary_least_squares_without_ridge_matches_lstsq():
     arrays = prices_of(clustered_ohlc_random_walk(300))
     _, info = har.har_variance(*arrays, window=120, ridge_n0=0.0, numeric_ridge=0.0, return_info=True)
@@ -190,6 +194,7 @@ def test_beta_t_egarch_filter_and_score_match_a_naive_loop():
         assert gradient[0, index] == pytest.approx((upper - lower) / 2e-6, rel=1e-4, abs=1e-4)
 
 
+@pytest.mark.ml
 def test_variogram_fit_is_the_exact_constrained_least_squares_solution():
     rng = np.random.default_rng(11)
     f = 1.0 - rough.matern_rho(np.arange(1, 31), 0.1, 0.01)
@@ -227,6 +232,7 @@ def test_kriging_weights_solve_the_noisy_matern_system():
                                np.exp(-0.03 * np.arange(0, 200, 7)), rtol=1e-12)
 
 
+@pytest.mark.ml
 def test_boa_concentrates_on_the_calibrated_expert():
     closes = clustered_ohlc_random_walk(800, alpha=0.0, beta=0.0, seed=11)["Close"].to_numpy()
     true_scale = 0.02 * math.sqrt(0.35 ** 2 + 0.9 ** 2) * np.sqrt(np.arange(1, 21))
@@ -244,6 +250,7 @@ def test_boa_concentrates_on_the_calibrated_expert():
     np.testing.assert_allclose(stds[-1], (weights[-1] * np.stack([calibrated[-1], 2.5 * calibrated[-1]], 1)).sum(1))
 
 
+@pytest.mark.ml
 def test_boa_weights_at_an_origin_ignore_targets_that_mature_later():
     frame = clustered_ohlc_random_walk(320)
     closes = frame["Close"].to_numpy()
@@ -307,6 +314,7 @@ def _naive_boa(closes, scales, means, *, eta, rho, loc_eta, loc_rho, start, loc_
     return issued_scale, issued_location
 
 
+@pytest.mark.ml
 def test_boa_scores_each_matured_pair_with_the_weights_issued_at_its_origin():
     closes = clustered_ohlc_random_walk(260)["Close"].to_numpy()
     base = crps_learning.reference_scale_forecast(closes)
@@ -386,6 +394,7 @@ def test_variance_proxies_fall_back_on_unusable_bars():
 
 
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
+@pytest.mark.ml
 def test_har_keeps_identically_zero_regressors_at_their_prior(use_range):
     dates = pd.bdate_range("2025-01-02", periods=160).strftime("%Y-%m-%d").tolist()
     rising = ohlc_frame_for_dates("NVDA", dates)
@@ -398,6 +407,7 @@ def test_har_keeps_identically_zero_regressors_at_their_prior(use_range):
 
 
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
+@pytest.mark.ml
 def test_har_insanity_filter_bounds_a_price_jump_in_a_short_window(use_range):
     dates = pd.bdate_range("2024-01-02", periods=300).strftime("%Y-%m-%d").tolist()
     jumped = oscillating_ohlc_frame_for_dates("NVDA", dates)
@@ -412,6 +422,7 @@ def test_har_insanity_filter_bounds_a_price_jump_in_a_short_window(use_range):
     assert np.max(bounded[rows]) <= np.max(unbounded[rows])
 
 
+@pytest.mark.ml
 def test_har_insanity_filter_is_inactive_on_ordinary_data():
     arrays = prices_of(clustered_ohlc_random_walk(700))
     for use_range in (True, False):
@@ -421,6 +432,7 @@ def test_har_insanity_filter_is_inactive_on_ordinary_data():
         )
 
 
+@pytest.mark.ml
 def test_score_driven_fit_batches_do_not_change_the_forecasts(monkeypatch):
     arrays = prices_of(clustered_ohlc_random_walk(260))
     whole = score_driven.score_driven_sigma(*arrays, refit=7)
@@ -432,6 +444,7 @@ def test_score_driven_fit_batches_do_not_change_the_forecasts(monkeypatch):
 @pytest.mark.parametrize("bad_close", (0.0, math.nan, math.inf), ids=("zero", "missing", "infinite"))
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
 @pytest.mark.parametrize("model", tuple(MODELS))
+@pytest.mark.ml
 def test_one_bad_close_removes_only_the_rows_that_touch_it(model, use_range, bad_close):
     clean = clustered_ohlc_random_walk(420)
     damaged = clean.copy()
@@ -450,6 +463,7 @@ def test_one_bad_close_removes_only_the_rows_that_touch_it(model, use_range, bad
 
 @pytest.mark.parametrize("use_range", (True, False), ids=("range", "close-only"))
 @pytest.mark.parametrize("model", tuple(MODELS))
+@pytest.mark.ml
 def test_variance_floors_ignore_zero_proxies_on_an_illiquid_series(model, use_range):
     frame = illiquid_ohlc_random_walk(800, halted_share=0.55)
     proxy = measures.parkinson_gap_variance(*prices_of(frame))[0]
@@ -490,6 +504,7 @@ def test_session_refit_origins_follow_dates_not_the_first_loaded_row():
         measures.session_refit_origins(dates[::-1], 20)
 
 
+@pytest.mark.ml
 def test_explicit_refit_origins_reproduce_the_index_grid():
     arrays = prices_of(clustered_ohlc_random_walk(300, missing_open_rows=(120,)))
     count = len(arrays)
@@ -503,6 +518,7 @@ def test_explicit_refit_origins_reproduce_the_index_grid():
                                                                   refit_origins=np.arange(anchor, count, 20)))
 
 
+@pytest.mark.ml
 def test_score_driven_start_skips_only_fits_that_serve_earlier_origins():
     frame = clustered_ohlc_random_walk(300)
     arrays = prices_of(frame)

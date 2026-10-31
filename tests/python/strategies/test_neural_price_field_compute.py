@@ -1,4 +1,4 @@
-"""Direct neural distribution causality and backend contracts. Code version: v1.0.1."""
+"""Direct neural distribution causality and backend contracts. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -132,6 +132,7 @@ def test_mps_cpu_fallback_cannot_be_reported_as_verified_accelerator_use():
 
 
 @pytest.mark.parametrize("architecture", compute.NEURAL_ARCHITECTURES)
+@pytest.mark.ml
 def test_each_architecture_trains_real_cpu_direct_distributions(architecture, single_thread_torch):
     features, closes = _inputs(64)
     result = compute.walk_forward_neural_predictions(
@@ -152,6 +153,7 @@ def test_each_architecture_trains_real_cpu_direct_distributions(architecture, si
 
 
 @pytest.mark.parametrize("architecture", compute.NEURAL_ARCHITECTURES)
+@pytest.mark.ml
 def test_future_changes_leave_all_earlier_forecasts_unchanged(single_thread_torch, architecture):
     features, closes = _inputs()
     first = compute.walk_forward_neural_predictions(features, closes, architecture=architecture, params=_params())
@@ -164,6 +166,7 @@ def test_future_changes_leave_all_earlier_forecasts_unchanged(single_thread_torc
     np.testing.assert_array_equal(first.origin_training_end[78:], 78)
 
 
+@pytest.mark.ml
 def test_training_preserves_the_callers_torch_random_stream(single_thread_torch):
     torch = single_thread_torch
     features, closes = _inputs(64)

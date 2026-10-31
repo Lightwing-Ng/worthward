@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.2 */
 import {
     expect,
     test,
@@ -47,7 +47,7 @@ test('aligns the Backtest page and Performance result titles on the shared deskt
     expect(geometry.themeDelta).toBeLessThanOrEqual(1);
 });
 
-test('keeps the Bayesian Price Field axis column fixed and shares chart typography', async ({page}) => {
+test('keeps the Bayesian Price Field axis column fixed and shares chart typography', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 974, height: 1_354});
     await page.goto(
@@ -138,7 +138,7 @@ test('keeps the Bayesian Price Field axis column fixed and shares chart typograp
     expect(String(geometry.chartYAxisFont.weight)).toBe('400');
 });
 
-test('renders matching Bayesian hover axis badges at the curve intersection', async ({page}) => {
+test('renders matching Bayesian hover axis badges at the curve intersection', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1_024, height: 900});
     await page.goto(
@@ -288,7 +288,7 @@ test('renders matching Bayesian hover axis badges at the curve intersection', as
     await expect(page.locator('#backtest_history_surface')).not.toHaveClass(/is-masked-during-switch/);
 });
 
-test('keeps the Bayesian Price Field detail plot and date labels inside the history rail', async ({page}) => {
+test('keeps the Bayesian Price Field detail plot and date labels inside the history rail', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 841});
     await page.goto('/workspaces/backtest?ticker=NVDA&range=6mo&strategy=bayesian-price-field');
@@ -418,7 +418,7 @@ test('keeps the Bayesian Price Field detail plot and date labels inside the hist
     })).toBe(true);
 });
 
-test('pins the Bayesian overview origin on primary press, mouse click, and touch tap', async ({page}) => {
+test('pins the Bayesian overview origin on primary press, mouse click, and touch tap', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1_024, height: 900});
     await page.goto(

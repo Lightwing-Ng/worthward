@@ -1,4 +1,4 @@
-/* Code version: v1.4.6 */
+/* Code version: v1.4.7 */
 import {
     expect,
     test,
@@ -339,7 +339,7 @@ test('masks stale Price results throughout same-page optimistic hydration', asyn
     await expect(page.locator('.is-masked-during-switch')).toHaveCount(0);
 });
 
-test('keeps Backtest pending glass fixed over exact graphics and values', async ({page}) => {
+test('keeps Backtest pending glass fixed over exact graphics and values', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1007, height: 1_355});
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=AAPL&period=1y');

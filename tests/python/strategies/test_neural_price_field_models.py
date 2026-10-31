@@ -1,6 +1,6 @@
 """Real extended-core learning, structure, and causal batch regressions.
 
-Code version: v1.0.1
+Code version: v1.0.2
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ def test_extended_core_imports_do_not_initialize_torch_or_web_application():
 
 @pytest.mark.parametrize("architecture", ARCHITECTURES)
 @pytest.mark.parametrize("variables", (1, 3))
+@pytest.mark.ml
 def test_each_core_has_real_cpu_gaussian_gradients_and_updates(torch_cpu, architecture, variables):
     torch = torch_cpu
     model = _make_model(torch, architecture, 12, variables * 2, 8, 0.0, 4)
@@ -83,6 +84,7 @@ def test_each_core_has_real_cpu_gaussian_gradients_and_updates(torch_cpu, archit
 
 
 @pytest.mark.parametrize("architecture", ARCHITECTURES)
+@pytest.mark.ml
 def test_later_batched_origins_never_change_an_earlier_prediction(torch_cpu, architecture):
     torch = torch_cpu
     model = _make_model(torch, architecture, 12, 6, 8, 0.2, 4).eval()
@@ -95,6 +97,7 @@ def test_later_batched_origins_never_change_an_earlier_prediction(torch_cpu, arc
     torch.testing.assert_close(batched, expected, rtol=1e-5, atol=1e-6)
 
 
+@pytest.mark.ml
 def test_itransformer_attention_tokens_are_variables_with_paired_masks(torch_cpu):
     torch = torch_cpu
     model = _make_model(torch, "itransformer", 12, 6, 8, 0.0, 4).eval()
@@ -110,6 +113,7 @@ def test_itransformer_attention_tokens_are_variables_with_paired_masks(torch_cpu
     assert torch.count_nonzero(values.grad[:, :, 3:]) > 0
 
 
+@pytest.mark.ml
 def test_tide_retains_an_exact_target_history_residual_and_separate_scale_head(torch_cpu):
     torch = torch_cpu
     model = make_extended_model(torch, "tide", 8, 2, 8, 0.0, 4, horizons=3).eval()
@@ -125,6 +129,7 @@ def test_tide_retains_an_exact_target_history_residual_and_separate_scale_head(t
     assert torch.count_nonzero(raw[:, :, 1]) == 0
 
 
+@pytest.mark.ml
 def test_moderntcn_contains_temporal_depthwise_and_both_grouped_mixing_stages(torch_cpu):
     torch = torch_cpu
     model = _make_model(torch, "moderntcn", 16, 6, 8, 0.0, 4)
@@ -140,6 +145,7 @@ def test_moderntcn_contains_temporal_depthwise_and_both_grouped_mixing_stages(to
 
 
 @pytest.mark.parametrize("lookback", (9, 33))
+@pytest.mark.ml
 def test_moderntcn_nondivisible_patch_stride_retains_latest_observation(torch_cpu, lookback):
     torch = torch_cpu
     model = _make_model(torch, "moderntcn", lookback, 2, 8, 0.0, 8).eval()
@@ -160,6 +166,7 @@ def test_moderntcn_nondivisible_patch_stride_retains_latest_observation(torch_cp
 
 
 @pytest.mark.parametrize("architecture", ARCHITECTURES)
+@pytest.mark.ml
 def test_end_to_end_walk_forward_reuses_mature_labels_and_ignores_future(torch_cpu, architecture, direct_inputs):
     features, closes = direct_inputs
     params = {

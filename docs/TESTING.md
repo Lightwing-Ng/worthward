@@ -1,6 +1,76 @@
 # Testing guide
 
-Documentation version: `v1.102.0`
+Documentation version: `v1.103.0`
+
+## Composable verification
+
+Select checks by the changed behavior and its affected callers. A small backend
+fix requires its Python tests and relevant contracts; unrelated browser flows
+and local model training are not mandatory. Do not infer scope from every dirty
+file in this checkout, because unrelated work may intentionally coexist.
+
+`./scripts/check.sh` accepts repeated `--group` options for `python-lint`,
+`js-syntax`, `python`, `js`, and `e2e`. File or directory selectors
+`--python-test`, `--js-test`, and `--e2e-test` narrow their respective test
+groups. `--python-k` and `--e2e-grep` further select test cases. Use `--list`
+to inspect the exact commands before execution. Without arguments, the runner
+selects Python lint, JavaScript syntax, and ordinary Python/JavaScript unit
+tests; it does not start a browser or tagged local-model integration.
+
+```bash
+# Backend-only fix.
+./scripts/check.sh --group python-lint --group python \
+  --python-test tests/python/services/test_market_data_freshness.py
+
+# A selected frontend module and its browser behavior.
+./scripts/check.sh --group js-syntax --group js --group e2e \
+  --js-test tests/js/investment/test_investment_realtime.mjs \
+  --e2e-test tests/e2e/investment/holdings-closed-session-quotes.spec.mjs
+
+# Preview a selection without importing optional test dependencies or launching a server.
+./scripts/check.sh --group python \
+  --python-test tests/python/tooling --list
+
+# Explicitly run real model integration tests.
+./scripts/check.sh --group python --group e2e --ml only
+
+# Complete validation, including real models and global coverage floors.
+./scripts/check.sh --full
+```
+
+Local forecasting-model integration, including Price Field fitting, neural
+training, gradient updates, and model inference, uses the pytest `ml` marker
+and Playwright `@ml` tag. Ordinary selections exclude these tests;
+`--ml only` runs only those tests within the selected groups, while `--ml
+include` includes them alongside ordinary tests. Mocked model/runtime guards,
+parameter validation, input conversion, and pure presentation tests remain
+ordinary checks, as do small deterministic classic-indicator and neighbor
+calculations. A browser test that renders a forecasting model remains tagged even
+when it intercepts the separate training-history API. New tests must classify
+actual computation rather than relying on names or elapsed time.
+
+`critical_flows/*.mjs` are imported by `critical-flows.spec.mjs` and are not
+independent Playwright entrypoints. Selecting only `tests/e2e/investment`
+does not include Investment tests in that aggregator. Select the aggregator
+with an appropriate `--e2e-grep`, or name the exact standalone regression;
+do not report a directory selection as complete domain coverage.
+
+Only `--full` applies whole-suite Python and JavaScript coverage floors and
+writes the global Python coverage reports. Focused and default runs neither
+claim complete coverage nor replace those reports. Their output names the
+selected scope and ML policy. A selected group with no matching tests fails;
+collection-only output is inventory, not a pass result. `--full` cannot be
+combined with selectors that would silently narrow complete validation.
+
+Use `--full` for an explicitly requested complete audit, release acceptance,
+or broad changes whose affected boundaries justify all layers. Shared frontend
+changes require the relevant unit and browser contracts. Financial import,
+replay, persistence, or live-order changes require the relevant evidence,
+accounting, authorization, and isolation regressions even when no browser
+assets changed. Changes to ML execution require its tagged integration tests.
+Report which affected boundaries were covered and any that remain untested.
+The repository report lock, isolated pytest stores, host E2E lock, and user-owned
+port `8688` boundary remain in force for every selection.
 
 ## Schwab authoritative trade reconciliation
 
@@ -630,12 +700,12 @@ Use Python 3.13 or newer. The shell wrappers support macOS and Linux;
 Windows Python commands are supported, but the Bash/fcntl quality gate requires
 WSL or a Unix host. No native PowerShell full gate is provided.
 
-The gate checks its Python quality dependencies before starting and names the
+The runner checks only dependencies needed by the selected groups and names the
 selected interpreter when dependencies are missing. Set `WORTHWARD_PYTHON`
 to a prepared interpreter or install dependencies with the setup wrapper.
 
-A repository-scoped lock protects the complete gate and its coverage reports.
-A competing complete run exits `73` before writing reports. Standalone coverage
+A repository-scoped lock protects composed runs and the complete gate's coverage
+reports. A competing run exits `73` before writing reports. Standalone coverage
 commands must use separate output paths; the browser stage also acquires its
 existing host-wide port lock. `scripts/check_steps.sh` is an internal worker;
 always invoke `scripts/check.sh`.
@@ -705,10 +775,10 @@ Run the focused, fully offline Yahoo transport regression tests:
   tests/python/services/test_market_data_freshness.py
 ```
 
-Run the complete quality gate:
+Run the complete quality gate explicitly:
 
 ```bash
-./scripts/check.sh
+./scripts/check.sh --full
 ```
 
 Run the OpenAI Site tools contract, Flask rendering, and random-port disposable-browser layers:
@@ -730,7 +800,7 @@ The complete gate runs, in order:
 4. Node unit tests with source coverage thresholds.
 5. Playwright Chromium E2E tests.
 
-GitHub Actions runs this same script on every push and pull request through
+GitHub Actions runs this explicit `--full` command on every push and pull request through
 `.github/workflows/quality.yml`. The workflow uses Node.js 22 for first-party
 tests and Node.js 24-based `v7` releases of the official checkout, setup, and
 artifact actions.

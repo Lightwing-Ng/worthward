@@ -1,4 +1,4 @@
-"""Exercise the tuning CLI against every enabled engine. Code version: v1.0.1."""
+"""Exercise the tuning CLI against every enabled engine. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ from tests.factories.market import ohlc_frame_for_dates
 
 
 CATALOG = list_enabled_strategies()
+MODEL_ENGINE_CASES = [
+    pytest.param(
+        entry,
+        marks=pytest.mark.ml if entry.get("presentation_renderer") == "probability-grid-v1" else (),
+        id=entry["id"],
+    )
+    for entry in CATALOG
+]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -54,7 +62,7 @@ def _read_artifacts(output):
     return result, evaluations
 
 
-@pytest.mark.parametrize("entry", CATALOG, ids=lambda entry: entry["id"])
+@pytest.mark.parametrize("entry", MODEL_ENGINE_CASES)
 @pytest.mark.parametrize("method", ("genetic", "random-forest"))
 def test_every_registry_strategy_runs_through_cli_with_real_execution(
     entry, method, tmp_path, monkeypatch, capsys
@@ -171,7 +179,7 @@ def test_every_registry_strategy_runs_through_cli_with_real_execution(
             )
 
 
-@pytest.mark.parametrize("method", ("genetic", "random-forest"))
+@pytest.mark.parametrize("method", ("genetic", pytest.param("random-forest", marks=pytest.mark.ml)))
 def test_subprocess_cli_reads_local_history_without_changing_input(
     method, tmp_path
 ):

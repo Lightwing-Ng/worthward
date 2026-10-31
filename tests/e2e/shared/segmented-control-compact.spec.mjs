@@ -1,4 +1,4 @@
-/* Code version: v0.2.1 */
+/* Code version: v0.2.2 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -82,7 +82,7 @@ test('keeps the shared mother specimen content-sized and centered', async ({page
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
-test('keeps the supplied Backtest interval pill content-sized at desktop and narrow widths', async ({page}) => {
+test('keeps the supplied Backtest interval pill content-sized at desktop and narrow widths', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto(backtestUrl);
 
@@ -100,7 +100,7 @@ test('keeps the supplied Backtest interval pill content-sized at desktop and nar
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
-test('centers Backtest history labels in selected and unselected states', async ({page}) => {
+test('centers Backtest history labels in selected and unselected states', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1033, height: 841});
     await page.goto(backtestUrl);
 

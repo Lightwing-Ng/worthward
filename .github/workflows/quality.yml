@@ -53,7 +53,7 @@ jobs:
           pdftotext -v
 
       - name: Run the complete quality gate
-        run: WORTHWARD_PYTHON="$(command -v python)" ./scripts/check.sh
+        run: WORTHWARD_PYTHON="$(command -v python)" ./scripts/check.sh --full
 
       - name: Upload Python coverage data
         if: always()

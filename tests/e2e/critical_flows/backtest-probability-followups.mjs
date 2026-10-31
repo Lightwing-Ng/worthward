@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 import {
     expect,
     test,
@@ -14,7 +14,7 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
-test('keeps hidden Bayesian detail and equity canvases out of overview hover updates', async ({page}) => {
+test('keeps hidden Bayesian detail and equity canvases out of overview hover updates', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto(
@@ -136,7 +136,7 @@ test('keeps hidden Bayesian detail and equity canvases out of overview hover upd
     expect(probeResult.tooltipCellCount).toBeGreaterThan(0);
 });
 
-test('keeps visible Bayesian detail hover updates out of shared layout reflow', async ({page}) => {
+test('keeps visible Bayesian detail hover updates out of shared layout reflow', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto(
@@ -226,7 +226,7 @@ test('keeps visible Bayesian detail hover updates out of shared layout reflow', 
     expect(probeResult.yTickCount).toBe(5);
 });
 
-test('renders the complete Bayesian detail row lattice when hover reaches a chart edge', async ({page}) => {
+test('renders the complete Bayesian detail row lattice when hover reaches a chart edge', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto(
@@ -320,7 +320,7 @@ test('renders the complete Bayesian detail row lattice when hover reaches a char
     expect(lattice.detailBottomInset).toBeGreaterThanOrEqual(-1);
 });
 
-test('protects full-width 20-column by 24-row detail resolution at 732 by 1318', async ({page}) => {
+test('protects full-width 20-column by 24-row detail resolution at 732 by 1318', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 732, height: 1318});
     await page.goto(
@@ -452,7 +452,7 @@ test('protects full-width 20-column by 24-row detail resolution at 732 by 1318',
     expect(documentOverflow.vertical).toBeLessThanOrEqual(1);
 });
 
-test('protects Price field detail resolution at the desktop resizer endpoint', async ({page}) => {
+test('protects Price field detail resolution at the desktop resizer endpoint', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto(
@@ -546,7 +546,7 @@ test('protects Price field detail resolution at the desktop resizer endpoint', a
     expect(documentOverflow.vertical).toBeLessThanOrEqual(1);
 });
 
-test('shows the full cumulative probability for a hovered Bayesian detail row', async ({page}) => {
+test('shows the full cumulative probability for a hovered Bayesian detail row', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto(
@@ -750,7 +750,7 @@ test('shows the full cumulative probability for a hovered Bayesian detail row', 
     expect(narrowOverflow.statusRight).toBeLessThanOrEqual(narrowOverflow.panelRight + 1);
 });
 
-test('keeps the Cycle price field clear of redundant probability copy', async ({page}) => {
+test('keeps the Cycle price field clear of redundant probability copy', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 867, height: 1297});
     await page.emulateMedia({colorScheme: 'dark'});
@@ -786,7 +786,7 @@ test('keeps the Cycle price field clear of redundant probability copy', async ({
     expect(overflow.vertical).toBeLessThanOrEqual(1);
 });
 
-test('keeps the Cycle Price field stable when an early date has no model', async ({page}) => {
+test('keeps the Cycle Price field stable when an early date has no model', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 592, height: 1297});
 
@@ -936,7 +936,7 @@ test('keeps the Cycle Price field stable when an early date has no model', async
     expect(restoredGeometry.panelOverflow).toBeLessThanOrEqual(1);
 });
 
-test('keeps available Bayesian ranges near the three-month price-field cell size', async ({page}) => {
+test('keeps available Bayesian ranges near the three-month price-field cell size', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(120_000);
     await page.setViewportSize({width: 1021, height: 841});
 

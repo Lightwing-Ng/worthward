@@ -1,8 +1,10 @@
 """
 Market data retrieval services.
 
-Code version: v0.26.1
+Code version: v0.26.2
 
+- Fixed: Closed-session holdings retain the latest completed trading day's
+  timestamped Longbridge post-market quote.
 - Fixed: Inferred split normalization adjusts historical Volume onto the same current-share basis as OHLC prices.
 - Added: Price-series selection retains OHLCV metadata for Canvas cost
   distribution calculations while preserving the selected close-price mode.
@@ -63,7 +65,11 @@ from app.infrastructure.storage import (
     normalize_ticker,
     write_parquet_atomic,
 )
-from app.services.market.date_constraints import nyse_market_session_state
+from app.services.market.date_constraints import (
+    is_nyse_early_close,
+    latest_completed_nyse_trading_day,
+    nyse_market_session_state,
+)
 
 DOWNLOAD_RETRY_ATTEMPTS = 3
 DOWNLOAD_RETRY_DELAYS_SECONDS = (0.0, 0.35, 0.8)
@@ -984,7 +990,7 @@ def _longbridge_realtime_quote_value(row: object, session: str) -> tuple[object,
 
 
 def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, object]]:
-    """Fetch configured Longbridge realtime US quotes for the active market session."""
+    """Fetch active US quotes or the latest completed session's post-market mark."""
     normalized_tickers = list(dict.fromkeys(
         normalize_ticker(ticker) for ticker in tickers if str(ticker or "").strip()
     ))
@@ -998,11 +1004,25 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
     session_state = nyse_market_session_state(include_overnight=True)
     session = str(session_state.get("session") or "off")
     session_date = str(session_state.get("session_date") or "").strip()
-    if session not in {"overnight", "pre", "intraday", "post"}:
+    if session not in {"off", "overnight", "pre", "intraday", "post"}:
         return []
     us_tickers = [ticker for ticker in normalized_tickers if infer_ticker_market(ticker) == "US"]
     if not us_tickers:
         return []
+
+    closed_reference = None
+    if session == "off":
+        closed_reference = pd.to_datetime(
+            session_state.get("as_of"), errors="coerce", utc=True
+        )
+        if pd.isna(closed_reference):
+            return []
+        reference_date = closed_reference.tz_convert(NEW_YORK_TIMEZONE).date()
+        session_date = latest_completed_nyse_trading_day(
+            closed_reference,
+            market_close_hour=13 if is_nyse_early_close(reference_date) else 16,
+        ).strftime("%Y-%m-%d")
+        session = "post"
 
     symbols_by_ticker = {ticker: normalize_longbridge_symbol(ticker) for ticker in us_tickers}
     try:
@@ -1038,6 +1058,9 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
             continue
         display_timestamp = ""
         quote_session_date = session_date
+        timestamp = pd.NaT
+        if closed_reference is not None and not isinstance(raw_timestamp, (str, datetime)):
+            continue
         if raw_timestamp is not None and str(raw_timestamp).strip():
             timestamp = pd.to_datetime(raw_timestamp, errors="coerce", utc=True)
             if not pd.isna(timestamp):
@@ -1045,6 +1068,17 @@ def fetch_longbridge_realtime_quotes(tickers: list[str]) -> list[dict[str, objec
                 display_timestamp = new_york_timestamp.strftime("%Y-%m-%d %H:%M")
                 if session != "overnight":
                     quote_session_date = new_york_timestamp.strftime("%Y-%m-%d")
+        if closed_reference is not None:
+            if pd.isna(timestamp) or timestamp > closed_reference:
+                continue
+            if quote_session_date != session_date:
+                continue
+            quote_minutes = new_york_timestamp.hour * 60 + new_york_timestamp.minute
+            close_minutes = (
+                13 if is_nyse_early_close(new_york_timestamp.date()) else 16
+            ) * 60
+            if not close_minutes <= quote_minutes < 20 * 60:
+                continue
         results.append({
             "ticker": ticker,
             "price": price,

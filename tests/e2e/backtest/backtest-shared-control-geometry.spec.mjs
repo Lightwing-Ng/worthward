@@ -1,4 +1,4 @@
-/* Backtest shared control geometry regression. Code version: v1.0.3 */
+/* Backtest shared control geometry regression. Code version: v1.0.4 */
 import {expect, test} from '@playwright/test';
 
 const backtestUrl = (
@@ -8,7 +8,7 @@ const backtestUrl = (
     + '&lstm_lookback=4&lstm_hidden_size=4&training_window=40'
 );
 
-test('shared Backtest controls keep the sampled compact geometry', async ({page}) => {
+test('shared Backtest controls keep the sampled compact geometry', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1021, height: 863});
     const run = {
         id: 'lstm-geometry-aaaaaaaaaaaaaaaaaaaa',

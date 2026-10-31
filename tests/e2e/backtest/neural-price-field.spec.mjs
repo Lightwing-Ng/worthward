@@ -1,4 +1,4 @@
-/* Neural Price Field UI integration. Code version: v1.7.1 */
+/* Neural Price Field UI integration. Code version: v1.7.2 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -11,7 +11,7 @@ const urlFor = (architecture) => `/workspaces/backtest?ticker=NVDA&strategy=${ar
     + '&compute_backend=CPU&epochs=1&lookback=8&hidden_size=8&training_window=64&retrain_interval=20&cell_display_threshold=0';
 
 for (const width of [1024, 390]) {
-    test(`four neural strategies share training and complete direct-horizon detail at ${width}px`, async ({page}, testInfo) => {
+    test(`four neural strategies share training and complete direct-horizon detail at ${width}px`, {tag: '@ml'}, async ({page}, testInfo) => {
         test.setTimeout(120_000);
         await page.setViewportSize({width, height: 1100});
         const errors = [];
@@ -108,7 +108,7 @@ for (const width of [1024, 390]) {
     });
 }
 
-test('completed probability history is model-scoped and restores its exact saved configuration', async ({page}) => {
+test('completed probability history is model-scoped and restores its exact saved configuration', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     let runs = [];
     const queries = [];
@@ -163,7 +163,7 @@ test('completed probability history is model-scoped and restores its exact saved
     await expect(menu.locator('.lstm-training-history-select')).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('a newly completed training run automatically restores its probability grid', async ({page}) => {
+test('a newly completed training run automatically restores its probability grid', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(120_000);
     let runs = [];
     let startRequests = 0;
@@ -217,7 +217,7 @@ test('a newly completed training run automatically restores its probability grid
 });
 
 for (const width of [1024, 390]) {
-    test(`training actions preserve model identity and stopped state at ${width}px`, async ({page}) => {
+    test(`training actions preserve model identity and stopped state at ${width}px`, {tag: '@ml'}, async ({page}) => {
         test.setTimeout(60_000);
         await page.setViewportSize({width, height: 1100});
         let runs = [];

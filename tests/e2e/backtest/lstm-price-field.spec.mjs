@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.13 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.14 */
 import {readFileSync} from 'node:fs';
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
@@ -125,7 +125,7 @@ const readGridContract = async (page) => page.evaluate(() => {
 });
 
 for (const width of [1276, 1018]) {
-    test(`Price Field future drag preserves the cursor, fixed axis, and badges at ${width}px`, async ({page}) => {
+    test(`Price Field future drag preserves the cursor, fixed axis, and badges at ${width}px`, {tag: '@ml'}, async ({page}) => {
         await page.setViewportSize({width, height: 1079});
         await page.emulateMedia({colorScheme: width === 1018 ? 'dark' : 'light'});
         await page.goto(lstmUrl);
@@ -219,7 +219,7 @@ for (const width of [1276, 1018]) {
     });
 }
 
-test('Price Field explains threshold-empty forecasts without losing the last date', async ({page}) => {
+test('Price Field explains threshold-empty forecasts without losing the last date', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1276, height: 1079});
     await page.goto(lstmUrl);
     await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
@@ -243,7 +243,7 @@ test('Price Field explains threshold-empty forecasts without losing the last dat
     await expect(page.locator('.trade-chart-hover-date-label')).toBeVisible();
 });
 
-test('LSTM Price Field reuses the shared probability grid and stays square at 390px', async ({page}) => {
+test('LSTM Price Field reuses the shared probability grid and stays square at 390px', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1024, height: 841});
     await page.goto(lstmUrl);
@@ -290,7 +290,7 @@ test('LSTM Price Field reuses the shared probability grid and stays square at 39
     expect(narrow.version).toBe(desktop.version);
 });
 
-test('LSTM private training actions stay in the private strategy parameters collapse', async ({page}) => {
+test('LSTM private training actions stay in the private strategy parameters collapse', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1024, height: 841});
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: 200,
@@ -430,7 +430,7 @@ test('LSTM private training actions stay in the private strategy parameters coll
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });
 
-test('LSTM training toggles one button and displays real progress and artifact metadata', async ({page}) => {
+test('LSTM training toggles one button and displays real progress and artifact metadata', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     let runs = [];
     let historyFails = false;
@@ -527,7 +527,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await expect(menu.getByRole('status')).toBeVisible();
 });
 
-test('LSTM exact-training action fails closed against older or malformed launch protocols', async ({page}) => {
+test('LSTM exact-training action fails closed against older or malformed launch protocols', {tag: '@ml'}, async ({page}) => {
     let protocolVersion = 2;
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         json: {success: true, protocol_version: protocolVersion, runs: []},
@@ -547,7 +547,7 @@ test('LSTM exact-training action fails closed against older or malformed launch 
     );
 });
 
-test('LSTM history distinguishes exact training from genetic-mode results', async ({page}) => {
+test('LSTM history distinguishes exact training from genetic-mode results', {tag: '@ml'}, async ({page}) => {
     const runs = [{
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'NVDA', period: '1y', interval: '1d',
         status: 'completed', active: false, training_mode: 'exact', accuracy_pct: 65,
@@ -584,7 +584,7 @@ test('LSTM history distinguishes exact training from genetic-mode results', asyn
     await expect(geneticDetails).toContainText('GA baseline parameters:');
 });
 
-test('LSTM history selects a complete case, detaches edits, and archives one result', async ({page}) => {
+test('LSTM history selects a complete case, detaches edits, and archives one result', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1021, height: 863});
     let runs = [];
@@ -732,7 +732,7 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     await expect(page.locator('#include_dividends')).toBeChecked();
 });
 
-test('server-side LSTM Price Field computes a real probability field and renders it', async ({page}) => {
+test('server-side LSTM Price Field computes a real probability field and renders it', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(120_000);
     await page.setViewportSize({width: 1024, height: 841});
     await page.goto(lstmUrl);
@@ -927,7 +927,7 @@ test('server-side LSTM Price Field computes a real probability field and renders
     );
 });
 
-test('Bayesian Price Field uses the same probability-grid module as LSTM', async ({page}) => {
+test('Bayesian Price Field uses the same probability-grid module as LSTM', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 1024, height: 841});
     await page.goto(bayesianUrl);
@@ -942,7 +942,7 @@ test('Bayesian Price Field uses the same probability-grid module as LSTM', async
 });
 
 for (const audit of auditUrls) {
-    test(`supplied DRAM audit URL renders ${audit.id} on the shared contract`, async ({page}) => {
+    test(`supplied DRAM audit URL renders ${audit.id} on the shared contract`, {tag: '@ml'}, async ({page}) => {
         test.setTimeout(180_000);
         await page.setViewportSize({width: 1024, height: 841});
 
@@ -1007,7 +1007,7 @@ for (const audit of auditUrls) {
 
 
 for (const url of [lstmUrl, bayesianUrl]) {
-    test(`shared chart controller remounts and disposes cleanly: ${url}`, async ({page}) => {
+    test(`shared chart controller remounts and disposes cleanly: ${url}`, {tag: '@ml'}, async ({page}) => {
         const errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
         await page.goto(url);
@@ -1047,7 +1047,7 @@ for (const url of [lstmUrl, bayesianUrl]) {
     });
 }
 
-test('controller routes custom distributions and rejects explicit unknown kinds', async ({page}) => {
+test('controller routes custom distributions and rejects explicit unknown kinds', {tag: '@ml'}, async ({page}) => {
     await page.goto(lstmUrl);
     await injectPriceFieldPresentation(page, 'lstm-price-field/v1');
     await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
@@ -1094,7 +1094,7 @@ test('controller routes custom distributions and rejects explicit unknown kinds'
     expect(result.restored).toBe(1);
 });
 
-test('Backtest keeps centered loading feedback after dismissing the refresh modal', async ({page}) => {
+test('Backtest keeps centered loading feedback after dismissing the refresh modal', {tag: '@ml'}, async ({page}) => {
     await page.goto(lstmUrl);
     await expect(page.locator('#tradePriceChart')).toHaveAttribute('data-trade-chart-ready', '1');
     let releaseRefresh;
@@ -1119,7 +1119,7 @@ test('Backtest keeps centered loading feedback after dismissing the refresh moda
 
 for (const width of [1161, 390]) {
     for (const strategy of ['lstm', 'bayesian']) {
-        test(`shared ${strategy} detail centers history and forecasts at ${width}px`, async ({page}, testInfo) => {
+        test(`shared ${strategy} detail centers history and forecasts at ${width}px`, {tag: '@ml'}, async ({page}, testInfo) => {
             await page.setViewportSize({width, height: 959});
             await page.emulateMedia({colorScheme: width === 1161 ? 'dark' : 'light'});
             // Keep this geometry check independent of asynchronously loaded
@@ -1254,7 +1254,7 @@ for (const width of [1161, 390]) {
     }
 }
 
-test('shared detail upgrades a cached template without restarting the service', async ({page}) => {
+test('shared detail upgrades a cached template without restarting the service', {tag: '@ml'}, async ({page}) => {
     await page.route('**/workspaces/backtest?**', async (route) => {
         const response = await route.fetch();
         const body = (await response.text())
@@ -1271,7 +1271,7 @@ test('shared detail upgrades a cached template without restarting the service', 
     await expect(page.locator('script[src*="backtest/detail-chart.js"]')).toHaveCount(1);
 });
 
-test('failed Auto training history exposes its GPU error without hiding the cause', async ({page}) => {
+test('failed Auto training history exposes its GPU error without hiding the cause', {tag: '@ml'}, async ({page}) => {
     await page.route('**/api/lstm-training', (route) => route.fulfill({json: {protocol_version: 3, runs: [{
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'QQQ', identifier: '260906(03)', status: 'failed_closed',
         selected_params: {compute_backend: 'Auto'}, started_at: '2026-09-06T13:19:09Z',

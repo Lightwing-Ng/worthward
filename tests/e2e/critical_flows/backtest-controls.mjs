@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {
     expect,
     test,
@@ -115,7 +115,7 @@ test('uses the global compact date format and split numeric typography in Backte
     }
 });
 
-test('starts every backtest strategy with its starter parameters from the dropdown', async ({page}) => {
+test('starts every backtest strategy with its starter parameters from the dropdown', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(180_000);
     await page.setViewportSize({width: 1024, height: 900});
     await page.goto('/workspaces/backtest?show_trade_details=1&period=6mo&strategy=buy-and-hold');
@@ -588,7 +588,7 @@ test('keeps the bottom Backtest strategy parameter dropdown fully visible', asyn
     expect(layout?.options.map((option) => option.text)).toEqual(['Best', 'Average', 'Worst']);
 });
 
-test('keeps Bayesian compute on internal Auto and preserves parameter-panel effects', async ({page}) => {
+test('keeps Bayesian compute on internal Auto and preserves parameter-panel effects', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 974, height: 1386});
     await page.goto('/workspaces/backtest?ticker=AAPL&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_options=0&use_pe_ratio=0&use_option_put_open_interest=1&use_option_put_call_open_interest_ratio=1&use_volume=0&cell_display_threshold=2.50&training_window=425&chip_window=62&prior_strength=10.52&compute_backend=GPU');
 
@@ -610,7 +610,7 @@ test('keeps Bayesian compute on internal Auto and preserves parameter-panel effe
     });
 });
 
-test('shares the plain switch style between Backtest controls and strategy booleans', async ({page}) => {
+test('shares the plain switch style between Backtest controls and strategy booleans', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 983, height: 1288});
     await page.goto('/workspaces/backtest?ticker=DRAM&range=6mo&strategy=bayesian-price-field&stop_loss=0&show_trade_details=0&use_options=0&use_pe_ratio=0&use_option_put_open_interest=1&use_option_put_call_open_interest_ratio=1&use_volume=0&cell_display_threshold=2.00&training_window=425&chip_window=62&prior_strength=10.52');
 

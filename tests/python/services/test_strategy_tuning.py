@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.2."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.3."""
 
 from dataclasses import replace
 import json
@@ -22,6 +22,14 @@ from tests.factories.market import ohlc_frame_for_dates
 
 
 CATALOG = list_enabled_strategies()
+MODEL_ENGINE_CASES = [
+    pytest.param(
+        entry,
+        marks=pytest.mark.ml if entry.get("presentation_renderer") == "probability-grid-v1" else (),
+        id=entry["id"],
+    )
+    for entry in CATALOG
+]
 
 
 @pytest.mark.parametrize("entry", CATALOG, ids=lambda entry: entry["id"])
@@ -42,7 +50,7 @@ def test_every_dropdown_strategy_has_one_search_and_group_contract(entry):
     assert "cell_display_threshold" not in {dimension.key for dimension in dimensions}
 
 
-@pytest.mark.parametrize("entry", CATALOG, ids=lambda entry: entry["id"])
+@pytest.mark.parametrize("entry", MODEL_ENGINE_CASES)
 def test_every_strategy_uses_real_execution_engines_on_isolated_factory_data(
     entry, monkeypatch
 ):
@@ -91,7 +99,7 @@ def test_every_strategy_uses_real_execution_engines_on_isolated_factory_data(
     )
 
 
-@pytest.mark.parametrize("method", ["genetic", "random-forest"])
+@pytest.mark.parametrize("method", ["genetic", pytest.param("random-forest", marks=pytest.mark.ml)])
 def test_optimizers_are_seeded_bounded_and_rank_validation_only(method):
     strategy = instantiate_strategy("macd")
     calls = []
@@ -110,6 +118,7 @@ def test_optimizers_are_seeded_bounded_and_rank_validation_only(method):
     assert all("holdout" not in row for row in calls)
 
 
+@pytest.mark.ml
 def test_forest_learns_parameter_response_instead_of_returning_random_scores():
     x = np.arange(40, dtype=float).reshape(-1, 1)
     forest = RegressionForest(np.random.default_rng(12))
@@ -215,6 +224,7 @@ def test_predictions_only_in_warmup_cannot_make_a_scored_window_eligible():
         session.validate(session.strategy.get_startup_params())
 
 
+@pytest.mark.ml
 def test_mixed_frequency_research_keeps_warmup_and_prediction_evidence(monkeypatch):
     strategy = instantiate_strategy("bayesian-price-field")
     frame = ohlc_frame_for_dates(

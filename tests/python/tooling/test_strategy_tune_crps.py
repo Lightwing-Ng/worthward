@@ -1,4 +1,4 @@
-"""Backtest CRPS skill objective for every Price Field strategy. Code version: v1.0.0."""
+"""Backtest CRPS skill objective for every Price Field strategy. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -82,6 +82,7 @@ def _date(offset):
 
 
 @pytest.mark.parametrize("entry", PRICE_FIELD, ids=lambda entry: entry["id"])
+@pytest.mark.ml
 def test_crps_skill_objective_reproduces_the_exact_range_backtest_headline(
     entry, tmp_path, monkeypatch, capsys
 ):
@@ -190,6 +191,7 @@ def test_crps_skill_objective_reproduces_the_exact_range_backtest_headline(
 @pytest.mark.parametrize(
     ("strategy_id", "bounds"), WARMUP_SEARCHES.items(), ids=list(WARMUP_SEARCHES)
 )
+@pytest.mark.ml
 def test_search_full_window_reproduces_the_backtest_for_the_best_params(
     strategy_id, bounds, tmp_path, monkeypatch, capsys
 ):
@@ -278,6 +280,7 @@ def test_search_full_window_reproduces_the_backtest_for_the_best_params(
     ],
     ids=["reload-error", "reload-dates-changed"],
 )
+@pytest.mark.ml
 def test_failed_full_window_fails_the_run_closed(
     failure, message, tmp_path, monkeypatch, capsys
 ):
@@ -326,6 +329,7 @@ def test_failed_full_window_fails_the_run_closed(
     assert len(loads) == 2
 
 
+@pytest.mark.ml
 def test_offline_subprocess_reports_the_kpi_without_writing_stores(tmp_path):
     market_root = tmp_path / "market"
     settings_root = tmp_path / "settings"

@@ -1,4 +1,4 @@
-"""Tests for the Bayesian Price Field strategy. Code version: v1.31.2."""
+"""Tests for the Bayesian Price Field strategy. Code version: v1.31.3."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.web.presentation.strategy_forms import build_strategy_form_field
 from strategies.algorithms.strategy_bayesian_price_field import (
@@ -295,6 +296,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("Low-High price bins", definitions["use_volume_at_price"].help_text)
         self.assertEqual(_MODEL_VERSION, "bayesian-price-field-model/v1.11.0")
 
+    @pytest.mark.ml
     def test_compute_backend_is_internal_auto_and_legacy_overrides_are_ignored(self) -> None:
         strategy = BayesianPriceFieldStrategy()
 
@@ -318,6 +320,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 resolve_backend.assert_called_once_with("Auto")
                 self.assertEqual(result.presentation["device"]["requested"], "Auto")
 
+    @pytest.mark.ml
     def test_probability_display_threshold_is_bounded_and_presentation_only(self) -> None:
         strategy = BayesianPriceFieldStrategy()
         self.assertEqual(
@@ -364,6 +367,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             focused.presentation["fingerprint"],
         )
 
+    @pytest.mark.ml
     def test_probability_diagnostics_are_bounded_and_score_executable_returns(self) -> None:
         frame = _market_frame(90)
         strategy = BayesianPriceFieldStrategy()
@@ -424,6 +428,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertIn("80", grid["central_intervals"])
 
+    @pytest.mark.ml
     def test_hidden_history_establishes_causal_grid_for_visible_origins(
             self,
     ) -> None:
@@ -513,6 +518,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertGreater(scale, 0.01)
         self.assertLess(mean, 4.0 * 0.02)
 
+    @pytest.mark.ml
     def test_walk_forward_prediction_has_no_future_lookahead(self) -> None:
         original = _market_frame()
         changed_future = original.copy()
@@ -553,6 +559,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 equal_nan=True,
             )
 
+    @pytest.mark.ml
     def test_walk_forward_prediction_ignores_future_pe_options_and_research_values(self) -> None:
         frame = _market_frame()
         future_start = 145
@@ -649,6 +656,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             )
         )
 
+    @pytest.mark.ml
     def test_walk_forward_noise_uses_regularized_residual_variance_floor(self) -> None:
         row_count = 40
         forward_returns = np.linspace(-0.02, 0.02, row_count - 1)
@@ -691,6 +699,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertLess(max(observed_noise_variances), float(np.var(forward_returns, ddof=1)))
         self.assertGreater(float(np.var(forward_returns, ddof=1)), 1e-5)
 
+    @pytest.mark.ml
     def test_ridge_noise_fallback_keeps_regularization_when_direct_solve_fails(self) -> None:
         design = np.column_stack((np.ones(30), np.linspace(-1.0, 1.0, 30)))
         target = np.linspace(-0.02, 0.02, 30)
@@ -703,6 +712,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertTrue(math.isfinite(variance))
         self.assertGreaterEqual(variance, _MIN_NOISE_VARIANCE)
 
+    @pytest.mark.ml
     def test_factor_selection_uses_causal_incremental_predictive_evidence(self) -> None:
         generator = np.random.default_rng(742)
         candidate_indices = np.arange(60, dtype=np.int64)
@@ -734,6 +744,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(selected_forward, selected_reversed)
         self.assertEqual(selected_forward, ["predictive"])
 
+    @pytest.mark.ml
     def test_prior_strength_is_scaled_to_standardized_sample_information(self) -> None:
         self.assertAlmostEqual(_ridge_penalty(10.52, 425), 44.71, places=12)
         self.assertAlmostEqual(_ridge_penalty(100.0, 425), 425.0, places=12)
@@ -908,6 +919,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertTrue(fetch_bundle.call_args.kwargs["include_options"])
         self.assertFalse(fetch_bundle.call_args.kwargs["include_pe"])
 
+    @pytest.mark.ml
     def test_factor_status_reports_stale_error_disabled_and_insufficient(self) -> None:
         frame = _market_frame(60)
         first_date = pd.Timestamp(frame["Date"].iloc[0])
@@ -1103,6 +1115,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
 
         self.assertEqual(len(fingerprints), 3)
 
+    @pytest.mark.ml
     def test_lstm_only_parameters_do_not_change_bayesian_compute_signals(self) -> None:
         frame = _market_frame(80)
         baseline = BayesianPriceFieldStrategy().compute_signals(
@@ -1146,6 +1159,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 changed.frame[column].to_numpy(),
             )
 
+    @pytest.mark.ml
     def test_presentation_contains_only_finite_probability_values(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
             _market_frame(),
@@ -1248,6 +1262,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             self.assertIn("selected", factor)
             self.assertIn("selection_status", factor)
 
+    @pytest.mark.ml
     def test_missing_pe_and_options_are_reported_without_blocking_prediction(self) -> None:
         result = BayesianPriceFieldStrategy().compute_signals(
             _market_frame(),
@@ -1280,6 +1295,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(factor_details["volume"]["coverage"], 1.0)
         self.assertGreater(result.frame["bayesian_probability_up"].notna().sum(), 0)
 
+    @pytest.mark.ml
     def test_factor_status_separates_provider_activity_from_model_selection(self) -> None:
         frame = _market_frame(90)
         strategy = BayesianPriceFieldStrategy()
@@ -1313,6 +1329,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
             selection,
         )
 
+    @pytest.mark.ml
     def test_research_factor_observations_join_as_of_and_are_exposed_in_the_model(self) -> None:
         frame = _market_frame(80)
         observations = tuple(
@@ -1348,6 +1365,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertTrue(pb_factor["enabled"])
         self.assertGreater(pb_factor["finite_observations"], 0)
 
+    @pytest.mark.ml
     def test_dynamic_pe_snapshot_is_joined_as_a_distinct_factor(self) -> None:
         frame = _market_frame(80)
         observations = tuple(
@@ -1398,6 +1416,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
 
         self.assertEqual(_option_ratio(observation), 1.5)
 
+    @pytest.mark.ml
     def test_constant_inputs_produce_a_stable_intercept_only_posterior(self) -> None:
         row_count = 100
         frame = pd.DataFrame(
@@ -1461,6 +1480,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 load_torch.assert_called_once_with()
                 platform_system.assert_not_called()
 
+    @pytest.mark.ml
     def test_runtime_gpu_failure_restarts_the_complete_walk_forward_pass_on_cpu(self) -> None:
         frame = _market_frame()
         cpu_backend = _ComputeBackend(requested="Auto")
@@ -1571,6 +1591,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
                 self.assertEqual(backend.resolved, expected_device)
                 self.assertEqual(backend.engine, "torch")
 
+    @pytest.mark.ml
     def test_auto_backend_presentation_reports_numpy_cpu_without_accelerator(self) -> None:
         with patch(
             "strategies.algorithms.strategy_bayesian_price_field._load_torch",
@@ -1633,6 +1654,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(backend.engine, "hybrid")
         self.assertEqual(backend.numeric_precision, "float32")
 
+    @pytest.mark.ml
     def test_auto_backend_coordinates_cpu_and_gpu_origins(self) -> None:
         frame = _market_frame(40)
         backend = _ComputeBackend(
@@ -1663,6 +1685,7 @@ class BayesianPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(backend.parallel_workers, 2)
         self.assertTrue(np.isfinite(predictions[0][21:]).all())
 
+    @pytest.mark.ml
     def test_cpu_parallel_origins_match_serial_results(self) -> None:
         frame = _market_frame(180)
         factor_values = {

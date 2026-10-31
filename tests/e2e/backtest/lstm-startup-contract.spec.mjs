@@ -1,4 +1,4 @@
-/* LSTM startup history and compact backend contracts. Code version: v1.0.0 */
+/* LSTM startup history and compact backend contracts. Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -25,7 +25,7 @@ const readParameters = (page) => page.locator(
     '#trade_strategy_params_panel [data-strategy-param-input][name]',
 ).evaluateAll((nodes) => Object.fromEntries(nodes.map((node) => [node.name, node.value])));
 
-test('default loading records real completed training and reloading preserves its identity', async ({page}) => {
+test('default loading records real completed training and reloading preserves its identity', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.setViewportSize({width: 914, height: 790});
     await page.goto(defaultUrl);
@@ -95,7 +95,7 @@ for (const theme of ['light', 'dark']) {
         {width: 390, height: 844},
         {width: 914, height: 500},
     ]) {
-        test(`LSTM backend uses arrow-free glass with keyboard selection at ${viewport.width}x${viewport.height} ${theme}`, async ({page}, testInfo) => {
+        test(`LSTM backend uses arrow-free glass with keyboard selection at ${viewport.width}x${viewport.height} ${theme}`, {tag: '@ml'}, async ({page}, testInfo) => {
             test.setTimeout(60_000);
             const errors = [];
             page.on('pageerror', (error) => errors.push(error.message));
@@ -190,7 +190,7 @@ for (const theme of ['light', 'dark']) {
     }
 }
 
-test('complete NVDA CPU memory migrates to Auto while custom values and explicit URLs retain precedence', async ({page}) => {
+test('complete NVDA CPU memory migrates to Auto while custom values and explicit URLs retain precedence', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     const url = '/workspaces/backtest?ticker=NVDA&strategy=lstm-price-field';
     const backend = page.locator('#strategy_param_compute_backend');

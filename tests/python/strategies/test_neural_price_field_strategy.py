@@ -1,4 +1,4 @@
-"""Shared neural strategy and causal input contracts. Code version: v1.6.0."""
+"""Shared neural strategy and causal input contracts. Code version: v1.6.1."""
 
 from copy import deepcopy
 import subprocess
@@ -325,6 +325,7 @@ def test_current_neural_tuning_profile_is_the_startup_default(spec):
 
 
 @pytest.mark.parametrize("architecture", ARCHITECTURES)
+@pytest.mark.ml
 def test_each_architecture_emits_direct_horizon_contract_on_cpu(architecture):
     pytest.importorskip("torch")
     strategy = instantiate_strategy(f"{architecture}-price-field")
@@ -396,6 +397,7 @@ def test_hidden_history_scores_only_visible_direct_neural_origins():
 
 
 @pytest.mark.parametrize("architecture", ("tsmixer", "itransformer", "tide", "moderntcn", "tft"))
+@pytest.mark.ml
 def test_future_prices_do_not_change_earlier_forecasts_or_model_fit(architecture):
     pytest.importorskip("torch")
     strategy = instantiate_strategy(f"{architecture}-price-field")
@@ -411,6 +413,7 @@ def test_future_prices_do_not_change_earlier_forecasts_or_model_fit(architecture
 
 
 @pytest.mark.parametrize("architecture", ("tsmixer", "itransformer", "tide", "moderntcn", "tft"))
+@pytest.mark.ml
 def test_display_threshold_does_not_change_training_or_probability_score(architecture):
     pytest.importorskip("torch")
     strategy = instantiate_strategy(f"{architecture}-price-field")

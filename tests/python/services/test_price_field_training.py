@@ -1,4 +1,4 @@
-"""Isolated generic probability training contracts. Code version: v1.4.2."""
+"""Isolated generic probability training contracts. Code version: v1.4.3."""
 
 from __future__ import annotations
 
@@ -255,6 +255,7 @@ def test_compute_history_read_preserves_production_ledger(tmp_path):
 
 
 @pytest.mark.parametrize("strategy_id", ("tsmixer-price-field", *FRONTIER_STRATEGIES))
+@pytest.mark.ml
 def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_path, monkeypatch, strategy_id):
     pytest.importorskip("torch")
     from scripts import price_field_train, price_field_runtime

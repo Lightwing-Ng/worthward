@@ -1,4 +1,4 @@
-"""LSTM compute backend and causality tests. Code version: v1.6.2."""
+"""LSTM compute backend and causality tests. Code version: v1.6.3."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from strategies.price_field.lstm_compute import (
     LstmBackend,
@@ -107,6 +108,7 @@ class LstmComputeTests(unittest.TestCase):
             np.testing.assert_allclose(cpu[0].std(axis=(0, 1)), 1.0, atol=1e-10)
             self.assertGreater(cpu[2][-1, 1], cpu[0][-1, -1, 1])
 
+    @pytest.mark.ml
     def test_minimum_work_continues_optimizer_updates_without_reinitializing(self):
         sequences = np.ones((16, 4, 1), dtype=np.float64) * 0.01
         targets = np.linspace(-0.02, 0.02, 16)
@@ -122,6 +124,7 @@ class LstmComputeTests(unittest.TestCase):
         self.assertEqual(len(ticks), 3)
         self.assertFalse(np.array_equal(before, model.W_out))
 
+    @pytest.mark.ml
     def test_work_budget_does_not_skip_requested_epochs(self):
         work = TrainingWork(0.0)
         model = _NumpyLSTM(1, 4, np.random.default_rng(17))
@@ -288,6 +291,7 @@ class LstmComputeTests(unittest.TestCase):
         self.assertEqual(backend.origins_trained, 0)
         self.assertGreater(backend.origins_failed_closed, 0)
 
+    @pytest.mark.ml
     def test_walk_forward_is_causal_in_features_and_targets(self) -> None:
         generator = np.random.default_rng(11)
         row_count = 64
@@ -328,6 +332,7 @@ class LstmComputeTests(unittest.TestCase):
         )
         self.assertTrue(np.isfinite(first[50]) or np.isnan(first[50]))
 
+    @pytest.mark.ml
     def test_confirmed_gpu_walk_forward_reports_mps_not_the_request(self) -> None:
         capabilities = detect_lstm_capabilities()
         if not capabilities["mps"]["confirmed"]:
@@ -355,6 +360,7 @@ class LstmComputeTests(unittest.TestCase):
         self.assertGreater(int(np.isfinite(means).sum()), 0)
         self.assertTrue(np.all(scales[np.isfinite(scales)] > 0.0))
 
+    @pytest.mark.ml
     def test_unavailable_factor_columns_do_not_zero_the_lag_return_lstm(self) -> None:
         generator = np.random.default_rng(11)
         lag_return = generator.normal(0.0, 0.01, size=48)

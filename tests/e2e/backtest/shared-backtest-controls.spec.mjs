@@ -1,10 +1,10 @@
-/* Shared Backtest control primitives. Code version: v1.3.4 */
+/* Shared Backtest control primitives. Code version: v1.3.5 */
 import {test, expect} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 for (const colorScheme of ['light', 'dark']) {
     for (const width of [1024, 390]) {
-        test(`shared collapses and training actions at ${width}px in ${colorScheme}`, async ({page}, testInfo) => {
+        test(`shared collapses and training actions at ${width}px in ${colorScheme}`, {tag: '@ml'}, async ({page}, testInfo) => {
             test.setTimeout(90_000);
             await page.setViewportSize({width, height: 900});
             await page.emulateMedia({colorScheme});
