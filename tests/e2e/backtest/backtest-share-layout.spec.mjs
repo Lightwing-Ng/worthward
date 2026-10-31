@@ -1,4 +1,4 @@
-/* Backtest share-control layout contract. Code version: v0.2.1 */
+/* Backtest share-control layout contract. Code version: v0.2.2 */
 import {expect, test} from '@playwright/test';
 
 const priceFieldShareUrl = (
@@ -159,7 +159,7 @@ test('keeps the Backtest output control inside its result card and clear of the 
     }));
 });
 
-test('keeps complete and partial Price Field metrics inside the detached Backtest share card', async ({page}) => {
+test('keeps complete and partial Price Field metrics inside the detached Backtest share card', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(120_000);
     await page.setViewportSize({width: 1_024, height: 900});
     await page.goto(priceFieldShareUrl);

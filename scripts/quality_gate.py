@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Serialize quality runs before they can overwrite shared reports.
+"""Serialize composable quality checks and complete coverage runs.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
 
-import argparse
 import fcntl
 import hashlib
-import importlib.util
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from typing import Sequence
+
+from scripts.quality_plan import describe_plan, parse_plan
 
 
 def run(root: Path, command: list[str]) -> int:
@@ -37,26 +38,16 @@ def run(root: Path, command: list[str]) -> int:
             return 130
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", required=True, type=Path)
-    args = parser.parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
     if sys.version_info[:2] < (3, 13):
-        parser.error("Python 3.13 or newer is required.")
-    missing = [
-        name
-        for name in ("ruff", "pytest", "pytest_cov")
-        if importlib.util.find_spec(name) is None
-    ]
-    if missing:
-        print(
-            f"Missing quality dependencies in {sys.executable}: {', '.join(missing)}. "
-            "Run ./scripts/setup_python.sh with the same WORTHWARD_PYTHON, "
-            "or select an already prepared interpreter.",
-            file=sys.stderr,
-        )
+        print("Python 3.13 or newer is required.", file=sys.stderr)
         return 1
-    return run(args.root, [str(args.root / "scripts/check_steps.sh")])
+    plan = parse_plan(arguments)
+    if plan.list_only:
+        print(describe_plan(plan))
+        return 0
+    return run(plan.root, [sys.executable, "-m", "scripts.quality_checks", *arguments])
 
 
 if __name__ == "__main__":

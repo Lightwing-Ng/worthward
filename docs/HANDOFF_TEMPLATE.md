@@ -1,6 +1,6 @@
 # Agent handoff template
 
-Documentation version: `v1.1.0`
+Documentation version: `v1.2.0`
 
 Use this structure for a task handoff. It is a template, not a record of the
 current working tree. Never put private account values, broker evidence, access
@@ -38,8 +38,11 @@ complete, or blocked.
 - `exact command`: exit code and exact pass/fail/skip counts
 - Browser or rendered verification: route, viewport, and observed result
 - Documentation link and contract checks:
-- Full-gate completion time and final source state it covered:
-- Changes made after the last full gate, with focused verification for each:
+- Selected verification groups, file filters, and ML inclusion or exclusion:
+- Why that scope covers the affected behavior; any untested affected boundary:
+- Verification completion time and final source state it covered:
+- Complete gate, only if explicitly run with `--full`:
+- Changes made after the last verification, with focused checks for each:
 - E2E lock conflicts: owner, exit status `73`, coordination, and successful retry:
 
 ## Remaining work or risks
@@ -65,10 +68,13 @@ complete, or blocked.
 - Name concurrent agents or tasks and their owned files. Do not overwrite or
   roll back their changes.
 - Run `git diff --check`.
-- Run the smallest relevant tests, then `./scripts/check.sh` unless a documented
-  independent blocker prevents it.
-- Confirm that the full gate ran after the last concurrent source change. If it
-  did not, state exactly which later files have only focused verification.
+- Run the smallest relevant tests and assemble the affected layers through
+  `./scripts/check.sh --group ...` and its file selectors. Follow
+  [`TESTING.md`](TESTING.md) for ML inclusion and complete-gate selection;
+  unrelated frontend or real model execution is not a handoff requirement.
+- Confirm that the selected checks cover the last concurrent source change.
+  State which later files have only focused verification. Reserve complete-gate
+  claims for a completed `--full` run.
 - Report a collection count only as inventory; report a pass count only from a
   completed run with a known exit status.
 - Treat E2E exit status `73` as an ownership conflict, not a product failure.

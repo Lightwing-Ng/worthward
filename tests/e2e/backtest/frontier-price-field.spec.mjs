@@ -1,4 +1,4 @@
-/* Additional neural Price Field GUI contracts. Code version: v1.7.1 */
+/* Additional neural Price Field GUI contracts. Code version: v1.7.2 */
 import {expect, test} from '@playwright/test';
 import {
     closeBacktestParameterOverlay,
@@ -142,7 +142,7 @@ async function visibleConfiguration(page) {
 }
 
 for (const width of [1024, 390]) {
-    test(`four additional models use the shared real CPU probability GUI at ${width}px`, async ({page}, testInfo) => {
+    test(`four additional models use the shared real CPU probability GUI at ${width}px`, {tag: '@ml'}, async ({page}, testInfo) => {
         test.setTimeout(120_000);
         await page.setViewportSize({width, height: 1100});
         const errors = [];
@@ -246,7 +246,7 @@ for (const width of [1024, 390]) {
         await page.screenshot({path: testInfo.outputPath(`frontier-price-field-${width}.png`), fullPage: true});
     });
 
-    test(`additional-model history stays isolated and restores complete parameters at ${width}px`, async ({page}) => {
+    test(`additional-model history stays isolated and restores complete parameters at ${width}px`, {tag: '@ml'}, async ({page}) => {
         test.setTimeout(120_000);
         await page.setViewportSize({width, height: 1100});
         let runs = [];
@@ -290,7 +290,7 @@ for (const width of [1024, 390]) {
 }
 
 for (const [index, [architecture]] of models.entries()) {
-    test(`${architecture} starts and stops asynchronously without a completed score`, async ({page}) => {
+    test(`${architecture} starts and stops asynchronously without a completed score`, {tag: '@ml'}, async ({page}) => {
         test.setTimeout(60_000);
         await page.setViewportSize({width: index % 2 ? 390 : 1024, height: 1100});
         let runs = [];

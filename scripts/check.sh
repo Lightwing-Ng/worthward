@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Code version: v1.6.0
+# Code version: v1.7.0
 
 set -euo pipefail
 
@@ -12,4 +12,5 @@ if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
     exit 1
 fi
 export WORTHWARD_PYTHON="$PYTHON_BIN"
-exec "$PYTHON_BIN" "$ROOT_DIR/scripts/quality_gate.py" --root "$ROOT_DIR"
+cd "$ROOT_DIR"
+exec "$PYTHON_BIN" -m scripts.quality_gate --root "$ROOT_DIR" "$@"

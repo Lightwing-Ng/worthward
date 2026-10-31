@@ -1,6 +1,6 @@
 # Agent operating guide
 
-Policy version: `v1.8.0-agent-contract.0`
+Policy version: `v1.9.0-agent-contract.0`
 
 The root [`AGENTS.md`](../AGENTS.md) is a compatibility pointer for agent
 discovery. This file remains the canonical guide.
@@ -124,7 +124,17 @@ discovery. This file remains the canonical guide.
    - `/trade/live-trading`
    - `/settings/<section>`
    - Treat `/workspaces/market-caps` as a compatibility redirect and test it as a redirect rather than a canonical renderer.
-6. Run the smallest relevant test first, then `./scripts/check.sh` before handoff.
+6. Assemble verification from the affected layers with `./scripts/check.sh`.
+   Run the smallest relevant tests first, then the relevant `--group` selections
+   and file selectors documented in [`TESTING.md`](TESTING.md). A backend-only
+   fix does not require unrelated JavaScript, browser, or real model execution.
+   The default excludes browser tests and tagged local-model integration. Include `--ml
+   only` or `--ml include` when the change affects model fitting, inference,
+   training integration, or a tagged model-rendering contract. Use `--full`
+   for explicit complete validation, release acceptance, or a broad change whose
+   affected boundaries justify every layer; it is not required for every task.
+   Report the selected scope and any untested affected boundary. Never describe
+   a focused run or collection-only inventory as a complete gate.
 7. Record intentional behavior changes in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) or the relevant domain documentation.
 8. Before deleting generated output, check active process ownership with `ps`
    and `lsof`. Apply [`STATIC_FILE_HOUSEKEEPING.md`](STATIC_FILE_HOUSEKEEPING.md)

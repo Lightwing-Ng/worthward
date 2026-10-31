@@ -1,8 +1,8 @@
 import {test, expect} from '@playwright/test';
 
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 
-test('keeps the Bayesian probability field unique at the final curve endpoint', async ({page}) => {
+test('keeps the Bayesian probability field unique at the final curve endpoint', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(60_000);
     await page.setViewportSize({width: 974, height: 1278});
     await page.goto(

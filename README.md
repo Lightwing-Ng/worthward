@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.46.0`
+Documentation version: `v3.47.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -438,7 +438,11 @@ regular, and post-market sessions. Overnight values require Longbridge because
 Yahoo does not expose that session. During the overnight window, a machine
 without a usable Longbridge quote keeps the latest `yfinance` post-market close
 for Holdings valuation without labeling or animating it as a live overnight
-quote. Other unresolved supported-session quotes also fall back to batched
+quote. After trading closes, including weekends and holidays, configured
+Longbridge quotes retain the latest completed NYSE trading day's timestamped
+post-market price for Holdings valuation without a live-session indicator.
+Missing, stale, future-dated, or invalid post-market timestamps are rejected.
+Other unresolved quotes also fall back to batched
 `yfinance` requests, which make at most one rotating individual recovery request
 per poll. Investment polling and its server-side
 complete-batch cache use a 60-second interval. An
@@ -908,7 +912,7 @@ scripts/setup_python.sh         -> Supported host-Python dependency installer
 scripts/run_app.sh              -> Supported host-Python app launcher
 scripts/test.sh                 -> Supported host-Python pytest wrapper
 scripts/test_js.sh              -> Node unit tests and gradual JavaScript coverage thresholds
-scripts/check.sh                -> Complete local and CI quality gate
+scripts/check.sh                -> Composable checks and explicit complete gate
 .github/workflows/quality.yml   -> Push and pull-request quality-gate workflow
 app/core/preferences/           -> Persisted settings and shared settings storage
 app/core/markets/               -> Shared ticker identity, calendars, and sessions
@@ -976,14 +980,31 @@ You can also pass normal `pytest` arguments through the wrapper:
 ./scripts/test.sh -q
 ```
 
-Run the complete Python, JavaScript, coverage, static, and browser quality gate:
+Assemble checks for the affected layers. A backend-only change can run just
+Python lint and its relevant tests:
 
 ```bash
-./scripts/check.sh
+./scripts/check.sh --group python-lint --group python \
+  --python-test tests/python/services/test_market_data_freshness.py
 ```
 
-The same command runs in GitHub Actions for pushes and pull requests. Node unit
-tests enforce gradual first-party JavaScript coverage floors; current baselines
-and safe threshold overrides are documented in [the testing guide](docs/TESTING.md).
+Use repeated `--group` options to combine `python-lint`, `js-syntax`, `python`,
+`js`, and `e2e`; `--python-test`, `--js-test`, and `--e2e-test` narrow their
+respective groups. `--list` previews exact commands without starting tests.
+Without arguments, the runner checks static code and Python/JavaScript units,
+excluding tagged local-model integration and browser tests. Local forecasting
+model integration tests are explicitly marked and require `--ml include` or
+`--ml only`.
+
+Run every layer, real ML, and the existing global coverage thresholds explicitly:
+
+```bash
+./scripts/check.sh --full
+```
+
+GitHub Actions uses this explicit complete command for pushes and pull requests.
+Focused runs do not overwrite global coverage reports or apply whole-suite
+coverage floors. Current commands, scope rules, and coverage baselines are
+documented in [the testing guide](docs/TESTING.md).
 
 The committed test suite, coverage baseline, shared factories, and E2E isolation rules are documented in [the testing guide](docs/TESTING.md).

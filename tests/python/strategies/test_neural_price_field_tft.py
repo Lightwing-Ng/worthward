@@ -1,6 +1,6 @@
 """Real CPU TFT structure, causality, and distribution training regressions.
 
-Code version: v1.0.1
+Code version: v1.0.2
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ def _observations(torch, batch=5, lookback=8, features=3):
     return torch.cat((observed, torch.ones_like(observed)), dim=-1)
 
 
+@pytest.mark.ml
 def test_tft_real_gaussian_nll_updates_all_core_components(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.0)
@@ -56,6 +57,7 @@ def test_tft_real_gaussian_nll_updates_all_core_components(torch_cpu):
     assert torch.isfinite(model(values)).all()
 
 
+@pytest.mark.ml
 def test_tft_variable_selection_is_conditional_and_normalized(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.0).eval()
@@ -71,6 +73,7 @@ def test_tft_variable_selection_is_conditional_and_normalized(torch_cpu):
     assert not torch.allclose(weights[0], weights[1])
 
 
+@pytest.mark.ml
 def test_tft_missing_values_cannot_influence_predictions_or_input_gradients(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.0).eval()
@@ -86,6 +89,7 @@ def test_tft_missing_values_cannot_influence_predictions_or_input_gradients(torc
     assert torch.count_nonzero(values.grad[:, 2:6, 1]) == 0
 
 
+@pytest.mark.ml
 def test_tft_inference_batch_never_changes_an_earlier_origin(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.2).eval()
@@ -99,6 +103,7 @@ def test_tft_inference_batch_never_changes_an_earlier_origin(torch_cpu):
     torch.testing.assert_close(batched, changed, atol=0.0, rtol=0.0)
 
 
+@pytest.mark.ml
 def test_tft_future_attention_is_causal_with_one_shared_value_projection(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.0).eval()
@@ -113,6 +118,7 @@ def test_tft_future_attention_is_causal_with_one_shared_value_projection(torch_c
     assert not isinstance(model.temporal_attention.value, torch.nn.ModuleList)
 
 
+@pytest.mark.ml
 def test_tft_horizon_decoder_does_not_feed_later_horizons_backwards(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 8, 6, 8, 0.0).eval()
@@ -125,6 +131,7 @@ def test_tft_horizon_decoder_does_not_feed_later_horizons_backwards(torch_cpu):
     assert not torch.allclose(original[:, -1], changed[:, -1])
 
 
+@pytest.mark.ml
 def test_tft_single_observed_variable_and_state_reload_are_supported(torch_cpu):
     torch = torch_cpu
     model = make_tft_model(torch, 3, 2, 6, 0.0, horizons=4).eval()

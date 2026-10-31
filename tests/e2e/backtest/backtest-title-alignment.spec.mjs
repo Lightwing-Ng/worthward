@@ -1,7 +1,7 @@
-/* Code version: v1.0.6 */
+/* Code version: v1.0.7 */
 import {test, expect} from '@playwright/test';
 
-test('Backtest title shares the global control centerline and preserves compact result flow', async ({page}) => {
+test('Backtest title shares the global control centerline and preserves compact result flow', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(90_000);
     await page.goto('/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field&show_trade_details=0&compute_backend=CPU&lstm_epochs=1&lstm_lookback=4&lstm_hidden_size=4&training_window=40');
     const result = page.locator('.backtest-results-stack [data-layout-role="result-heading"]');

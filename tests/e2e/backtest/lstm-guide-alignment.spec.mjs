@@ -1,6 +1,6 @@
 import {expect, test} from '@playwright/test';
 
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 
 const lstmUrl = (
     '/workspaces/backtest?ticker=DRAM&strategy=lstm-price-field'
@@ -123,7 +123,7 @@ const readSnapshot = (page) => page.evaluate(() => {
     };
 });
 
-test('keeps every right-half hover frame coherent during vertical movement', async ({page}) => {
+test('keeps every right-half hover frame coherent during vertical movement', {tag: '@ml'}, async ({page}) => {
     await page.setViewportSize({width: 1018, height: 1294});
     await page.goto(lstmUrl);
     await expect.poll(() => readPresentation(page), {timeout: 90_000}).not.toBeNull();
@@ -219,7 +219,7 @@ test('keeps every right-half hover frame coherent during vertical movement', asy
     }
 });
 
-test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', async ({page}) => {
+test('records LSTM Price Field guide alignment for 28 and 29 Jul 2026', {tag: '@ml'}, async ({page}) => {
     test.setTimeout(120_000);
     await page.setViewportSize({width: 974, height: 1278});
     await page.goto(lstmUrl);

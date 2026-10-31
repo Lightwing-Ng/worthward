@@ -1,4 +1,4 @@
-"""Econometric Price Field provenance CLI contracts. Code version: v1.0.0."""
+"""Econometric Price Field provenance CLI contracts. Code version: v1.0.1."""
 
 from __future__ import annotations
 
@@ -185,6 +185,7 @@ def test_missing_history_fails_offline_without_creating_output(tmp_path, monkeyp
     assert not output.exists()
 
 
+@pytest.mark.ml
 def test_priors_use_only_pre_cutoff_bars_and_are_deterministic(tmp_path, monkeypatch, capsys):
     tickers = ("AAA", "BBB", "CCC")
     frames = _frames(tickers, count=760, start="2014-03-03")
@@ -245,6 +246,7 @@ def test_priors_use_only_pre_cutoff_bars_and_are_deterministic(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("scored_sessions", [10, 20, 21])
+@pytest.mark.ml
 def test_panel_requires_all_20_horizons_even_with_complete_pair_coverage(
     scored_sessions, tmp_path, monkeypatch, capsys
 ):
@@ -277,6 +279,7 @@ def test_panel_requires_all_20_horizons_even_with_complete_pair_coverage(
     assert (summary["mean_pct"] is not None) is complete
 
 
+@pytest.mark.ml
 def test_panel_scores_frozen_forecasts_with_the_official_scorer(tmp_path, monkeypatch, capsys):
     # Short windows keep the official scorer fast; the frozen dates are covered by --describe.
     monkeypatch.setattr(research, "SELECTION_START", "2016-06-01")

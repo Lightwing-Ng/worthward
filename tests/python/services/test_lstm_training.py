@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.10.0."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.10.1."""
 
 from __future__ import annotations
 
@@ -770,6 +770,7 @@ def completed_inline_training():
     }
 
 
+@pytest.mark.ml
 def test_completed_backtest_records_actual_training_with_honest_score(tmp_path, completed_inline_training):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     run = manager.record_completed_backtest(**completed_inline_training)
@@ -799,6 +800,7 @@ def test_completed_backtest_records_actual_training_with_honest_score(tmp_path, 
     assert manager.list_runs()[0]["identifier"] == "260927(01)"
 
 
+@pytest.mark.ml
 def test_completed_backtest_deduplicates_refreshes_restarts_and_concurrent_requests(tmp_path, completed_inline_training):
     first = lstm_training.LstmTrainingManager(tmp_path).record_completed_backtest(**completed_inline_training)
     refreshed = deepcopy(completed_inline_training)
@@ -814,6 +816,7 @@ def test_completed_backtest_deduplicates_refreshes_restarts_and_concurrent_reque
 
 
 @pytest.mark.parametrize("source", ["backtest", "manual"])
+@pytest.mark.ml
 def test_completed_backtest_replay_retains_only_the_matching_saved_run(tmp_path, completed_inline_training, source):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     if source == "backtest":
@@ -848,6 +851,7 @@ def test_completed_backtest_replay_retains_only_the_matching_saved_run(tmp_path,
 @pytest.mark.parametrize("replayed_run_id", [
     None, "", "../../invalid", "lstm-ga-" + "f" * 24,
 ])
+@pytest.mark.ml
 def test_completed_backtest_invalid_replay_identity_does_not_hide_training(tmp_path, completed_inline_training, replayed_run_id):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     run = manager.record_completed_backtest(
@@ -859,6 +863,7 @@ def test_completed_backtest_invalid_replay_identity_does_not_hide_training(tmp_p
 
 
 @pytest.mark.parametrize("change", ["configuration", "status", "symlink"])
+@pytest.mark.ml
 def test_completed_backtest_nonmatching_replay_records_the_actual_result(tmp_path, completed_inline_training, change):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     first = manager.record_completed_backtest(**completed_inline_training)
@@ -883,6 +888,7 @@ def test_completed_backtest_nonmatching_replay_records_the_actual_result(tmp_pat
     assert len(manager.list_runs()) == 2
 
 
+@pytest.mark.ml
 def test_completed_backtest_malformed_replay_metadata_does_not_discard_training(tmp_path, completed_inline_training):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     first = manager.record_completed_backtest(**completed_inline_training)
@@ -898,6 +904,7 @@ def test_completed_backtest_malformed_replay_metadata_does_not_discard_training(
     assert manager._paths_for_run_id(current["id"]).result.is_file()
 
 
+@pytest.mark.ml
 def test_completed_backtest_distinguishes_data_and_keeps_deleted_run_archived(tmp_path, completed_inline_training):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     first = manager.record_completed_backtest(**completed_inline_training)
@@ -917,6 +924,7 @@ def test_completed_backtest_distinguishes_data_and_keeps_deleted_run_archived(tm
     {"schema": "bayesian-price-field/v1"}, {"data_keys": []},
     {"data_keys": ["invalid"]}, {"data_keys": ["2025-01-03", "2025-01-02"]},
 ])
+@pytest.mark.ml
 def test_completed_backtest_never_records_missing_training_evidence(tmp_path, completed_inline_training, change):
     payload = deepcopy(completed_inline_training)
     payload["presentation"].update(change)
@@ -924,6 +932,7 @@ def test_completed_backtest_never_records_missing_training_evidence(tmp_path, co
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.ml
 def test_completed_backtest_publishes_all_artifacts_atomically(tmp_path, completed_inline_training, monkeypatch):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     write = manager._write_json
@@ -941,6 +950,7 @@ def test_completed_backtest_publishes_all_artifacts_atomically(tmp_path, complet
     assert [path.name for path in manager._workspace_root().iterdir()] == ["workspace.lock"]
 
 
+@pytest.mark.ml
 def test_completed_backtest_rejects_incomplete_parameters_without_inventing_defaults(tmp_path, completed_inline_training):
     payload = deepcopy(completed_inline_training)
     del payload["params"]["compute_backend"]
@@ -949,6 +959,7 @@ def test_completed_backtest_rejects_incomplete_parameters_without_inventing_defa
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.ml
 def test_completed_backtest_rejects_symlink_workspace_without_external_writes(tmp_path, completed_inline_training):
     manager = lstm_training.LstmTrainingManager(tmp_path / "compute")
     external = tmp_path / "protected"

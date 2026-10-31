@@ -1,4 +1,4 @@
-"""Tests for the LSTM Price Field strategy. Code version: v1.6.4."""
+"""Tests for the LSTM Price Field strategy. Code version: v1.6.5."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from strategies.algorithms.strategy_lstm_price_field import (
     _MODEL_VERSION,
@@ -144,6 +145,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             },
         )
 
+    @pytest.mark.ml
     def test_disabled_vap_skips_kernel_and_chip_window_warmup(self):
         from strategies.price_field.pipeline import load_price_field_market_bundle
 
@@ -163,6 +165,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(starts[0], starts[1])
         self.assertLess(starts[2], starts[0])
 
+    @pytest.mark.ml
     def test_latest_selection_excludes_a_factor_missing_in_current_sequence(self):
         frame = _market_frame()
         frame.loc[len(frame) - 1, "Volume"] = np.nan
@@ -171,6 +174,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertNotIn("volume", selection["selected"])
         self.assertEqual(selection["selection_status"]["volume"], "unavailable")
 
+    @pytest.mark.ml
     def test_training_progress_reports_actual_origins_without_changing_results(self) -> None:
         strategy = LSTMPriceFieldStrategy()
         observed = []
@@ -220,6 +224,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             self.assertEqual(lstm.step, bayesian.step)
             self.assertEqual(lstm.unit_hint, bayesian.unit_hint)
 
+    @pytest.mark.ml
     def test_lag_return_alone_still_produces_a_price_field(self) -> None:
         disabled_factors = {
             definition.parameter_key: False
@@ -247,6 +252,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             0,
         )
 
+    @pytest.mark.ml
     def test_bayesian_only_parameters_do_not_change_lstm_fingerprint(self) -> None:
         frame = _market_frame(80)
         baseline = LSTMPriceFieldStrategy().compute_signals(
@@ -303,6 +309,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.backtest_cacheable)
         self.assertEqual(strategy.get_signal_bridge("1m"), "daily-close-to-next-session-open")
 
+    @pytest.mark.ml
     def test_presentation_matches_the_shared_probability_grid_contract(self) -> None:
         result = LSTMPriceFieldStrategy().compute_signals(
             _market_frame(),
@@ -365,6 +372,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         )
         self.assertIn("80", grid["central_intervals"])
 
+    @pytest.mark.ml
     def test_hidden_history_scores_only_visible_origins(self) -> None:
         full_frame = _market_frame(120)
         visible_frame = full_frame.iloc[60:].reset_index(drop=True)
@@ -393,6 +401,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             check_names=False,
         )
 
+    @pytest.mark.ml
     def test_unavailable_longbridge_factors_do_not_blank_the_field(self) -> None:
         result = LSTMPriceFieldStrategy().compute_signals(
             _market_frame(80),
@@ -412,6 +421,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertIn("lstm_lagged_close_return", presentation["lstm"]["feature_names"])
         self.assertNotIn("pe", presentation["lstm"]["feature_names"])
 
+    @pytest.mark.ml
     def test_cell_display_threshold_is_presentation_only(self) -> None:
         frame = _market_frame(80)
         baseline = LSTMPriceFieldStrategy().compute_signals(
@@ -444,6 +454,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
             focused.presentation["fingerprint"],
         )
 
+    @pytest.mark.ml
     def test_walk_forward_has_no_future_lookahead(self) -> None:
         original = _market_frame(90)
         changed_future = original.copy()
@@ -482,6 +493,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertFalse(result.frame["buy_signal"].any())
         self.assertEqual(result.presentation["device"]["origins_trained"], 0)
 
+    @pytest.mark.ml
     def test_gpu_request_reports_cpu_fallback_instead_of_the_request(self) -> None:
         with patch("strategies.price_field.lstm_compute._load_optional_module", return_value=None):
             result = LSTMPriceFieldStrategy().compute_signals(
@@ -494,6 +506,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(device["engine"], "numpy-fallback")
         self.assertIn("torch is not installed", str(device["fallback_reason"]))
 
+    @pytest.mark.ml
     def test_missing_optional_accelerators_do_not_crash_import_or_auto(self) -> None:
         with patch("strategies.price_field.lstm_compute._load_optional_module", return_value=None):
             result = LSTMPriceFieldStrategy().compute_signals(
@@ -503,6 +516,7 @@ class LSTMPriceFieldStrategyTests(unittest.TestCase):
         self.assertEqual(result.presentation["schema"], LSTM_PRICE_FIELD_SCHEMA)
         self.assertEqual(result.presentation["device"]["resolved"], "cpu")
 
+    @pytest.mark.ml
     def test_probability_mass_is_finite_and_normalized_when_present(self) -> None:
         result = LSTMPriceFieldStrategy().compute_signals(
             _market_frame(80),

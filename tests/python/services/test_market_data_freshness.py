@@ -1,7 +1,7 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.22.1
+Code version: v0.22.2
 """
 
 from __future__ import annotations
@@ -1399,7 +1399,115 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
         self.assertEqual(quotes, [])
 
-    def test_longbridge_realtime_quotes_skip_transport_outside_supported_scope(self) -> None:
+    def test_longbridge_closed_quotes_retain_latest_completed_post_market_price(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        cases = [
+            (
+                "Friday after post-market",
+                "2026-10-31T00:10:00Z",
+                "2026-10-30T23:59:30Z",
+                "2026-10-30 19:59",
+            ),
+            (
+                "Weekend with provider timezone conversion",
+                "2026-10-31T15:00:00Z",
+                "2026-10-31T07:59:30+08:00",
+                "2026-10-30 19:59",
+            ),
+            (
+                "Observed holiday after an early close",
+                "2026-07-03T18:00:00Z",
+                "2026-07-02T20:30:00Z",
+                "2026-07-02 16:30",
+            ),
+            (
+                "Early close before ordinary regular close",
+                "2026-11-27T18:45:00Z",
+                "2026-11-27T18:30:00Z",
+                "2026-11-27 13:30",
+            ),
+        ]
+        for label, reference, quote_timestamp, expected_timestamp in cases:
+            with self.subTest(label=label):
+                session_state = nyse_market_session_state(
+                    reference, include_overnight=True
+                )
+                self.assertEqual(session_state["session"], "off")
+                with (
+                    patch("app.services.market.market_data.load_broker_settings", return_value=settings),
+                    patch(
+                        "app.services.market.market_data.nyse_market_session_state",
+                        return_value=session_state,
+                    ),
+                    patch(
+                        "app.services.market.market_data.run_longbridge_cli_json",
+                        return_value=[{
+                            "symbol": "DRAM.US",
+                            "last": "55.12",
+                            "post_market": {
+                                "last": "54.88", "timestamp": quote_timestamp
+                            },
+                        }],
+                    ) as cli_json,
+                ):
+                    quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+
+                self.assertEqual(quotes, [{
+                    "ticker": "DRAM",
+                    "price": 54.88,
+                    "timestamp": expected_timestamp,
+                    "session": "post",
+                    "session_date": expected_timestamp[:10],
+                    "market": "US",
+                    "source": "longbridge",
+                }])
+                cli_json.assert_called_once()
+
+    def test_longbridge_closed_quotes_reject_unusable_post_market_snapshots(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        reference = "2026-10-31T15:00:00Z"
+        cases = [
+            ("previous trading day", "54.88", "2026-10-29T23:59:30Z"),
+            ("future trading day", "54.88", "2026-11-02T22:30:00Z"),
+            ("missing timestamp", "54.88", None),
+            ("empty timestamp", "54.88", ""),
+            ("malformed timestamp", "54.88", "invalid"),
+            ("timestamp array", "54.88", ["2026-10-30T23:59:30Z"]),
+            ("timestamp object", "54.88", {"timestamp": "2026-10-30T23:59:30Z"}),
+            ("pre-market timestamp", "54.88", "2026-10-30T12:30:00Z"),
+            ("regular-session timestamp", "54.88", "2026-10-30T19:30:00Z"),
+            ("after post-market timestamp", "54.88", "2026-10-31T00:01:00Z"),
+            ("zero price", "0", "2026-10-30T23:59:30Z"),
+            ("negative price", "-1", "2026-10-30T23:59:30Z"),
+            ("NaN price", "nan", "2026-10-30T23:59:30Z"),
+            ("infinite price", "inf", "2026-10-30T23:59:30Z"),
+            ("malformed price", "invalid", "2026-10-30T23:59:30Z"),
+        ]
+        for label, price, quote_timestamp in cases:
+            with (
+                self.subTest(label=label),
+                patch("app.services.market.market_data.load_broker_settings", return_value=settings),
+                patch(
+                    "app.services.market.market_data.nyse_market_session_state",
+                    return_value=nyse_market_session_state(reference, include_overnight=True),
+                ),
+                patch(
+                    "app.services.market.market_data.run_longbridge_cli_json",
+                    return_value=[{
+                        "symbol": "DRAM.US",
+                        "post_market": {"last": price, "timestamp": quote_timestamp},
+                    }],
+                ),
+            ):
+                self.assertEqual(fetch_longbridge_realtime_quotes(["DRAM"]), [])
+
+    def test_longbridge_closed_quotes_reject_future_timestamp_within_completed_day(self) -> None:
         settings = BrokerSettings(
             selected_broker="longbridge",
             longbridge_auth_mode="cli_oauth",
@@ -1408,26 +1516,72 @@ class MarketDataFreshnessTests(unittest.TestCase):
             patch("app.services.market.market_data.load_broker_settings", return_value=settings),
             patch(
                 "app.services.market.market_data.nyse_market_session_state",
-                return_value={"session": "off", "session_date": "2026-07-20"},
+                return_value=nyse_market_session_state(
+                    "2026-11-27T18:45:00Z", include_overnight=True
+                ),
             ),
-            patch("app.services.market.market_data.run_longbridge_cli_json") as cli_json,
+            patch(
+                "app.services.market.market_data.run_longbridge_cli_json",
+                return_value=[{
+                    "symbol": "DRAM.US",
+                    "post_market": {"last": "54.88", "timestamp": "2026-11-27T19:00:00Z"},
+                }],
+            ),
         ):
-            off_session_quotes = fetch_longbridge_realtime_quotes(["DRAM"])
+            self.assertEqual(fetch_longbridge_realtime_quotes(["DRAM"]), [])
 
+    def test_longbridge_closed_quotes_do_not_substitute_pre_market_or_regular_snapshots(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
         with (
             patch("app.services.market.market_data.load_broker_settings", return_value=settings),
             patch(
                 "app.services.market.market_data.nyse_market_session_state",
-                return_value={"session": "intraday", "session_date": "2026-07-20"},
+                return_value=nyse_market_session_state(
+                    "2026-10-31T15:00:00Z", include_overnight=True
+                ),
             ),
-            patch("app.services.market.market_data.run_longbridge_cli_json") as non_us_cli_json,
+            patch(
+                "app.services.market.market_data.run_longbridge_cli_json",
+                return_value=[{
+                    "symbol": "DRAM.US",
+                    "last": "55.12",
+                    "timestamp": "2026-10-30T19:59:30Z",
+                    "pre_market": {"last": "54.88", "timestamp": "2026-10-30T12:30:00Z"},
+                }],
+            ),
         ):
-            non_us_quotes = fetch_longbridge_realtime_quotes(["2800.HK"])
+            self.assertEqual(fetch_longbridge_realtime_quotes(["DRAM"]), [])
 
-        self.assertEqual(off_session_quotes, [])
-        self.assertEqual(non_us_quotes, [])
-        cli_json.assert_not_called()
-        non_us_cli_json.assert_not_called()
+    def test_longbridge_realtime_quotes_skip_transport_outside_supported_scope(self) -> None:
+        settings = BrokerSettings(
+            selected_broker="longbridge",
+            longbridge_auth_mode="cli_oauth",
+        )
+        cases = [
+            ("off", "2800.HK"),
+            ("intraday", "2800.HK"),
+            ("off", "000660.KS"),
+            ("invalid", "DRAM"),
+        ]
+        for session, ticker in cases:
+            with (
+                self.subTest(session=session, ticker=ticker),
+                patch("app.services.market.market_data.load_broker_settings", return_value=settings),
+                patch(
+                    "app.services.market.market_data.nyse_market_session_state",
+                    return_value={
+                        "session": session,
+                        "session_date": "2026-10-31",
+                        "as_of": "2026-10-31T15:00:00Z",
+                    },
+                ),
+                patch("app.services.market.market_data.run_longbridge_cli_json") as cli_json,
+            ):
+                self.assertEqual(fetch_longbridge_realtime_quotes([ticker]), [])
+                cli_json.assert_not_called()
 
     def test_longbridge_realtime_quotes_support_legacy_api_key_configuration(self) -> None:
         settings = BrokerSettings(

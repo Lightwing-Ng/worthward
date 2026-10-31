@@ -1,10 +1,10 @@
-/* Code version: v0.14.1 */
+/* Code version: v0.14.2 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
 const MEMORY_KEY = 'worthward:backtest-strategy-params:v1';
 
-test('Price Field adopts new defaults automatically and preserves customized profiles and URLs', async ({page}) => {
+test('Price Field adopts new defaults automatically and preserves customized profiles and URLs', {tag: '@ml'}, async ({page}) => {
     // Five LSTM Price Field page loads each run a small training pass; slow CI runners exceed 30s.
     test.setTimeout(90_000);
     const url = '/workspaces/backtest?ticker=NVDA&range=1y&strategy=lstm-price-field';
@@ -113,7 +113,7 @@ test.describe('iPad Backtest strategy interaction', () => {
         isMobile: true,
     });
 
-    test('switches Strategy through the open parameter drawer at the 900px breakpoint', async ({page}) => {
+    test('switches Strategy through the open parameter drawer at the 900px breakpoint', {tag: '@ml'}, async ({page}) => {
         await page.goto('/workspaces/backtest?ticker=DRAM&strategy=bayesian-price-field'
             + '&cell_display_threshold=2.50&training_window=30&chip_window=41&prior_strength=1.51'
             + '&use_illiquidity_20d=1&use_close_location=0&use_intraday_return=0&use_volume=1'
