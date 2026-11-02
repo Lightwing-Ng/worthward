@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Current-cash FX provenance, 2 Nov 2026: when daily market FX was missing,
+current cash could silently reuse an old exchange trade's execution rate,
+including a rate from another broker. Current broker and aggregate cash now
+require an applicable daily market rate no more than seven calendar days old.
+Missing current FX leaves converted cash and total equity unavailable instead
+of showing a stale valuation. Native balances, historical execution FX, and
+dated RewardCash income remain independent. See the current-cash rule in
+[the investment equity replay contract](ARCHITECTURE.md#investment-equity-replay-contract).
+
 Composable verification, 31 Oct 2026: local checks can select Python lint,
 JavaScript syntax, Python units, JavaScript units, and browser tests independently.
 Default checks exclude browsers and tagged local forecasting-model integration;

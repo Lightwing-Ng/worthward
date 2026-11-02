@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.7.0
+ * Code version: v1.7.1
+ * - Fixed: Unavailable current broker equity cannot become a numeric zero.
  * - Changed: Shared posted RewardCash aggregation feeds Rewards and realized
  *   P&L, with missing card FX isolated from verified investment unrealized P&L.
  * - Added: Include all signed cash-reward currencies in reward-ledger navigation.
@@ -297,8 +298,20 @@ function getInvestmentBrokerSummaryTotalEquity(brokerCode) {
         const latestProcessed = [...runtime.state.investmentProcessedTransactionsCache].reverse().find((txn) => (
             runtime.normalizeInvestmentBroker(runtime.getTransactionBrokerCode(txn)) === normalizedBrokerCode
         ));
-        const brokerTotalEquity = Number(latestProcessed?.broker_current_total_equity ?? latestProcessed?.broker_total_equity);
-        return Number.isFinite(brokerTotalEquity) ? brokerTotalEquity : 0;
+        if (!latestProcessed) return 0;
+        const currentCash = resolveInvestmentMetricsCurrentCash(
+            getInvestmentBrokerSummaryTransactions(normalizedBrokerCode), normalizedBrokerCode,
+        ).cash;
+        if (!Number.isFinite(currentCash)) return NaN;
+        const hasCurrentEquity = Object.hasOwn(latestProcessed, 'broker_current_total_equity');
+        const brokerTotalEquity = runtime.getOptionalInvestmentNumber(hasCurrentEquity
+            ? latestProcessed.broker_current_total_equity : latestProcessed.broker_total_equity);
+        if (brokerTotalEquity === null) return NaN;
+        if (hasCurrentEquity) return brokerTotalEquity;
+        const replayCash = runtime.getOptionalInvestmentNumber(
+            latestProcessed.broker_display_cash ?? latestProcessed.broker_running_cash,
+        );
+        return replayCash === null ? NaN : brokerTotalEquity - replayCash + currentCash;
     }
 
 function resolveInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', currentCash = null) {
@@ -363,6 +376,19 @@ function resolveInvestmentMetricsCurrentCash(transactions, brokerCode = 'all', c
                     cashIsApproximate: currentBrokerSnapshot.isApproximate === true,
                 };
             }
+            const replayBalances = latestBrokerProcessed?.broker_cash_by_currency;
+            if (replayBalances && typeof replayBalances === 'object') {
+                const cash = runtime.sumCurrentCashLedgerInBaseCurrency(
+                    replayBalances,
+                    runtime.getTodayLedgerDate(),
+                    runtime.buildInvestmentFxRateTimeline(fxTransactions, baseCurrency),
+                    baseCurrency,
+                ) + (Number(latestBrokerProcessed.broker_pending_settlement_cash) || 0);
+                return {
+                    cash: Number.isFinite(cash) ? cash : null,
+                    cashIsApproximate: latestBrokerProcessed.broker_current_cash_is_approximate === true,
+                };
+            }
         } else {
             const realtimeState = runtime.getInvestmentHoldingsRealtimeState();
             const realtimeCash = runtime.getOptionalInvestmentNumber(realtimeState?.aggregateCash);
@@ -419,8 +445,13 @@ function renderInvestmentMetricsPanel({
                 : {}),
             ...(latestPrices && typeof latestPrices === 'object' ? latestPrices : {}),
         };
-        const resolvedTotalEquity = isAllBrokersSelected && Number.isFinite(Number(totalEquity))
-            ? Number(totalEquity)
+        const suppliedTotalEquity = runtime.getOptionalInvestmentNumber(totalEquity);
+        const aggregateCash = isAllBrokersSelected
+            ? resolveInvestmentMetricsCurrentCash(scopedTransactions, 'all').cash : null;
+        const resolvedTotalEquity = isAllBrokersSelected && !Number.isFinite(aggregateCash)
+            ? NaN
+            : isAllBrokersSelected && suppliedTotalEquity !== null
+            ? suppliedTotalEquity
             : isAllBrokersSelected
                 ? runtime.getLatestDashboardEquity(runtime.state.investmentProcessedTransactionsCache, runtime.state.investmentChartPointsCache)
                 : getInvestmentBrokerSummaryTotalEquity(selectedBrokerCode);

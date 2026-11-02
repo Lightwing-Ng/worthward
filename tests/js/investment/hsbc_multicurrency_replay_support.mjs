@@ -1,4 +1,4 @@
-/* Compact anonymized HSBC multicurrency replay fixture. Code version: v1.1.0 */
+/* Compact anonymized HSBC multicurrency replay fixture. Code version: v1.1.1 */
 import {
     applyInvestmentVerifiedTaxLotCompatibilityFallbacks,
     createInvestmentDataUtils,
@@ -29,6 +29,7 @@ const USD_OPENING_SHA = '1'.repeat(64);
 const USD_LEGACY_MARKER_SHA = '2'.repeat(64);
 const USD_SETTLEMENT_SHA = '3'.repeat(64);
 const MULTICURRENCY_SHA = '4'.repeat(64);
+const DEFAULT_REPLAY_TODAY = '2026-03-06';
 
 export function usdSavingsCash(date, type, amount, balance, rowNumber, sha, extraSource = {}) {
     return {
@@ -253,8 +254,15 @@ export function buildHsbcMulticurrencyPayload({withSecondBroker = false} = {}) {
             position_snapshot_authoritative: false,
         },
         fx_rate_history_by_currency: {
-            HKD: {dates: ['2026-02-02'], values: {'2026-02-02': 7.8}},
-            CNH: {dates: ['2026-02-02'], values: {'2026-02-02': 7}},
+            // Historical and current valuation have separate dated market quotes.
+            HKD: {
+                dates: ['2026-02-02', DEFAULT_REPLAY_TODAY],
+                values: {'2026-02-02': 7.8, [DEFAULT_REPLAY_TODAY]: 7.8},
+            },
+            CNH: {
+                dates: ['2026-02-02', DEFAULT_REPLAY_TODAY],
+                values: {'2026-02-02': 7, [DEFAULT_REPLAY_TODAY]: 7},
+            },
         },
         price_history_by_ticker: {
             ALFA: closes([
@@ -450,7 +458,7 @@ function composeReplayRuntime(today) {
  * Replay one payload through the production transaction-table pipeline and
  * inspect the result before the temporary browser globals are restored.
  */
-export async function inspectInvestmentReplay(payload, inspect, {today = '2026-03-06'} = {}) {
+export async function inspectInvestmentReplay(payload, inspect, {today = DEFAULT_REPLAY_TODAY} = {}) {
     const previous = {
         window: globalThis.window,
         document: globalThis.document,
