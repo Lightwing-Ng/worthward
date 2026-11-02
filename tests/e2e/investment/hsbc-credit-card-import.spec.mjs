@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -37,7 +37,60 @@ Available balance:
 1,250.00 HKD
 Transactions`;
 
-// All credit-card reads and writes are intercepted; no fixture reaches a store.
+const expandedCardPage = `${completeCardPage.split('\nTransactions\n')[0]}
+Transactions
+Transaction date Card Description Amount in Amount out Additional options
+29 Oct 2026
+TEST CARD HOLDER
+Card ending in 6789
+SALES: SAMPLE SHOP Beijing CN
+51.75 HKD
+Post date
+30 Oct 2026
+Transaction time
+17:40:23
+Merchant name
+SAMPLE SHOP
+Area / district
+Beijing
+Country / region
+CHINA
+Transaction amount
+43.00 CNY
+Billing amount
+51.75 HKD
+Card number
+4321-0000-0000-6789
+24 Oct 2026
+TEST CARD HOLDER
+Card ending in 6789
+APPLEPAY SAMPLE TRANSIT Shenzhen CN
+36.00 CNY
+Pending
+Post date
+Not yet posted
+Transaction time
+18:37:03
+Merchant name
+SAMPLE TRANSIT
+Area / district
+Shenzhen
+Country / region
+CN
+Transaction amount
+36.00 CNY
+Billing amount
+Pending
+Card number
+4321-0000-0000-6789
+24 Oct 2026
+TEST CARD HOLDER
+Card ending in 6789
+APPLEPAY SAMPLE TRANSIT Shenzhen CN
+5.99 HKD
+Download`;
+
+// Writes are always intercepted. One case exercises the isolated read-only preview.
 const parsedCard = () => ({
     success: true, ready: true, source_sha256: 'a'.repeat(64),
     account: {last4: '6789', name: 'HSBC Red Credit Card', currency: 'HKD'},
@@ -53,10 +106,12 @@ const parsedCard = () => ({
 });
 const validCash = () => ({success: true, ready: true, mode: 'cash_only', field_status: {cash: true}, cash_currencies: ['HKD']});
 
-async function openAccountImport(page, width = 1280, url = '/trade/investment', height = 900) {
+async function openAccountImport(page, width = 1280, url = '/trade/investment', height = 900, {realSession = false} = {}) {
     await mockInvestmentReadApis(page, {intradayRows: () => []});
     await page.setViewportSize({width, height});
-    await page.route('**/api/investment/session-token', (route) => route.fulfill({json: {success: true, investment_csrf_token: 'test-card-session'}}));
+    if (!realSession) {
+        await page.route('**/api/investment/session-token', (route) => route.fulfill({json: {success: true, investment_csrf_token: 'test-card-session'}}));
+    }
     await page.goto(url);
     await page.locator('#toggle_form_button').click();
     await page.locator('#investment_import_broker').selectOption('hsbc', {force: true});
@@ -73,6 +128,30 @@ async function pasteAccountClipboard(page, text) {
         Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {readText: async () => value}});
     }, text);
     await page.getByRole('button', {name: 'Paste HSBC account page text from clipboard', exact: true}).click();
+}
+
+async function pasteDisplayText(page, selector, text) {
+    const prevented = await page.locator(selector).evaluate((input, value) => {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', value);
+        const event = new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData});
+        input.dispatchEvent(event);
+        return event.defaultPrevented;
+    }, text);
+    expect(prevented).toBe(true);
+}
+
+async function disableClipboardReader(page) {
+    await page.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', {configurable: true, value: undefined});
+    });
+}
+
+async function pasteDisplayClipboard(page, selector, text) {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+    await disableClipboardReader(page);
+    await page.locator(selector).press(process.platform === 'darwin' ? 'Meta+V' : 'Control+V');
 }
 
 async function replaceAccountInput(page, text) {
@@ -100,6 +179,200 @@ async function guardRoutingRequests(page) {
     });
     return calls;
 }
+
+test('native keyboard paste previews sales and pending CNY without a Clipboard API reader or ledger writes', async ({page}) => {
+    let previewResult;
+    let previews = 0;
+    const writes = [];
+    await page.route('**/api/credit-cards/hsbc/import', (route) => {
+        writes.push(route.request().url());
+        return route.abort();
+    });
+    await page.route('**/api/investment/import', (route) => {
+        writes.push(route.request().url());
+        return route.abort();
+    });
+    await page.route('**/api/credit-cards/hsbc/preview', async (route) => {
+        previews += 1;
+        expect(route.request().postDataJSON()).toEqual({text: expandedCardPage});
+        const response = await route.fetch();
+        previewResult = await response.json();
+        await route.fulfill({response});
+    });
+    await openAccountImport(page, 1280, '/trade/investment', 900, {realSession: true});
+    await pasteDisplayClipboard(page, '#hsbc_cash_account_display', expandedCardPage);
+    await expect(page.locator('#hsbc_cash_account_text')).toHaveValue(expandedCardPage);
+    await expect(page.locator('#hsbc_credit_card_status')).toContainText('Preview ready. Nothing has been saved.');
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+    await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(3);
+    const rows = page.locator('#hsbc_credit_card_rows tr');
+    await expect(rows.nth(0)).toContainText('SALES: SAMPLE SHOP Beijing CN');
+    await expect(rows.nth(0).locator('td').nth(4)).toHaveText('Posted');
+    await expect(rows.nth(0).locator('td').nth(5)).toHaveText('HKD 51.75');
+    await expect(rows.nth(1).locator('td').nth(4)).toHaveText('Pending');
+    await expect(rows.nth(1).locator('td').nth(5)).toHaveText('CNY 36.00');
+    expect(previewResult.ready).toBe(true);
+    expect(previewResult.committed).toBe(false);
+    expect(previewResult.transactions[1].liability_delta).toBeNull();
+    expect(previewResult.summary.pending_total).toBeNull();
+    expect(previewResult.summary.pending_totals_by_currency).toEqual({CNY: '36.00'});
+    await pasteDisplayText(page, '#hsbc_cash_account_display', expandedCardPage);
+    await expect(page.locator('#hsbc_cash_account_text')).toHaveValue(expandedCardPage);
+    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+    expect(previews).toBe(1);
+    expect(writes).toEqual([]);
+});
+
+test('native HSBC cash, portfolio, and order pastes retain separate multiline sources', async ({page}) => {
+    const calls = await guardRoutingRequests(page);
+    const validations = [];
+    const writes = [];
+    await page.route('**/api/investment/import', (route) => {
+        writes.push(route.request().url());
+        return route.abort();
+    });
+    await page.route('**/api/investment/imports/hsbc-paste/validate', (route) => {
+        const body = route.request().postDataJSON();
+        validations.push(body);
+        return route.fulfill({json: {
+            ...validCash(),
+            field_status: {
+                cash: Boolean(body.cash_account_text),
+                portfolio: Boolean(body.portfolio_text),
+                order_status: Boolean(body.order_status_text),
+            },
+        }});
+    });
+    await openAccountImport(page);
+    await disableClipboardReader(page);
+    const fields = [
+        ['#hsbc_cash_account_display', '#hsbc_cash_account_text', 'cash_account_text', completeCashPage],
+        ['#hsbc_portfolio_text_display', '#hsbc_portfolio_text', 'portfolio_text', 'Portfolio\nSample holdings capture'],
+        ['#hsbc_order_status_display', '#hsbc_order_status_text', 'order_status_text', 'Order Status\nSample order capture'],
+    ];
+    const expected = {cash_account_text: '', portfolio_text: '', order_status_text: ''};
+    for (const [display, source, key, text] of fields) {
+        await pasteDisplayText(page, display, text);
+        expected[key] = text;
+        await expect(page.locator(source)).toHaveValue(text);
+        await expect.poll(() => validations.at(-1)).toEqual({...expected});
+        await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+    }
+    for (const [, source, , text] of fields) await expect(page.locator(source)).toHaveValue(text);
+    await expect(page.locator('#hsbc_credit_card_panel')).toBeHidden();
+    expect(calls).toEqual({cash: 0, card: 0, preview: 0});
+    expect(writes).toEqual([]);
+});
+
+for (const [label, text, status] of [
+    ['mixed', joinChunks(completeCashPage, completeCardPage), 'mixed or multiple credit-card pages'],
+    ['incomplete', completeCardPage.replace('Payment due date:', 'See payment details:'), 'credit-card page is incomplete'],
+]) {
+    test(`native ${label} card paste retains its source and blocks preview and import`, async ({page}) => {
+        const calls = await guardRoutingRequests(page);
+        const writes = [];
+        await page.route('**/api/investment/import', (route) => {
+            writes.push(route.request().url());
+            return route.abort();
+        });
+        await openAccountImport(page);
+        await disableClipboardReader(page);
+        await pasteDisplayText(page, '#hsbc_cash_account_display', text);
+        await expect(page.locator('#hsbc_cash_account_text')).toHaveValue(text);
+        await expect(page.locator('#hsbc_credit_card_status')).toContainText(status);
+        await expect(page.locator('#hsbc_credit_card_results')).toBeHidden();
+        await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
+        expect(calls).toEqual({cash: 0, card: 0, preview: 0});
+        expect(writes).toEqual([]);
+    });
+}
+
+test('credit-card feedback shows progress, the next step, and an all-duplicate saved result', async ({page}) => {
+    const calls = await guardRoutingRequests(page);
+    const writes = [];
+    const imports = [];
+    let releasePreview;
+    let previewReceived;
+    let releaseImport;
+    let importReceived;
+    let previews = 0;
+    const previewArrived = new Promise((resolve) => { previewReceived = resolve; });
+    const previewAllowed = new Promise((resolve) => { releasePreview = resolve; });
+    const importArrived = new Promise((resolve) => { importReceived = resolve; });
+    const importAllowed = new Promise((resolve) => { releaseImport = resolve; });
+    const duplicateResult = () => {
+        const result = parsedCard();
+        result.source_already_imported = true;
+        result.summary = {...result.summary, added_count: 0, promoted_count: 0, duplicate_count: 4};
+        return result;
+    };
+    await page.route('**/api/investment/import', (route) => {
+        writes.push(route.request().url());
+        return route.abort();
+    });
+    await page.route('**/api/credit-cards/hsbc/preview', async (route) => {
+        previews += 1;
+        previewReceived();
+        await previewAllowed;
+        await route.fulfill({json: duplicateResult()});
+    });
+    await page.route('**/api/credit-cards/hsbc/import', async (route) => {
+        imports.push(route.request().postDataJSON());
+        importReceived();
+        await importAllowed;
+        const result = duplicateResult();
+        result.committed = true;
+        result.merged_transactions = result.transactions;
+        await route.fulfill({json: result});
+    });
+    await openAccountImport(page);
+    await pasteDisplayText(page, '#hsbc_cash_account_display', completeCardPage);
+    await previewArrived;
+    const status = page.locator('#hsbc_credit_card_status');
+    const note = page.locator('#investment_import_note');
+    const icon = page.locator('#hsbc_cash_account_text_status');
+    const display = page.locator('#hsbc_cash_account_display');
+    const submit = page.locator('#investment_import_submit_button');
+    await expect(status).toContainText('Previewing credit-card activity');
+    await expect(note).toHaveText(await status.textContent());
+    await expect(icon).toHaveClass(/suggestion-loading-spinner/);
+    await expect(submit).toBeDisabled();
+    await expect(page.locator('#hsbc_credit_card_results')).toBeHidden();
+    releasePreview();
+    await expect(status).toContainText('Preview ready. Nothing has been saved.');
+    await expect(status).toContainText('4 captured transactions.');
+    await expect(status).toContainText('0 added, 0 updated, 4 duplicates.');
+    await expect(status).toContainText('select Import now');
+    await expect(note).toHaveText(await status.textContent());
+    await expect(icon).not.toHaveClass(/suggestion-loading-spinner/);
+    await expect(submit).toBeEnabled();
+    expect(imports).toEqual([]);
+    await submit.click();
+    await importArrived;
+    await expect(status).toContainText('Importing credit-card activity');
+    await expect(note).toHaveText(await status.textContent());
+    await expect(icon).toHaveClass(/suggestion-loading-spinner/);
+    await expect(submit).toBeDisabled();
+    releaseImport();
+    await expect(status).toContainText('Credit-card import saved.');
+    await expect(status).toContainText('0 added, 0 updated, 4 duplicates.');
+    await expect(note).toHaveText(await status.textContent());
+    await expect(display).toHaveValue(/Imported/);
+    await expect(display).not.toHaveValue(/Check preview/);
+    await expect(icon).not.toHaveClass(/suggestion-loading-spinner/);
+    await expect(submit).toBeDisabled();
+    await expect(page.locator('#hsbc_credit_card_caption')).toHaveText('Saved transactions');
+    await page.locator('#investment_import_close_button').click();
+    await page.locator('#toggle_form_button').click();
+    await expect(status).toContainText('Credit-card import saved.');
+    await expect(note).toHaveText(await status.textContent());
+    await expect(display).toHaveValue(/Imported/);
+    await expect(submit).toBeDisabled();
+    expect(previews).toBe(1);
+    expect(imports).toEqual([{text: completeCardPage, source_sha256: 'a'.repeat(64)}]);
+    expect(calls).toEqual({cash: 0, card: 0, preview: 0});
+    expect(writes).toEqual([]);
+});
 
 for (const width of [1280, 390]) {
     test(`shared account preview classifies safely from stock details at width ${width}`, async ({page}, testInfo) => {

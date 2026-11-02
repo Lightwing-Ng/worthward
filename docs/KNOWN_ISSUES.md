@@ -1,5 +1,23 @@
 # Known issues and operating constraints
 
+HSBC credit-card clipboard imports, 2 Nov 2026: complete English account-page
+captures accept `SALES:` purchases, pending CNY authorizations, and expanded
+transaction details. Billing, original-currency, and posting evidence remain
+separate and are checked against the account and visible row. Only pending
+purchases may retain CNY, without a posted liability or inferred HKD conversion;
+pending totals stay separate by currency. Expanded details do not change row
+identity or prove a foreign authorization matches a later HKD posting.
+
+All three HSBC Copy/paste summary fields accept native keyboard and context-menu
+paste through the same merging, classification, and duplicate checks as their
+clipboard buttons. Preview and import show progress beside the field and in the
+persistent action note. Ready previews disclose captured and duplicate counts
+and explain Import now. Confirmed saves retain Imported and saved counts before
+derived reward views refresh; rendering failures cannot turn a saved result into
+a retryable import error. Reopening the same broker dialog preserves that result;
+editing the source or changing broker or mode still invalidates it. Imports
+remain explicit, and the separate card ledger never changes investment cash.
+
 Composable verification, 31 Oct 2026: local checks can select Python lint,
 JavaScript syntax, Python units, JavaScript units, and browser tests independently.
 Default checks exclude browsers and tagged local forecasting-model integration;
@@ -1262,7 +1280,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.1`
+Documentation version: `v1.286.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

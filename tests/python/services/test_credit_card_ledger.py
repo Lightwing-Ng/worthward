@@ -1,6 +1,7 @@
 """Isolated HSBC credit-card persistence and reconciliation contracts.
 
-Code version: v1.0.0
+Code version: v1.1.0
+- Added: Foreign pending-currency isolation and expanded-detail provenance coverage.
 - Added: Preview isolation, replay, conservative reconciliation, concurrency,
   corruption handling, atomic failure, and browser-safe readback coverage.
 """
@@ -33,17 +34,18 @@ def _row(
     occurrence: int = 1,
     description: str = "MERCHANT",
     account: str = "card-a",
+    currency: str = "HKD",
 ) -> dict:
     return {
         "id": _digest(
-            json.dumps([account, day, amount, kind, occurrence, description])
+            json.dumps([account, day, amount, kind, occurrence, description, currency])
         ),
         "transaction_date": day,
         "card_last4": "1111",
         "description": description,
         "kind": kind,
         "status": status,
-        "currency": "HKD",
+        "currency": currency,
         "amount": amount,
         "liability_delta": None
         if status == "pending"
@@ -268,6 +270,7 @@ def test_repayment_rewardcash_and_pending_are_separate(isolated: Path) -> None:
         "rewardcash_total": "5.00",
         "pending_count": 1,
         "pending_total": "8.00",
+        "pending_totals_by_currency": {"HKD": "8.00"},
         "added_count": 4,
         "promoted_count": 0,
         "duplicate_count": 0,
@@ -440,3 +443,158 @@ def test_actual_parser_preview_commit_and_readback(tmp_path: Path) -> None:
     assert len(ledger.read_credit_card_ledger(path)["transactions"]) == 11
     assert "4111-1111-1111-1111" not in json.dumps(result)
     assert len(ledger.load_credit_card_ledger(path)["sources"]) == 1
+
+
+@pytest.mark.parametrize("include_hkd", [False, True])
+def test_foreign_pending_purchase_keeps_native_currency_and_no_liability(
+    isolated: Path, include_hkd: bool
+) -> None:
+    foreign = _row("36.00", status="pending", currency="CNY")
+    rows = [foreign]
+    if include_hkd:
+        rows.append(_row("5.99", status="pending"))
+    text = _capture(rows)
+    preview = ledger.preview_hsbc_credit_card_import(text, isolated)
+    assert preview["ready"] is True
+    assert preview["summary"]["pending_total"] is None
+    expected = {"CNY": "36.00", **({"HKD": "5.99"} if include_hkd else {})}
+    assert preview["summary"]["pending_totals_by_currency"] == expected
+    assert not isolated.parent.exists()
+    ledger.commit_hsbc_credit_card_import(text, isolated)
+    public = ledger.read_credit_card_ledger(isolated)
+    assert public["summary"]["pending_totals_by_currency"] == expected
+    assert public["summary"]["pending_total"] is None
+    assert all(row["liability_delta"] is None for row in public["transactions"])
+    before = isolated.read_bytes()
+    replay = ledger.commit_hsbc_credit_card_import(text, isolated)
+    assert replay["summary"]["added_count"] == 0
+    assert isolated.read_bytes() == before
+
+
+def test_foreign_pending_and_hkd_posted_are_distinct_without_fx_inference(
+    isolated: Path,
+) -> None:
+    ledger.commit_hsbc_credit_card_import(
+        _capture([_row("36.00", status="pending", currency="CNY")]), isolated
+    )
+    result = ledger.commit_hsbc_credit_card_import(_capture([_row("36.00")]), isolated)
+    assert result["ready"] is True
+    assert result["summary"]["promoted_count"] == 0
+    assert result["summary"]["pending_count"] == 1
+    assert result["summary"]["posted_purchase_total"] == "36.00"
+    assert len(result["transactions"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("status", "kind", "currency"),
+    [
+        ("posted", "purchase", "CNY"),
+        ("pending", "repayment", "CNY"),
+        ("pending", "rewardcash", "CNY"),
+        ("pending", "purchase", "USD"),
+    ],
+)
+def test_foreign_currency_support_is_limited_to_cny_pending_purchases(
+    status: str, kind: str, currency: str
+) -> None:
+    with pytest.raises(ValueError, match="status or currency"):
+        ledger._validate_transaction(_row(status=status, kind=kind, currency=currency))
+
+
+def test_expanded_duplicate_enriches_one_source_backed_row_without_losing_aliases(
+    isolated: Path,
+) -> None:
+    row = _row()
+    details = {
+        "post_date": "2026-10-13",
+        "transaction_time": "17:40:23",
+        "merchant_name": "MERCHANT",
+        "area_district": "Beijing",
+        "country_region": "CHINA",
+        "original_currency": "CNY",
+        "original_amount": "8.00",
+    }
+    collapsed = _capture([row])
+    expanded = _capture([{**row, **details}])
+    ledger.commit_hsbc_credit_card_import(collapsed, isolated)
+    result = ledger.commit_hsbc_credit_card_import(expanded, isolated)
+    assert result["summary"]["duplicate_count"] == 1
+    assert result["summary"]["added_count"] == 0
+    public = ledger.read_credit_card_ledger(isolated)["transactions"]
+    assert len(public) == 1
+    assert all(public[0][field] == value for field, value in details.items())
+    assert public[0]["post_dates"] == ["2026-10-13"]
+    before = isolated.read_bytes()
+    ledger.commit_hsbc_credit_card_import(collapsed, isolated)
+    assert isolated.read_bytes() == before
+    stored = ledger.load_credit_card_ledger(isolated)
+    assert len(stored["sources"]) == 2
+    assert len(next(iter(stored["transactions"].values()))["source_sha256s"]) == 2
+
+
+def test_optional_details_must_match_one_retained_source_without_stitching(
+    isolated: Path,
+) -> None:
+    first = {**_row(), "merchant_name": "MERCHANT", "country_region": "CHINA"}
+    second = {**_row(), "transaction_time": "17:40:23"}
+    ledger.commit_hsbc_credit_card_import(_capture([first]), isolated)
+    ledger.commit_hsbc_credit_card_import(_capture([second]), isolated)
+    row = ledger.read_credit_card_ledger(isolated)["transactions"][0]
+    assert row["country_region"] == "CHINA"
+    assert "transaction_time" not in row
+    payload = json.loads(isolated.read_text())
+    next(iter(payload["transactions"].values()))["transaction_time"] = "17:40:23"
+    isolated.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="damaged or incompatible"):
+        ledger.load_credit_card_ledger(isolated)
+
+
+def test_posted_promotion_does_not_stitch_expanded_pending_metadata(
+    isolated: Path,
+) -> None:
+    pending = {
+        **_row(status="pending"),
+        "post_date": None,
+        "transaction_time": "17:40:23",
+        "merchant_name": "MERCHANT",
+    }
+    ledger.commit_hsbc_credit_card_import(_capture([pending]), isolated)
+    result = ledger.commit_hsbc_credit_card_import(_capture([_row()]), isolated)
+    assert result["summary"]["promoted_count"] == 1
+    row = ledger.read_credit_card_ledger(isolated)["transactions"][0]
+    assert row["status"] == "posted"
+    assert "post_date" not in row
+    assert "transaction_time" not in row
+    assert len(ledger.load_credit_card_ledger(isolated)["sources"]) == 2
+
+
+def test_actual_expanded_parser_preview_commit_and_readback(tmp_path: Path) -> None:
+    from tests.factories.hsbc_credit_card import hsbc_credit_card_expanded_text
+
+    path = tmp_path / "expanded" / "cards.json"
+    text = hsbc_credit_card_expanded_text()
+    preview = ledger.preview_hsbc_credit_card_import(text, path)
+    assert preview["ready"] is True
+    assert preview["capture_summary"]["posted_purchase_total"] == "57.74"
+    assert preview["capture_summary"]["pending_total"] is None
+    assert preview["capture_summary"]["pending_totals_by_currency"] == {"CNY": "36.00"}
+    assert not path.parent.exists()
+    result = ledger.commit_hsbc_credit_card_import(text, path)
+    assert result["committed"] is True
+    public = ledger.read_credit_card_ledger(path)
+    assert len(public["transactions"]) == 5
+    pending = next(row for row in public["transactions"] if row["status"] == "pending")
+    assert pending["currency"] == "CNY"
+    assert pending["amount"] == "36.00"
+    assert pending["liability_delta"] is None
+    posted = next(
+        row for row in public["transactions"] if row["description"].startswith("SALES:")
+    )
+    assert posted["post_dates"] == ["2026-10-30"]
+    assert posted["original_amount"] == "43.00"
+    assert posted["original_currency"] == "CNY"
+    assert posted["liability_delta"] == "51.75"
+    before = path.read_bytes()
+    replay = ledger.commit_hsbc_credit_card_import(text, path)
+    assert replay["summary"]["duplicate_count"] == 5
+    assert path.read_bytes() == before

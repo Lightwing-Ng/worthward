@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.7.0
+ * Code version: v1.7.1
+ * - Fixed: Card progress and saved feedback synchronize the action note and field icon.
  * - Changed: Shared posted RewardCash aggregation feeds Rewards and realized
  *   P&L, with missing card FX isolated from verified investment unrealized P&L.
  * - Added: Include all signed cash-reward currencies in reward-ledger navigation.
@@ -558,7 +559,8 @@ function syncImportValidationState() {
             ? runtime.getHsbcPasteFieldValidationState('order', hsbcOrderStatusText)
             : 'empty';
         const hsbcCashAccountValidationState = isHsbcCreditCard
-            ? (runtime.isHsbcCreditCardReady?.() ? 'valid' : 'empty')
+            ? (runtime.getHsbcCreditCardFeedback?.().validationState
+                || (runtime.isHsbcCreditCardReady?.() ? 'valid' : 'empty'))
             : isHsbcPaste
             ? runtime.getHsbcPasteFieldValidationState('cash', hsbcCashAccountText)
             : 'empty';
@@ -639,10 +641,10 @@ function syncImportValidationState() {
         runtime.setHsbcPasteStatusIcon(
             runtime.hsbcCashAccountTextStatus,
             hsbcCashAccountValidationState,
-            hsbcCashAccountValidationState === 'valid'
-                ? (isHsbcCreditCard ? 'HSBC credit-card preview ready.'
-                    : `HSBC ${runtime.state.hsbcPasteValidation.cashCurrencies.join(', ') || 'cash-account'} text validated.`)
-                : '',
+            isHsbcCreditCard ? runtime.getHsbcCreditCardFeedback?.().message
+                : hsbcCashAccountValidationState === 'valid'
+                    ? `HSBC ${runtime.state.hsbcPasteValidation.cashCurrencies.join(', ') || 'cash-account'} text validated.`
+                    : '',
         );
         runtime.setImportStatusIcon(runtime.hsbcStatementPdfsStatus, Boolean(hsbcStatementsReady));
         runtime.setImportStatusIcon(runtime.futuhkStatementPdfsStatus, Boolean(futuhkStatementsReady));
