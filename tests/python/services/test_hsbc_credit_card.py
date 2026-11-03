@@ -1,4 +1,4 @@
-"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.1.0."""
+"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.2.0."""
 
 from collections import Counter
 from decimal import Decimal
@@ -8,7 +8,10 @@ import json
 import pytest
 
 from app.services.hsbc_credit_card import parse_hsbc_credit_card_text
-from tests.factories.hsbc_credit_card import hsbc_credit_card_text
+from tests.factories.hsbc_credit_card import (
+    hsbc_credit_card_expanded_text,
+    hsbc_credit_card_text,
+)
 
 
 def _row(description="APPLEPAY SAMPLE SHOP HK", amount="42.50 HKD", *, pending=False):
@@ -195,3 +198,80 @@ def test_signed_account_credit_balance_is_preserved():
     assert (
         parse_hsbc_credit_card_text(text)["snapshot"]["account_balance"] == "-4850.50"
     )
+
+
+def test_expanded_sales_and_pending_foreign_purchase_preserve_separate_amounts():
+    text = hsbc_credit_card_expanded_text()
+    parsed = parse_hsbc_credit_card_text(text)
+    posted, pending, collapsed, reward, repayment = parsed["transactions"]
+    assert len(parsed["transactions"]) == 5
+    assert posted["kind"] == "purchase"
+    assert posted["transaction_date"] == "2026-10-29"
+    assert posted["post_date"] == "2026-10-30"
+    assert (posted["amount"], posted["currency"]) == ("51.75", "HKD")
+    assert (posted["original_amount"], posted["original_currency"]) == ("43.00", "CNY")
+    assert posted["liability_delta"] == "51.75"
+    assert posted["transaction_time"] == "17:40:23"
+    assert posted["merchant_name"] == "SAMPLE MERCHANT"
+    assert posted["area_district"] == "Beijing"
+    assert posted["country_region"] == "CHINA"
+    assert (pending["amount"], pending["currency"]) == ("36.00", "CNY")
+    assert pending["status"] == "pending"
+    assert pending["post_date"] is None
+    assert pending["liability_delta"] is None
+    assert collapsed["amount"] == "5.99"
+    assert "post_date" not in collapsed
+    assert reward["kind"] == "rewardcash"
+    assert repayment["kind"] == "repayment"
+    assert parsed["source"]["text"] == text
+    assert "4111-1111" not in json.dumps(parsed["transactions"])
+
+
+def test_expanding_details_does_not_change_transaction_identity():
+    expanded = parse_hsbc_credit_card_text(hsbc_credit_card_expanded_text())[
+        "transactions"
+    ][0]
+    collapsed = parse_hsbc_credit_card_text(
+        hsbc_credit_card_text(
+            transactions=(
+                "29 Oct 2026\nCard ending in 1111\nSALES: SAMPLE MERCHANT Beijing CN\n51.75 HKD"
+            )
+        )
+    )["transactions"][0]
+    assert expanded["id"] == collapsed["id"]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("Post date\n30 Oct 2026", "Post date\n28 Oct 2026"),
+        ("Post date\nNot yet posted", "Post date\n25 Oct 2026"),
+        ("Billing amount\n51.75 HKD", "Billing amount\n51.74 HKD"),
+        ("Billing amount\n51.75 HKD", "Billing amount\n51.75 CNY"),
+        ("Billing amount\nPending", "Billing amount\n36.00 HKD"),
+        ("Transaction amount\n36.00 CNY", "Transaction amount\n35.00 CNY"),
+        ("Card number\n4111-1111-1111-1111", "Card number\n5222-2222-2222-1111"),
+        ("Transaction time\n17:40:23", "Transaction time\n25:40:23"),
+        ("Merchant name\nSAMPLE MERCHANT\n", ""),
+        ("Area / district", "Unrecognized detail"),
+        ("SALES: SAMPLE MERCHANT", "SALES: REFUND SAMPLE MERCHANT"),
+        ("36.00 CNY\nPending", "36.00 CNY"),
+    ],
+)
+def test_contradictory_or_incomplete_expanded_details_fail_closed(old, new):
+    with pytest.raises(ValueError):
+        parse_hsbc_credit_card_text(hsbc_credit_card_expanded_text().replace(old, new))
+
+
+@pytest.mark.parametrize(
+    "description", ["PAYMENT - THANK YOU", "PAY w/RC SAMPLE SHOP HK"]
+)
+def test_foreign_pending_credits_are_not_treated_as_purchase_authorizations(
+    description,
+):
+    with pytest.raises(ValueError):
+        parse_hsbc_credit_card_text(
+            hsbc_credit_card_text(
+                transactions=_row(description, "36.00 CNY", pending=True),
+            )
+        )

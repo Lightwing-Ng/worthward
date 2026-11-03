@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.5.1 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -83,6 +83,7 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
         hsbcCashAccountTextInput: document.getElementById('hsbc_cash_account_text'),
         hsbcPortfolioTextInput: document.getElementById('hsbc_portfolio_text'),
         hsbcOrderStatusTextInput: document.getElementById('hsbc_order_status_text'),
+        investmentImportNote: document.getElementById('investment_import_note'),
         getSelectedInvestmentImportBroker() { return this.broker; },
         getSelectedHsbcImportMode() { return this.mode; },
         ensureInvestmentImportSession: async () => true,
@@ -146,6 +147,152 @@ test('complete shared account text previews automatically without an import requ
     for (const removedId of ['hsbc_credit_card_preview_button', 'hsbc_credit_card_saved_button', 'hsbc_credit_card_summary']) {
         assert.equal(elements.has(removedId), false);
     }
+});
+
+test('pending preview reports progress and successful duplicate preview gives an explicit next step', async (t) => {
+    const pending = deferred();
+    const urls = [];
+    const {runtime, elements} = setup(t, (url) => { urls.push(url); return pending.promise; });
+    const initial = runtime.getHsbcCreditCardFeedback();
+    assert.equal(initial.phase, 'previewing');
+    assert.equal(initial.validationState, 'pending');
+    assert.match(initial.summaryLabel, /preview/i);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Previewing/);
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    await settle();
+    pending.resolve(response({...fixture(), summary: {...fixture().summary, added_count: 0, duplicate_count: 1}}));
+    await settle();
+    const ready = runtime.getHsbcCreditCardFeedback();
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.validationState, 'valid');
+    assert.match(ready.message, /^Preview ready\. Nothing has been saved\./);
+    assert.match(ready.message, /Import now/);
+    assert.match(ready.message, /1.*(?:duplicate|already saved)/i);
+    assert.equal(elements.get('investment_import_note').textContent, ready.message);
+    assert.equal(runtime.isHsbcCreditCardReady(), true);
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview']);
+});
+
+test('pending import reports progress without allowing a second submission', async (t) => {
+    const pending = deferred();
+    const urls = [];
+    const {runtime} = setup(t, async (url) => {
+        urls.push(url);
+        return url.endsWith('/import') ? pending.promise : response(fixture());
+    });
+    await settle();
+    const commit = runtime.importHsbcCreditCard();
+    await settle();
+    const feedback = runtime.getHsbcCreditCardFeedback();
+    assert.equal(feedback.phase, 'importing');
+    assert.equal(feedback.validationState, 'pending');
+    assert.match(feedback.message, /Importing/);
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    await runtime.importHsbcCreditCard();
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
+    pending.resolve(response({...fixture(), merged_transactions: fixture().transactions}));
+    await commit;
+    assert.equal(runtime.getHsbcCreditCardFeedback().phase, 'saved');
+});
+
+test('saved feedback is published before waiting for paint and derived reward rendering', async (t) => {
+    const paint = deferred();
+    const urls = [];
+    const rewards = {status: 'complete', transactions: []};
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        return response(url.endsWith('/import')
+            ? {...fixture(), merged_transactions: fixture().transactions, credit_card_rewards: rewards,
+                summary: {...fixture().summary, added_count: 0, promoted_count: 0, duplicate_count: 1}}
+            : fixture());
+    });
+    runtime.waitForInvestmentLoadingPaint = () => paint.promise;
+    await settle();
+    const commit = runtime.importHsbcCreditCard();
+    await settle();
+    const feedback = runtime.getHsbcCreditCardFeedback();
+    assert.equal(feedback.phase, 'saved');
+    assert.equal(feedback.validationState, 'valid');
+    assert.equal(feedback.summaryLabel, 'Imported');
+    assert.match(feedback.message, /^Credit-card import saved\./);
+    assert.match(feedback.message, /1.*(?:duplicate|already saved)/i);
+    assert.equal(elements.get('investment_import_note').textContent, feedback.message);
+    assert.equal(elements.get('hsbc_credit_card_caption').textContent, 'Saved transactions');
+    assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
+    assert.equal(runtime.rewardViewRefreshes, 0);
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    paint.resolve();
+    await commit;
+    assert.equal(runtime.rewardViewRefreshes, 1);
+    assert.equal(runtime.state.investmentImportInFlight, false);
+    runtime.syncHsbcCreditCardInput();
+    await runtime.importHsbcCreditCard();
+    assert.equal(runtime.getHsbcCreditCardFeedback().phase, 'saved');
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
+});
+
+test('a derived reward refresh failure preserves saved readback and never authorizes a retry', async (t) => {
+    const urls = [];
+    const rewards = {status: 'complete', transactions: []};
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        return response(url.endsWith('/import')
+            ? {...fixture(), merged_transactions: fixture().transactions, credit_card_rewards: rewards}
+            : fixture());
+    });
+    runtime.refreshInvestmentRewardViews = () => { throw new Error('Derived reward view failed'); };
+    await settle();
+    await runtime.importHsbcCreditCard();
+    const feedback = runtime.getHsbcCreditCardFeedback();
+    assert.equal(feedback.phase, 'saved');
+    assert.equal(feedback.validationState, 'valid');
+    assert.equal(feedback.summaryLabel, 'Imported');
+    assert.match(feedback.message, /^Credit-card import saved\./);
+    assert.match(feedback.message, /refresh/i);
+    assert.doesNotMatch(feedback.message, /Credit-card import failed|Paste the page again|before retrying/);
+    assert.equal(elements.get('hsbc_credit_card_results').hidden, false);
+    assert.equal(elements.get('hsbc_credit_card_caption').textContent, 'Saved transactions');
+    assert.equal(runtime.state.investmentImportInFlight, false);
+    assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA.credit_card_rewards, rewards);
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    runtime.syncHsbcCreditCardInput();
+    await runtime.importHsbcCreditCard();
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
+});
+
+test('a post-commit layout failure keeps the acknowledged save and blocks a second import', async (t) => {
+    let failSavedLayout = false;
+    const urls = [];
+    const {runtime, elements} = setup(t, async (url) => {
+        urls.push(url);
+        if (url.endsWith('/import')) {
+            failSavedLayout = true;
+            return response({...fixture(), committed: true, merged_transactions: fixture().transactions});
+        }
+        return response(fixture());
+    });
+    runtime.syncInvestmentImportContainerHeight = () => {
+        if (failSavedLayout) {
+            failSavedLayout = false;
+            throw new Error('Saved-result layout failed');
+        }
+    };
+    await settle();
+    await runtime.importHsbcCreditCard();
+    const feedback = runtime.getHsbcCreditCardFeedback();
+    assert.equal(feedback.phase, 'saved');
+    assert.equal(feedback.validationState, 'valid');
+    assert.equal(feedback.summaryLabel, 'Imported');
+    assert.match(feedback.message, /^Credit-card import saved\./);
+    assert.match(feedback.message, /refresh/i);
+    assert.doesNotMatch(feedback.message, /Credit-card import failed|Paste the page again|before retrying/);
+    assert.equal(elements.get('hsbc_credit_card_status').textContent, feedback.message);
+    assert.equal(elements.get('investment_import_note').textContent, feedback.message);
+    assert.equal(runtime.state.investmentImportInFlight, false);
+    assert.equal(runtime.isHsbcCreditCardReady(), false);
+    runtime.syncHsbcCreditCardInput();
+    await runtime.importHsbcCreditCard();
+    assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
 });
 
 for (const [label, replacement] of [

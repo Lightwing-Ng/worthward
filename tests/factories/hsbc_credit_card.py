@@ -1,4 +1,4 @@
-"""Anonymous HSBC credit-card clipboard fixtures. Code version: v0.1.0."""
+"""Anonymous HSBC credit-card clipboard fixtures. Code version: v0.2.0."""
 
 
 def hsbc_credit_card_text(*, account_number="4111-1111-1111-1111", transactions=None):
@@ -82,3 +82,67 @@ Print
 Show more transactions
  EnglishSelected
 """
+
+
+def hsbc_credit_card_expanded_text():
+    """Mix expanded foreign purchases with collapsed HKD rows, using anonymous data."""
+    return hsbc_credit_card_text(
+        transactions="""29 Oct 2026
+SAMPLE CARDHOLDER
+Card ending in 1111
+SALES: SAMPLE MERCHANT Beijing CN
+51.75 HKD
+Post date
+30 Oct 2026
+Transaction time
+17:40:23
+Merchant name
+SAMPLE MERCHANT
+Area / district
+Beijing
+Country / region
+CHINA
+Transaction amount
+43.00 CNY
+Billing amount
+51.75 HKD
+Card number
+4111-1111-1111-1111
+24 Oct 2026
+SAMPLE CARDHOLDER
+Card ending in 1111
+APPLEPAY SAMPLE TRANSIT Shenzhen CN
+36.00 CNY
+Pending
+Post date
+Not yet posted
+Transaction time
+18:37:03
+Merchant name
+SAMPLE TRANSIT
+Area / district
+Shenzhen
+Country / region
+CN
+Transaction amount
+36.00 CNY
+Billing amount
+Pending
+Card number
+4111-1111-1111-1111
+24 Oct 2026
+SAMPLE CARDHOLDER
+Card ending in 1111
+APPLEPAY SAMPLE TRANSIT Shenzhen CN
+5.99 HKD
+23 Oct 2026
+SAMPLE CARDHOLDER
+Card ending in 1111
+PAY w/RC SAMPLE SHOP HONG KONG HK
+8.00 HKD
+22 Oct 2026
+SAMPLE CARDHOLDER
+Card ending in 1111
+PAYMENT - THANK YOU
+100.00 HKD"""
+    )

@@ -1,10 +1,10 @@
 """Parse HSBC credit-card clipboard evidence without persistence or network access.
 
-Code version: v0.1.0
+Code version: v0.2.0
 """
 
 from collections import Counter
-from datetime import date
+from datetime import date, time
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -43,6 +43,16 @@ _FOOTER_STARTS = {
     "Print your transaction summary",
     "Show more transactions",
 }
+_DETAIL_LABELS = (
+    "Post date",
+    "Transaction time",
+    "Merchant name",
+    "Area / district",
+    "Country / region",
+    "Transaction amount",
+    "Billing amount",
+    "Card number",
+)
 
 
 def _normalize(value: str) -> str:
@@ -166,11 +176,81 @@ def _kind(description: str) -> tuple[str, str]:
         )
     if re.match(r"^PAY W/RC \S", normalized):
         return "rewardcash", "in"
-    if re.match(r"^APPLEPAY \S", normalized):
+    if re.match(r"^(?:APPLEPAY |SALES: )\S", normalized):
         return "purchase", "out"
     raise ValueError(
         "The HSBC credit-card transaction description has an unsupported direction."
     )
+
+
+def _transaction_amount(value: str) -> tuple[str, str]:
+    match = _MONEY.fullmatch(value)
+    if not match or match["currency"] not in {"HKD", "CNY"}:
+        raise ValueError("The HSBC credit-card transaction currency is unsupported.")
+    amount = _money(match["amount"], currency=False)
+    if Decimal(amount) <= 0:
+        raise ValueError("The HSBC credit-card transaction amount must be positive.")
+    return amount, match["currency"]
+
+
+def _transaction_details(
+    lines: list[str],
+    index: int,
+    *,
+    account_id: str,
+    transaction_date: str,
+    status: str,
+    amount: str,
+    currency: str,
+) -> tuple[dict, int]:
+    if index >= len(lines) or lines[index] != _DETAIL_LABELS[0]:
+        return {}, index
+    details = {}
+    for label in _DETAIL_LABELS:
+        if index + 1 >= len(lines) or lines[index] != label:
+            raise ValueError("The HSBC credit-card expanded details are incomplete.")
+        details[label] = lines[index + 1]
+        index += 2
+    raw_number = details["Card number"]
+    if (
+        not re.fullmatch(r"[\d -]+", raw_number)
+        or _digest(re.sub(r"[ -]", "", raw_number)) != account_id
+    ):
+        raise ValueError("The HSBC credit-card detail card does not match the account.")
+    clock = details["Transaction time"]
+    if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", clock):
+        raise ValueError("The HSBC credit-card transaction time is invalid.")
+    try:
+        time.fromisoformat(clock)
+    except ValueError as error:
+        raise ValueError("The HSBC credit-card transaction time is invalid.") from error
+    original_amount, original_currency = _transaction_amount(
+        details["Transaction amount"]
+    )
+    if status == "pending":
+        if (
+            details["Post date"] != "Not yet posted"
+            or details["Billing amount"] != "Pending"
+            or (amount, currency) != (original_amount, original_currency)
+        ):
+            raise ValueError("The HSBC credit-card pending details contradict the row.")
+        post_date = None
+    else:
+        post_date = _date(details["Post date"], "post date")
+        if (
+            post_date < transaction_date
+            or _money(details["Billing amount"], currency=True) != amount
+        ):
+            raise ValueError("The HSBC credit-card billing details contradict the row.")
+    return {
+        "post_date": post_date,
+        "transaction_time": clock,
+        "merchant_name": details["Merchant name"],
+        "area_district": details["Area / district"],
+        "country_region": details["Country / region"],
+        "original_amount": original_amount,
+        "original_currency": original_currency,
+    }, index
 
 
 def _transactions(lines: list[str], account_id: str, account_last4: str) -> list[dict]:
@@ -238,16 +318,23 @@ def _transactions(lines: list[str], account_id: str, account_last4: str) -> list
         if re.fullmatch(_NUMBER, amount_text) and index + 1 < len(lines):
             index += 1
             amount_text += " " + lines[index]
-        amount = _money(amount_text, currency=True)
-        if Decimal(amount) == 0:
-            raise ValueError(
-                "The HSBC credit-card transaction amount must be positive."
-            )
+        amount, currency = _transaction_amount(amount_text)
         index += 1
         status = "posted"
         if index < len(lines) and lines[index] == "Pending":
             status = "pending"
             index += 1
+        if currency != "HKD" and (status != "pending" or kind != "purchase"):
+            raise ValueError("Only pending card purchases may retain a CNY amount.")
+        details, index = _transaction_details(
+            lines,
+            index,
+            account_id=account_id,
+            transaction_date=transaction_date,
+            status=status,
+            amount=amount,
+            currency=currency,
+        )
         identity = json.dumps(
             [
                 account_id,
@@ -255,7 +342,7 @@ def _transactions(lines: list[str], account_id: str, account_last4: str) -> list
                 transaction_date,
                 _normalize(description).upper(),
                 kind,
-                "HKD",
+                currency,
                 amount,
             ],
             ensure_ascii=False,
@@ -277,12 +364,13 @@ def _transactions(lines: list[str], account_id: str, account_last4: str) -> list
                 "description": description,
                 "kind": kind,
                 "status": status,
-                "currency": "HKD",
+                "currency": currency,
                 "amount": amount,
                 "amount_direction": direction,
                 "direction_source": direction_source,
                 "liability_delta": delta if status == "posted" else None,
                 "occurrence": occurrence,
+                **details,
             }
         )
     return result
@@ -292,8 +380,9 @@ def parse_hsbc_credit_card_text(text: str) -> dict:
     """Return an evidence-backed capture or reject unsupported/ambiguous content.
 
     Copied HSBC text loses empty amount-column cells. Only descriptions with an
-    explicit meaning can then establish direction: Apple Pay purchases increase
-    the liability, repayments and Pay with RC reduce it. This function never
+    explicit meaning can then establish direction: Apple Pay and SALES purchases
+    increase the liability, repayments and Pay with RC reduce it. Pending CNY
+    purchases retain their original currency without a posted liability. This function never
     infers a missing opening balance or reconciles a partial transaction list to
     the displayed account balance.
     """
