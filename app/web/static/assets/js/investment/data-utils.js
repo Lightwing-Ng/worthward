@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.123.0
+ * Code version: v1.124.0
+ * - Added: Current cash conversion requires recent daily market FX provenance.
  * - Added: Strict signed HSBC debit-card cashback classification and realized income.
  * - Changed: Resolves dated account snapshots, cash anchors, and cost-conserving replay.
  * - Fixed: Reconstructed transfers conserve residual lot basis and later P&L.
@@ -246,7 +247,7 @@
 
 import {
     createInvestmentCoreCashUtils,
-} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.4.0';
+} from './data-utils/core-cash.js?v=investment-data-utils-core-cash-v1.5.0';
 import {
     createInvestmentInterestAccrualUtils,
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
@@ -661,6 +662,7 @@ export function createInvestmentDataUtils({
         shiftLedgerDate,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
+        sumCurrentCashLedgerInBaseCurrency,
         sumKolRewardRealizedIncomeInBaseCurrency,
         sumCashRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
@@ -807,6 +809,7 @@ export function createInvestmentDataUtils({
         shiftLedgerDate,
         shouldTrackHoldingTicker,
         sumCashLedgerInBaseCurrency,
+        sumCurrentCashLedgerInBaseCurrency,
         sumKolRewardRealizedIncomeInBaseCurrency,
         sumCashRewardRealizedIncomeInBaseCurrency,
         isKolRewardTransaction,
@@ -819,7 +822,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.123.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.124.0';
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
 export function getInvestmentAggregatePnlCoverage(summaries = []) {

@@ -1,7 +1,8 @@
 /**
  * Workspace navigation, segmented controls, and responsive layout.
  *
- * Code version: v1.5.2
+ * Code version: v1.5.3
+ * - Fixed: Current aggregate cash cannot reuse historical execution FX when market FX is missing.
  * - Fixed: Current Metrics retains foreign cash beside pending USD history,
  *   and explicit CNH funding can settle one day after an IBKR receipt.
  * - Fixed: Sequential pending-buy rows retain a private dated native cash
@@ -1414,6 +1415,28 @@ function applyAuthoritativeCurrentAggregateCash(
         const latestProcessed = transactions[transactions.length - 1];
         if (!latestProcessed) return;
 
+        // Revalue replay-only current cash too, even when no authoritative
+        // broker snapshot can replace the native aggregate balances below.
+        const replayBalances = latestProcessed.aggregate_cash_by_currency ?? latestProcessed.cash_by_currency;
+        if (replayBalances && typeof replayBalances === 'object') {
+            const currentRunningCash = runtime.sumCurrentCashLedgerInBaseCurrency(
+                replayBalances,
+                runtime.normalizeLedgerDate(valuationDate) || runtime.getTodayLedgerDate(),
+                fxTimeline,
+                runtime.getInvestmentBaseCurrency(),
+            );
+            const currentDisplayCash = currentRunningCash
+                + (Number(latestProcessed.aggregate_pending_settlement_cash) || 0);
+            const marketValue = runtime.getOptionalInvestmentNumber(
+                latestProcessed.aggregate_market_value ?? latestProcessed.market_value,
+            );
+            latestProcessed.running_cash = currentRunningCash;
+            latestProcessed.aggregate_running_cash = currentRunningCash;
+            latestProcessed.aggregate_display_cash = currentDisplayCash;
+            latestProcessed.total_equity = marketValue === null ? null : currentDisplayCash + marketValue;
+            latestProcessed.aggregate_total_equity = latestProcessed.total_equity;
+        }
+
         const configuredCashBrokerCodes = Array.isArray(
             window.WORTHWARD_INVESTMENT_DATA?.summary?.authoritative_current_cash_brokers,
         )
@@ -1454,7 +1477,12 @@ function applyAuthoritativeCurrentAggregateCash(
                 )
             );
             if (!hasCurrentCashBoundary || !currentCashSnapshot) {
-                if (Math.abs(Number(latestBrokerTxn?.broker_running_cash) || 0) > 1e-9) {
+                const replayCash = runtime.getOptionalInvestmentNumber(latestBrokerTxn?.broker_running_cash);
+                const hasNativeCash = Object.values(latestBrokerTxn?.broker_cash_by_currency || {}).some((value) => {
+                    const amount = runtime.getOptionalInvestmentNumber(value);
+                    return amount === null || Math.abs(amount) > 1e-9;
+                });
+                if (latestBrokerTxn && (replayCash === null || Math.abs(replayCash) > 1e-9 || hasNativeCash)) {
                     unsupportedCashBrokers.push(brokerCode);
                 }
                 return;
@@ -1475,7 +1503,7 @@ function applyAuthoritativeCurrentAggregateCash(
                 aggregateBalances[currency] = (Number(aggregateBalances[currency]) || 0) + numericValue;
             });
         });
-        const aggregateRunningCash = runtime.sumCashLedgerInBaseCurrency(
+        const aggregateRunningCash = runtime.sumCurrentCashLedgerInBaseCurrency(
             aggregateBalances,
             runtime.normalizeLedgerDate(valuationDate) || runtime.getTodayLedgerDate(),
             fxTimeline,

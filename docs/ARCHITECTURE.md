@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.143.0`
+Documentation version: `v1.143.1`
 
 ## HSBC debit-card cashback boundary
 
@@ -1662,6 +1662,17 @@ second broker balance ledger. Its accounting boundaries are explicit:
   Holdings, but HSBC settlement-boundary corrections must use that row's
   pre-projection broker ledger. Current presentation state must never enter the
   historical aggregate correction base or cancel earlier settled proceeds.
+- Current broker and aggregate cash use only the top-level daily market FX
+  history, separately retained from transaction execution and statement rates.
+  The latest applicable market rate must be on or before the valuation date and
+  at most seven calendar days old. This availability window permits weekends
+  and short market closures; it does not certify that a provider has published
+  its latest close. Missing, invalid, future-only, or older market FX leaves
+  nonzero foreign-currency current Cash and Total equity unavailable while
+  retaining native balances. Base-currency and zero foreign balances need no FX.
+  Historical transaction, chart, and reward conversion keeps its dated accounting
+  timeline, including evidenced execution rates. Card reward FX cannot supply
+  current investment cash valuation.
 - A dated native-currency anchor already holds its currency's settled balance.
   Transaction History therefore retires every settlement correction in that
   currency on an anchored row instead of adding it to the anchored Cash again.

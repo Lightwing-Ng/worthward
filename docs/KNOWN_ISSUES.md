@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Current-cash FX provenance, 2 Nov 2026: when daily market FX was missing,
+current cash could silently reuse an old exchange trade's execution rate,
+including a rate from another broker. Current broker and aggregate cash now
+require an applicable daily market rate no more than seven calendar days old.
+Missing current FX leaves converted cash and total equity unavailable instead
+of showing a stale valuation. Native balances, historical execution FX, and
+dated RewardCash income remain independent. See the current-cash rule in
+[the investment equity replay contract](ARCHITECTURE.md#investment-equity-replay-contract).
+
 HSBC credit-card clipboard imports, 2 Nov 2026: complete English account-page
 captures accept `SALES:` purchases, pending CNY authorizations, and expanded
 transaction details. Billing, original-currency, and posting evidence remain
@@ -1280,7 +1289,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.2`
+Documentation version: `v1.286.3`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

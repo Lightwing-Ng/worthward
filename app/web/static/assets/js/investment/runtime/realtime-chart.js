@@ -1,7 +1,8 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: Missing current cash remains unavailable during realtime quote updates.
  * - Changed: Equity axis ticks now use the one shared tick-selection owner
  *   instead of an independent copy of the same algorithm.
  * - Fixed: An unavailable current Holdings NAV stays unavailable in realtime
@@ -824,8 +825,8 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
                 0,
             )
             : aggregateMarketValue;
-        const resolvedDisplayCash = Number.isFinite(Number(holdingsRealtimeState?.aggregateCash))
-            ? Number(holdingsRealtimeState.aggregateCash)
+        const resolvedDisplayCash = holdingsRealtimeState
+            ? runtime.parseInvestmentOptionalNumber(holdingsRealtimeState.aggregateCash)
             : aggregateDisplayCash;
         const holdingsTotalEquity = runtime.parseInvestmentOptionalNumber(
             holdingsRealtimeState?.totalEquity,

@@ -1,7 +1,8 @@
 /**
  * Core transaction, cash-ledger, and FX utilities.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
+ * - Fixed: Current cash requires recent daily market FX, independently of dated execution rates.
  * - Added: HSBC debit-card cashback keeps signed cash-reward semantics apart from KOL income.
  * - Added: Explicit per-currency ending balances are native cash anchors,
  *   each dated by its own component post date and converted once.
@@ -43,6 +44,7 @@ export function createInvestmentCoreCashUtils(runtime) {
     } = createHsbcHistoryEvidenceUtils(runtime, {baseCurrency: 'USD'});
 
     const INVESTMENT_BASE_CURRENCY = 'USD';
+    const CURRENT_CASH_FX_MAX_AGE_DAYS = 7;
     const USMART_HK_FRACTIONAL_SYNTHETIC_TICKER = 'USMART_HK_FRACTIONAL_SHARES';
     const LONGBRIDGE_HK_CASH_EQUIVALENT_SYNTHETIC_PREFIX = 'LONGBRIDGE_HK_CASH_EQUIVALENT';
     const INVESTMENT_MARKET_CURRENCY_BY_SUFFIX = {
@@ -544,7 +546,7 @@ export function createInvestmentCoreCashUtils(runtime) {
             baseCurrency,
         );
         const resolvedDate = normalizeLedgerDate(targetDate) || getTodayLedgerDate();
-        const runningCash = sumCashLedgerInBaseCurrency(
+        const runningCash = sumCurrentCashLedgerInBaseCurrency(
             runningBalances,
             resolvedDate,
             resolvedFxTimeline,
@@ -1375,6 +1377,14 @@ export function createInvestmentCoreCashUtils(runtime) {
                 });
             });
         }
+        // Preserve market provenance before execution and statement evidence
+        // specialize the separate historical accounting timeline.
+        const marketRatesByCurrency = Object.fromEntries(
+            Object.entries(dateRates).map(([currency, values]) => [currency, {
+                dates: Object.keys(values).sort(),
+                values: {...values},
+            }]),
+        );
         groupedRows.forEach((entries) => {
             const baseEntries = entries.filter((entry) => (
                 entry.currency === normalizedBaseCurrency
@@ -1410,6 +1420,7 @@ export function createInvestmentCoreCashUtils(runtime) {
 
         const timeline = {
             baseCurrency: normalizedBaseCurrency,
+            marketRatesByCurrency,
             ratesByCurrency: {
                 [normalizedBaseCurrency]: {
                     dates: [],
@@ -1501,6 +1512,40 @@ export function createInvestmentCoreCashUtils(runtime) {
         ), 0);
     }
 
+    function sumCurrentCashLedgerInBaseCurrency(
+        balances,
+        targetDate,
+        fxTimeline,
+        baseCurrency = INVESTMENT_BASE_CURRENCY,
+    ) {
+        const normalizedBaseCurrency = normalizeCurrencyCode(baseCurrency) || INVESTMENT_BASE_CURRENCY;
+        const valuationDate = normalizeLedgerDate(targetDate) || getTodayLedgerDate();
+        const valuationTime = Date.parse(`${valuationDate}T00:00:00Z`);
+        const marketRates = fxTimeline?.marketRatesByCurrency
+            ?? buildInvestmentFxRateTimeline([], normalizedBaseCurrency).marketRatesByCurrency;
+        return Object.entries(balances || {}).reduce((total, [currency, value]) => {
+            const amount = value === null || value === undefined || String(value).trim() === ''
+                ? NaN : Number(value);
+            if (!Number.isFinite(amount)) return NaN;
+            const normalizedCurrency = normalizeCurrencyCode(currency);
+            if (amount === 0 || normalizedCurrency === normalizedBaseCurrency) return total + amount;
+            const history = marketRates?.[normalizedCurrency];
+            const rateDate = (Array.isArray(history?.dates) ? history.dates : [])
+                .filter((date) => date <= valuationDate)
+                .sort().at(-1);
+            const rateTime = Date.parse(`${rateDate}T00:00:00Z`);
+            const rate = Number(history?.values?.[rateDate]);
+            const ageDays = (valuationTime - rateTime) / 86400000;
+            // Seven calendar days cover weekends and short market closures;
+            // an execution price or an older close cannot value current cash.
+            if (!Number.isFinite(ageDays) || ageDays < 0 || ageDays > CURRENT_CASH_FX_MAX_AGE_DAYS
+                || new Date(rateTime).toISOString().slice(0, 10) !== rateDate
+                || new Date(valuationTime).toISOString().slice(0, 10) !== valuationDate
+                || !Number.isFinite(rate) || rate <= 0) return NaN;
+            return total + amount / rate;
+        }, 0);
+    }
+
     return {
         INVESTMENT_BASE_CURRENCY,
         USMART_HK_FRACTIONAL_SYNTHETIC_TICKER,
@@ -1586,5 +1631,6 @@ export function createInvestmentCoreCashUtils(runtime) {
         convertAmountToBaseCurrencyAtLatestRate,
         convertAmountToBaseCurrency,
         sumCashLedgerInBaseCurrency,
+        sumCurrentCashLedgerInBaseCurrency,
     };
 }
