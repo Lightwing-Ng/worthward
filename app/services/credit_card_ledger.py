@@ -1,6 +1,8 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.1.0
+Code version: v1.2.0
+- Added: Pending CNY purchase evidence and currency-separated pending totals.
+- Fixed: Expanded page details retain source-backed metadata on duplicate capture.
 - Added: Atomic PDF/CSV bundle reconciliation with retained original bytes,
   verified account bindings, dated statements, and exact-date evidence matching.
 """
@@ -45,6 +47,17 @@ _TRANSACTION_FIELDS = (
     "amount",
     "liability_delta",
     "occurrence",
+)
+_TRANSACTION_DETAIL_FIELDS = (
+    "post_date",
+    "source_row_number",
+    "source_line_number",
+    "original_currency",
+    "original_amount",
+    "transaction_time",
+    "merchant_name",
+    "area_district",
+    "country_region",
 )
 
 
@@ -93,7 +106,14 @@ def _validate_transaction(row: Any) -> None:
         raise ValueError("Missing credit-card transaction description.")
     if row["kind"] not in {"purchase", "repayment", "rewardcash"}:
         raise ValueError("Invalid credit-card transaction kind.")
-    if row["status"] not in {"posted", "pending"} or row["currency"] != "HKD":
+    if row["status"] not in {"posted", "pending"} or (
+        row["currency"] != "HKD"
+        and not (
+            row["currency"] == "CNY"
+            and row["status"] == "pending"
+            and row["kind"] == "purchase"
+        )
+    ):
         raise ValueError("Invalid credit-card transaction status or currency.")
     if type(row["occurrence"]) is not int or row["occurrence"] < 1:
         raise ValueError("Invalid credit-card transaction occurrence.")
@@ -249,17 +269,7 @@ def _validate_ledger(ledger: Any) -> dict[str, Any]:
             else "pending"
         )
         fields = set(_TRANSACTION_FIELDS) - {"id", "account_id"}
-        fields.update(
-            field
-            for field in (
-                "post_date",
-                "source_row_number",
-                "source_line_number",
-                "original_currency",
-                "original_amount",
-            )
-            if field in row
-        )
+        fields.update(field for field in _TRANSACTION_DETAIL_FIELDS if field in row)
         if row["status"] != expected_status or not any(
             all(row[field] == item.get(field) for field in fields) for item in evidence
         ):
@@ -300,6 +310,13 @@ def _public_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def _public_transaction(row: dict[str, Any]) -> dict[str, Any]:
     result = {field: row[field] for field in _TRANSACTION_FIELDS if field in row}
+    result.update(
+        {
+            field: row[field]
+            for field in _TRANSACTION_DETAIL_FIELDS
+            if field in row and field not in {"source_row_number", "source_line_number"}
+        }
+    )
     result["description"] = re.sub(
         r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)",
         "[card number redacted]",
@@ -329,6 +346,24 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         result[f"{prefix}_total"] = format(
             sum((_money(row["amount"]) for row in selected), Decimal(0)), ".2f"
         )
+        if prefix == "pending":
+            currencies = sorted({row["currency"] for row in selected})
+            result["pending_totals_by_currency"] = {
+                currency: format(
+                    sum(
+                        (
+                            _money(row["amount"])
+                            for row in selected
+                            if row["currency"] == currency
+                        ),
+                        Decimal(0),
+                    ),
+                    ".2f",
+                )
+                for currency in currencies
+            }
+            if set(currencies) - {"HKD"}:
+                result["pending_total"] = None
     return result
 
 
@@ -528,9 +563,32 @@ def _merge_capture(
                     set(old.get("post_dates", [])) | {row["post_date"]}
                 )
             if old["status"] == "pending" and row["status"] == "posted":
+                for field in _TRANSACTION_DETAIL_FIELDS:
+                    old.pop(field, None)
                 old.update({**row, "id": key})
                 counts["promoted_count"] += 1
             else:
+                old_details = {
+                    field: old[field]
+                    for field in _TRANSACTION_DETAIL_FIELDS
+                    if field in old
+                }
+                new_details = {
+                    field: row[field]
+                    for field in _TRANSACTION_DETAIL_FIELDS
+                    if field in row
+                }
+                if (
+                    old["status"] == row["status"]
+                    and old_details.keys() < new_details.keys()
+                    and all(
+                        new_details[field] == value
+                        for field, value in old_details.items()
+                    )
+                ):
+                    # Keep one source-backed representation rather than joining
+                    # optional details that no retained source contains together.
+                    old.update({**row, "id": key})
                 counts["duplicate_count"] += 1
         if digest not in merged["sources"]:
             captured_at = datetime.now(timezone.utc).isoformat()

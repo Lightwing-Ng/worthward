@@ -1,6 +1,7 @@
 """Verify the credit-card HTTP boundary with independent temporary ledgers.
 
-Code version: v1.1.0
+Code version: v1.1.1
+- Added: Expanded sales and native-currency pending evidence round trips safely.
 - Added: Card commits cannot wait for remote FX and retain dated cache semantics.
 - Fixed: Legacy mode rejection directs users to the unified account-page field.
 """
@@ -16,7 +17,10 @@ import pytest
 
 from app.web.runtime_domains.investment import credit_cards
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
-from tests.factories.hsbc_credit_card import hsbc_credit_card_text
+from tests.factories.hsbc_credit_card import (
+    hsbc_credit_card_expanded_text,
+    hsbc_credit_card_text,
+)
 
 
 @pytest.fixture
@@ -98,6 +102,72 @@ def test_credit_card_import_round_trip_and_repeat_keep_investment_separate(card_
     assert "4111111111111111" not in saved.text
     assert "SAMPLE CARDHOLDER" not in saved.text
     assert "source_text" not in saved.text
+    assert not (ledger.parent / "investment.parquet").exists()
+
+
+def test_expanded_sales_and_pending_cny_preview_import_and_readback(card_client):
+    client, headers, ledger = card_client
+    text = hsbc_credit_card_expanded_text()
+    payload = {"text": text, "source_sha256": hashlib.sha256(text.encode()).hexdigest()}
+    preview = client.post(
+        "/api/credit-cards/hsbc/preview", json=payload, headers=headers
+    )
+    assert preview.status_code == 200, preview.get_json()
+    result = preview.get_json()
+    assert result["ready"] and not result["committed"]
+    assert not ledger.parent.exists()
+    assert result["summary"]["posted_purchase_total"] == "57.74"
+    assert result["summary"]["pending_total"] is None
+    assert result["summary"]["pending_totals_by_currency"] == {"CNY": "36.00"}
+    sales = next(
+        row
+        for row in result["transactions"]
+        if row["description"].startswith("SALES:")
+    )
+    assert (sales["kind"], sales["status"], sales["currency"], sales["amount"]) == (
+        "purchase",
+        "posted",
+        "HKD",
+        "51.75",
+    )
+    pending = next(
+        row for row in result["transactions"] if row["status"] == "pending"
+    )
+    assert (pending["currency"], pending["amount"], pending["liability_delta"]) == (
+        "CNY",
+        "36.00",
+        None,
+    )
+    committed = client.post(
+        "/api/credit-cards/hsbc/import", json=payload, headers=headers
+    )
+    assert committed.status_code == 200, committed.get_json()
+    saved_bytes = ledger.read_bytes()
+    saved = client.get("/api/credit-cards/hsbc")
+    assert saved.status_code == 200
+    saved_rows = saved.get_json()["transactions"]
+    assert len(saved_rows) == 5
+    assert {row["id"] for row in saved_rows} == {
+        row["id"] for row in result["transactions"]
+    }
+    saved_pending = next(row for row in saved_rows if row["status"] == "pending")
+    assert saved_pending["liability_delta"] is None
+    reward = next(row for row in saved_rows if row["kind"] == "rewardcash")
+    assert committed.get_json()["credit_card_rewards"]["transactions"] == [
+        {
+            "id": reward["id"],
+            "date": reward["transaction_date"],
+            "currency": "HKD",
+            "amount": "8.00",
+        }
+    ]
+    replay = client.post(
+        "/api/credit-cards/hsbc/import", json=payload, headers=headers
+    )
+    assert replay.status_code == 200
+    assert replay.get_json()["summary"]["added_count"] == 0
+    assert replay.get_json()["summary"]["promoted_count"] == 0
+    assert ledger.read_bytes() == saved_bytes
     assert not (ledger.parent / "investment.parquet").exists()
 
 

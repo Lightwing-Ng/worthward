@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: Native paste and clipboard buttons share HSBC capture validation.
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
  * - Fixed: HSBC paste validation refreshes the browser write session first.
  * - Changed: HSBC is the import chooser fallback when a selection is absent.
@@ -901,7 +902,8 @@ function summarizeHsbcPastedText(kind, rawText, validationState) {
             : (kind === 'portfolio' ? 'Portfolio' : 'Order Status');
         const chunkLabel = chunkCount === 1 ? '1 clip' : `${chunkCount.toLocaleString('en-US')} clips`;
         const readiness = cardKind === 'credit_card'
-            ? (runtime.isHsbcCreditCardReady?.() ? 'Preview ready' : 'Check preview')
+            ? (runtime.getHsbcCreditCardFeedback?.().summaryLabel
+                || (runtime.isHsbcCreditCardReady?.() ? 'Preview ready' : 'Check preview'))
             : validationState === 'valid'
             ? 'Ready'
             : (validationState === 'pending' ? 'Checking…' : 'Check format');
@@ -1238,38 +1240,34 @@ function syncHsbcPasteDisplaySummaries() {
         syncHsbcPasteClearButtons();
     }
 
+function ingestHsbcPasteText(kind, rawText) {
+        if (getSelectedInvestmentImportBroker() !== 'hsbc'
+            || getSelectedHsbcImportMode() !== 'paste'
+            || runtime.state.investmentImportInFlight) return;
+        const input = getHsbcPasteInput(kind);
+        if (!(input instanceof HTMLTextAreaElement)) return;
+        const normalizedText = normalizeClipboardText(rawText);
+        if (!normalizedText) {
+            runtime.setImportFeedback('Clipboard is empty.', 'error');
+            return;
+        }
+        const mergeResult = mergeHsbcPastedText(input.value, normalizedText);
+        input.value = mergeResult.mergedText;
+        runtime.clearImportFeedback();
+        runtime.syncInvestmentImportMode();
+        syncHsbcPasteDisplaySummaries();
+        runtime.syncImportValidationState();
+        requestHsbcPasteValidation({debounce: false});
+        flashHsbcPasteButton(kind);
+    }
+
 async function pasteHsbcClipboardIntoField(kind) {
         if (!navigator.clipboard?.readText) {
             runtime.setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
             return;
         }
         try {
-            const rawText = await navigator.clipboard.readText();
-            if (getSelectedInvestmentImportBroker() !== 'hsbc'
-                || getSelectedHsbcImportMode() !== 'paste'
-                || runtime.state.investmentImportInFlight) return;
-            const normalizedText = normalizeClipboardText(rawText);
-            if (!normalizedText) {
-                runtime.setImportFeedback('Clipboard is empty.', 'error');
-                return;
-            }
-            let mergeResult = null;
-            if (kind === 'cash' && runtime.hsbcCashAccountTextInput instanceof HTMLTextAreaElement) {
-                mergeResult = mergeHsbcPastedText(runtime.hsbcCashAccountTextInput.value, normalizedText);
-                runtime.hsbcCashAccountTextInput.value = mergeResult.mergedText;
-            } else if (kind === 'portfolio' && runtime.hsbcPortfolioTextInput instanceof HTMLTextAreaElement) {
-                mergeResult = mergeHsbcPastedText(runtime.hsbcPortfolioTextInput.value, normalizedText);
-                runtime.hsbcPortfolioTextInput.value = mergeResult.mergedText;
-            } else if (kind === 'order' && runtime.hsbcOrderStatusTextInput instanceof HTMLTextAreaElement) {
-                mergeResult = mergeHsbcPastedText(runtime.hsbcOrderStatusTextInput.value, normalizedText);
-                runtime.hsbcOrderStatusTextInput.value = mergeResult.mergedText;
-            }
-            runtime.clearImportFeedback();
-            runtime.syncInvestmentImportMode();
-            syncHsbcPasteDisplaySummaries();
-            runtime.syncImportValidationState();
-            requestHsbcPasteValidation({debounce: false});
-            flashHsbcPasteButton(kind);
+            ingestHsbcPasteText(kind, await navigator.clipboard.readText());
         } catch (_error) {
             runtime.setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
         }
@@ -1450,6 +1448,10 @@ function syncInvestmentImportMode() {
         } else {
             resetHsbcPasteValidation();
         }
+        if (isHsbcCreditCard && runtime.investmentImportNote) {
+            const message = runtime.getHsbcCreditCardFeedback?.().message;
+            if (message) runtime.investmentImportNote.textContent = message;
+        }
         seedLongbridgeImportDateRange();
     }
 
@@ -1534,6 +1536,7 @@ function isUnsettledHsbcBuyTransaction(txn) {
         flashHsbcPasteButton,
         updateHsbcPasteFieldDisplay,
         syncHsbcPasteDisplaySummaries,
+        ingestHsbcPasteText,
         pasteHsbcClipboardIntoField,
         seedLongbridgeImportDateRange,
         syncInvestmentImportMode,
