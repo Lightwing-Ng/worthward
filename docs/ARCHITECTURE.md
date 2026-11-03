@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.143.1`
+Documentation version: `v1.143.2`
 
 ## HSBC debit-card cashback boundary
 
@@ -1249,6 +1249,9 @@ anchor. Snapshots validate original accounting lot quantities and costs before
 applying display anchors, and accounting cost/P&L fields retain the accounting
 basis. Hover changes quantity and profitability without repricing surviving
 entry anchors. The price chart owns its domain; chip anchors never expand it.
+Every chip bar has the same 1 CSS px vertical thickness, independent of quantity
+and neighboring price gaps. Horizontal length alone encodes share quantity;
+bar centers retain the price chart's exact vertical coordinates.
 
 Investment Stock details keeps pointer work inside one animation-frame commit.
 The active pointer replaces any earlier uncommitted pointer, so a high-frequency
