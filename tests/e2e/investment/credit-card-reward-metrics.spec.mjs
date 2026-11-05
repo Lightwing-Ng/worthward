@@ -1,5 +1,5 @@
-/* Code version: v1.2.1
- * Reward disclosure keeps left-aligned currency lines and right-aligned conversions.
+/* Code version: v1.2.2
+ * Reward detail columns retain their headline anchors across viewport changes.
  */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
@@ -11,6 +11,46 @@ const holdingsRewardDetailsRow = (page) => page.locator('#investment_holdings_pa
 const holdingsRewardDetails = (page) => holdingsRewardDetailsRow(page).locator('[data-investment-rewards-breakdown]');
 const holdingsRewardCategory = (page, category) => holdingsRewardDetails(page)
     .locator(`[data-investment-rewards-category="${category}"]`);
+
+const expectRewardCategoryAlignment = async (page, key) => {
+    await expect(async () => {
+        const layout = await holdingsRewardCategory(page, key).evaluate((node) => {
+            const table = node.closest('table');
+            const title = table.querySelector('[data-investment-broker-rewards-row] .investment-holdings-rewards-title');
+            const total = table.querySelector('[data-investment-broker-rewards-row] [data-investment-rewards-value]');
+            const label = node.querySelector('dt');
+            const native = node.querySelector('[data-investment-rewards-category-native]');
+            const amount = node.querySelector('[data-investment-rewards-category-amount]');
+            return {
+                labelAlign: getComputedStyle(label).textAlign,
+                nativeAlign: getComputedStyle(native).textAlign,
+                amountAlign: getComputedStyle(amount).textAlign,
+                titleLeft: title.getBoundingClientRect().left,
+                totalRight: total.getBoundingClientRect().right,
+                labelLeft: label.getBoundingClientRect().left,
+                nativeLeft: native.getBoundingClientRect().left,
+                amountRight: amount.getBoundingClientRect().right,
+                currencyLines: [...native.querySelectorAll('.investment-holdings-rewards-breakdown-currency')]
+                    .map((line) => {
+                        const bounds = line.getBoundingClientRect();
+                        return {left: bounds.left, top: bounds.top, bottom: bounds.bottom};
+                    }),
+            };
+        });
+        expect(layout.labelAlign).toBe('left');
+        expect(layout.nativeAlign).toBe('left');
+        expect(layout.amountAlign).toBe('right');
+        expect(Math.abs(layout.labelLeft - layout.titleLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(layout.nativeLeft - layout.titleLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(layout.amountRight - layout.totalRight)).toBeLessThanOrEqual(1);
+        for (const [index, line] of layout.currencyLines.entries()) {
+            expect(Math.abs(line.left - layout.titleLeft)).toBeLessThanOrEqual(1);
+            if (index > 0) {
+                expect(line.top).toBeGreaterThanOrEqual(layout.currencyLines[index - 1].bottom - 0.5);
+            }
+        }
+    }).toPass({timeout: 5000});
+};
 
 const mockRewardCategories = async (page, {missingFx = false} = {}) => mockInvestmentReadApis(page, {
     startingCash: 0,
@@ -89,7 +129,7 @@ const mockRewards = async (page, {missingFx = false} = {}) => mockInvestmentRead
     },
 });
 
-for (const width of [1280, 390]) {
+for (const width of [1280, 843, 390]) {
     test(`Holdings Rewards expands six categories with native and converted amounts at ${width}px`, async ({page}) => {
         const errors = [];
         const writes = [];
@@ -121,7 +161,11 @@ for (const width of [1280, 390]) {
         await expect(trigger).toHaveAttribute('aria-label', 'Hide Rewards details');
         await expect(trigger).toHaveAttribute('aria-expanded', 'true');
         await expect(holdingsRewardDetailsRow(page)).toBeVisible();
-        await expect(holdingsRewardDetailsRow(page).locator(':scope > td')).toHaveAttribute('colspan', '9');
+        const detailCells = holdingsRewardDetailsRow(page).locator(':scope > td');
+        await expect(detailCells).toHaveCount(3);
+        const columnSpans = await detailCells.evaluateAll((cells) => cells.map((cell) => cell.colSpan));
+        expect(columnSpans).toEqual([1, 6, 2]);
+        expect(columnSpans.reduce((total, span) => total + span, 0)).toBe(9);
         expect(await holdingsRewardDetailsRow(page).evaluate((row) => row.previousElementSibling
             ?.hasAttribute('data-investment-broker-rewards-row'))).toBe(true);
         const categories = [
@@ -139,36 +183,7 @@ for (const width of [1280, 390]) {
             const nativeAmounts = category.locator('[data-investment-rewards-category-native]');
             await expect(nativeAmounts.locator('.investment-holdings-rewards-breakdown-currency')).toHaveText(native);
             await expect(category.locator('[data-investment-rewards-category-amount]')).toContainText(converted);
-            const layout = await category.evaluate((node) => {
-                const label = node.querySelector('dt');
-                const native = node.querySelector('[data-investment-rewards-category-native]');
-                const amount = node.querySelector('[data-investment-rewards-category-amount]');
-                return {
-                    labelAlign: getComputedStyle(label).textAlign,
-                    nativeAlign: getComputedStyle(native).textAlign,
-                    amountAlign: getComputedStyle(amount).textAlign,
-                    labelLeft: label.getBoundingClientRect().left,
-                    nativeLeft: native.getBoundingClientRect().left,
-                    amountRight: amount.getBoundingClientRect().right,
-                    entryRight: node.getBoundingClientRect().right,
-                    currencyLines: [...native.querySelectorAll('.investment-holdings-rewards-breakdown-currency')]
-                        .map((line) => {
-                            const bounds = line.getBoundingClientRect();
-                            return {left: bounds.left, top: bounds.top, bottom: bounds.bottom};
-                        }),
-                };
-            });
-            expect(layout.labelAlign).toBe('left');
-            expect(layout.nativeAlign).toBe('left');
-            expect(layout.amountAlign).toBe('right');
-            expect(Math.abs(layout.nativeLeft - layout.labelLeft)).toBeLessThanOrEqual(1);
-            expect(Math.abs(layout.amountRight - layout.entryRight)).toBeLessThanOrEqual(1);
-            for (const [index, line] of layout.currencyLines.entries()) {
-                expect(Math.abs(line.left - layout.labelLeft)).toBeLessThanOrEqual(1);
-                if (index > 0) {
-                    expect(line.top).toBeGreaterThanOrEqual(layout.currencyLines[index - 1].bottom - 0.5);
-                }
-            }
+            await expectRewardCategoryAlignment(page, key);
         }
         const convertedTotal = await holdingsRewardDetails(page)
             .locator('[data-investment-rewards-category-amount]').evaluateAll((nodes) => nodes.reduce(
@@ -176,6 +191,13 @@ for (const width of [1280, 390]) {
             ));
         expect(convertedTotal).toBe(23);
         expect(await holdingsRewardDetails(page).evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+        for (const resizedWidth of [width === 390 ? 1280 : 390, width]) {
+            await page.setViewportSize({width: resizedWidth, height: 900});
+            await expect(holdingsRewardDetailsRow(page)).toBeVisible();
+            for (const [key] of categories) await expectRewardCategoryAlignment(page, key);
+            expect(await holdingsRewardDetails(page).evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+            await expect(holdingsRewardValue(page)).toHaveText('23.00');
+        }
         await trigger.click();
         await expect(trigger).toHaveAttribute('aria-expanded', 'false');
         await expect(holdingsRewardDetailsRow(page)).toBeHidden();
@@ -187,6 +209,8 @@ for (const width of [1280, 390]) {
         expect(writes).toEqual([]);
         expect(errors).toEqual([]);
     });
+
+    if (width === 843) continue;
 
     test(`Holdings Rewards keeps known categories and native card amounts when FX is missing at ${width}px`, async ({page}) => {
         await page.setViewportSize({width, height: 900});

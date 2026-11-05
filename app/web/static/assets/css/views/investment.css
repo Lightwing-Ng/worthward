@@ -1,4 +1,4 @@
-/* Code version: v1.84.1 */
+/* Code version: v1.84.2 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2942,17 +2942,23 @@
     display: none;
 }
 
+.investment-holdings-table tbody [data-investment-rewards-breakdown-row] > td {
+    width: auto;
+    min-width: 0;
+}
+
 .investment-holdings-table tbody td.investment-holdings-rewards-breakdown-cell {
-    padding: 8px 12px 12px;
+    padding: var(--investment-holdings-cell-padding);
+    padding-block: 8px 12px;
     text-align: left;
     white-space: normal;
 }
 
 .investment-holdings-rewards-breakdown {
+    box-sizing: border-box;
     width: 100%;
-    max-width: var(--content-width-md, 640px);
     min-width: 0;
-    margin-inline: auto;
+    padding-inline-start: calc(var(--ticker-identity-pad-inline) + var(--ticker-identity-logo-height) + var(--ticker-identity-gap));
 }
 
 .investment-holdings-rewards-breakdown-list {
