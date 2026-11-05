@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.13.1
+Code version: v0.13.2
 """
 
 from __future__ import annotations
@@ -459,13 +459,18 @@ def _asof_market_cap_values(
 ) -> pd.Series:
     if source.empty:
         return pd.Series(float("nan"), index=target_dates.index, dtype="float64")
+    target_frame = target_dates[["Date"]].copy().sort_values("Date")
+    source_frame = source[["Date", value_column]].copy().sort_values("Date")
+    # Provider frames may retain microseconds beside nanosecond price history.
+    target_frame["Date"] = target_frame["Date"].astype("datetime64[ns]")
+    source_frame["Date"] = source_frame["Date"].astype("datetime64[ns]")
     aligned = pd.merge_asof(
-        target_dates[["Date"]].sort_values("Date"),
-        source[["Date", value_column]].sort_values("Date"),
+        target_frame,
+        source_frame,
         on="Date",
         direction="backward",
     )
-    aligned.index = target_dates[["Date"]].sort_values("Date").index
+    aligned.index = target_frame.index
     return aligned[value_column].reindex(target_dates.index)
 
 

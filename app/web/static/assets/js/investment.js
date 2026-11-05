@@ -1,9 +1,10 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.166.4
+ * Code version: v2.166.5
  * - Fixed: Loads left-aligned reward categories and separate native-currency lines.
  * - Added: Loads expandable Rewards categories with native and converted amounts.
+ * - Fixed: Loads personal chip bars with uniform vertical thickness.
  * - Fixed: Loads current-cash FX provenance and aggregate valuation safeguards.
  * - Fixed: Native HSBC paste and persistent card-import feedback.
  * - Added: Compact total-equity allocation and price-aligned personal chips.
@@ -160,7 +161,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.41.1';
+} from './investment/stock-details.js?v=investment-stock-details-v0.41.2';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -209,7 +210,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.166.4',
+    entry: 'v2.166.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

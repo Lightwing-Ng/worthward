@@ -1,4 +1,5 @@
-{# Code version: v1.81.5
+{# Code version: v1.81.6
+   Fixed: Loads personal chip bars with uniform vertical thickness.
    Fixed: Loads native HSBC paste and persistent card-import feedback.
    Added: Loads user-confirmed HSBC dividend Description selectors.
    Fixed: Loads Stock-details control effect containment.
@@ -964,5 +965,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.4') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.5') }}"></script>
 {% endblock %}
