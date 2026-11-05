@@ -1,12 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.64.0`
+Documentation version: `v1.64.1`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Rewards category names and native amounts align left.
+  Native currency totals use one line per currency; converted USD amounts stay
+  right-aligned.
 
 - Fixed: Zero-valued cash boundaries retain subsequent cash movements. Foreign
   cash requires dated FX evidence; future quotes no longer backfill earlier

@@ -1,7 +1,7 @@
 /**
  * Share-card capture and linked-hover interactions.
  *
- * Code version: v1.0.0
+ * Code version: v1.0.1
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -426,7 +426,8 @@ function buildInvestmentHoldingsShareTable({ maskSensitive = false } = {}) {
 
         const headerRow = headerTable.querySelector('thead tr:first-child');
         const summaryRow = headerTable.querySelector('.investment-holdings-summary-row');
-        const allDataRows = Array.from(bodyTable.querySelectorAll('tbody tr'));
+        const allDataRows = Array.from(bodyTable.querySelectorAll('tbody tr'))
+            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row]'));
         const brokerRewardsRow = allDataRows.find((row) => row.matches('[data-investment-broker-rewards-row]'));
         const dataRows = allDataRows
             .filter((row) => row !== brokerRewardsRow)

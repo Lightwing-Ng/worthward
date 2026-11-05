@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.5.0
+ * Code version: v1.6.0
+ * - Added: Structured reward categories retain dated conversions and signed native totals.
  * - Changed: Posted RewardCash joins current and dated realized reward income
  *   while investment cash, equity, and ledger rows remain independent.
  * - Added: Signed debit-card cashback and campaign rewards with native-currency details.
@@ -15,6 +16,63 @@
  *   of recomputing cash plus market value and dropping dated NAV components.
  * - Added: Extracted from the Investment workspace composition root.
  */
+
+const BROKER_REWARD_LABELS = {
+    coupons: 'Coupons',
+    cash_rewards: 'Cash rewards',
+    debit_card_cashback: 'Debit-card rebates',
+    kol_rewards: 'KOL rewards',
+    card_rewardcash: 'Credit-card RewardCash',
+    card_rebates: 'Credit-card rebates',
+    card_rewards: 'Credit-card rewards',
+};
+
+function recordBrokerRewardBreakdown(groups, key, currency, nativeAmount, convertedAmount) {
+    const group = groups.get(key) || {key, amount: 0, nativeTotals: new Map()};
+    group.amount += convertedAmount;
+    if (currency && Number.isFinite(nativeAmount)) {
+        group.nativeTotals.set(currency, (group.nativeTotals.get(currency) || 0) + nativeAmount);
+    }
+    groups.set(key, group);
+}
+
+function serializeBrokerRewardBreakdown(groups) {
+    return Array.from(groups.values()).map(({key, amount, nativeTotals}) => ({
+        key,
+        label: BROKER_REWARD_LABELS[key],
+        amount,
+        nativeTotals: Array.from(nativeTotals, ([currency, nativeAmount]) => ({
+            currency, amount: nativeAmount,
+        })).sort((left, right) => left.currency.localeCompare(right.currency)),
+    }));
+}
+
+/** Return numeric reward categories without parsing formatted disclosure text. */
+export function getBrokerRewardBreakdown(brokerBenefitMetrics = {}) {
+    const metrics = brokerBenefitMetrics || {};
+    const brokerRows = Array.isArray(metrics.brokerRewardBreakdown)
+        ? metrics.brokerRewardBreakdown
+        : [
+            {key: 'coupons', amount: Number(metrics.couponRebateIncome ?? 0)},
+            {key: 'cash_rewards', amount: Number(metrics.cashRewardIncome ?? 0)},
+            {key: 'kol_rewards', amount: Number(metrics.kolRewardIncome ?? 0)},
+        ];
+    const cardRows = Array.isArray(metrics.creditCardRewardBreakdown)
+        ? metrics.creditCardRewardBreakdown
+        : [{key: 'card_rewards', amount: Number(metrics.creditCardRewardIncome ?? 0)}];
+    const order = Object.keys(BROKER_REWARD_LABELS);
+    return [...brokerRows, ...cardRows]
+        .map((row) => ({
+            key: row.key,
+            label: BROKER_REWARD_LABELS[row.key] || row.label || 'Rewards',
+            amount: Number(row.amount),
+            nativeTotals: (Array.isArray(row.nativeTotals) ? row.nativeTotals : [])
+                .map(({currency, amount}) => ({currency, amount: Number(amount)})),
+        }))
+        .filter((row) => !Number.isFinite(row.amount) || Math.abs(row.amount) > 1e-9
+            || row.nativeTotals.some(({amount}) => !Number.isFinite(amount) || Math.abs(amount) > 1e-9))
+        .sort((left, right) => order.indexOf(left.key) - order.indexOf(right.key));
+}
 
 export function createInvestmentFundingMetricsRuntime(runtime) {
 function formatAmount(value) {
@@ -740,6 +798,7 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
         const kolRewardRowSet = new Set();
         const couponAndCashRewardRowSet = new Set();
         const couponAndCashRewardDetailsByKey = new Map();
+        const rewardBreakdownGroups = new Map();
 
         const recordCouponAndCashReward = ({
             category,
@@ -783,12 +842,16 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             hasNonUsdRewardSource = hasNonUsdRewardSource || currency !== 'USD';
 
             if (benefitType === 'kol_reward') {
-                kolRewardIncome += runtime.convertAmountToBaseCurrency(
+                const convertedAmount = runtime.convertAmountToBaseCurrency(
                     amount,
                     currency,
                     ledgerDate,
                     fxTimeline,
                     baseCurrency,
+                );
+                kolRewardIncome += convertedAmount;
+                recordBrokerRewardBreakdown(
+                    rewardBreakdownGroups, 'kol_rewards', currency, amount, convertedAmount,
                 );
                 kolRewardRowSet.add(ledgerNo);
                 return;
@@ -806,6 +869,13 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             const isCashReward = benefitType === 'cash_reward' || isSignedCashReward;
             const usesUsdBucket = benefitType === 'coupon_usd' || sourceCurrency === 'USD';
             hasNonUsdRewardSource = hasNonUsdRewardSource || sourceCurrency !== 'USD';
+            recordBrokerRewardBreakdown(
+                rewardBreakdownGroups,
+                isDebitCardCashback ? 'debit_card_cashback' : isCashReward ? 'cash_rewards' : 'coupons',
+                sourceCurrency,
+                sourceAmount,
+                convertedAmount,
+            );
 
             if (isCashReward) {
                 cashRewardIncome += convertedAmount;
@@ -870,6 +940,7 @@ function getBrokerBenefitMetrics(transactions, latestPrices, TOTAL_EQUITY) {
             hasNonUsdCouponAndCashRewardSource,
             couponAndCashRewardRows: Array.from(couponAndCashRewardRowSet),
             couponAndCashRewardDetails,
+            brokerRewardBreakdown: serializeBrokerRewardBreakdown(rewardBreakdownGroups),
             couponRebateHkdRows: Array.from(couponRebateHkdRowSet),
             couponRebateUsdRows: Array.from(couponRebateUsdRowSet),
             cashRewardRows: Array.from(cashRewardRowSet),
@@ -893,6 +964,7 @@ function getMetricsRewardDisclosureMetrics(
         let unavailable = !Number.isFinite(income);
         let creditCardRewardIncome = 0;
         let creditCardRewardUnavailable = false;
+        const cardRewardBreakdownGroups = new Map();
         const cutoffDate = runtime.normalizeLedgerDate(asOfDate);
         const normalizedBroker = String(brokerCode || 'all').trim().toLowerCase();
         if (normalizedBroker === 'all' || normalizedBroker === 'hsbc') {
@@ -900,7 +972,8 @@ function getMetricsRewardDisclosureMetrics(
             if ((asOfDate && !cutoffDate) || rewards?.status !== 'complete' || !Array.isArray(rewards?.transactions)) {
                 unavailable = true;
                 creditCardRewardUnavailable = true;
-                details.push({label: 'RewardCash', value: 'Unavailable'});
+                recordBrokerRewardBreakdown(cardRewardBreakdownGroups, 'card_rewards', '', NaN, NaN);
+                details.push({label: 'Card rewards', value: 'Unavailable'});
             } else {
                 let cardUnavailable = false;
                 const baseCurrency = runtime.getInvestmentBaseCurrency();
@@ -917,27 +990,40 @@ function getMetricsRewardDisclosureMetrics(
                     const rowDate = runtime.normalizeLedgerDate(row?.date);
                     if (cutoffDate && rowDate && rowDate > cutoffDate) return;
                     const amount = Number(row?.amount);
+                    const kind = row?.kind === undefined ? 'rewardcash' : row.kind;
                     if (!row?.id || row.currency !== 'HKD' || !(amount > 0)
                         || !Number.isFinite(amount) || !rowDate
+                        || !['rewardcash', 'rebate'].includes(kind)
                         || !/^\d{4}-\d{2}-\d{2}$/.test(row?.date || '')) {
                         cardUnavailable = true;
+                        recordBrokerRewardBreakdown(cardRewardBreakdownGroups, 'card_rewards', '', NaN, NaN);
                         return;
                     }
                     seenIds.add(row.id);
-                    nativeTotals.set(row.currency, (nativeTotals.get(row.currency) || 0) + amount);
+                    const nativeKey = `${kind}:${row.currency}`;
+                    const nativeTotal = nativeTotals.get(nativeKey) || {kind, currency: row.currency, amount: 0};
+                    nativeTotal.amount += amount;
+                    nativeTotals.set(nativeKey, nativeTotal);
                     const converted = runtime.convertAmountToBaseCurrency(
                         amount, row.currency, row.date, cardFxTimeline, baseCurrency,
                     );
                     if (!Number.isFinite(converted)) cardUnavailable = true;
                     creditCardRewardIncome += converted;
+                    recordBrokerRewardBreakdown(
+                        cardRewardBreakdownGroups,
+                        kind === 'rebate' ? 'card_rebates' : 'card_rewardcash',
+                        row.currency,
+                        amount,
+                        converted,
+                    );
                 });
-                nativeTotals.forEach((amount, currency) => details.push({
-                    label: `RewardCash · ${currency}`,
+                nativeTotals.forEach(({kind, currency, amount}) => details.push({
+                    label: `${kind === 'rebate' ? 'Card rebates' : 'RewardCash'} · ${currency}`,
                     value: runtime.formatAmountWithCurrency(amount, currency, {showUsdSymbol: false}),
                     valueClass: getSignedMetricClass(amount),
                 }));
                 if (cardUnavailable && nativeTotals.size) {
-                    details.push({label: 'RewardCash conversion', value: 'Unavailable'});
+                    details.push({label: 'Card reward conversion', value: 'Unavailable'});
                 }
                 income += creditCardRewardIncome;
                 creditCardRewardUnavailable = cardUnavailable;
@@ -951,6 +1037,7 @@ function getMetricsRewardDisclosureMetrics(
             rewardDisclosureDetails: details,
             creditCardRewardIncome: creditCardRewardUnavailable ? NaN : creditCardRewardIncome,
             creditCardRewardUnavailable,
+            creditCardRewardBreakdown: serializeBrokerRewardBreakdown(cardRewardBreakdownGroups),
         };
     }
 
@@ -1434,6 +1521,7 @@ function getUsdFundingMetrics(transactions) {
         classifyBrokerBenefitTransaction,
         getStockGrantBenefitMetrics,
         getBrokerBenefitMetrics,
+        getBrokerRewardBreakdown,
         getMetricsRewardDisclosureMetrics,
         renderMetricValueCopy,
         formatInvestmentMetricTooltipRowLabel,

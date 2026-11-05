@@ -1,5 +1,13 @@
 # Known issues and operating constraints
 
+Holdings Rewards details, 4 Nov 2026: the Rewards row now expands into
+independent reward categories, with native totals and activity-date FX
+conversions. Debit-card rebates, credit-card RewardCash, KOL rewards, coupons,
+and cash rewards remain distinct; supplied card rebates retain their own kind.
+Missing FX preserves native evidence and known categories while withholding
+the affected category and overall total. Valuation and card-data refreshes keep
+the disclosure open. These details do not enter share or Markdown table rows.
+
 Current-cash FX provenance, 2 Nov 2026: when daily market FX was missing,
 current cash could silently reuse an old exchange trade's execution rate,
 including a rate from another broker. Current broker and aggregate cash now

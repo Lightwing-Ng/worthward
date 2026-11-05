@@ -1,7 +1,8 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
+ * - Added: Rewards category details refresh without closing their disclosure.
  * - Changed: Stock details shows compact total-equity allocation and personal chips.
  * - Changed: Shared two-row labels omit visible chip date and share metadata.
  * - Changed: Quote updates retain posted RewardCash in reward and P&L totals.
@@ -741,6 +742,7 @@ function syncInvestmentHoldingsRealtimeValues() {
             {brokerCode: 'all'},
         );
         const rewardIncome = runtime.getBrokerRewardRealizedIncome(brokerBenefitMetrics);
+        runtime.syncInvestmentRewardsBreakdown?.(brokerBenefitMetrics);
         document.querySelectorAll('#investment_holdings_panel [data-investment-rewards-value]').forEach((rewardNode) => {
             runtime.updateInvestmentLiveValueNode(
                 rewardNode,

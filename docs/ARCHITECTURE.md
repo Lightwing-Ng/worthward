@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.143.2`
+Documentation version: `v1.143.3`
 
 ## HSBC debit-card cashback boundary
 
@@ -109,6 +109,13 @@ P&L passes an explicit `asOfDate` and includes only card rows on or before
 that date. Later redemptions cannot alter an earlier point. Missing card or
 dated FX evidence leaves native HKD detail visible and makes affected converted
 rewards and P&L totals unavailable instead of showing a partial total.
+
+The Holdings Rewards row expands into independently converted coupon, cash,
+debit-card rebate, KOL, credit-card RewardCash, and supplied credit-card rebate
+categories. Each category retains its signed native-currency totals and
+activity-date FX; missing FX leaves that category unavailable while preserving
+known categories. Live valuation and card-disclosure refreshes preserve the
+expanded state and update the same category data without adding income twice.
 
 The card ledger remains independent: its activity never becomes an investment
 cash transaction or investment ledger navigation target. Card rewards do not

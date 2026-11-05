@@ -1,4 +1,4 @@
-/* Code version: v1.83.0 */
+/* Code version: v1.84.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2913,6 +2913,91 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
+}
+
+.investment-holdings-rewards-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.investment-holdings-rewards-title > .investment-holdings-rewards-breakdown-trigger {
+    position: relative;
+    inset: auto;
+    flex: 0 0 20px;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+}
+
+.investment-holdings-rewards-breakdown-trigger::before {
+    transform: translate(-50%, -50%) rotate(var(--shared-select-chevron-closed-rotation));
+}
+
+.investment-holdings-rewards-breakdown-trigger[aria-expanded="true"]::before {
+    transform: translate(-50%, -50%) rotate(var(--shared-select-chevron-open-rotation));
+}
+
+[data-investment-rewards-breakdown-row][hidden] {
+    display: none;
+}
+
+.investment-holdings-table tbody td.investment-holdings-rewards-breakdown-cell {
+    padding: 8px 12px 12px;
+    text-align: left;
+    white-space: normal;
+}
+
+.investment-holdings-rewards-breakdown {
+    width: 100%;
+    max-width: var(--content-width-md, 640px);
+    min-width: 0;
+    margin-inline: auto;
+}
+
+.investment-holdings-rewards-breakdown-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+}
+
+.investment-holdings-rewards-breakdown-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    min-width: 0;
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
+}
+
+.investment-holdings-rewards-breakdown-entry > dt,
+.investment-holdings-rewards-breakdown-entry > dd {
+    min-width: 0;
+    margin: 0;
+}
+
+.investment-holdings-rewards-breakdown-amount {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.investment-holdings-rewards-breakdown-native {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+}
+
+.investment-holdings-rewards-breakdown-currency {
+    display: block;
+}
+
+.investment-holdings-rewards-breakdown-note {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: var(--font-ui-xs);
+    line-height: 1.3;
 }
 
 .investment-stock-details-donut-card {

@@ -1,7 +1,9 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.1
+ * - Fixed: Native reward currencies render on separate lines.
+ * - Added: Expandable Rewards categories retain native amounts and dated conversions.
  * - Changed: Rewards includes posted card RewardCash and exposes missing FX.
  * - Changed: Header and body share the scoped percentage column tokens.
  * - Fixed: Unavailable summary labels retain their semantic layout boundaries.
@@ -9,6 +11,65 @@
  */
 
 export function createInvestmentHoldingsWorkspaceRuntime(runtime) {
+function renderInvestmentRewardsBreakdown(brokerBenefitMetrics) {
+        const entries = typeof runtime.getBrokerRewardBreakdown === 'function'
+            ? runtime.getBrokerRewardBreakdown(brokerBenefitMetrics) : [];
+        const baseCurrency = runtime.getInvestmentBaseCurrency();
+        return `
+            <dl class="investment-holdings-rewards-breakdown-list">
+                ${entries.map((entry) => {
+                    const amount = Number.isFinite(entry.amount)
+                        ? `${baseCurrency} ${runtime.formatHoldingsMoney(entry.amount)}` : 'Unavailable';
+                    const nativeAmounts = (entry.nativeTotals || []).map(({currency, amount: nativeAmount}) => (
+                        `<span class="investment-holdings-rewards-breakdown-currency">${runtime.escapeHtml(`${currency} ${runtime.formatHoldingsMoney(nativeAmount)}`)}</span>`
+                    )).join('');
+                    const toneClass = Number.isFinite(entry.amount) && Math.abs(entry.amount) > 1e-9
+                        ? (entry.amount > 0 ? ' investment-holdings-value-positive' : ' investment-holdings-value-negative')
+                        : '';
+                    return `
+                        <div class="investment-holdings-rewards-breakdown-entry" data-investment-rewards-category="${runtime.escapeHtml(entry.key)}">
+                            <dt>${runtime.escapeHtml(entry.label)}</dt>
+                            <dd class="investment-holdings-rewards-breakdown-amount${toneClass}" data-investment-rewards-category-amount data-workspace-mask="trade-metric">${runtime.renderWorkspaceMetricValueContent(amount)}</dd>
+                            ${nativeAmounts ? `<dd class="investment-holdings-rewards-breakdown-native" data-investment-rewards-category-native data-workspace-mask="trade-metric">${nativeAmounts}</dd>` : ''}
+                        </div>
+                    `;
+                }).join('')}
+            </dl>
+            <p class="investment-holdings-rewards-breakdown-note">Converted to ${runtime.escapeHtml(baseCurrency)} using each activity date’s exchange rate.</p>
+        `;
+    }
+
+function syncInvestmentRewardsBreakdown(brokerBenefitMetrics) {
+        const markup = renderInvestmentRewardsBreakdown(brokerBenefitMetrics);
+        document.querySelectorAll('#investment_holdings_panel [data-investment-rewards-breakdown]').forEach((node) => {
+            if (node.innerHTML !== markup) node.innerHTML = markup;
+        });
+    }
+
+function bindInvestmentRewardsBreakdownControls(holdingsPanel) {
+        if (!holdingsPanel) return;
+        holdingsPanel.querySelectorAll('.scrollable-data-table-frosted-underlay [data-investment-rewards-breakdown-trigger]').forEach((button) => {
+            button.disabled = true;
+            button.tabIndex = -1;
+        });
+        if (holdingsPanel.dataset.investmentRewardsBreakdownBound === '1') return;
+        holdingsPanel.dataset.investmentRewardsBreakdownBound = '1';
+        holdingsPanel.addEventListener('click', (event) => {
+            const trigger = event.target instanceof Element
+                ? event.target.closest('[data-investment-rewards-breakdown-trigger]') : null;
+            if (!(trigger instanceof HTMLButtonElement) || !holdingsPanel.contains(trigger)) return;
+            const expanded = trigger.getAttribute('aria-expanded') !== 'true';
+            runtime.state.investmentRewardsBreakdownExpanded = expanded;
+            holdingsPanel.querySelectorAll('[data-investment-rewards-breakdown-trigger]').forEach((button) => {
+                button.setAttribute('aria-expanded', String(expanded));
+                button.setAttribute('aria-label', `${expanded ? 'Hide' : 'Show'} Rewards details`);
+            });
+            holdingsPanel.querySelectorAll('[data-investment-rewards-breakdown-row]').forEach((row) => {
+                row.hidden = !expanded;
+            });
+        });
+    }
+
 function syncInvestmentFormLayout() {
         if (!runtime.formContainer || !runtime.historyTable || !runtime.parentSection) return;
         runtime.historyTable.style.transform = 'translateY(0)';
@@ -299,7 +360,7 @@ function renderHoldingsTable(
                             <div class="ticker-identity-row">
                                 <span class="ticker-identity-logo investment-broker-reward-token-logo" aria-hidden="true"></span>
                                 <span class="ticker-identity-copy">
-                                    <span class="suggestion-symbol ticker-identity-symbol">Rewards</span>
+                                    <span class="suggestion-symbol ticker-identity-symbol investment-holdings-rewards-title">Rewards<button type="button" class="investment-stock-details-metric-breakdown-trigger investment-holdings-rewards-breakdown-trigger" data-investment-rewards-breakdown-trigger aria-controls="investment_holdings_rewards_breakdown" aria-expanded="${runtime.state.investmentRewardsBreakdownExpanded === true}" aria-label="${runtime.state.investmentRewardsBreakdownExpanded === true ? 'Hide' : 'Show'} Rewards details"></button></span>
                                     <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards, KOL rewards &amp; RewardCash">Coupons, cash rewards, KOL rewards &amp; RewardCash</span>
                                 </span>
                             </div>
@@ -314,6 +375,11 @@ function renderHoldingsTable(
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
+                </tr>
+                <tr data-investment-rewards-breakdown-row${runtime.state.investmentRewardsBreakdownExpanded === true ? '' : ' hidden'}>
+                    <td colspan="9" class="investment-holdings-rewards-breakdown-cell">
+                        <div class="investment-holdings-rewards-breakdown" id="investment_holdings_rewards_breakdown" data-investment-rewards-breakdown role="region" aria-label="Rewards details">${renderInvestmentRewardsBreakdown(brokerBenefitMetrics)}</div>
+                    </td>
                 </tr>
             `
             : '';
@@ -473,6 +539,7 @@ function renderHoldingsTable(
 
 function bindHoldingsHistoryInteractions(holdingsPanel) {
         if (!holdingsPanel) return;
+        bindInvestmentRewardsBreakdownControls(holdingsPanel);
         holdingsPanel.querySelectorAll('tr[data-investment-holdings-ticker]').forEach((row) => {
             if (row.dataset.historyHoverBound === '1') return;
             row.dataset.historyHoverBound = '1';
@@ -608,6 +675,8 @@ function buildInvestmentStockDonutMarkup(summary, profile) {
     }
 
     return {
+        renderInvestmentRewardsBreakdown,
+        syncInvestmentRewardsBreakdown,
         syncInvestmentFormLayout,
         setInvestmentSharedChartDateRange,
         getInvestmentSharedChartDateRange,

@@ -1,7 +1,7 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.3.0
+ * Code version: v1.3.1
  * - Added: HSBC dividend matching in Description, excluded from exports.
  * - Changed: The unresolved HSBC order reference is the sole visible `*`
  *   marker; Cash and Equity retain their explanatory titles without repeating
@@ -351,7 +351,8 @@ async function exportStandardInvestmentXlsx() {
 function cloneRenderedTable(headerTable, bodyTable) {
         if (!headerTable || !bodyTable) return null;
         const headerRows = Array.from(headerTable.querySelectorAll('thead tr'));
-        const bodyRows = Array.from(bodyTable.querySelectorAll('tbody tr'));
+        const bodyRows = Array.from(bodyTable.querySelectorAll('tbody tr'))
+            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row]'));
         const table = document.createElement('table');
         if (headerRows.length) {
             const thead = document.createElement('thead');
