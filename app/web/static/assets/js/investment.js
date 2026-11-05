@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.166.5
+ * Code version: v2.166.6
+ * - Fixed: Loads reward details at the headline column boundaries.
  * - Fixed: Loads left-aligned reward categories and separate native-currency lines.
  * - Added: Loads expandable Rewards categories with native and converted amounts.
  * - Fixed: Loads personal chip bars with uniform vertical thickness.
@@ -95,7 +96,7 @@ import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.6.0';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.5.0';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.2.1';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.2.2';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.1';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.1';
 import {
@@ -210,7 +211,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.166.5',
+    entry: 'v2.166.6',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

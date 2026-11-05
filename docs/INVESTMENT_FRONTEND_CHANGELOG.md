@@ -1,12 +1,16 @@
 # Investment frontend changelog
 
-Documentation version: `v1.64.1`
+Documentation version: `v1.64.2`
 
 This is a historical record, not a current implementation contract. Entries
 may be superseded by later source code, tests, Architecture, or Known Issues.
 It must not contain user account identifiers, real balances, position
 quantities, portfolio size, transaction dates, or a private acceptance
 portfolio. Record only privacy-safe behavior invariants.
+
+- Fixed: Rewards detail labels and native currencies share the Rewards title's
+  left edge, and converted amounts share the headline total's right edge at
+  every table width.
 
 - Fixed: Rewards category names and native amounts align left.
   Native currency totals use one line per currency; converted USD amounts stay

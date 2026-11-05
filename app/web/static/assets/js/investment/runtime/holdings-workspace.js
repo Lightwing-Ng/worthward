@@ -1,7 +1,8 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
+ * - Fixed: Reward details share the title and total column boundaries.
  * - Fixed: Native reward currencies render on separate lines.
  * - Added: Expandable Rewards categories retain native amounts and dated conversions.
  * - Changed: Rewards includes posted card RewardCash and exposes missing FX.
@@ -377,9 +378,11 @@ function renderHoldingsTable(
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                 </tr>
                 <tr data-investment-rewards-breakdown-row${runtime.state.investmentRewardsBreakdownExpanded === true ? '' : ' hidden'}>
-                    <td colspan="9" class="investment-holdings-rewards-breakdown-cell">
+                    <td aria-hidden="true"></td>
+                    <td colspan="6" class="investment-holdings-rewards-breakdown-cell">
                         <div class="investment-holdings-rewards-breakdown" id="investment_holdings_rewards_breakdown" data-investment-rewards-breakdown role="region" aria-label="Rewards details">${renderInvestmentRewardsBreakdown(brokerBenefitMetrics)}</div>
                     </td>
+                    <td colspan="2" aria-hidden="true"></td>
                 </tr>
             `
             : '';
