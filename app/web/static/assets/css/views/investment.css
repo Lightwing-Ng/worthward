@@ -1,4 +1,4 @@
-/* Code version: v1.84.0 */
+/* Code version: v1.84.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2942,7 +2942,7 @@
     display: none;
 }
 
-.investment-holdings-table .investment-holdings-rewards-breakdown-cell {
+.investment-holdings-table tbody td.investment-holdings-rewards-breakdown-cell {
     padding: 8px 12px 12px;
     text-align: left;
     white-space: normal;
@@ -2987,6 +2987,10 @@
     grid-column: 1 / -1;
     color: var(--muted);
     overflow-wrap: anywhere;
+}
+
+.investment-holdings-rewards-breakdown-currency {
+    display: block;
 }
 
 .investment-holdings-rewards-breakdown-note {

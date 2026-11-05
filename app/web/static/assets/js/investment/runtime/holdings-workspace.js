@@ -1,7 +1,8 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.2.0
+ * Code version: v1.2.1
+ * - Fixed: Native reward currencies render on separate lines.
  * - Added: Expandable Rewards categories retain native amounts and dated conversions.
  * - Changed: Rewards includes posted card RewardCash and exposes missing FX.
  * - Changed: Header and body share the scoped percentage column tokens.
@@ -20,8 +21,8 @@ function renderInvestmentRewardsBreakdown(brokerBenefitMetrics) {
                     const amount = Number.isFinite(entry.amount)
                         ? `${baseCurrency} ${runtime.formatHoldingsMoney(entry.amount)}` : 'Unavailable';
                     const nativeAmounts = (entry.nativeTotals || []).map(({currency, amount: nativeAmount}) => (
-                        `${currency} ${runtime.formatHoldingsMoney(nativeAmount)}`
-                    )).join(' · ');
+                        `<span class="investment-holdings-rewards-breakdown-currency">${runtime.escapeHtml(`${currency} ${runtime.formatHoldingsMoney(nativeAmount)}`)}</span>`
+                    )).join('');
                     const toneClass = Number.isFinite(entry.amount) && Math.abs(entry.amount) > 1e-9
                         ? (entry.amount > 0 ? ' investment-holdings-value-positive' : ' investment-holdings-value-negative')
                         : '';
@@ -29,7 +30,7 @@ function renderInvestmentRewardsBreakdown(brokerBenefitMetrics) {
                         <div class="investment-holdings-rewards-breakdown-entry" data-investment-rewards-category="${runtime.escapeHtml(entry.key)}">
                             <dt>${runtime.escapeHtml(entry.label)}</dt>
                             <dd class="investment-holdings-rewards-breakdown-amount${toneClass}" data-investment-rewards-category-amount data-workspace-mask="trade-metric">${runtime.renderWorkspaceMetricValueContent(amount)}</dd>
-                            ${nativeAmounts ? `<dd class="investment-holdings-rewards-breakdown-native" data-investment-rewards-category-native data-workspace-mask="trade-metric">${runtime.escapeHtml(nativeAmounts)}</dd>` : ''}
+                            ${nativeAmounts ? `<dd class="investment-holdings-rewards-breakdown-native" data-investment-rewards-category-native data-workspace-mask="trade-metric">${nativeAmounts}</dd>` : ''}
                         </div>
                     `;
                 }).join('')}

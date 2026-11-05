@@ -1,5 +1,5 @@
-/* Code version: v1.2.0
- * Reward disclosure keeps category evidence, accessible controls, and live import updates.
+/* Code version: v1.2.1
+ * Reward disclosure keeps left-aligned currency lines and right-aligned conversions.
  */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
@@ -15,6 +15,9 @@ const holdingsRewardCategory = (page, category) => holdingsRewardDetails(page)
 const mockRewardCategories = async (page, {missingFx = false} = {}) => mockInvestmentReadApis(page, {
     startingCash: 0,
     brokers: ['hsbc', 'ibkr', 'tigertrade', 'longbridge_hk'],
+    fxRateHistoryByCurrency: {
+        CNH: {dates: ['2026-09-01'], values: {'2026-09-01': 4}},
+    },
     transactions: [
         {broker: 'hsbc', date: '2026-09-01', type: 'deposit', currency: 'USD', amount: 1000},
         {
@@ -28,7 +31,16 @@ const mockRewardCategories = async (page, {missingFx = false} = {}) => mockInves
                 file_kind: 'hsbc_multi_currency_cash_account_text', account_number: '000-555555-001',
                 account_type: 'USD Savings',
             },
-            normalized: {net_amount: '2.00', cash_flow_amount: '2.00'},
+            normalized: {net_amount: '1.00', cash_flow_amount: '1.00'},
+        },
+        {
+            broker: 'hsbc', date: '2026-09-03', type: 'credit_interest', currency: 'CNH',
+            description: 'CASH REBATE 0055',
+            source: {
+                file_kind: 'hsbc_multi_currency_cash_account_text', account_number: '000-555555-001',
+                account_type: 'RMB Savings',
+            },
+            normalized: {net_amount: '4.00', cash_flow_amount: '4.00'},
         },
         {
             broker: 'tigertrade', date: '2026-09-04', type: 'deposit', currency: 'USD',
@@ -113,19 +125,50 @@ for (const width of [1280, 390]) {
         expect(await holdingsRewardDetailsRow(page).evaluate((row) => row.previousElementSibling
             ?.hasAttribute('data-investment-broker-rewards-row'))).toBe(true);
         const categories = [
-            ['debit_card_cashback', 'Debit-card rebates', 'USD 2.00', '2.00'],
-            ['card_rewardcash', 'Credit-card RewardCash', 'HKD 40.00', '5.00'],
-            ['card_rebates', 'Credit-card rebates', 'HKD 8.00', '1.00'],
-            ['kol_rewards', 'KOL rewards', 'USD 10.00', '10.00'],
-            ['coupons', 'Coupons', 'USD 2.00', '2.00'],
-            ['cash_rewards', 'Cash rewards', 'USD 3.00', '3.00'],
+            ['debit_card_cashback', 'Debit-card rebates', ['CNH 4.00', 'USD 1.00'], '2.00'],
+            ['card_rewardcash', 'Credit-card RewardCash', ['HKD 40.00'], '5.00'],
+            ['card_rebates', 'Credit-card rebates', ['HKD 8.00'], '1.00'],
+            ['kol_rewards', 'KOL rewards', ['USD 10.00'], '10.00'],
+            ['coupons', 'Coupons', ['USD 2.00'], '2.00'],
+            ['cash_rewards', 'Cash rewards', ['USD 3.00'], '3.00'],
         ];
         await expect(holdingsRewardDetails(page).locator('[data-investment-rewards-category]')).toHaveCount(6);
         for (const [key, label, native, converted] of categories) {
             const category = holdingsRewardCategory(page, key);
             await expect(category).toContainText(label);
-            await expect(category.locator('[data-investment-rewards-category-native]')).toContainText(native);
+            const nativeAmounts = category.locator('[data-investment-rewards-category-native]');
+            await expect(nativeAmounts.locator('.investment-holdings-rewards-breakdown-currency')).toHaveText(native);
             await expect(category.locator('[data-investment-rewards-category-amount]')).toContainText(converted);
+            const layout = await category.evaluate((node) => {
+                const label = node.querySelector('dt');
+                const native = node.querySelector('[data-investment-rewards-category-native]');
+                const amount = node.querySelector('[data-investment-rewards-category-amount]');
+                return {
+                    labelAlign: getComputedStyle(label).textAlign,
+                    nativeAlign: getComputedStyle(native).textAlign,
+                    amountAlign: getComputedStyle(amount).textAlign,
+                    labelLeft: label.getBoundingClientRect().left,
+                    nativeLeft: native.getBoundingClientRect().left,
+                    amountRight: amount.getBoundingClientRect().right,
+                    entryRight: node.getBoundingClientRect().right,
+                    currencyLines: [...native.querySelectorAll('.investment-holdings-rewards-breakdown-currency')]
+                        .map((line) => {
+                            const bounds = line.getBoundingClientRect();
+                            return {left: bounds.left, top: bounds.top, bottom: bounds.bottom};
+                        }),
+                };
+            });
+            expect(layout.labelAlign).toBe('left');
+            expect(layout.nativeAlign).toBe('left');
+            expect(layout.amountAlign).toBe('right');
+            expect(Math.abs(layout.nativeLeft - layout.labelLeft)).toBeLessThanOrEqual(1);
+            expect(Math.abs(layout.amountRight - layout.entryRight)).toBeLessThanOrEqual(1);
+            for (const [index, line] of layout.currencyLines.entries()) {
+                expect(Math.abs(line.left - layout.labelLeft)).toBeLessThanOrEqual(1);
+                if (index > 0) {
+                    expect(line.top).toBeGreaterThanOrEqual(layout.currencyLines[index - 1].bottom - 0.5);
+                }
+            }
         }
         const convertedTotal = await holdingsRewardDetails(page)
             .locator('[data-investment-rewards-category-amount]').evaluateAll((nodes) => nodes.reduce(
