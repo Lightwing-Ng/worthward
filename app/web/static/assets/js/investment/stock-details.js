@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.41.1
+ * Code version: v0.41.2
+ * - Fixed: Personal chip bars use one uniform vertical thickness.
  * - Changed: Loads the shared current-cash FX provenance utilities.
  * - Added: Personal chips and immutable entry-price anchors share the price axis.
  * - Fixed: Historical hover restores the latest allocation and chip snapshot.
@@ -77,11 +78,11 @@ import {
 import {
     applyInvestmentStockDetailsHorizontalGuideStyle,
     createInvestmentStockDetailsChipChart,
-} from './stock-details-chip-chart.js?v=investment-stock-details-chip-chart-v1.5.1';
+} from './stock-details-chip-chart.js?v=investment-stock-details-chip-chart-v1.5.2';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.41.1';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.41.2';
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,

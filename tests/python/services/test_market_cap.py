@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.11.2
+Code version: v0.11.3
 """
 
 from __future__ import annotations
@@ -781,6 +781,29 @@ class MarketCapTests(unittest.TestCase):
 
         self.assertEqual(result["Shares"].tolist(), [10_000_000_000.0, 9_900_000_000.0])
         self.assertEqual(result.attrs["reported_shares_scope"], "issuer_total")
+
+    def test_asof_market_cap_values_aligns_mixed_datetime_resolutions_without_mutation(self) -> None:
+        for target_unit, source_unit in (("ns", "us"), ("us", "ns")):
+            with self.subTest(target_unit=target_unit, source_unit=source_unit):
+                target_dates = pd.DataFrame({
+                    "Date": pd.to_datetime([
+                        "2026-01-05", "2026-01-01", "2026-01-03",
+                    ]).as_unit(target_unit),
+                }, index=[8, 2, 5])
+                source = pd.DataFrame({
+                    "Date": pd.to_datetime(["2026-01-02", "2026-01-04"]).as_unit(source_unit),
+                    "Shares": [10.0, 20.0],
+                })
+                original_targets = target_dates.copy(deep=True)
+                original_source = source.copy(deep=True)
+
+                result = market_cap._asof_market_cap_values(target_dates, source, "Shares")
+
+                pd.testing.assert_series_equal(result, pd.Series(
+                    [20.0, float("nan"), 10.0], index=target_dates.index, name="Shares",
+                ))
+                pd.testing.assert_frame_equal(target_dates, original_targets)
+                pd.testing.assert_frame_equal(source, original_source)
 
     def test_alphabet_market_cap_uses_total_issuer_shares_when_yfinance_is_limited(self) -> None:
         prices = pd.DataFrame({

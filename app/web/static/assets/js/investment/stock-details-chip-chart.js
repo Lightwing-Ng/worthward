@@ -1,6 +1,6 @@
 /**
  * Personal remaining-lot distribution presentation.
- * Code version: v1.5.1
+ * Code version: v1.5.2
  */
 
 const quantityFormatter = new Intl.NumberFormat('en-US', {maximumFractionDigits: 6});
@@ -82,13 +82,9 @@ export function createInvestmentStockDetailsChipChart(card, {resolveTheme, getPr
         ctx.beginPath();
         ctx.rect(0, top, rect.width, bottom - top);
         ctx.clip();
-        paintedRows.forEach((row, index) => {
-            const previousGap = index ? row.y - paintedRows[index - 1].y : Number.POSITIVE_INFINITY;
-            const nextGap = index + 1 < paintedRows.length
-                ? paintedRows[index + 1].y - row.y : Number.POSITIVE_INFINITY;
-            // Dense levels retain their exact source-axis center and at least
-            // one physical pixel of ink; isolated levels need not become thin.
-            const barHeight = Math.max(1 / ratio, Math.min(5, Math.min(previousGap, nextGap) * 0.8));
+        // Quantity changes only bar width; every price level has the same thickness.
+        const barHeight = 1;
+        paintedRows.forEach((row) => {
             let x = left;
             row.bins.forEach((bin) => {
                 const width = (bin.quantity / maxPaintedQuantity) * (right - left);
