@@ -1,6 +1,7 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.6.0
+Code version: v0.6.1
+- Fixed: Page-level market-index timestamps do not date Portfolio holdings.
 - Added: Verified bank cashback and reversals remain distinct from interest.
 - Changed: Credit-card pages fail before investment cash parsing and direct
   users to the first HSBC Copy/paste field and explicit Preview.
@@ -641,10 +642,20 @@ def _split_hsbc_pasted_text_chunks(raw_text: str) -> list[str]:
 
 def _extract_hsbc_portfolio_market_data_updated_at(raw_text: str) -> dict[str, str]:
     candidates: list[tuple[date, str, str]] = []
+    index_widget = False
+    index_heading = re.compile(
+        r"^(?:Dow Jones|S&P(?: 500)?|Nasdaq(?: Composite| 100)?|"
+        r"Hang Seng(?: Index)?|HSI|FTSE(?: 100)?|Nikkei(?: 225)?)$",
+        re.IGNORECASE,
+    )
     for line in raw_text.splitlines():
         normalized_line = _normalize_whitespace(line)
+        if re.match(r"^Portfolio(?:Market value|$)", normalized_line):
+            index_widget = False
+        elif index_heading.fullmatch(normalized_line):
+            index_widget = True
         match = HSBC_PORTFOLIO_UPDATED_PATTERN.fullmatch(normalized_line)
-        if not match:
+        if not match or index_widget:
             continue
         try:
             updated_date = _parse_hsbc_human_date(
