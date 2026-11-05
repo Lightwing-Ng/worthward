@@ -1,4 +1,4 @@
-"""Direct neural distribution causality and backend contracts. Code version: v1.0.2."""
+"""Direct neural distribution causality and backend contracts. Code version: v1.0.3."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from tests.factories.market import ohlc_frame_for_dates
 def _inputs(count=85):
     frame = ohlc_frame_for_dates("NVDA", pd.bdate_range("2024-01-02", periods=count).astype(str).tolist())
     frame["Close"] *= np.exp(np.sin(np.arange(count) * 0.31) * 0.02)
-    closes = frame["Close"].to_numpy()
+    closes = frame["Close"].to_numpy(copy=True)
     returns = np.r_[np.nan, np.diff(np.log(closes))]
     features = np.column_stack((returns, np.cos(np.arange(count) * 0.2), np.full(count, np.nan)))
     return features, closes
