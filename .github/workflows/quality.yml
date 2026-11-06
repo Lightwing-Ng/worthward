@@ -1,3 +1,5 @@
+# Code version: v1.0.0
+
 name: Quality gate
 
 on:
@@ -15,7 +17,8 @@ jobs:
   check:
     name: Python ${{ matrix.python-version }}, JavaScript, and browser checks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Preserve the complete gate on slower hosted runners, including real models.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.4.1
+Code version: v0.4.2
+- Fixed: Settled limit-price sells retain unconfirmed price evidence without an inferred residual.
 - Changed: Principal-only sells settle without attaching fees from another cash scope.
 - Changed: A sell cash match commits only with its complete same-scope fee row.
 """
@@ -728,19 +729,40 @@ class HsbcReconciliationImportTestsMixin:
             sell_order["source"]["cash_flow_fee_row_numbers"],
             [2],
         )
-        self.assertEqual(sell_order["settlement_adjustment_raw"], "-0.01")
+        # Order Status supplies a limit, not a confirmed execution price. The
+        # separate native cash postings establish settlement independently.
+        self.assertEqual(sell_order["price_raw"], "31.020")
+        self.assertEqual(sell_order["normalized"]["unit_price"], "31.020")
         self.assertEqual(
-            sell_order["source"]["settlement_component_total_raw"],
-            "775.49",
+            sell_order["source"]["file_kind"], "hsbc_order_status_text"
+        )
+        self.assertEqual(sell_order["source"]["order_type"], "Limit Price Order")
+        self.assertEqual(
+            sell_order["source"]["execution_price_status"],
+            "settled_cash_price_unconfirmed",
         )
         self.assertEqual(
-            sell_order["source"]["settlement_adjustment_classification"],
-            "unclassified_broker_settlement_difference",
+            sell_order["source"]["execution_price_calibration_status"],
+            "settled_cash_price_unconfirmed",
         )
+        self.assertNotIn("execution_price_final_raw", sell_order["source"])
+        self.assertIsNot(
+            sell_order["source"].get("cash_replay_pending_settlement"), True
+        )
+        self.assertEqual(sell_order["source"]["cash_settlement_date"], "2026-07-02")
         self.assertEqual(
-            sell_order["normalized"]["settlement_adjustment"],
-            "-0.01",
+            sell_order["source"]["cash_settlement_balance_after_raw"], "18124.43"
         )
+        for container in (sell_order, sell_order["source"], sell_order["normalized"]):
+            for field in (
+                "settlement_adjustment_raw",
+                "settlement_adjustment",
+                "settlement_component_total_raw",
+                "settlement_component_total",
+                "settlement_adjustment_calculation",
+                "settlement_adjustment_classification",
+            ):
+                self.assertNotIn(field, container)
         self.assertEqual(
             [
                 (

@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.3.6 */
 import {
     expect,
     test,
@@ -1841,7 +1841,7 @@ test('keeps Holdings live-value geometry stable and fixed summary cumulative P&L
     await expect(cumulativePnl).toHaveAttribute('data-investment-live-display', '-50.00');
     await expect(dailyNetPnl).toHaveCount(0);
 
-    const readStableLiveValueGeometry = () => page.evaluate(() => {
+    const readLiveValueGeometry = () => page.evaluate(() => {
         const panel = document.querySelector('#investment_holdings_panel:not([hidden])');
         const shell = panel?.querySelector('.investment-holdings-table-shell');
         const table = panel?.querySelector('[data-table-body]');
@@ -1865,7 +1865,36 @@ test('keeps Holdings live-value geometry stable and fixed summary cumulative P&L
             ),
         };
     });
-    const initialGeometry = await readStableLiveValueGeometry();
+    const readStableLiveValueGeometry = async () => {
+        const surface = page.locator('#investment_view_surface');
+        await expect(surface).toHaveAttribute('data-active-view', 'holdings');
+        // A view switch keeps a temporary surface height until its cleanup finishes.
+        await expect.poll(() => surface.evaluate((node) => ({
+            height: node.style.height,
+            overflow: node.style.overflow,
+        })), {timeout: 5_000}).toEqual({height: '', overflow: ''});
+        await page.evaluate(() => document.fonts.ready);
+
+        // Settle each snapshot independently of the other snapshot's dimensions.
+        let previous = null;
+        let geometry = null;
+        let stableSamples = 0;
+        await expect.poll(async () => {
+            await page.evaluate(() => new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(resolve));
+            }));
+            geometry = await readLiveValueGeometry();
+            const complete = Object.values(geometry).every((rect) => rect
+                && Number.isFinite(rect.width) && rect.width > 0
+                && Number.isFinite(rect.height) && rect.height > 0);
+            stableSamples = complete && previous
+                && JSON.stringify(geometry) === JSON.stringify(previous)
+                ? stableSamples + 1 : 0;
+            previous = complete ? geometry : null;
+            return stableSamples;
+        }, {timeout: 5_000, intervals: [16, 32, 64, 100]}).toBeGreaterThanOrEqual(2);
+        return geometry;
+    };
 
     const dailyHoldingBadges = page.locator(
         '#investment_holdings_panel:not([hidden]) [data-table-scroll] tr[data-investment-holdings-ticker] [data-investment-live-field="daily_unrealized_pnl"]',
@@ -1874,6 +1903,7 @@ test('keeps Holdings live-value geometry stable and fixed summary cumulative P&L
     for (let index = 0; index < 5; index += 1) {
         await expect(dailyHoldingBadges.nth(index)).toHaveAttribute('data-investment-live-display', '+1.00');
     }
+    const initialGeometry = await readStableLiveValueGeometry();
 
     quotePrice = 1_000;
     await expect.poll(() => page.evaluate(() => (
@@ -1969,9 +1999,14 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     await page.locator('label[for="investment_view_holdings"]').click();
 
     const bodyRows = page.locator(
-        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll tbody > tr',
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll tbody > tr:not([data-investment-rewards-breakdown-row])',
     );
     await expect(bodyRows).toHaveCount(14);
+    const rewardDetails = page.locator(
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll [data-investment-rewards-breakdown-row]',
+    );
+    await expect(rewardDetails).toHaveCount(1);
+    await expect(rewardDetails).toBeHidden();
     const rewardRow = bodyRows.last();
     await expect(rewardRow).toHaveAttribute('data-investment-broker-rewards-row', '');
     await expect(rewardRow.locator('.ticker-identity-symbol')).toHaveText('Rewards');

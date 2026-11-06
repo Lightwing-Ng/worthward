@@ -1,4 +1,4 @@
-/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.14 */
+/* Shared LSTM / Bayesian Price Field E2E. Code version: v1.22.15 */
 import {readFileSync} from 'node:fs';
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
@@ -441,7 +441,7 @@ test('LSTM training toggles one button and displays real progress and artifact m
         id: 'lstm-ga-aaaaaaaaaaaaaaaaaaaaaaaa', ticker: 'DRAM', period: '1y',
         status: 'running', active: true, started_at: '2026-09-04T00:00:00Z',
         progress: {completed: 25, total: 100, percent: 25},
-        files: [{name: 'request.json', size_bytes: 1234}, {name: 'status.json', size_bytes: 256}],
+        files: [{name: 'request.sqlite3', size_bytes: 1234}, {name: 'status.sqlite3', size_bytes: 256}],
     };
     await page.route('**/api/lstm-training', (route) => route.fulfill({
         status: historyFails ? 503 : 200, contentType: 'application/json',
@@ -519,6 +519,8 @@ test('LSTM training toggles one button and displays real progress and artifact m
     await expect(menu.locator('.lstm-training-history-identifier').first()).toHaveCSS('text-align', 'right');
     await menu.locator('.lstm-training-history-select').first().click();
     await expect(menu.locator('.lstm-training-files').first()).toBeVisible();
+    await expect(menu.locator('.lstm-training-files').first().locator('.lstm-training-file-name'))
+        .toHaveText(['request.sqlite3', 'status.sqlite3']);
     await page.reload();
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(0);
     await expect(menu.getByRole('progressbar')).toHaveCount(0);
@@ -616,7 +618,7 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
         started_at: '2026-09-04T00:00:00Z', identifier: '260904(01)', accuracy_pct: 65,
         accuracy_label: 'Holdout direction accuracy', training_mode: 'exact',
         selected_params: configuration.params,
-        configuration, files: [{name: 'request.json', size_bytes: 1234}],
+        configuration, files: [{name: 'request.sqlite3', size_bytes: 1234}],
     }, {
         id: 'lstm-ga-bbbbbbbbbbbbbbbbbbbbbbbb', ticker: 'DRAM', status: 'completed', active: false,
         started_at: '2026-09-04T01:00:00Z', identifier: '260904(02)', accuracy_pct: 61.25,
@@ -676,6 +678,8 @@ test('LSTM history selects a complete case, detaches edits, and archives one res
     )).toBe(20);
     await expect(menu.locator('.lstm-training-history-select[aria-expanded="true"]')).toHaveCount(1);
     await expect(menu.locator('.lstm-training-history-details').first()).toContainText('Selected parameters:');
+    await expect(menu.locator('.lstm-training-history-details').first().locator('.lstm-training-file-name'))
+        .toHaveText(['request.sqlite3']);
     await expect(menu.locator('.lstm-training-history-details').first()).not.toContainText('Objective CRPS skill vs baseline');
     expect(await menu.locator('.lstm-training-history-details').first().evaluate((node) => getComputedStyle(node).fontFamily)).toContain('Univers Next for HSBC');
     await page.reload();

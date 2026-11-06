@@ -1,8 +1,19 @@
 # Testing guide
 
-Documentation version: `v1.104.0`
+Documentation version: `v1.104.2`
 
 ## SQLite persistence verification
+
+Fixtures obtained from canonical market-store path helpers must use
+`write_market_frame_atomic`, including tagged offline CLI tests. Writing
+Parquet bytes to a `.sqlite3` path is invalid even when a listing-only test
+does not open that file. Preserve explicit legacy paths for tests that actually
+exercise the legacy adapter.
+
+Current-cash FX browser fixtures pin browser wall time to their evidence date
+without pausing timers. Keep an explicit expired-rate control so a static
+historical fixture cannot become stale as the calendar advances, or accidentally
+weaken the production freshness boundary.
 
 SQLite tests use temporary stores and synthetic fixtures. Verify logical payload
 equality separately from SQLite integrity, source-byte preservation, and runtime
@@ -99,6 +110,11 @@ assets changed. Changes to ML execution require its tagged integration tests.
 Report which affected boundaries were covered and any that remain untested.
 The repository report lock, isolated pytest stores, host E2E lock, and user-owned
 port `8688` boundary remain in force for every selection.
+
+Each hosted Python matrix job has a 90-minute budget for the complete gate.
+Slower runners can exceed one hour while tests continue making progress; this
+job budget preserves all model execution, individual test timeouts, assertions,
+and coverage thresholds.
 
 ## Schwab authoritative trade reconciliation
 

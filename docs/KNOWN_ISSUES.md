@@ -1,5 +1,11 @@
 # Known issues and operating constraints
 
+Ticker lookup after rapid refocus, 6 Nov 2026: pressing Enter blurs a ticker
+field and schedules suggestion dismissal. That delayed callback now checks
+focus before closing the panel, so returning to the field and starting a new
+lookup preserves its pending feedback. A genuine blur still dismisses the
+panel; symbol validation and exact-match confirmation remain unchanged.
+
 HSBC Portfolio timestamp scope, 5 Nov 2026: an `Updated` line within the page's
 market-index widget does not establish a Portfolio quote time. The importer
 now excludes that widget's timestamp while retaining independently scoped
@@ -1313,7 +1319,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.3`
+Documentation version: `v1.286.4`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

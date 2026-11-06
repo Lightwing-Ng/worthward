@@ -1,6 +1,6 @@
 """Investment import domain: merge identity.
 
-Code version: v0.5.0
+Code version: v0.5.2
 - Fixed: Same-order HSBC cash imports with an unconfirmed execution price retain
   an existing final cash-derived price without replacing new cash evidence.
 - Fixed: Schwab source aliases start with the merged canonical identity so
@@ -26,10 +26,8 @@ from app.services.investment.importing.support import (
     Decimal,
     HSBC_CASH_ACCOUNT_FILE_KINDS,
     HSBC_CORPORATE_EVENT_PAYMENT_PREFIX,
-    HSBC_CURRENCY_ALIASES,
     InvalidOperation,
     ZERO,
-    _decimal_to_str,
     _normalize_text,
     _normalize_whitespace,
     date,
@@ -42,9 +40,20 @@ from app.services.investment.importing.support import (
 
 import app.services.investment.importing.basics as _ii_basics
 
-import app.services.investment.importing.brokers.bochk as _ii_bochk
+# Preserve the historical module aliases independently of the pure helper exports.
+import app.services.investment.importing.brokers.bochk as _ii_bochk  # noqa: F401
+import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash  # noqa: F401
 
-import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+from app.services.investment.importing.merge.currency_balances import (
+    HSBC_CURRENCY_ALIASES as HSBC_CURRENCY_ALIASES,
+    _decimal_to_str as _decimal_to_str,
+    _normalize_hsbc_currency_code as _normalize_hsbc_currency_code,
+    _normalize_currency_balance_map as _normalize_currency_balance_map,
+    _normalize_hsbc_currency_balance_map as _normalize_hsbc_currency_balance_map,
+    _normalize_bochk_currency_balance_map as _normalize_bochk_currency_balance_map,
+    _normalize_bochk_subaccount_balance_map as _normalize_bochk_subaccount_balance_map,
+)
+
 
 from app.services.investment.importing.brokers.hsbc.rewards import (
     hsbc_cash_reward_identity_description,
@@ -298,100 +307,6 @@ def _pick_fx_translation_pnl_record(
     if incoming_date >= current_date:
         return _merge_transaction_records(current, incoming)
     return _merge_transaction_records(incoming, current)
-
-
-def _normalize_hsbc_currency_code(value: Any) -> str:
-    return HSBC_CURRENCY_ALIASES.get(_normalize_text(value).upper(), "")
-
-
-def _normalize_currency_balance_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    normalized: dict[str, Decimal] = {}
-    for raw_currency, raw_amount in value.items():
-        currency = _normalize_text(raw_currency).upper()
-        amount = _ii_hsbc_cash._parse_decimal_text_or_none(raw_amount)
-        if not currency or amount is None:
-            continue
-        normalized[currency] = normalized.get(currency, ZERO) + amount
-    return {
-        currency: "0" if amount == ZERO else _decimal_to_str(amount)
-        for currency, amount in normalized.items()
-    }
-
-
-def _normalize_hsbc_currency_balance_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    normalized: dict[str, Decimal] = {}
-    for raw_currency, raw_amount in value.items():
-        currency = _normalize_hsbc_currency_code(raw_currency)
-        amount = _ii_hsbc_cash._parse_decimal_text_or_none(raw_amount)
-        if not currency or amount is None:
-            continue
-        normalized[currency] = normalized.get(currency, ZERO) + amount
-    return {
-        currency: _decimal_to_str(amount) or "0"
-        for currency, amount in normalized.items()
-    }
-
-
-def _normalize_bochk_currency_balance_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    normalized: dict[str, Decimal] = {}
-    for raw_currency, raw_amount in value.items():
-        currency = _ii_bochk._normalize_bochk_currency_code(raw_currency)
-        amount = _ii_hsbc_cash._parse_decimal_text_or_none(raw_amount)
-        if not currency or amount is None:
-            continue
-        normalized[currency] = normalized.get(currency, ZERO) + amount
-    return {
-        currency: "0" if amount == ZERO else _decimal_to_str(amount)
-        for currency, amount in normalized.items()
-    }
-
-
-def _normalize_bochk_subaccount_balance_map(value: Any) -> dict[str, dict[str, Any]]:
-    """Normalize BOCHK subaccount balances while retaining printed currency labels."""
-    if not isinstance(value, dict):
-        return {}
-    normalized: dict[str, dict[str, Any]] = {}
-    for raw_key, raw_balance in value.items():
-        if not isinstance(raw_balance, dict):
-            continue
-        account_number = _normalize_text(raw_balance.get("account_number"))
-        raw_key_text = _normalize_text(raw_key)
-        raw_key_currency = (
-            raw_key_text.rsplit(":", 1)[-1] if ":" in raw_key_text else ""
-        )
-        raw_currency = _normalize_text(
-            raw_balance.get("currency_raw")
-            or raw_balance.get("currency")
-            or raw_key_currency
-        ).upper()
-        currency = _ii_bochk._normalize_bochk_currency_code(raw_currency)
-        if not currency:
-            currency = _normalize_text(raw_balance.get("currency")).upper()
-        if not currency:
-            continue
-        balance = dict(raw_balance)
-        if account_number:
-            balance["account_number"] = account_number
-        balance["currency"] = currency
-        if raw_currency:
-            balance["currency_raw"] = raw_currency
-        normalized_key = (
-            f"{account_number}:{currency}" if account_number else raw_key_text
-        )
-        if not normalized_key:
-            continue
-        existing = normalized.get(normalized_key)
-        if existing is None:
-            normalized[normalized_key] = balance
-        else:
-            normalized[normalized_key] = {**existing, **balance}
-    return normalized
 
 
 def _is_hsbc_cash_account_source(source: dict[str, Any] | None) -> bool:

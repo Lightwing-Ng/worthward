@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {
     expect,
     test,
@@ -578,6 +578,8 @@ test('keeps the HSBC pending-settlement marker separate from FX conversion', asy
 });
 
 test('sums HSBC, IBKR, and Schwab current cash before adding holdings equity', async ({page}) => {
+    // Value the supplied anchors after their dates while market FX is current.
+    await page.clock.setFixedTime(new Date('2026-08-20T12:00:00Z'));
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc', 'ibkr', 'schwab'],
         transactions: [
@@ -893,6 +895,8 @@ test('keeps mixed-broker aggregate cash continuous when current HSBC cash postda
 });
 
 test('keeps HSBC pending-sell cash source-bounded in history and equity', async ({page}) => {
+    // Value current cash after the fixture's transactions with recent market FX.
+    await page.clock.setFixedTime(new Date('2026-08-05T12:00:00Z'));
     await mockInvestmentReadApis(page, {
         brokers: ['hsbc'],
         transactions: [

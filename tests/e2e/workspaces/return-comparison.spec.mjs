@@ -1,4 +1,4 @@
-/* Return comparison regressions. Code version: v1.2.3 */
+/* Return comparison regressions. Code version: v1.2.4 */
 import {expect, test} from '@playwright/test';
 
 
@@ -55,9 +55,10 @@ test('keeps a cold DY prefix and pending DYNF lookup neutral', async ({page}) =>
 
 
 test('clears a malformed .DY error while a new DYNF lookup is pending', async ({page}) => {
+    await page.clock.install({time: new Date('2026-07-14T12:00:00Z')});
     let releaseLookup;
     let dynfLookupCount = 0;
-    const lookupGate = new Promise((resolve) => {
+    let lookupGate = new Promise((resolve) => {
         releaseLookup = resolve;
     });
     await page.route('**/api/symbol-search?**', async (route) => {
@@ -73,6 +74,9 @@ test('clears a malformed .DY error while a new DYNF lookup is pending', async ({
     });
     await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=1y');
     const input = page.locator('#ticker_2');
+    const panel = page.locator('#ticker_2_suggestions');
+    await expect(input).toHaveAttribute('data-autocomplete-ready', '1');
+    await page.clock.pauseAt(new Date('2026-07-14T12:01:00Z'));
 
     await input.fill('.DY');
     await input.press('Enter');
@@ -81,7 +85,15 @@ test('clears a malformed .DY error while a new DYNF lookup is pending', async ({
 
     await input.fill('DYNF');
     await expect(page.locator('#ticker_2_suggestions .suggestion-loading')).toHaveText('Fetching DYNF…');
+    await page.clock.runFor(50);
     await expect.poll(() => dynfLookupCount).toBe(1);
+    await expect(input).not.toHaveClass(/is-invalid/);
+    await expect(input).toHaveJSProperty('validationMessage', '');
+
+    // Expire Enter's old blur callback while the refocused lookup is still pending.
+    await page.clock.runFor(120);
+    await expect(input).toBeFocused();
+    await expect(panel.locator('.suggestion-loading')).toHaveText('Fetching DYNF…');
     await expect(input).not.toHaveClass(/is-invalid/);
     await expect(input).toHaveJSProperty('validationMessage', '');
 
@@ -89,6 +101,23 @@ test('clears a malformed .DY error while a new DYNF lookup is pending', async ({
     await expect(page.locator('#ticker_2_suggestions .suggestion-item[data-symbol="DYNF"]')).toBeVisible();
     await expect(input).toHaveAttribute('data-validated-ticker', 'DYNF');
     await expect(input).not.toHaveClass(/is-invalid/);
+
+    // A real blur must still dismiss the panel while fresh validation is blocked.
+    lookupGate = new Promise((resolve) => {
+        releaseLookup = resolve;
+    });
+    await input.blur();
+    await expect(input).not.toBeFocused();
+    await expect.poll(() => dynfLookupCount).toBe(2);
+    await page.clock.runFor(120);
+    await expect(panel).not.toHaveClass(/is-open/);
+    await expect(panel.locator('.suggestion-loading')).toHaveCount(0);
+    const blurredLookupResponse = page.waitForResponse((response) => (
+        new URL(response.url()).pathname === '/api/symbol-search'
+        && new URL(response.url()).searchParams.get('q') === 'DYNF'
+    ));
+    releaseLookup();
+    await blurredLookupResponse;
 });
 
 

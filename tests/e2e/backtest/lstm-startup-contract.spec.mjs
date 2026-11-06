@@ -1,4 +1,4 @@
-/* LSTM startup history and compact backend contracts. Code version: v1.0.1 */
+/* LSTM startup history and compact backend contracts. Code version: v1.0.2 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -60,7 +60,7 @@ test('default loading records real completed training and reloading preserves it
     expect(run.accuracy_label).toBe('Backtest direction accuracy');
     expect(run.result_available).toBe(true);
     expect(run.files.map((file) => file.name)).toEqual(expect.arrayContaining([
-        'request.json', 'snapshot.json', 'status.json', 'result.json',
+        'request.sqlite3', 'snapshot.sqlite3', 'status.sqlite3', 'result.sqlite3',
     ]));
     const row = page.locator(`[data-lstm-training-run-id="${run.id}"]`);
     await expect(row).toBeVisible();
