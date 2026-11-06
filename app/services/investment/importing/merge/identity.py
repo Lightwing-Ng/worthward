@@ -1,6 +1,8 @@
 """Investment import domain: merge identity.
 
-Code version: v0.4.2
+Code version: v0.5.0
+- Fixed: Same-order HSBC cash imports with an unconfirmed execution price retain
+  an existing final cash-derived price without replacing new cash evidence.
 - Fixed: Schwab source aliases start with the merged canonical identity so
   reimporting the same export does not reorder provenance.
 - Added: Evidenced HSBC cashback retains legacy cash-row merge identity.
@@ -11,6 +13,8 @@ Code version: v0.4.2
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
 
 from app.services.investment.dividend_attribution import (
     preserve_hsbc_dividend_attribution_on_cash_merge as _preserve_hsbc_dividend_attribution_on_cash_merge,
@@ -1078,6 +1082,100 @@ def _merge_transaction_records_default(
         source = dict(merged.get("source") or {})
         source["transfer_source_identity_aliases"] = aliases
         merged["source"] = source
+    return _preserve_hsbc_final_price_on_unconfirmed_cash_merge(
+        merged, current, incoming
+    )
+
+
+def _preserve_hsbc_final_price_on_unconfirmed_cash_merge(
+    merged: dict[str, Any],
+    current: dict[str, Any],
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Retain existing HSBC price evidence when new cash leaves price unconfirmed."""
+    current_source = (
+        current.get("source") if isinstance(current.get("source"), dict) else {}
+    )
+    incoming_source = (
+        incoming.get("source") if isinstance(incoming.get("source"), dict) else {}
+    )
+    if (
+        incoming_source.get("execution_price_status")
+        != "settled_cash_price_unconfirmed"
+        or current_source.get("execution_price_status") != "final_settled"
+        or current_source.get("execution_price_source")
+        != "hsbc_cash_settlement_amount"
+        or any(
+            _ii_basics._normalize_broker_code(record.get("broker")) != "hsbc"
+            for record in (current, incoming)
+        )
+    ):
+        return merged
+
+    def positive_decimal(value: Any) -> Decimal | None:
+        try:
+            number = Decimal(_normalize_text(value))
+        except (InvalidOperation, ValueError):
+            return None
+        return number if number.is_finite() and number > ZERO else None
+
+    def scope(record: dict[str, Any], source: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            _normalize_text(record.get("account")),
+            _normalize_text(source.get("statement_order_id") or source.get("order_id")),
+            normalize_ticker(_normalize_text(record.get("ticker"))),
+            _normalize_text(record.get("type")).lower(),
+            _normalize_text(record.get("currency")).upper(),
+            positive_decimal(record.get("quantity_abs")),
+        )
+
+    current_scope = scope(current, current_source)
+    if (
+        not all(current_scope)
+        or current_scope[3] != "sell"
+        or current_scope != scope(incoming, incoming_source)
+    ):
+        return merged
+    final_price = positive_decimal(current_source.get("execution_price_final_raw"))
+    if (
+        final_price is None
+        or positive_decimal(current.get("price_raw")) != final_price
+        or positive_decimal(current.get("gross_amount_raw"))
+        != final_price * current_scope[5]
+    ):
+        return merged
+
+    # The incoming cash, fee, and balance fields remain owned by the new evidence.
+    for field in ("price_raw", "price", "gross_amount_raw", "gross_amount"):
+        if field in current:
+            merged[field] = deepcopy(current[field])
+        else:
+            merged.pop(field, None)
+    normalized = (
+        dict(merged["normalized"])
+        if isinstance(merged.get("normalized"), dict)
+        else {}
+    )
+    current_normalized = (
+        current["normalized"] if isinstance(current.get("normalized"), dict) else {}
+    )
+    for field in ("unit_price", "gross_amount", "display_amount"):
+        if field in current_normalized:
+            normalized[field] = deepcopy(current_normalized[field])
+        else:
+            normalized.pop(field, None)
+    merged["normalized"] = normalized
+
+    source = dict(merged.get("source") or {})
+    for field in tuple(source):
+        if field.startswith("execution_price_"):
+            source.pop(field)
+    source.update({
+        field: deepcopy(value)
+        for field, value in current_source.items()
+        if field.startswith("execution_price_")
+    })
+    merged["source"] = source
     return merged
 
 

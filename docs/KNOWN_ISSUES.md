@@ -1,5 +1,21 @@
 # Known issues and operating constraints
 
+HSBC Portfolio timestamp scope, 5 Nov 2026: an `Updated` line within the page's
+market-index widget does not establish a Portfolio quote time. The importer
+now excludes that widget's timestamp while retaining independently scoped
+Portfolio timestamps. Without a Portfolio timestamp, the snapshot keeps its
+explicit date and quantities and enters the existing missing-timestamp review
+state; verified bank cash and settlement status remain independently usable.
+
+HSBC settled cash with an unconfirmed price, 5 Nov 2026: a separate sell
+cash deduction previously caused a pasted limit to become a derived final
+execution price. Such an order now retains its limit as an unconfirmed price,
+while verified bank postings clear cash pending and determine net cash and
+realized proceeds. Estimated prices do not create settlement residuals. A
+repeat import preserves existing settled price evidence for the exact same
+transaction identity. History and exports retain the established Description
+format; execution-price certainty remains recorded in the source metadata.
+
 Holdings Rewards details, 4 Nov 2026: the Rewards row now expands into
 independent reward categories, with native totals and activity-date FX
 conversions. Debit-card rebates, credit-card RewardCash, KOL rewards, coupons,

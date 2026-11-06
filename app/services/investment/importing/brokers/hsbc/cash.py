@@ -1,6 +1,9 @@
 """Investment import domain: hsbc cash.
 
-Code version: v0.7.0
+Code version: v0.8.0
+- Fixed: A settled Limit Price sell with a separate cash debit retains its
+  unconfirmed execution price instead of inferring a fill from principal cash.
+- Fixed: Existing final or reported execution prices survive cash-evidence refreshes.
 - Fixed: Settlement matching stages verified economics atomically, accepts scoped
   zero or multiple fees within a shared proportional bound, and rejects invalid money.
 - Fixed: Both settlement paths reject missing or conflicting declared sell fees.
@@ -1659,6 +1662,66 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
     side = _normalize_text(order_record.get("type")).lower()
     if side not in {"buy", "sell"}:
         return False
+    source = (
+        order_record.get("source")
+        if isinstance(order_record.get("source"), dict)
+        else {}
+    )
+    price_source = _normalize_text(source.get("execution_price_source"))
+    price_status = _normalize_text(source.get("execution_price_status"))
+    final_price = _parse_hsbc_money_or_none(source.get("execution_price_final_raw"))
+    provisional_sources = {
+        "",
+        "hsbc_order_status_price",
+        "hsbc_portfolio_average_purchase_price",
+    }
+    if (
+        (final_price is not None and final_price > ZERO)
+        or price_status.startswith("final")
+        or "reported" in price_status.lower()
+        or price_source not in provisional_sources
+    ):
+        return False
+
+    postings = source.get("cash_settlement_postings")
+    limit_price_sell_with_separate_debit = (
+        side == "sell"
+        and _normalize_text(source.get("file_kind")) == "hsbc_order_status_text"
+        and _normalize_whitespace(source.get("order_type")).lower()
+        == "limit price order"
+        and price_source in {"", "hsbc_order_status_price"}
+        and isinstance(postings, list)
+        and _hsbc_settlement_postings_have_valid_sequence_order(
+            postings,
+            order_source=source,
+            order_record=order_record,
+            order_account=order_record.get("account"),
+            order_currency=order_record.get("currency"),
+        )
+        and any(
+            _normalize_text(posting.get("role")).lower() == "fee"
+            and (_parse_hsbc_money_or_none(posting.get("amount_raw")) or ZERO) < ZERO
+            for posting in postings
+        )
+    )
+    if limit_price_sell_with_separate_debit:
+        source.update(
+            {
+                "execution_price_status": "settled_cash_price_unconfirmed",
+                "execution_price_calibration_status": "settled_cash_price_unconfirmed",
+                "execution_price_settlement_amount_raw": _decimal_to_str(settlement_amount)
+                or "",
+                "execution_price_settlement_date": settlement_date,
+                "execution_price_reconciliation_reason": (
+                    "The cash postings confirm settlement, but a Limit Price and a "
+                    "separate debit do not establish the actual execution price."
+                ),
+            }
+        )
+        source.pop("execution_price_final_raw", None)
+        order_record["source"] = source
+        return False
+
     commission_dec = (
         _parse_hsbc_money_or_none(order_record.get("commission_raw")) or ZERO
     )
@@ -1672,11 +1735,6 @@ def _reconcile_hsbc_order_execution_price_from_cash_settlement(
     if final_price_dec <= ZERO:
         return False
 
-    source = (
-        order_record.get("source")
-        if isinstance(order_record.get("source"), dict)
-        else {}
-    )
     previous_price_raw = _normalize_text(
         source.get("execution_price_raw")
     ) or _normalize_text(order_record.get("price_raw"))
@@ -1746,6 +1804,24 @@ def _annotate_hsbc_order_settlement_adjustment(
         if isinstance(order_record.get("source"), dict)
         else {}
     )
+    if (
+        _normalize_text(source.get("execution_price_status"))
+        == "settled_cash_price_unconfirmed"
+    ):
+        order_record.pop("settlement_adjustment_raw", None)
+        for key in (
+            "settlement_component_total_raw",
+            "settlement_adjustment_calculation",
+            "settlement_adjustment_raw",
+            "settlement_adjustment_classification",
+        ):
+            source.pop(key, None)
+        normalized = order_record.get("normalized")
+        if isinstance(normalized, dict):
+            normalized.pop("settlement_component_total", None)
+            normalized.pop("settlement_adjustment", None)
+        order_record["source"] = source
+        return False
     broker = _ii_basics._normalize_broker_code(
         order_record.get("broker") or source.get("broker")
     )

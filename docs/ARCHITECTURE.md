@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.143.3`
+Documentation version: `v1.144.0`
 
 ## HSBC debit-card cashback boundary
 
@@ -1977,6 +1977,13 @@ sets of values.
   posting group is revalidated, and no partial SHA or cash-subaccount repair is
   retained when any leg crosses an evidence domain.
   Cash replay remains owned by the ordered settlement postings.
+- An HSBC Limit Price Order with a separately posted sell deduction can confirm
+  cash settlement without confirming the gross execution price. When Order
+  Status supplies only a limit, price certainty remains unconfirmed in the source
+  metadata. Verified ordered cash postings still own cash and realized proceeds. An estimated gross amount cannot establish a settlement
+  residual. Reimporting the same complete transaction identity preserves its
+  existing settled price evidence while accepting new cash evidence; it must
+  not replace that price with a lower-authority limit.
 - Every accepted HSBC pasted page is retained as exact UTF-8 parser-input bytes
   in one fingerprint-addressed immutable evidence bundle. The Portfolio
   snapshot stores `market_value` as exact `quantity * last_price`, preserves the

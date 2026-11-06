@@ -1,6 +1,6 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 import hashlib
@@ -328,7 +328,12 @@ def test_composite_cash_settles_older_order_absent_from_visible_order_page(
     merged = investment_import.merge_investment_payloads(existing, incoming)
     (sell,) = [row for row in merged["transactions"] if row["type"] == "sell"]
     source = sell["source"]
-    assert source["execution_price_status"] == "final_settled"
+    # The bank cash legs establish settlement, while the old page reports only a limit.
+    (original_sell,) = [row for row in existing["transactions"] if row["type"] == "sell"]
+    assert source["execution_price_status"] == "settled_cash_price_unconfirmed"
+    assert "execution_price_final_raw" not in source
+    assert sell["price_raw"] == original_sell["price_raw"]
+    assert sell["gross_amount_raw"] == original_sell["gross_amount_raw"]
     assert not source.get("cash_replay_pending_settlement")
     assert Decimal(source["cash_settlement_amount_raw"]) == Decimal("62.49")
     assert Decimal(sell["commission_raw"]) == Decimal("-0.01")
