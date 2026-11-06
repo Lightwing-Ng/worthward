@@ -1,7 +1,7 @@
 """
 Broker-backed market data services.
 
-Code version: v0.18.1
+Code version: v0.19.0
 - Fixed: Daily candles now resolve their trading dates in each ticker's native
   market timezone instead of applying New York dates to every market.
 """
@@ -47,7 +47,8 @@ from app.infrastructure.storage import (
     intraday_history_store_path_for,
     market_store_file_lock,
     normalize_ticker,
-    write_parquet_atomic,
+    read_market_frame,
+    write_market_frame_atomic,
 )
 
 
@@ -923,7 +924,7 @@ def _candlestick_rows_to_frame(
 
     Longbridge candlestick timestamps are absolute instants and must be parsed
     as UTC-compatible epoch values before conversion.
-    According to the user's unified decision, we store 1m data in local Parquet
+    According to the user's unified decision, we store 1m data in local SQLite
     strictly using America/New_York (NYT).
 
     This handles Summer/Winter time transitions (Daylight Saving Time) correctly
@@ -1392,7 +1393,7 @@ def fetch_longbridge_daily_history(
 def _read_existing_one_minute_store_for_refresh(path, ticker: str) -> pd.DataFrame:
     """Read an existing cache or fail closed before any replacement can occur."""
     try:
-        return normalize_one_minute_store_frame(pd.read_parquet(path), ticker)
+        return normalize_one_minute_store_frame(read_market_frame(path), ticker)
     except Exception as exc:
         raise OneMinuteStoreReadError(
             f"Unable to read the existing 1-minute market store for {ticker}; "
@@ -1428,10 +1429,10 @@ def refresh_longbridge_one_minute_store(ticker: str, settings: BrokerSettings) -
             cut_off = one_minute_lookback_start().tz_convert(NEW_YORK_TIMEZONE).tz_localize(None)
             combined = combined.loc[combined["Date"] >= cut_off].copy()
 
-            write_parquet_atomic(path, combined, index=False)
+            write_market_frame_atomic(path, combined, index=False)
             return combined
 
-        write_parquet_atomic(path, new_dataset, index=False)
+        write_market_frame_atomic(path, new_dataset, index=False)
         return new_dataset
 
 
@@ -1440,7 +1441,7 @@ def has_recent_one_minute_store(ticker: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:
@@ -1465,7 +1466,7 @@ def is_one_minute_store_complete(ticker: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:
@@ -1492,7 +1493,7 @@ def is_one_minute_store_fresh(ticker: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:
@@ -1510,7 +1511,7 @@ def is_daily_store_complete(ticker: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:
@@ -1537,7 +1538,7 @@ def is_daily_store_fresh(ticker: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:
@@ -1555,7 +1556,7 @@ def _has_new_listing_short_history(ticker: str, *, interval: str) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
+        dataset = read_market_frame(path, columns=["Date"])
     except Exception:
         return False
     if dataset.empty:

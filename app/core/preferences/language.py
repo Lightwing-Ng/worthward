@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.11.1
+Code version: v0.12.0
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from app.core.preferences.store import LEGACY_SECTION_PATHS, load_settings_secti
 
 LanguageCode = Literal["en", "zh_hant_hk", "zh_hans_cn"]
 
-LANGUAGE_SETTINGS_PATH = SETTINGS_STORE_DIR / "language.json"
+LANGUAGE_SETTINGS_PATH = SETTINGS_STORE_DIR / "language.sqlite3"
 LEGACY_SECTION_PATHS["language"] = LANGUAGE_SETTINGS_PATH
 
 DEFAULT_LANGUAGE_CODE: LanguageCode = "en"
@@ -313,9 +313,9 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Try the current broker authentication against the selected service and report whether it works. This only verifies connectivity and does not place any order.", "使用目前券商驗證資料連線至所選服務，並回報是否成功。此操作只會驗證連線，不會下單。", "使用当前券商验证信息连接至所选服务，并报告是否成功。此操作只会验证连接，不会下单。"),
         ("Test connection", "測試連線", "测试连接"),
         ("Tested at", "測試時間", "测试时间"),
-        ("This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its parquet history, company profiles, logo images, matching ticker search caches, and ticker usage records.", "此操作會移除非本機市場搜尋快取、搜尋設定檔及搜尋標誌。已受本機市場資料庫保護的內容會保留其 parquet 歷史資料、公司資料、標誌圖片、相符股票代號搜尋快取及股票代號使用記錄。", "此操作会移除非本地市场搜索缓存、搜索配置文件及搜索标志。已受本地市场数据库保护的内容会保留其 parquet 历史数据、公司资料、标志图片、匹配股票代码搜索缓存及股票代码使用记录。"),
+        ("This removes non-local market search caches, search profiles, and search logos. Anything already protected by Local Market Store keeps its SQLite history, company profiles, logo images, matching ticker search caches, and ticker usage records.", "此操作會移除非本機市場搜尋快取、搜尋設定檔及搜尋標誌。已受本機市場資料庫保護的內容會保留其 SQLite 歷史資料、公司資料、標誌圖片、相符股票代號搜尋快取及股票代號使用記錄。", "此操作会移除非本地市场搜索缓存、搜索配置文件及搜索标志。已受本地市场数据库保护的内容会保留其 SQLite 历史数据、公司资料、标志图片、匹配股票代码搜索缓存及股票代码使用记录。"),
         ("Clear market data caches", "清除市場資料快取", "清除市场数据缓存"),
-        ("This deletes <code>settings_store/investment.parquet</code> on this device, which removes the imported local broker transaction history shown in My investment.", "此操作會刪除此裝置上的 <code>settings_store/investment.parquet</code>，並移除「我的投資」中顯示的本機券商交易歷史。", "此操作会删除此设备上的 <code>settings_store/investment.parquet</code>，并移除「我的投资」中显示的本地券商交易历史。"),
+        ("This deletes <code>settings_store/investment.sqlite3</code> and legacy copies on this device, which removes the imported local broker transaction history shown in My investment.", "此操作會刪除此裝置上的 <code>settings_store/investment.sqlite3</code> 及舊格式副本，並移除「我的投資」中顯示的本機券商交易歷史。", "此操作会删除此设备上的 <code>settings_store/investment.sqlite3</code> 及旧格式副本，并移除「我的投资」中显示的本地券商交易历史。"),
         ("Clear local broker transaction record", "清除本機券商交易記錄", "清除本地券商交易记录"),
         ("Resize style token demos", "調整樣式權杖示範區大小", "调整样式令牌示范区大小"),
         ("Style token range mode", "樣式權杖範圍模式", "样式令牌范围模式"),
@@ -514,7 +514,7 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("This deletes", "此操作會刪除", "此操作会删除"),
         ("When a signal appears, queue the trade and execute it at the opening price of the next bar. This is more conservative and better matches a real decision made after the signal bar has closed.", "訊號出現時，將交易排程至下一柱的開市價執行。此方式較為保守，更貼近訊號柱收市後作出實際決策的情況。", "信号出现时，将交易排程至下一柱的开盘价执行。此方式较为保守，更贴近信号柱收盘后作出实际决策的情况。"),
         ("community share template", "社群分享範本", "社区分享模板"),
-        ("on this device, which removes the imported local broker transaction history shown in My investment.", "在此裝置上，並移除「我的投資」中顯示的已匯入本機券商交易歷史。", "在此设备上，并移除「我的投资」中显示的已导入本地券商交易历史。"),
+        ("and legacy copies on this device, which removes the imported local broker transaction history shown in My investment.", "及此裝置上的舊格式副本，並移除「我的投資」中顯示的已匯入本機券商交易歷史。", "及此设备上的旧格式副本，并移除「我的投资」中显示的已导入本地券商交易历史。"),
         ("logo", "標誌", "标志"),
         ("parameters", "參數", "参数"),
         ("tokens", "權杖", "令牌"),

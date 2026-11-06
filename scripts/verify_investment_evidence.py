@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify or safely restore local investment source evidence.
 
-Code version: v0.3.0
+Code version: v0.3.1
 - Added: Explicit dry-run and partial-recovery modes restore every exact
   SHA-256 match without fabricating artifacts that are absent from the archive.
 """
@@ -32,7 +32,7 @@ from app.infrastructure.storage import (  # noqa: E402
 )
 
 
-SCRIPT_VERSION = "0.3.0"
+SCRIPT_VERSION = "0.3.1"
 
 
 def _sha256_file(path: Path) -> str:
@@ -164,7 +164,7 @@ def main() -> int:
     parser.add_argument(
         "--store",
         default=str(INVESTMENT_STORE_PATH),
-        help="Investment ledger path; defaults to the configured investment.parquet.",
+        help="Investment ledger path; defaults to the configured investment.sqlite3.",
     )
     parser.add_argument(
         "--restore-from",

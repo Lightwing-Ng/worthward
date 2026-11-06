@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.26.2
+Code version: v0.27.0
 
 - Fixed: Closed-session holdings retain the latest completed trading day's
   timestamped Longbridge post-market quote.
@@ -63,7 +63,8 @@ from app.infrastructure.storage import (
     market_ticker_store_aliases,
     market_store_file_lock,
     normalize_ticker,
-    write_parquet_atomic,
+    read_market_frame,
+    write_market_frame_atomic,
 )
 from app.services.market.date_constraints import (
     is_nyse_early_close,
@@ -736,7 +737,7 @@ def fetch_yfinance_realtime_quote(ticker: str) -> dict[str, object]:
     """
     Fetch the latest yfinance 1-minute quote including pre-market and post-market bars.
 
-    The result is intentionally not written to the local parquet store because
+    The result is intentionally not written to the local market store because
     the investment overview uses it as a live mark-to-market point, not as an
     official daily close.
     """
@@ -1230,7 +1231,7 @@ def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
     with market_store_file_lock(path):
         if path.exists():
             try:
-                existing_df = normalize_one_minute_store_frame(pd.read_parquet(path), normalized_ticker)
+                existing_df = normalize_one_minute_store_frame(read_market_frame(path), normalized_ticker)
             except (ImportError, OSError, ValueError, KeyError) as exc:
                 LOGGER.warning("Unable to read existing 1-minute store for %s from %s: %s", normalized_ticker, path, exc)
                 existing_df = pd.DataFrame()
@@ -1240,7 +1241,7 @@ def _upsert_one_minute_store(ticker: str, dataset: pd.DataFrame) -> Path:
 
         cut_off = one_minute_lookback_start().tz_convert("America/New_York").tz_localize(None)
         normalized_dataset = normalized_dataset.loc[normalized_dataset["Date"] >= cut_off].copy()
-        write_parquet_atomic(path, normalized_dataset, index=False)
+        write_market_frame_atomic(path, normalized_dataset, index=False)
     return path
 
 
@@ -1577,7 +1578,7 @@ def load_local_one_minute_history(ticker: str) -> pd.DataFrame:
             f"Local 1-minute market data for {normalized_ticker} is unavailable."
         )
     with market_store_file_lock(path):
-        dataset = pd.read_parquet(path)
+        dataset = read_market_frame(path)
     normalized_dataset = normalize_one_minute_store_frame(
         dataset,
         normalized_ticker,
@@ -1615,11 +1616,11 @@ def fetch_history(
         should_refresh_for_actions = False
         split_actions_are_authoritative = False
         with market_store_file_lock(path):
-            dataset = pd.read_parquet(path)
+            dataset = read_market_frame(path)
             if is_intraday_market_interval(normalized_interval):
                 normalized_intraday = normalize_one_minute_store_frame(dataset, normalized_ticker)
                 if not normalized_intraday.equals(dataset):
-                    write_parquet_atomic(path, normalized_intraday, index=False)
+                    write_market_frame_atomic(path, normalized_intraday, index=False)
                 dataset = normalized_intraday
             else:
                 split_actions_are_authoritative = not _daily_history_has_incomplete_split_actions(
@@ -1634,7 +1635,7 @@ def fetch_history(
             try:
                 refresh_history_store(normalized_ticker, force_full=True)
                 with market_store_file_lock(path):
-                    refreshed_dataset = pd.read_parquet(path)
+                    refreshed_dataset = read_market_frame(path)
                     split_actions_are_authoritative = not _daily_history_has_incomplete_split_actions(
                         refreshed_dataset
                     )
@@ -1656,7 +1657,7 @@ def fetch_history(
     )
     normalized_dataset = normalize_history_frame(history, normalized_ticker, interval=normalized_interval)
     with market_store_file_lock(path):
-        write_parquet_atomic(path, normalized_dataset, index=False)
+        write_market_frame_atomic(path, normalized_dataset, index=False)
     result = select_price_series(normalized_dataset, include_dividends, dividend_mode=dividend_mode)
     result.attrs["stock_split_actions_authoritative"] = split_actions_are_authoritative
     return result
@@ -1673,7 +1674,7 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
     with market_store_file_lock(path):
         if path.exists() and not force_full:
             try:
-                existing_df = normalize_history_frame(pd.read_parquet(path), normalized_ticker)
+                existing_df = normalize_history_frame(read_market_frame(path), normalized_ticker)
                 if not existing_df.empty:
                     # Get the max date and go back 1 day to ensure overlap and consistency
                     max_date = pd.to_datetime(existing_df["Date"].max())
@@ -1694,7 +1695,7 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
                 if existing_df is not None:
                     with market_store_file_lock(path):
                         try:
-                            latest_existing = normalize_history_frame(pd.read_parquet(path), normalized_ticker) if path.exists() else existing_df
+                            latest_existing = normalize_history_frame(read_market_frame(path), normalized_ticker) if path.exists() else existing_df
                         except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
                             LOGGER.warning("Unable to re-read daily history store for %s at %s: %s", normalized_ticker, path, exc)
                             latest_existing = existing_df
@@ -1709,7 +1710,7 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
                         combined = pd.concat([existing_normalized, new_df])
                         combined = combined.drop_duplicates(subset=["Date"], keep="last").sort_values("Date")
                         if not combined.reset_index(drop=True).equals(existing_normalized):
-                            write_parquet_atomic(path, combined, index=False)
+                            write_market_frame_atomic(path, combined, index=False)
                     return path
         except Exception as exc:
             # Fallback to full download if incremental fails
@@ -1719,7 +1720,7 @@ def refresh_history_store(ticker: str, *, force_full: bool = False) -> Path:
     history = download_full_history(normalized_ticker)
     normalized_dataset = normalize_history_frame(history, normalized_ticker)
     with market_store_file_lock(path):
-        write_parquet_atomic(path, normalized_dataset, index=False)
+        write_market_frame_atomic(path, normalized_dataset, index=False)
     return path
 
 

@@ -1,11 +1,13 @@
 """Build the backtest settings web-runtime context.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+
+from app.infrastructure.storage import read_market_frame
 
 
 def build_backtest_settings_context(context: dict[str, object]) -> dict[str, object]:
@@ -614,7 +616,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
             if not path.exists():
                 raise
             dataset = select_price_series(
-                pd.read_parquet(path),
+                read_market_frame(path),
                 False,
                 dividend_mode="price",
             )
@@ -788,7 +790,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
 
     def list_local_market_tickers() -> list[str]:
         # Project canonical form for US stocks is bare symbol (e.g. "BAC").
-        # Support legacy files named "XXX.US.parquet" coming from Longbridge imports
+        # Support retained files named "XXX.US.sqlite3" from Longbridge imports
         # without polluting the displayed symbol.
         def _has_usable_history(t: str) -> bool:
             p = history_store_path_for(t)
@@ -796,7 +798,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
                 return True
             # legacy polluted name from Longbridge
             legacy = (
-                MARKET_STORE_DIR / "historical" / f"{normalize_ticker(t)}.US.parquet"
+                MARKET_STORE_DIR / "historical" / f"{normalize_ticker(t)}.US.sqlite3"
             )
             return legacy.exists() and legacy.stat().st_size > 0
 
@@ -895,11 +897,11 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
         for ticker in tickers:
             history_path = history_store_path_for(ticker)
             if not history_path.exists() or history_path.stat().st_size == 0:
-                # fallback for Longbridge-polluted "BAC.US.parquet" etc.
+                # Resolve a retained Longbridge-suffixed SQLite cache.
                 legacy_path = (
                     MARKET_STORE_DIR
                     / "historical"
-                    / f"{normalize_ticker(ticker)}.US.parquet"
+                    / f"{normalize_ticker(ticker)}.US.sqlite3"
                 )
                 if legacy_path.exists() and legacy_path.stat().st_size > 0:
                     history_path = legacy_path
@@ -913,7 +915,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
             range_end = ""
             if include_ranges:
                 try:
-                    dataset = pd.read_parquet(history_path, columns=["Date"])
+                    dataset = read_market_frame(history_path, columns=["Date"])
                     if dataset.empty:
                         continue
                     date_values = dataset["Date"]
@@ -921,7 +923,7 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
                         date_values = date_values.iloc[:, 0]
                     range_start = format_store_range_date(date_values.min())
                     range_end = format_store_range_date(date_values.max())
-                except (ImportError, OSError, ValueError, KeyError, TypeError):
+                except (ImportError, OSError, ValueError, KeyError, TypeError, RuntimeError):
                     pass
             daily_store_status = classify_daily_store_status(ticker)
             intraday_store_status = classify_one_minute_store_status(ticker)

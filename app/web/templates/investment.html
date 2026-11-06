@@ -1,4 +1,4 @@
-{# Code version: v1.81.7
+{# Code version: v1.81.8
    Fixed: Loads personal chip bars with uniform vertical thickness.
    Fixed: Loads native HSBC paste and persistent card-import feedback.
    Added: Loads user-confirmed HSBC dividend Description selectors.
@@ -879,7 +879,7 @@
                             </span>
                             <div class="settings-action-package-copy settings-callout-text">
                                 <p class="settings-service-name">Investment import</p>
-                                <p class="settings-service-note" id="investment_import_note">Imports into <code>settings_store/investment.parquet</code> without clearing existing records.</p>
+                                <p class="settings-service-note" id="investment_import_note">Imports into <code>settings_store/investment.sqlite3</code> without clearing existing records.</p>
                                 <p class="settings-service-note investment-import-session-status" id="investment_import_session_status" role="alert" hidden></p>
                             </div>
                             <div class="settings-action-package-form">
@@ -965,5 +965,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.6') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.7') }}"></script>
 {% endblock %}

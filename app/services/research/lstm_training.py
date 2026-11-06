@@ -1,6 +1,6 @@
 """Durable local LSTM training launch and history service.
 
-Code version: v0.10.0
+Code version: v0.11.0
 
 The browser action trains exactly the submitted form state so the completed
 configuration can be observed in LSTM Price Field. Genetic search remains an
@@ -177,7 +177,7 @@ class LstmTrainingManager:
                 if not log_handle.closed:
                     log_handle.close()
 
-            self._write_json(paths.state / "launch.json", {
+            self._write_json(paths.state / "launch.sqlite3", {
                 "schema": 1,
                 "run_id": paths.state.name,
                 "pid": process.pid,
@@ -274,18 +274,18 @@ class LstmTrainingManager:
             "full": dict(diagnostics) if isinstance(diagnostics, Mapping) else {},
         }
         artifacts = {
-            "request.json": spec,
-            "snapshot.json": {
+            "request.sqlite3": spec,
+            "snapshot.sqlite3": {
                 "ticker": normalized_ticker, "interval": normalized_interval,
                 "start": dates[0], "end": dates[-1], "fingerprint": fingerprint,
             },
-            "status.json": {
+            "status.sqlite3": {
                 "status": "completed", "phase": "completed",
                 "started_at": started_at or completed_at,
                 "updated_at": completed_at, "completed_at": completed_at,
                 "evaluated": 1,
             },
-            "result.json": {
+            "result.sqlite3": {
                 "status": "completed", "completed_at": completed_at,
                 "evaluated": 1, "best": best,
             },
@@ -343,7 +343,7 @@ class LstmTrainingManager:
         run = self._read_run(paths.state)
         if run.get("status") not in ACTIVE_STATUSES:
             return run
-        request = self._read_json(paths.request) or self._read_json(paths.state / "launch.json")
+        request = self._read_json(paths.request) or self._read_json(paths.state / "launch.sqlite3")
         pid = self._run_pid(run)
         if not pid or not self._process_matches(pid, request):
             return {**run, "status": "stale", "active": False}
@@ -405,14 +405,14 @@ class LstmTrainingManager:
         return ga_runner.RunPaths(
             root=self._state_root(),
             state=state,
-            request=state / "request.json",
-            snapshot=state / "snapshot.json",
-            checkpoint=state / "checkpoint.json",
-            status=state / "status.json",
-            baseline=state / "baseline.json",
-            evaluations=state / "evaluations.jsonl",
-            leaderboard=state / "leaderboard.json",
-            result=state / "result.json",
+            request=state / "request.sqlite3",
+            snapshot=state / "snapshot.sqlite3",
+            checkpoint=state / "checkpoint.sqlite3",
+            status=state / "status.sqlite3",
+            baseline=state / "baseline.sqlite3",
+            evaluations=state / "evaluations.sqlite3",
+            leaderboard=state / "leaderboard.sqlite3",
+            result=state / "result.sqlite3",
             log=state / "run.log",
             lock=state / "run.lock",
         )
@@ -453,11 +453,11 @@ class LstmTrainingManager:
         raise RuntimeError("Unable to allocate a unique LSTM training run.")
 
     def _read_run(self, state: Path) -> dict[str, Any]:
-        request = self._read_json(state / "request.json")
-        status = self._read_json(state / "status.json")
-        launch = self._read_json(state / "launch.json")
+        request = self._read_json(state / "request.sqlite3")
+        status = self._read_json(state / "status.sqlite3")
+        launch = self._read_json(state / "launch.sqlite3")
         identity = request or launch
-        result = self._read_json(state / "result.json")
+        result = self._read_json(state / "result.sqlite3")
         if not request and isinstance(result.get("request"), dict):
             request = result["request"]
         ticker = str(status.get("ticker") or request.get("ticker") or launch.get("ticker") or "")
@@ -480,7 +480,7 @@ class LstmTrainingManager:
         best = result.get("best") if isinstance(result.get("best"), Mapping) else status.get("best")
         if not isinstance(best, Mapping):
             best = None
-        snapshot = self._read_json(state / "snapshot.json") if result else {}
+        snapshot = self._read_json(state / "snapshot.sqlite3") if result else {}
         interval = request.get("interval") or launch.get("interval") or snapshot.get("interval")
         if not interval and request.get("runner_version") in {"v0.1.0", "v0.2.0"}:
             interval = "1d"  # These saved runner versions only supported daily data.
@@ -557,7 +557,7 @@ class LstmTrainingManager:
             "best": self._best_summary(best),
             "selected_params": selected_params,
             "base_params": base_params,
-            "result_available": (state / "result.json").is_file(),
+            "result_available": (state / "result.sqlite3").is_file(),
             "progress": self._progress_summary(status, effective_status),
             "files": self._training_files(state),
             "error": str(status.get("error") or launch_error or "") or None,
@@ -647,8 +647,8 @@ class LstmTrainingManager:
         """Expose existing artifact names and sizes, never arbitrary paths or contents."""
         files = []
         for name in (
-            "request.json", "snapshot.json", "checkpoint.json", "baseline.json",
-            "evaluations.jsonl", "leaderboard.json", "result.json", "status.json", "run.log",
+            "request.sqlite3", "snapshot.sqlite3", "checkpoint.sqlite3", "baseline.sqlite3",
+            "evaluations.sqlite3", "leaderboard.sqlite3", "result.sqlite3", "status.sqlite3", "run.log",
         ):
             path = state / name
             try:

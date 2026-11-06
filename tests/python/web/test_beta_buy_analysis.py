@@ -1,6 +1,8 @@
-"""Beta committee probabilities, aggregation, and read-only boundaries. Code version: v1.0.0."""
+"""Beta committee probabilities, aggregation, and read-only boundaries. Code version: v1.0.1."""
 
 from __future__ import annotations
+
+from app.infrastructure.storage import write_market_frame_atomic
 
 import builtins
 from copy import deepcopy
@@ -200,7 +202,7 @@ def committee_store(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "HISTORICAL_STORE_DIR", directory)
     dates = pd.bdate_range(end="2026-07-14", periods=320).strftime("%Y-%m-%d").tolist()
     frame = ohlc_frame_for_dates("QQQ", dates)
-    frame.to_parquet(directory / "QQQ.parquet", index=False)
+    write_market_frame_atomic(directory / "QQQ.sqlite3", frame, index=False)
     return directory, frame
 
 
@@ -247,6 +249,7 @@ def test_committee_endpoint_only_reads_local_data_and_returns_one_price_field_vo
     monkeypatch.setattr(socket, "create_connection", reject)
     monkeypatch.setattr(storage, "ensure_market_store_dir", reject)
     monkeypatch.setattr(storage, "write_parquet_atomic", reject)
+    monkeypatch.setattr(storage, "write_market_frame_atomic", reject)
     monkeypatch.setattr(storage, "_migrate_store_filenames", reject)
     monkeypatch.setattr(pd.DataFrame, "to_parquet", reject)
     response = committee_app.test_client().get("/beta/api/buy-analysis?ticker=qqq.us")
@@ -299,15 +302,15 @@ def test_buy_analysis_ticker_allowlist_precedes_path_access(committee_app, monke
 def test_valid_closes_with_missing_ohlc_keep_price_field_abstention(committee_store):
     directory, frame = committee_store
     close_frame = close_frame_for_dates(frame["Date"].dt.strftime("%Y-%m-%d").tolist(), frame["Close"].tolist())
-    close_frame.to_parquet(directory / "QQQ.parquet", index=False)
-    before = (directory / "QQQ.parquet").read_bytes()
+    write_market_frame_atomic(directory / "QQQ.sqlite3", close_frame, index=False)
+    before = (directory / "QQQ.sqlite3").read_bytes()
     payload = buy_analysis.analyze("QQQ")
     assert [vote["vote"] for vote in payload["votes"][:2]] == ["approve", "approve"]
     assert payload["votes"][-1]["vote"] == "abstain"
     assert payload["votes"][-1]["probability_up"] is None
     assert payload["summary"]["verdict"] == "incomplete"
     assert payload["summary"]["total"] == 3
-    assert (directory / "QQQ.parquet").read_bytes() == before
+    assert (directory / "QQQ.sqlite3").read_bytes() == before
 
 
 @pytest.mark.parametrize("defect", ["invalid", "duplicate_daily_origin", "reversed"])

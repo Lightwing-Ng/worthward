@@ -1,6 +1,6 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.4.0
+Code version: v0.5.0
 - Added: Fresh card rewards disclosure outside the investment ledger cache.
 """
 
@@ -43,6 +43,10 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
     apply_no_store_headers = context["apply_no_store_headers"]
 
     build_file_fingerprint = context["build_file_fingerprint"]
+
+    build_private_investment_evidence_fingerprint = context[
+        "build_private_investment_evidence_fingerprint"
+    ]
 
     build_investment_fx_rate_history_payload = context[
         "build_investment_fx_rate_history_payload"
@@ -140,7 +144,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
             "credit_card_rewards": read_credit_card_reward_payload(
                 context.get(
                     "CREDIT_CARD_STORE_PATH",
-                    Path(INVESTMENT_STORE_PATH).parent / "credit_cards.json",
+                    Path(INVESTMENT_STORE_PATH).parent / "credit_cards.sqlite3",
                 ),
                 build_investment_fx_rate_history_payload,
             ),
@@ -165,6 +169,20 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
             },
         )
         if not investment_store_exists(INVESTMENT_STORE_PATH):
+            canonical_path = Path(INVESTMENT_STORE_PATH)
+            if canonical_path.suffix.lower() == ".sqlite3" and any(
+                canonical_path.with_suffix(suffix).exists()
+                for suffix in (".parquet", ".json")
+            ):
+                response = jsonify({
+                    "success": False,
+                    "error": (
+                        "The SQLite investment ledger is missing. Explicitly migrate "
+                        "the legacy ledger before loading investment transactions."
+                    ),
+                })
+                response.status_code = 500
+                return apply_no_store_headers(response)
             invalidate_investment_transactions_cache()
             response = jsonify(
                 with_credit_card_rewards({
@@ -247,6 +265,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
 
             # Bind the payload and version to one committed ledger snapshot.
             with market_store_file_lock(INVESTMENT_STORE_PATH):
+                private_evidence_fingerprint = build_private_investment_evidence_fingerprint()
                 data = load_normalized_investment_payload()
                 investment_store_fingerprint = build_file_fingerprint(
                     investment_store_path_for(INVESTMENT_STORE_PATH)
@@ -319,12 +338,17 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                     "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
                 }
                 with market_store_file_lock(INVESTMENT_STORE_PATH):
-                    if investment_store_fingerprint == build_file_fingerprint(
-                        investment_store_path_for(INVESTMENT_STORE_PATH)
+                    if (
+                        investment_store_fingerprint == build_file_fingerprint(
+                            investment_store_path_for(INVESTMENT_STORE_PATH)
+                        )
+                        and private_evidence_fingerprint
+                        == build_private_investment_evidence_fingerprint()
                     ):
                         write_investment_transactions_cache(
                             investment_store_fingerprint=investment_store_fingerprint,
                             price_store_fingerprints=price_store_fingerprints,
+                            private_evidence_fingerprint=private_evidence_fingerprint,
                             payload=cacheable_data,
                         )
             response = jsonify(with_credit_card_rewards(data))

@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.13.2
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -33,7 +33,8 @@ from app.infrastructure.storage import (
     history_store_path_for,
     market_store_file_lock,
     normalize_ticker,
-    write_parquet_atomic,
+    read_market_frame,
+    write_market_frame_atomic,
 )
 from app.infrastructure.yahoo_chart import download_yahoo_chart_daily_history
 from app.models.schemas import SeriesPayload
@@ -189,7 +190,7 @@ def _normalize_new_york_timestamps(values: pd.Series) -> pd.Series:
 
 
 def fx_store_path_for(currency: str) -> Path:
-    return FX_STORE_DIR / f"{str(currency).strip().upper()}.parquet"
+    return FX_STORE_DIR / f"{str(currency).strip().upper()}.sqlite3"
 
 
 def _normalize_fx_history(values: pd.DataFrame | None) -> pd.DataFrame:
@@ -224,7 +225,7 @@ def load_fx_history(currency: str) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return _normalize_fx_history(None)
     try:
-        return _normalize_fx_history(pd.read_parquet(path))
+        return _normalize_fx_history(read_market_frame(path))
     except (ImportError, OSError, ValueError, KeyError, TypeError):
         return _normalize_fx_history(None)
 
@@ -275,7 +276,7 @@ def fetch_usd_exchange_rate_history(
         merged = _normalize_fx_history(pd.concat(available_frames, ignore_index=True))
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with market_store_file_lock(cache_path):
-            write_parquet_atomic(cache_path, merged)
+            write_market_frame_atomic(cache_path, merged)
         return merged
     except Exception as exc:  # noqa: BLE001
         if cache_covers_request:
@@ -337,11 +338,11 @@ def _convert_market_cap_history_to_usd(ticker: str, history: pd.DataFrame) -> pd
 
 
 def shares_store_path_for(ticker: str) -> Path:
-    return SHARES_STORE_DIR / f"{normalize_ticker(ticker)}.parquet"
+    return SHARES_STORE_DIR / f"{normalize_ticker(ticker)}.sqlite3"
 
 
 def splits_store_path_for(ticker: str) -> Path:
-    return SPLITS_STORE_DIR / f"{normalize_ticker(ticker)}.parquet"
+    return SPLITS_STORE_DIR / f"{normalize_ticker(ticker)}.sqlite3"
 
 
 def yahoo_quote_symbol(ticker: str) -> str:
@@ -389,7 +390,7 @@ def _load_market_cap_component_prices(
     path = history_store_path_for(normalized_ticker)
     if path.exists() and path.stat().st_size > 0:
         try:
-            return _normalize_market_cap_price_frame(pd.read_parquet(path))
+            return _normalize_market_cap_price_frame(read_market_frame(path))
         except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
             LOGGER.warning("Unable to read market-cap component history for %s: %s", normalized_ticker, exc)
     try:
@@ -719,7 +720,7 @@ def load_stock_split_events(ticker: str) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return normalize_stock_split_events(None)
     try:
-        return normalize_stock_split_events(pd.read_parquet(path))
+        return normalize_stock_split_events(read_market_frame(path))
     except (ImportError, OSError, ValueError, KeyError, TypeError):
         return normalize_stock_split_events(None)
 
@@ -784,7 +785,7 @@ def resolve_stock_split_events(
     if remote_succeeded:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with market_store_file_lock(cache_path):
-            write_parquet_atomic(cache_path, resolved)
+            write_market_frame_atomic(cache_path, resolved)
     resolved.attrs["stock_split_source"] = source if remote_succeeded else "unavailable"
     return resolved
 
@@ -1241,7 +1242,7 @@ def load_reported_shares(ticker: str) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return normalize_reported_shares(None)
     try:
-        cached = normalize_reported_shares(pd.read_parquet(path))
+        cached = normalize_reported_shares(read_market_frame(path))
     except (ImportError, OSError, ValueError, KeyError, TypeError):
         return normalize_reported_shares(None)
     cached.attrs[REPORTED_SHARES_SOURCE_ATTR] = _reported_shares_source_for(
@@ -1339,7 +1340,7 @@ def fetch_reported_shares(ticker: str, start: pd.Timestamp, end: pd.Timestamp) -
     if not refreshed.empty:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with market_store_file_lock(cache_path):
-            write_parquet_atomic(cache_path, merged)
+            write_market_frame_atomic(cache_path, merged)
     return merged
 
 

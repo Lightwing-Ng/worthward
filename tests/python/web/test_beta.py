@@ -1,6 +1,8 @@
-"""Beta isolation, data validation, and causal diagnostics. Code version: v0.2.0."""
+"""Beta isolation, data validation, and causal diagnostics. Code version: v0.2.1."""
 
 from __future__ import annotations
+
+from app.infrastructure.storage import write_market_frame_atomic
 
 import builtins
 import os
@@ -31,7 +33,7 @@ def beta_store(tmp_path, monkeypatch):
     dates = pd.bdate_range("2015-01-01", periods=650)
     closes = (100 * np.exp(np.linspace(0, 0.5, 650) + np.sin(np.arange(650) / 13) * 0.12)).tolist()
     frame = close_frame_for_dates(dates.strftime("%Y-%m-%d").tolist(), closes)
-    frame.to_parquet(directory / "QQQ.parquet", index=False, row_group_size=50)
+    write_market_frame_atomic(directory / "QQQ.sqlite3", frame, index=False)
     return directory, frame
 
 
@@ -129,6 +131,7 @@ def test_analysis_reads_without_network_or_file_writes(beta_store, beta_app, mon
     monkeypatch.setattr(socket, "create_connection", reject)
     monkeypatch.setattr(storage, "ensure_market_store_dir", reject)
     monkeypatch.setattr(storage, "write_parquet_atomic", reject)
+    monkeypatch.setattr(storage, "write_market_frame_atomic", reject)
     monkeypatch.setattr(storage, "_migrate_store_filenames", reject)
     monkeypatch.setattr(pd.DataFrame, "to_parquet", reject)
     response = beta_app.test_client().get("/beta/api/analyze", query_string={"experiment": experiment, "ticker": "qqq.us"})
@@ -173,9 +176,9 @@ def test_local_data_absence_and_symlink_escape_fail_closed(beta_store):
     with pytest.raises(analysis.BetaDataError, match="No local") as failure:
         analysis.load_closes("MISSING")
     assert failure.value.status == 404
-    outside = directory.parent / "outside.parquet"
-    outside.write_bytes((directory / "QQQ.parquet").read_bytes())
-    (directory / "ESCAPE.parquet").symlink_to(outside)
+    outside = directory.parent / "outside.sqlite3"
+    outside.write_bytes((directory / "QQQ.sqlite3").read_bytes())
+    (directory / "ESCAPE.sqlite3").symlink_to(outside)
     with pytest.raises(analysis.BetaDataError, match="ordinary local") as failure:
         analysis.load_closes("ESCAPE")
     assert failure.value.status == 400
@@ -183,19 +186,19 @@ def test_local_data_absence_and_symlink_escape_fail_closed(beta_store):
 
 def test_same_security_market_alias_is_read_with_explicit_provenance(beta_store):
     directory, frame = beta_store
-    frame.to_parquet(directory / "SKHYV.parquet", index=False)
+    write_market_frame_atomic(directory / "SKHYV.sqlite3", frame, index=False)
     payload = analysis.analyze("regime-radar", "SKHY")
     assert payload["ticker"] == "SKHY"
     assert "(SKHYV)" in payload["source"]
-    frame.to_parquet(directory / "SKHY.parquet", index=False)
+    write_market_frame_atomic(directory / "SKHY.sqlite3", frame, index=False)
     payload = analysis.analyze("regime-radar", "SKHY")
     assert "(SKHY)" in payload["source"]
 
 
 def test_investment_lineage_proxy_is_never_used_as_market_identity(beta_store):
     directory, frame = beta_store
-    frame.to_parquet(directory / "SPY.parquet", index=False)
-    frame.to_parquet(directory / "SPYM.parquet", index=False)
+    write_market_frame_atomic(directory / "SPY.sqlite3", frame, index=False)
+    write_market_frame_atomic(directory / "SPYM.sqlite3", frame, index=False)
     with pytest.raises(analysis.BetaDataError, match="No local"):
         analysis.load_closes("SPLG")
 
@@ -203,7 +206,7 @@ def test_investment_lineage_proxy_is_never_used_as_market_identity(beta_store):
 @pytest.mark.parametrize("defect", ["zero", "negative", "nan", "infinity", "duplicate_date", "bad_date", "reversed_dates", "missing_close", "too_short", "future_date", "corrupt"])
 def test_bad_local_rows_are_rejected_without_repair(beta_store, defect):
     directory, frame = beta_store
-    path = directory / "QQQ.parquet"
+    path = directory / "QQQ.sqlite3"
     if defect in {"zero", "negative", "nan", "infinity"}:
         frame.loc[80, "Close"] = {"zero": 0, "negative": -1, "nan": np.nan, "infinity": np.inf}[defect]
     elif defect == "duplicate_date":
@@ -218,9 +221,9 @@ def test_bad_local_rows_are_rejected_without_repair(beta_store, defect):
         frame = frame.head(79)
     elif defect == "future_date":
         frame.loc[len(frame) - 1, "Date"] = pd.Timestamp.now().normalize() + pd.Timedelta(days=3)
-    frame.to_parquet(path, index=False)
+    write_market_frame_atomic(path, frame, index=False)
     if defect == "corrupt":
-        path.write_bytes(b"not a parquet file")
+        path.write_bytes(b"not a SQLite file")
     before = path.read_bytes()
     with pytest.raises(analysis.BetaDataError):
         analysis.load_closes("QQQ")
@@ -235,13 +238,13 @@ def test_bad_local_rows_are_rejected_without_repair(beta_store, defect):
 ])
 def test_experiment_minimum_closes_is_enforced_at_read_boundary(beta_store, experiment, minimum):
     directory, frame = beta_store
-    path = directory / "QQQ.parquet"
-    frame.head(minimum - 1).to_parquet(path, index=False)
+    path = directory / "QQQ.sqlite3"
+    write_market_frame_atomic(path, frame.head(minimum - 1), index=False)
     before = path.read_bytes()
     with pytest.raises(analysis.BetaDataError, match=f"at least {minimum}"):
         analysis.analyze(experiment, "QQQ")
     assert path.read_bytes() == before
-    frame.head(minimum).to_parquet(path, index=False)
+    write_market_frame_atomic(path, frame.head(minimum), index=False)
     assert analysis.analyze(experiment, "QQQ")["observations"] == minimum
 
 
@@ -249,7 +252,7 @@ def test_tail_observation_cap_is_explicit(beta_store):
     directory, _frame = beta_store
     dates = pd.bdate_range("2010-01-01", periods=3_000).strftime("%Y-%m-%d").tolist()
     frame = close_frame_for_dates(dates, np.linspace(100, 200, 3_000).tolist())
-    frame.to_parquet(directory / "QQQ.parquet", index=False, row_group_size=100)
+    write_market_frame_atomic(directory / "QQQ.sqlite3", frame, index=False)
     payload = analysis.analyze("stress-lab", "QQQ")
     assert payload["observations"] == 2_500
     assert "capped at 2,500" in payload["notes"][0]
@@ -283,7 +286,7 @@ def test_rolling_horizon_semantics_and_stress_use_h_plus_one_closes(beta_store):
     directory, frame = beta_store
     # Deterministic compounding makes the correct number of price intervals observable.
     frame["Close"] = 100 * np.power(1.01, np.arange(len(frame)))
-    frame.to_parquet(directory / "QQQ.parquet", index=False)
+    write_market_frame_atomic(directory / "QQQ.sqlite3", frame, index=False)
     expected = analysis.percent(1.01 ** 20 - 1)
     stress = analysis.analyze("stress-lab", "QQQ")
     assert stress["metrics"][1]["value"] == expected
@@ -299,7 +302,7 @@ def test_regime_volatility_and_trailing_drawdown_have_known_values(beta_store):
     directory, frame = beta_store
     frame["Close"] = 100.0
     frame.loc[len(frame) - 1, "Close"] = 90.0
-    frame.to_parquet(directory / "QQQ.parquet", index=False)
+    write_market_frame_atomic(directory / "QQQ.sqlite3", frame, index=False)
     payload = analysis.analyze("regime-radar", "QQQ")
     metrics = {item["label"]: item["value"] for item in payload["metrics"]}
     assert metrics["Trend texture"] == "Falling"

@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.9.1
+Code version: v0.9.2
 """
 
 from __future__ import annotations
@@ -356,11 +356,11 @@ class LogoServiceTests(unittest.TestCase):
         self.assertIn("BRK B", candidates)
 
     def test_store_paths_canonicalize_share_class_spacing(self) -> None:
-        self.assertEqual(history_store_path_for("BRK B").name, "BRK-B.parquet")
+        self.assertEqual(history_store_path_for("BRK B").name, "BRK-B.sqlite3")
         self.assertEqual(logo_store_path_for("BRK B").name, "BRK-B.png")
 
     def test_store_paths_canonicalize_share_class_dot_notation(self) -> None:
-        self.assertEqual(history_store_path_for("BRK.B").name, "BRK-B.parquet")
+        self.assertEqual(history_store_path_for("BRK.B").name, "BRK-B.sqlite3")
         self.assertEqual(logo_store_path_for("BRK.B").name, "BRK-B.png")
 
     def test_resolve_logo_store_path_ignores_content_with_the_wrong_extension(self) -> None:

@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.47.0`
+Documentation version: `v3.48.0`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -47,7 +47,7 @@ read-compatible interfaces; the application writes only the Worthward names.
 
 - Python `3.13` or newer
 - Dependencies from `requirements.txt`
-- `pyarrow` for parquet persistence
+- `pyarrow` for typed Arrow frames and explicit legacy Parquet interchange
 - Node.js `22` for the JavaScript and browser quality gate
 - Optional Longbridge credentials for broker-backed market-data fallback
 - Yahoo Mail app password for SMTP alerts
@@ -411,7 +411,7 @@ market-store key.
 
 ### Daily history
 
-- Stored in `market_store/historical/` as parquet
+- Stored in `market_store/historical/` as typed SQLite frame databases
 - Used by comparison views, portfolio views, investment valuation, and default backtests
 - Downloaded through `yfinance` first
 - Retries the same authoritative Yahoo Chart endpoint through the standard-library network stack when the `yfinance` transport fails, including on Windows
@@ -419,7 +419,7 @@ market-store key.
 
 ### 1-minute history
 
-- Stored in `market_store/historical/` as parquet
+- Stored in `market_store/historical/` as typed SQLite frame databases
 - Preferred source is `yfinance`, using bounded recent-data windows supported by the free service
 - When `yfinance` returns no usable bars without an explicit rate-limit signal, the same bounded request falls back to Yahoo Chart directly before the optional Longbridge provider
 - An explicit Yahoo rate-limit signal stops further Yahoo transport retries; an optional Longbridge provider may still supply the requested bars
@@ -505,11 +505,11 @@ py -3 -m pip install --upgrade -r requirements.txt
 
 ### Metadata and search caches
 
-- `market_store/profiles/profiles.parquet` stores cached company profiles
+- `market_store/profiles/profiles.sqlite3` stores cached company profiles
 - `market_store/logos/` stores cached ticker logos
-- `settings_store/search/search_cache.parquet` stores search-result caches
-- `settings_store/search/ticker_usage.json` stores ticker usage frequency
-- `settings_store/search/strategy_usage.json` stores strategy usage frequency
+- `settings_store/search/search_cache.sqlite3` stores search-result caches
+- `settings_store/search/ticker_usage.sqlite3` stores ticker usage frequency
+- `settings_store/search/strategy_usage.sqlite3` stores strategy usage frequency
 
 Investment ticker identities prefer a valid provider name, then an exact local
 search-cache name, then a vetted standard-name fallback. A symbol-only provider
@@ -521,15 +521,30 @@ profile name.
 
 `settings_store/` is created locally at runtime and is ignored by Git. It is used for device-local data such as:
 
-- `settings_store/settings.json`
-- `settings_store/investment.parquet`
+- `settings_store/settings.sqlite3`
+- `settings_store/investment.sqlite3`
 - `settings_store/investment_cache/`
 - `settings_store/search/`
 
+## SQLite storage and explicit migration
+
+All active structured runtime stores use SQLite, including daily and intraday
+market history, profiles, FX, settings, ledgers, derived caches, and compute
+state. Existing Parquet/JSON sources require explicit verified migration;
+runtime readers do not silently fall back to historical copies after a missing
+or corrupt canonical database. Immutable broker source bytes and native assets
+remain in their original formats.
+
+See [Local SQLite persistence](docs/LOCAL_SQLITE.md) for the complete storage,
+migration, source-preserving archive, and performance-measurement contract, and
+[Investment SQLite ledger](docs/INVESTMENT_SQLITE.md) for ledger locking,
+provenance, unknown-value preservation, and isolated input/browser ablation.
+Keep local migration reports and account-level acceptance evidence outside Git.
+
 ## Investment ledger notes
 
-- Investment transactions are read from `settings_store/investment.parquet`
-- The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these device-local files are ignored by Git, are never required for startup, and are rebuilt from `investment.parquet` plus local market history files
+- Investment transactions are read from `settings_store/investment.sqlite3`
+- The investment API may cache derived transaction, profile, and local price-history payloads under `settings_store/investment_cache/`; these device-local files are ignored by Git, are never required for startup, and are rebuilt from `investment.sqlite3` plus local market history files
 - The `Trade -> Investment` workspace renders holdings, equity history, metrics, and transaction history from that ledger
 - `Settings -> Investment` controls the shared buy-lot matching method used by Holdings, Stock details, and local realized P&L. The default is `Lowest-cost lots first`, which attributes a sale to the cheapest open lots first; FIFO, LIFO, and moving-average alternatives remain available.
 - Holdings remaining shares, cost basis, and unrealized P&L are aggregated only after each broker/account/ticker/currency scope has replayed its own transactions, so one account's sale cannot consume another account's lots.
@@ -543,7 +558,7 @@ profile name.
 - Holdings reuse locally cached ticker profiles and logos when available
 - Configured money market funds can use the transaction `description` field as a display-name fallback when no local profile exists
 - IBKR internal FX conversion symbols such as `USD.HKD` are treated as ledger-only cash-conversion artifacts rather than queryable securities
-- Confirmed internal-transfer bindings are persisted in `investment.parquet` with
+- Confirmed internal-transfer bindings are persisted in `investment.sqlite3` with
   cross-import `v2` leg identities. Broker re-imports preserve cash-transfer
   identities across source-file, row-number, description, IBKR account-mask,
   and USD blank-field presentation changes. In-kind security-transfer identities
@@ -671,7 +686,7 @@ Status drafts remain separate. If a card page reaches cash validation,
 the error explains how to refresh Import and preview the card page in the
 first Copy/paste field without interpreting card liability as investment cash.
 
-Credit-card records live in `settings_store/credit_cards.json`, separate from
+Credit-card records live in `settings_store/credit_cards.sqlite3`, separate from
 the investment ledger. Purchases increase card liability; repayments and
 RewardCash offsets reduce it. Pending authorizations stay outside posted totals.
 The bank's displayed balance, current amount due, minimum payment, due date,
@@ -717,7 +732,7 @@ and native rewards without inventing a converted total.
 - Every trade, charge, and dividend in the legacy paired path must reconcile to a same-date and same-amount USD cash posting. The statement import fails closed when reconciliation is incomplete.
 - Historical statement snapshots do not replace a newer copy/paste Portfolio or posted-ledger cash snapshot. Matching order references and corporate actions upgrade existing rows idempotently.
 - When a historical HSBC statement overlaps an existing cash-account import, the same-account event is deduplicated by date, type, currency, signed amount, and occurrence count. Existing USD cash rows remain the current snapshot, while statement-only HKD and CNH rows are added to the ledger.
-- The read-only validator can independently audit the four official account CSVs with `python3 scripts/validate_hsbc_statement_import.py /path/to/statements --official-csv-dir /path/to/official-csvs`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.parquet`.
+- The read-only validator can independently audit the four official account CSVs with `python3 scripts/validate_hsbc_statement_import.py /path/to/statements --official-csv-dir /path/to/official-csvs`. It checks each CSV's descending-date balance continuity, compares per-account date-and-amount multisets across the PDF/CSV overlap, and verifies the imported cutoff balance. The CSVs are never imported into `investment.sqlite3`.
 
 ### BOCHK statement import
 
@@ -796,9 +811,9 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
   - **GainsKeeper**: OFX/GKX files for precision upgrades and overlapping historical coverage.
   - **Web paste**: copied Trade Notifications page text for immediate provisional
     filled trades. It is not a browser session, API, or direct broker transport.
-- Each newly imported file or pasted evidence capture is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its Parquet path as `<parquet-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB. On POSIX systems, evidence directories are owner-only (`0700`) and artifacts, including staging files, are owner-only (`0600`).
-- Application startup and read-only Investment browsing require only `investment.parquet`. Source-evidence verification remains mandatory at the investment-import commit boundary, so a device without the matching evidence sidecar can inspect the portable ledger but cannot silently extend it with unauditable imports.
-- Existing ledger records remain readable after a Parquet-only transfer and
+- Each newly imported file or pasted evidence capture is retained locally as an immutable source-evidence artifact keyed by its SHA-256 digest. For the default ledger, artifacts live under `settings_store/investment_evidence/`; for every ledger, the evidence directory is derived from its ledger stem as `<ledger-stem>_evidence`. The ledger stores the matching manifest, statement metadata, and source role; a re-import of identical bytes reuses the same artifact instead of duplicating it. A single source file is capped at 64 MiB and the evidence directory at 256 MiB. On POSIX systems, evidence directories are owner-only (`0700`) and artifacts, including staging files, are owner-only (`0600`).
+- Application startup and read-only Investment browsing require only `investment.sqlite3`. Source-evidence verification remains mandatory at the investment-import commit boundary, so a device without the matching evidence sidecar can inspect the portable ledger but cannot silently extend it with unauditable imports.
+- Existing ledger records remain readable after a SQLite-only transfer and
   remain mergeable when their matching evidence sidecar is present. Legacy
   imports that predate source-evidence persistence remain explicitly without a
   reconstructed raw artifact; the application never fabricates one.
@@ -808,7 +823,7 @@ IBKR is separate from HSBC behavior. Under the current repository convention, en
 `settings_store/` is intentionally ignored by Git. Therefore, a Git pull never
 transfers the investment ledger or its device-local derived cache. To start the
 app and browse the ledger on another macOS or Windows device, transfer only
-`investment.parquet` through a binary-safe copy method. Do not transfer
+`investment.sqlite3` through a binary-safe copy method. Do not transfer
 `investment_cache/`; it contains disposable machine-local fingerprints and is
 rebuilt automatically. A stale, malformed, or unwritable cache is treated as a
 cache miss and never blocks ledger startup.
@@ -827,10 +842,10 @@ performing another broker import:
 py -3 scripts/verify_investment_evidence.py
 ```
 
-For a non-default ledger location, pass its Parquet path explicitly:
+For a non-default ledger location, pass its ledger path explicitly:
 
 ```powershell
-py -3 scripts/verify_investment_evidence.py --store D:\worthward\settings_store\investment.parquet
+py -3 scripts/verify_investment_evidence.py --store D:\worthward\settings_store\investment.sqlite3
 ```
 
 If verification reports a missing or changed artifact, read-only startup remains

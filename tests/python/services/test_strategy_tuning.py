@@ -1,4 +1,4 @@
-"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.3."""
+"""Registry-wide research and shared parameter-group contracts. Code version: v1.4.4."""
 
 from dataclasses import replace
 import json
@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.infrastructure.storage import write_market_frame_atomic
 from app.services.research.strategy_tuning import (
     ResearchRequest,
     ResearchSession,
@@ -323,8 +324,8 @@ def test_cli_reads_market_files_without_mutating_them(tmp_path, monkeypatch):
     from app.services.research import strategy_tuning
 
     frame = ohlc_frame_for_dates("NVDA", ["2026-01-02", "2026-01-05"])
-    path = tmp_path / "NVDA.parquet"
-    frame.to_parquet(path)
+    path = tmp_path / "NVDA.sqlite3"
+    write_market_frame_atomic(path, frame, index=True)
     original = path.read_bytes()
     monkeypatch.setattr(
         strategy_tuning, "history_store_path_for_interval", lambda *_args: path
@@ -333,7 +334,7 @@ def test_cli_reads_market_files_without_mutating_them(tmp_path, monkeypatch):
     assert len(result) == 2
     assert path.read_bytes() == original
     frame["Synthetic"] = True
-    frame.to_parquet(path)
+    write_market_frame_atomic(path, frame, index=True)
     with pytest.raises(ValueError, match="Synthetic"):
         load_research_history("NVDA", "1d")
 

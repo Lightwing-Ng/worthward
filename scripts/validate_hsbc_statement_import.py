@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Validate HSBC statement PDF imports without writing investment.parquet.
+"""Validate HSBC statement PDF imports without writing the investment ledger.
 
-Code version: v0.1.3
+Code version: v0.1.4
 """
 
 from __future__ import annotations
@@ -415,7 +415,7 @@ def _load_store(path: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate HSBC statement PDF import output without writing investment.parquet."
+        description="Validate HSBC statement PDF import output without writing the investment ledger."
     )
     parser.add_argument(
         "inputs",
@@ -425,7 +425,7 @@ def main() -> int:
     parser.add_argument(
         "--store",
         default=str(INVESTMENT_STORE_PATH),
-        help="Existing investment.parquet path used for merge simulation.",
+        help="Existing investment ledger path used for merge simulation (default: investment.sqlite3).",
     )
     parser.add_argument(
         "--official-csv-dir",

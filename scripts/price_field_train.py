@@ -1,4 +1,4 @@
-"""Train one saved neural Price Field configuration. Code version: v1.1.2."""
+"""Train one saved neural Price Field configuration. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -15,13 +15,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.core.object_sqlite import read_structured_object, write_structured_object  # noqa: E402
+
 
 def run(request_path: Path, run_token: str) -> dict:
     from scripts.price_field_runtime import ensure_price_field_runtime
 
     if request_path.is_symlink() or not request_path.is_file():
         raise ValueError("Invalid training request path.")
-    request = json.loads(request_path.read_text(encoding="utf-8"))
+    request = read_structured_object(request_path)
     if not run_token or request.get("run_token") != run_token:
         raise ValueError("Training request ownership could not be verified.")
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "0"
@@ -47,7 +49,7 @@ def run(request_path: Path, run_token: str) -> dict:
         signal.signal(sig, stop)
 
     def cancellation_requested():
-        return cancelled or (state / "stop-request.json").is_file()
+        return cancelled or (state / "stop-request.sqlite3").is_file()
 
     def check_cancel():
         if cancellation_requested():
@@ -63,7 +65,7 @@ def run(request_path: Path, run_token: str) -> dict:
         if completed is not None and total and 0 <= completed <= total:
             status["progress"] = {"completed": completed, "total": total, "unit": "origins",
                                   "percent": round(completed / total * 100, 1)}
-        write_json(state / "status.json", status)
+        write_json(state / "status.sqlite3", status)
 
     try:
         record("loading")
@@ -79,7 +81,7 @@ def run(request_path: Path, run_token: str) -> dict:
         visible = full.loc[(full["Date"].dt.date >= start) & (full["Date"].dt.date <= end)].copy()
         if visible.empty:
             raise ValueError("The selected range has no daily observations.")
-        write_json(state / "snapshot.json", _json_safe({"schema": 1, "ticker": request["ticker"],
+        write_json(state / "snapshot.sqlite3", _json_safe({"schema": 1, "ticker": request["ticker"],
                    "start": str(start), "end": str(end), "interval": "1d", "visible_rows": _frame_rows(visible),
                    "bundle": plain_market_bundle(strategy._warmup_bundle)}))
         strategy.training_progress = lambda completed, total: record("training", completed, total)
@@ -99,15 +101,15 @@ def run(request_path: Path, run_token: str) -> dict:
                              "configuration": exact, "diagnostics": diagnostics, "device": presentation.get("device"),
                              "fingerprint": presentation.get("fingerprint"), "model_version": presentation.get("model_version"),
                              "evaluation_kind": "exact-configuration-causal-walk-forward", "presentation": presentation})
-        write_json(state / "result.json", payload)
+        write_json(state / "result.sqlite3", payload)
         status.update({"status": "completed", "phase": "completed", "completed_at": completed,
                        "updated_at": completed, "progress": {"percent": 100.0}})
-        write_json(state / "status.json", status)
+        write_json(state / "status.sqlite3", status)
         return payload
     except Exception as exc:
         status.update({"status": "stopped" if isinstance(exc, (InterruptedError, NeuralTrainingCancelled)) else "failed",
                        "error": str(exc), "updated_at": datetime.now(timezone.utc).isoformat()})
-        write_json(state / "status.json", status)
+        write_json(state / "status.sqlite3", status)
         raise
     finally:
         for sig, handler in previous_signals.items():
@@ -125,15 +127,21 @@ def main() -> int:
         # Runtime discovery can fail before application imports. Preserve that
         # startup error beside the owned request so the GUI can explain it.
         try:
-            request = json.loads(args.request.read_text(encoding="utf-8"))
+            request = read_structured_object(args.request)
             if not args.request.is_symlink() and request.get("run_token") == args.run_token:
-                status_path = args.request.parent / "status.json"
-                previous = json.loads(status_path.read_text(encoding="utf-8")) if status_path.is_file() else {}
+                status_path = args.request.parent / "status.sqlite3"
+                if args.request.suffix.lower() == ".sqlite3":
+                    status_path = status_path.with_suffix(".sqlite3")
+                previous = read_structured_object(status_path) if status_path.is_file() else {}
                 if previous.get("status") not in {"completed", "stopped", "failed"}:
-                    temporary = status_path.with_name(f".status.json.{os.getpid()}.tmp")
-                    temporary.write_text(json.dumps({"status": "failed", "error": str(exc),
-                                         "updated_at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
-                    temporary.replace(status_path)
+                    failure = {"status": "failed", "error": str(exc),
+                               "updated_at": datetime.now(timezone.utc).isoformat()}
+                    if status_path.suffix.lower() == ".sqlite3":
+                        write_structured_object(status_path, failure)
+                    else:
+                        temporary = status_path.with_name(f".status.sqlite3.{os.getpid()}.tmp")
+                        temporary.write_text(json.dumps(failure), encoding="utf-8")
+                        temporary.replace(status_path)
         except (OSError, ValueError, TypeError):
             pass
         print(f"price_field_train failed: {exc}", file=sys.stderr, flush=True)

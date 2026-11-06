@@ -1,9 +1,11 @@
 """Build the investment market live web-runtime context.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame
 
 
 def build_investment_market_live_context(
@@ -110,7 +112,7 @@ def build_investment_market_live_context(
                 )
 
             if intraday_path is not None:
-                dataset = pd.read_parquet(intraday_path)
+                dataset = read_market_frame(intraday_path)
             else:
                 dataset = fetch_history(
                     normalized_ticker, include_dividends=False, interval="1m"
@@ -184,7 +186,7 @@ def build_investment_market_live_context(
                             normalized_ticker, interval="1m"
                         )
                         dataset = (
-                            pd.read_parquet(intraday_path)
+                            read_market_frame(intraday_path)
                             if intraday_path is not None
                             else dataset
                         )
@@ -226,7 +228,7 @@ def build_investment_market_live_context(
                                 interval="1m",
                             )
                             dataset = (
-                                pd.read_parquet(intraday_path)
+                                read_market_frame(intraday_path)
                                 if intraday_path is not None
                                 else dataset
                             )

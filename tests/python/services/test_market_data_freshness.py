@@ -1,10 +1,12 @@
 """
 Tests for daily market data freshness safeguards.
 
-Code version: v0.22.2
+Code version: v0.22.3
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame, write_market_frame_atomic
 
 import logging
 import threading
@@ -69,16 +71,16 @@ class LocalMarketStoreListingTests(unittest.TestCase):
             historical_dir = Path(tempdir) / "historical"
             historical_dir.mkdir()
             retained_files = (
-                "000660.KS.parquet",
-                "7709.HK.parquet",
+                "000660.KS.sqlite3",
+                "7709.HK.sqlite3",
             )
             ignored_files = (
-                "000660.KS_1m.parquet",
-                "000660.KS_1m.b7a37152d3194833a9c492990a0974ec.tmp.parquet",
-                "7709.HK_1M-2.parquet",
-                "7709.HK_1M.c9e35aec1fb945d693184b53aacfa15c.tmp.parquet",
-                "7709.HK_1m.parquet.lock",
-                "AAPL.1234567890.TMP.parquet",
+                "000660.KS_1m.sqlite3",
+                "000660.KS_1m.b7a37152d3194833a9c492990a0974ec.tmp.sqlite3",
+                "7709.HK_1M-2.sqlite3",
+                "7709.HK_1M.c9e35aec1fb945d693184b53aacfa15c.tmp.sqlite3",
+                "7709.HK_1m.sqlite3.lock",
+                "AAPL.1234567890.TMP.sqlite3",
             )
             for filename in (*retained_files, *ignored_files):
                 (historical_dir / filename).write_bytes(b"1")
@@ -348,8 +350,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
             ["2026-08-28 09:30", "2026-08-28 09:31"],
         )
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "NVDA_1m.parquet"
-            dataset.to_parquet(path, index=False)
+            path = Path(tempdir) / "NVDA_1m.sqlite3"
+            write_market_frame_atomic(path, dataset, index=False)
             before_bytes = path.read_bytes()
             before_mtime = path.stat().st_mtime_ns
             with (
@@ -361,7 +363,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
                     "app.services.market.market_data.history_store_path_for_interval",
                     return_value=path,
                 ),
-                patch("app.services.market.market_data.write_parquet_atomic") as write_mock,
+                patch("app.services.market.market_data.write_market_frame_atomic") as write_mock,
             ):
                 result = load_local_one_minute_history("NVDA")
 
@@ -499,7 +501,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
             raise ValueError(f"Unsupported isolated market interval: {interval}")
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / f"DRAM_{interval}.parquet"
+            path = Path(tempdir) / "historical" / f"DRAM_{interval}.sqlite3"
             for production_root in (BASE_DIR / "market_store", BASE_DIR / "settings_store"):
                 self.assertFalse(path.resolve().is_relative_to(production_root.resolve()))
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -509,7 +511,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
                 else "app.infrastructure.broker_market_data.history_store_path_for"
             )
             with patch(path_function, return_value=path):
-                dataset.to_parquet(path, index=False)
+                write_market_frame_atomic(path, dataset, index=False)
                 callback(path)
 
     def test_isolated_store_cleanup_survives_callback_failure(self) -> None:
@@ -656,9 +658,9 @@ class MarketDataFreshnessTests(unittest.TestCase):
         ).set_index("Date")
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ.parquet"
+            path = Path(tempdir) / "historical" / "QQQ.sqlite3"
             path.parent.mkdir(parents=True, exist_ok=True)
-            existing_dataset.to_parquet(path, index=False)
+            write_market_frame_atomic(path, existing_dataset, index=False)
             before_bytes = path.read_bytes()
 
             with (
@@ -679,7 +681,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
             self.assertEqual(refreshed_path, path)
             self.assertEqual(path.read_bytes(), before_bytes)
-            stored = pd.read_parquet(path).sort_values("Date").reset_index(drop=True)
+            stored = read_market_frame(path).sort_values("Date").reset_index(drop=True)
             pd.testing.assert_frame_equal(stored, existing_dataset)
 
     def test_fetch_history_repairs_missing_dividend_actions_from_adjustment_steps(self) -> None:
@@ -706,13 +708,13 @@ class MarketDataFreshnessTests(unittest.TestCase):
         ] = [0.83, 0.91]
 
         with TemporaryDirectory() as tempdir:
-            history_path = Path(tempdir) / "MSFT.parquet"
-            broken_dataset.to_parquet(history_path, index=False)
+            history_path = Path(tempdir) / "MSFT.sqlite3"
+            write_market_frame_atomic(history_path, broken_dataset, index=False)
 
             def repair_store(ticker: str, *, force_full: bool = False) -> Path:
                 self.assertEqual(ticker, "MSFT")
                 self.assertTrue(force_full)
-                repaired_dataset.to_parquet(history_path, index=False)
+                write_market_frame_atomic(history_path, repaired_dataset, index=False)
                 return history_path
 
             with (
@@ -736,13 +738,13 @@ class MarketDataFreshnessTests(unittest.TestCase):
         repaired_dataset["Stock Splits"] = [0.0, 10.0]
 
         with TemporaryDirectory() as tempdir:
-            history_path = Path(tempdir) / "NVDA.parquet"
-            legacy_dataset.to_parquet(history_path, index=False)
+            history_path = Path(tempdir) / "NVDA.sqlite3"
+            write_market_frame_atomic(history_path, legacy_dataset, index=False)
 
             def repair_store(ticker: str, *, force_full: bool = False) -> Path:
                 self.assertEqual(ticker, "NVDA")
                 self.assertTrue(force_full)
-                repaired_dataset.to_parquet(history_path, index=False)
+                write_market_frame_atomic(history_path, repaired_dataset, index=False)
                 return history_path
 
             with (
@@ -764,8 +766,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
             "Dividends": [0.0, 0.0],
         })
         with TemporaryDirectory() as tempdir:
-            history_path = Path(tempdir) / "NVDA.parquet"
-            legacy_dataset.to_parquet(history_path, index=False)
+            history_path = Path(tempdir) / "NVDA.sqlite3"
+            write_market_frame_atomic(history_path, legacy_dataset, index=False)
             with (
                 patch("app.services.market.market_data.market_ticker_store_aliases", return_value=["NVDA"]),
                 patch("app.services.market.market_data.history_store_path_for_interval", return_value=history_path),
@@ -786,8 +788,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
         non_dividend_dataset["Stock Splits"] = 0.0
 
         with TemporaryDirectory() as tempdir:
-            history_path = Path(tempdir) / "ADBE.parquet"
-            non_dividend_dataset.to_parquet(history_path, index=False)
+            history_path = Path(tempdir) / "ADBE.sqlite3"
+            write_market_frame_atomic(history_path, non_dividend_dataset, index=False)
             with (
                 patch("app.services.market.market_data.market_ticker_store_aliases", return_value=["ADBE"]),
                 patch("app.services.market.market_data.history_store_path_for_interval", return_value=history_path),
@@ -1071,7 +1073,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
     @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_refresh_one_minute_store_uses_yfinance_before_configured_longbridge(self) -> None:
         yfinance_history = market_frame("QQQ", intraday=True)
-        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+        expected_path = Path("isolated-market-store/QQQ-1m.sqlite3")
 
         with (
             patch("app.services.market.market_data.has_recent_one_minute_store", return_value=False),
@@ -1093,7 +1095,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
     @patch.dict("os.environ", {"WORTHWARD_REMOTE_MARKET_ACCESS": "enabled"})
     def test_refresh_one_minute_store_uses_one_recent_window_for_existing_cache(self) -> None:
         yfinance_history = market_frame("QQQ", intraday=True)
-        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+        expected_path = Path("isolated-market-store/QQQ-1m.sqlite3")
 
         with (
             patch("app.services.market.market_data.has_recent_one_minute_store", return_value=True),
@@ -1111,7 +1113,7 @@ class MarketDataFreshnessTests(unittest.TestCase):
         yfinance_mock.assert_called_once_with("QQQ", days=7)
 
     def test_explicit_longbridge_minute_refresh_bypasses_yahoo(self) -> None:
-        expected_path = Path("isolated-market-store/QQQ-1m.parquet")
+        expected_path = Path("isolated-market-store/QQQ-1m.sqlite3")
         settings = object()
 
         with (
@@ -1684,8 +1686,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
             "Close": [24.5, 24.5, 23.5],
         })
         with TemporaryDirectory() as tempdir:
-            store_path = Path(tempdir) / "EUV_1m.parquet"
-            dataset.to_parquet(store_path, index=False)
+            store_path = Path(tempdir) / "EUV_1m.sqlite3"
+            write_market_frame_atomic(store_path, dataset, index=False)
             with patch(
                 "app.web.runtime.intraday_history_store_path_for",
                 return_value=store_path,
@@ -1717,11 +1719,11 @@ class MarketDataFreshnessTests(unittest.TestCase):
         )
 
         with TemporaryDirectory() as tempdir:
-            store_path = Path(tempdir) / "DRAM_1m.parquet"
-            prior_dataset.to_parquet(store_path, index=False)
+            store_path = Path(tempdir) / "DRAM_1m.sqlite3"
+            write_market_frame_atomic(store_path, prior_dataset, index=False)
 
             def refresh_with_fallback(_ticker):
-                current_dataset.to_parquet(store_path, index=False)
+                write_market_frame_atomic(store_path, current_dataset, index=False)
                 return SimpleNamespace(source="longbridge_fallback")
 
             with (
@@ -1787,12 +1789,12 @@ class MarketDataFreshnessTests(unittest.TestCase):
         )
 
         with TemporaryDirectory() as tempdir:
-            store_path = Path(tempdir) / "DRAM_1m.parquet"
-            dataset.to_parquet(store_path, index=False)
+            store_path = Path(tempdir) / "DRAM_1m.sqlite3"
+            write_market_frame_atomic(store_path, dataset, index=False)
 
             def refresh_with_complete_history(_ticker, *, days):
                 self.assertEqual(days, 30)
-                refreshed_dataset.to_parquet(store_path, index=False)
+                write_market_frame_atomic(store_path, refreshed_dataset, index=False)
                 return SimpleNamespace(source="yfinance_30d")
 
             with (
@@ -1850,11 +1852,11 @@ class MarketDataFreshnessTests(unittest.TestCase):
         completed_dataset = ohlc_frame_for_dates("DRAM", completed_day)
 
         with TemporaryDirectory() as tempdir:
-            store_path = Path(tempdir) / "DRAM_1m.parquet"
-            partial_dataset.to_parquet(store_path, index=False)
+            store_path = Path(tempdir) / "DRAM_1m.sqlite3"
+            write_market_frame_atomic(store_path, partial_dataset, index=False)
 
             def refresh_with_longbridge(_ticker):
-                completed_dataset.to_parquet(store_path, index=False)
+                write_market_frame_atomic(store_path, completed_dataset, index=False)
                 return SimpleNamespace(source="longbridge_fallback")
 
             with (
@@ -1907,8 +1909,8 @@ class MarketDataFreshnessTests(unittest.TestCase):
         dataset = ohlc_frame_for_dates("DRAM", ["2026-08-10 15:59"])
 
         with TemporaryDirectory() as tempdir:
-            store_path = Path(tempdir) / "DRAM_1m.parquet"
-            dataset.to_parquet(store_path, index=False)
+            store_path = Path(tempdir) / "DRAM_1m.sqlite3"
+            write_market_frame_atomic(store_path, dataset, index=False)
             with (
                 patch(
                     "app.web.runtime.intraday_history_store_path_for",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Preview or explicitly commit HSBC card files through the card ledger service.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument(
-        "--store", type=Path, default=SETTINGS_STORE_DIR / "credit_cards.json"
+        "--store", type=Path, default=SETTINGS_STORE_DIR / "credit_cards.sqlite3"
     )
     parser.add_argument("--commit", action="store_true")
     parser.add_argument(

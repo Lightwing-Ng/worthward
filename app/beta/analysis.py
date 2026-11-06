@@ -1,4 +1,4 @@
-"""Bounded, read-only local history diagnostics for Beta. Code version: v0.3.0."""
+"""Bounded, read-only local history diagnostics for Beta. Code version: v0.4.0."""
 
 from __future__ import annotations
 
@@ -8,13 +8,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as parquet
 
 from app.infrastructure.storage import (
     HISTORICAL_STORE_DIR,
     history_store_path_for,
+    market_frame_info,
     market_ticker_store_aliases,
     normalize_ticker,
+    read_market_frame,
 )
 
 MAX_OBSERVATIONS = 2_500
@@ -66,28 +67,19 @@ def load_history(
             raise BetaDataError(f"No local daily Close cache is available for {ticker}.", 404)
         if path.stat().st_size > MAX_SOURCE_BYTES:
             raise BetaDataError("This daily cache exceeds Beta's 32 MiB read limit.")
-        with path.open("rb") as source:
-            reader = parquet.ParquetFile(source)
-            if reader.metadata.num_rows > MAX_SOURCE_ROWS:
-                raise BetaDataError("This daily cache exceeds Beta's 100,000-row source limit.")
-            if not {"Date", "Close"}.issubset(reader.schema_arrow.names):
-                raise BetaDataError("The local daily cache must contain Date and Close columns.")
-            columns = ["Date", "Close"]
-            if include_ohlcv:
-                columns.extend(column for column in ("Open", "High", "Low", "Volume")
-                               if column in reader.schema_arrow.names)
-            groups: list[int] = []
-            count = 0
-            for group in range(reader.num_row_groups - 1, -1, -1):
-                groups.append(group)
-                count += reader.metadata.row_group(group).num_rows
-                if count >= maximum:
-                    break
-            table = reader.read_row_groups(sorted(groups), columns=columns, use_threads=False)
-            frame = table.slice(max(0, len(table) - maximum)).to_pandas()
+        info = market_frame_info(path)
+        if info["row_count"] > MAX_SOURCE_ROWS:
+            raise BetaDataError("This daily cache exceeds Beta's 100,000-row source limit.")
+        if not {"Date", "Close"}.issubset(info["columns"]):
+            raise BetaDataError("The local daily cache must contain Date and Close columns.")
+        columns = ["Date", "Close"]
+        if include_ohlcv:
+            columns.extend(column for column in ("Open", "High", "Low", "Volume")
+                           if column in info["columns"])
+        frame = read_market_frame(path, columns=columns, tail=maximum)
     except BetaDataError:
         raise
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
         raise BetaDataError("The local daily cache could not be read. No refresh was attempted.") from exc
 
     if len(frame) < minimum:

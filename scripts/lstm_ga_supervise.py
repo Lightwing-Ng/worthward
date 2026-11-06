@@ -1,4 +1,4 @@
-"""Bound one explicitly launched compute job. Code version: v1.1.0."""
+"""Bound one explicitly launched compute job. Code version: v1.2.0."""
 
 from __future__ import annotations
 
@@ -10,7 +10,14 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import time
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.core.object_sqlite import write_structured_object  # noqa: E402
 
 
 def process_start_identity(pid: int) -> str:
@@ -26,6 +33,9 @@ def process_start_identity(pid: int) -> str:
 
 
 def _persist(metadata: Path, record: dict) -> None:
+    if metadata.suffix.lower() == ".sqlite3":
+        write_structured_object(metadata, record)
+        return
     temporary = metadata.with_suffix(".tmp")
     temporary.write_text(json.dumps(record, indent=2), encoding="utf-8")
     temporary.replace(metadata)
