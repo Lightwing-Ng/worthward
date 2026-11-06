@@ -1,6 +1,23 @@
 # Architecture guide
 
-Documentation version: `v1.144.0`
+Documentation version: `v1.145.0`
+
+## Canonical SQLite persistence
+
+The [local storage contract](LOCAL_SQLITE.md) owns all active structured
+runtime databases, including market history, profiles, FX, settings, compute
+state, and separate investment/credit-card ledgers. Typed market frames use
+checksummed Arrow column blocks in SQLite; JSON-compatible state and ordered
+events retain their complete values and occurrence order. The
+[investment contract](INVESTMENT_SQLITE.md) owns its specialized compressed
+transaction blocks and complete source manifests.
+
+Migration is explicit, source-preserving, verified on readback, and atomic per
+database. A canonical database never falls back to an older shadow file after
+an error. The transaction cache binds both canonical-ledger and private-evidence
+fingerprints, captures them before projection, and checks them before cache
+publication. Existing broker accounting, unknowns, source authority, and order
+authorization retain their independent contracts.
 
 ## HSBC debit-card cashback boundary
 
@@ -31,7 +48,7 @@ one particular purchase or campaign.
 
 The first HSBC Copy/paste account-page field recognizes credit-card pages
 and automatically runs a read-only preview before explicit import. It owns a separate local
-`credit_cards.json` ledger under the configured settings directory. Its dedicated preview, import, and
+`credit_cards.sqlite3` ledger under the configured settings directory. Its dedicated preview, import, and
 read routes are `/api/credit-cards/hsbc/preview`,
 `/api/credit-cards/hsbc/import`, and `/api/credit-cards/hsbc`. POST routes use
 the existing same-origin session CSRF boundary. Preview is read-only; commit
@@ -175,11 +192,11 @@ not an invented broker confirmation.
 
 Investment cache publication binds the payload to the ledger fingerprint read
 under the ledger lock and rechecks that fingerprint before writing the cache.
-Transient price repair or required FX failures remain retryable. Strict Parquet
-decoding rejects corrupt JSON cells, including malformed transaction objects;
-an empty transaction list round-trips as an empty list. Legacy JSON migration
-holds the same Parquet lock as an import and cannot overwrite a concurrent
-commit. Cache schema changes invalidate older derived payloads without rewriting
+Transient price repair or required FX failures remain retryable. SQLite
+decoding verifies the ordered payload and checksums; explicit legacy Parquet
+reads still reject malformed JSON cells. Empty transaction lists remain empty.
+Explicit migration holds compatible source and canonical-ledger locks and
+cannot overwrite an existing conflicting target or a concurrent commit. Cache schema changes invalidate older derived payloads without rewriting
 financial records.
 
 Authoritative native-currency zero balances survive normalization and replay.
@@ -296,7 +313,7 @@ Each browser consumer still owns its own bar-edge geometry: `chart.js` plots to 
 `closeMinute` boundary, while the SVG exporter plots to `barEndMinute`, the
 exclusive end of the last included minute bar.
 
-`app/infrastructure/compute_jobs.py` owns only side-effect-isolated JSON,
+`app/infrastructure/compute_jobs.py` owns side-effect-isolated SQLite state,
 project-workspace, directory-enumeration, numbering, and admission-lock
 primitives. Its lock combines in-process thread exclusion with a host file lock.
 LSTM and Price Field managers reuse those mechanics while keeping their distinct
@@ -1919,16 +1936,16 @@ sets of values.
 - Investment source evidence is immutable, SHA-256-addressed, capacity-bounded,
   and verified under the ledger lock at the import commit and persisted-readback
   boundary. Application startup and read-only ledger browsing intentionally
-  require only the portable Parquet ledger; an explicit verifier checks the
+  require only the portable SQLite ledger; an explicit verifier checks the
   sidecar when evidence validation or a later import is required. A ledger
   manifest must never retain raw uploaded Base64 bytes.
-- Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(parquet_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger parquet path as `<parquet-stem>_evidence` and is not an independently configurable store.
+- Each distinct source-artifact manifest digest maps to exactly one immutable `.bin` file at `investment_evidence_dir_for(ledger_path) / <sha256>.bin`; identical source bytes reuse that file. The evidence directory is derived from the ledger stem as `<ledger-stem>_evidence` and is not an independently configurable store.
 - Historical sidecars may be recovered from an explicit broker-export archive
   only when both SHA-256 and byte count match the ledger manifest. The recovery
   command is all-or-nothing by default; its explicit partial mode writes only
   exact matches and leaves every unmatched digest visible to strict verification.
 - `commit_investment_import` requires both the source-evidence materializer and persisted-payload verifier. Every production import path must provide and execute both callbacks; neither is an optional escape hatch.
-- Evidence materialization, persisted-manifest verification, and `clear_investment_store` evidence-directory removal all hold the same reentrant `market_store_file_lock(parquet_path)`. A per-artifact file lock is supplementary and must never replace the ledger lock for an operation that changes or validates the manifest-to-directory relationship.
+- Evidence materialization, persisted-manifest verification, and `clear_investment_store` evidence-directory removal all hold the same reentrant `market_store_file_lock(ledger_path)`. A per-artifact file lock is supplementary and must never replace the ledger lock for an operation that changes or validates the manifest-to-directory relationship.
 - Manually confirmed internal-transfer bindings are durable ledger facts. Import
   adapters must preserve their cross-import leg identities and must fail back to
   explicit review when an identity becomes ambiguous.

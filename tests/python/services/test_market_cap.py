@@ -6,6 +6,8 @@ Code version: v0.11.3
 
 from __future__ import annotations
 
+from app.infrastructure.storage import read_market_frame, write_market_frame_atomic
+
 import os
 from pathlib import Path
 import tempfile
@@ -69,7 +71,7 @@ class MarketCapTests(unittest.TestCase):
                 }'''
 
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "005930.KS.parquet"
+            isolated_path = Path(tempdir) / "shares" / "005930.KS.sqlite3"
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch(
@@ -181,7 +183,7 @@ class MarketCapTests(unittest.TestCase):
             index=pd.to_datetime(["2026-07-13", "2026-07-14"]),
         )
         with tempfile.TemporaryDirectory() as tempdir:
-            fx_path = Path(tempdir) / "fx" / "HKD.parquet"
+            fx_path = Path(tempdir) / "fx" / "HKD.sqlite3"
             with (
                 patch("app.services.market.market_cap.fetch_reported_shares", return_value=shares),
                 patch("app.services.market.market_cap._is_recent_market_cap_window", return_value=False),
@@ -207,7 +209,7 @@ class MarketCapTests(unittest.TestCase):
 
     def test_reported_shares_cache_hit_restores_persisted_yfinance_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             with patch(
                 "app.services.market.market_cap.shares_store_path_for",
                 return_value=isolated_path,
@@ -222,7 +224,7 @@ class MarketCapTests(unittest.TestCase):
                         pd.Timestamp("2026-01-03"),
                     )
 
-                persisted = pd.read_parquet(isolated_path)
+                persisted = read_market_frame(isolated_path)
                 with patch(
                     "app.services.market.market_cap.yf.Ticker",
                     side_effect=AssertionError("A fresh cache hit must not fetch remote shares"),
@@ -248,7 +250,7 @@ class MarketCapTests(unittest.TestCase):
 
     def test_reported_shares_merges_cached_and_sec_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             with patch(
                 "app.services.market.market_cap.shares_store_path_for",
                 return_value=isolated_path,
@@ -284,19 +286,19 @@ class MarketCapTests(unittest.TestCase):
                         pd.Timestamp("2026-01-05"),
                     )
 
-                persisted = pd.read_parquet(isolated_path)
+                persisted = read_market_frame(isolated_path)
 
         self.assertEqual(merged.attrs["reported_shares_source"], "merged_yfinance_and_sec_reported_shares")
         self.assertEqual(persisted.attrs["reported_shares_source"], "merged_yfinance_and_sec_reported_shares")
 
     def test_legacy_reported_shares_cache_uses_explicit_cached_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             isolated_path.parent.mkdir(parents=True)
-            pd.DataFrame({
+            write_market_frame_atomic(isolated_path, pd.DataFrame({
                 "Date": pd.to_datetime(["2026-01-01"]),
                 "Shares": [10.0],
-            }).to_parquet(isolated_path, index=False)
+            }), index=False)
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch(
@@ -318,7 +320,7 @@ class MarketCapTests(unittest.TestCase):
             "Close": [100.0, 120.0],
         })
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.yf.Ticker", return_value=_TickerWithShares()),
@@ -339,7 +341,7 @@ class MarketCapTests(unittest.TestCase):
         market_cap._LONGBRIDGE_SNAPSHOT_CACHE.clear()
         self.addCleanup(market_cap._LONGBRIDGE_SNAPSHOT_CACHE.clear)
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.yf.Ticker", return_value=_TickerWithShares()),
@@ -371,7 +373,7 @@ class MarketCapTests(unittest.TestCase):
             index=pd.to_datetime(["2024-06-10"], utc=True),
         )
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "splits" / "NVDA.parquet"
+            isolated_path = Path(tempdir) / "splits" / "NVDA.sqlite3"
             with (
                 patch("app.services.market.market_cap.splits_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.fetch_reported_shares", return_value=reported_shares),
@@ -383,7 +385,7 @@ class MarketCapTests(unittest.TestCase):
                     prices,
                     resolve_missing_split_events=True,
                 )
-                cached = pd.read_parquet(isolated_path)
+                cached = read_market_frame(isolated_path)
 
         self.assertEqual(cached["Date"].dt.strftime("%Y-%m-%d").tolist(), ["2024-06-10"])
         self.assertEqual(cached["Factor"].tolist(), [10.0])
@@ -405,7 +407,7 @@ class MarketCapTests(unittest.TestCase):
             index=pd.to_datetime(["2024-06-10", "2024-07-17"]),
         )
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "splits" / "NVDA.parquet"
+            isolated_path = Path(tempdir) / "splits" / "NVDA.sqlite3"
             with (
                 patch("app.services.market.market_cap.splits_store_path_for", return_value=isolated_path),
                 patch(
@@ -430,7 +432,7 @@ class MarketCapTests(unittest.TestCase):
             "Stock Splits": [0.0],
         })
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "splits" / "QQQ.parquet"
+            isolated_path = Path(tempdir) / "splits" / "QQQ.sqlite3"
             with (
                 patch("app.services.market.market_cap.splits_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.yf.Ticker", side_effect=AssertionError("unexpected yfinance request")),
@@ -500,7 +502,7 @@ class MarketCapTests(unittest.TestCase):
             }
         )
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "QQQ.parquet"
+            isolated_path = Path(tempdir) / "shares" / "QQQ.sqlite3"
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.yf.Ticker", return_value=_TickerWithShares()),
@@ -519,7 +521,7 @@ class MarketCapTests(unittest.TestCase):
             }
         )
         with tempfile.TemporaryDirectory() as tempdir:
-            isolated_path = Path(tempdir) / "shares" / "AAPL.parquet"
+            isolated_path = Path(tempdir) / "shares" / "AAPL.sqlite3"
             with (
                 patch("app.services.market.market_cap.shares_store_path_for", return_value=isolated_path),
                 patch("app.services.market.market_cap.yf.Ticker", return_value=_TickerWithShares()),
@@ -804,6 +806,7 @@ class MarketCapTests(unittest.TestCase):
                 ))
                 pd.testing.assert_frame_equal(target_dates, original_targets)
                 pd.testing.assert_frame_equal(source, original_source)
+
 
     def test_alphabet_market_cap_uses_total_issuer_shares_when_yfinance_is_limited(self) -> None:
         prices = pd.DataFrame({

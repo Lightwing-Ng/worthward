@@ -1,10 +1,19 @@
 # Documentation map and repository ownership
 
-Documentation version: `v1.6.1`
+Documentation version: `v1.7.0`
 
 This file is the entrypoint for project documentation. It defines which files
 are authoritative, which records are historical, and how local artifacts must
 be classified before an agent edits or removes them.
+
+## Persistence contracts
+
+- [Local SQLite persistence](LOCAL_SQLITE.md): Typed market frames, structured
+  documents and ordered events, explicit migration, verified rollback archives,
+  and workload-specific measurements.
+- [Investment SQLite ledger](INVESTMENT_SQLITE.md): Lossless ordered snapshots,
+  canonical-ledger authority, evidence locks, auxiliary cache dependencies, and
+  isolated API/browser ablation tools.
 
 ## Authority order
 

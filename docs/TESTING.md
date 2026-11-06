@@ -1,6 +1,34 @@
 # Testing guide
 
-Documentation version: `v1.103.0`
+Documentation version: `v1.104.0`
+
+## SQLite persistence verification
+
+SQLite tests use temporary stores and synthetic fixtures. Verify logical payload
+equality separately from SQLite integrity, source-byte preservation, and runtime
+adoption. Coverage includes typed schema/index metadata, duplicates, nulls,
+corruption, failed transactions, concurrent commits, projected/tail reads,
+cloud-placeholder readiness, migration collisions and idempotence, verified
+archives, and canonical failure without legacy fallback.
+
+```bash
+./scripts/check.sh --group python-lint --group python \
+  --python-test tests/python/infrastructure/test_investment_sqlite.py \
+  --python-test tests/python/infrastructure/test_frame_sqlite.py \
+  --python-test tests/python/infrastructure/test_frame_sqlite_materialization.py \
+  --python-test tests/python/infrastructure/test_object_sqlite.py \
+  --python-test tests/python/tooling/test_migrate_investment_sqlite.py \
+  --python-test tests/python/tooling/test_migrate_local_sqlite.py \
+  --python-test tests/python/tooling/test_archive_local_sqlite_sources.py
+```
+
+Run the affected market, settings, compute, import-commit, and cache-dependency
+callers as well. `tests/js/tooling/test_ledger_browser_ablation.mjs` checks the
+browser harness controls; harness unit tests are separate from an actual browser
+accounting run. The ablation tools in [Investment SQLite ledger](INVESTMENT_SQLITE.md)
+retain full payload/curve evidence in private SQLite checkpoints, with explicit
+counts for actual renders and exact-input reuse. Never commit native broker
+sources, private ledger snapshots, or account-level acceptance reports.
 
 ## Composable verification
 

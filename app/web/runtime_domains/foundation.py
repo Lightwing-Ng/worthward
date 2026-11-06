@@ -1,9 +1,13 @@
 """Build the foundation web-runtime context.
 
-Code version: v0.2.2
+Code version: v0.3.1
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame
+from app.core.object_sqlite import read_structured_object
+from app.services.investment.importing.support import PRIVATE_INVESTMENT_EVIDENCE_PATH
 
 
 def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
@@ -32,6 +36,10 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
     LstmTrainingManager = context["LstmTrainingManager"]
 
     Path = context["Path"]
+
+    private_investment_evidence_path = Path(
+        context.get("PRIVATE_INVESTMENT_EVIDENCE_PATH", PRIVATE_INVESTMENT_EVIDENCE_PATH)
+    )
 
     PriceFieldTrainingManager = context["PriceFieldTrainingManager"]
 
@@ -100,8 +108,6 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
     ]
 
     investment_ticker_store_aliases = context["investment_ticker_store_aliases"]
-
-    json = context["json"]
 
     jsonify = context["jsonify"]
 
@@ -739,6 +745,9 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
             )
         return fingerprints
 
+    def build_private_investment_evidence_fingerprint() -> dict[str, object]:
+        return build_file_fingerprint(private_investment_evidence_path)
+
     def read_investment_transactions_cache(
         investment_store_fingerprint: dict[str, object],
     ) -> dict[str, Any] | None:
@@ -747,16 +756,16 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
             with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
                 if not INVESTMENT_TRANSACTIONS_CACHE_PATH.exists():
                     return None
-                with open(
-                    INVESTMENT_TRANSACTIONS_CACHE_PATH, "r", encoding="utf-8"
-                ) as f:
-                    cached = json.load(f)
-        except (json.JSONDecodeError, OSError, TypeError):
+                cached = read_structured_object(INVESTMENT_TRANSACTIONS_CACHE_PATH)
+        except (ValueError, RuntimeError, OSError, TypeError):
             return None
 
         if cached.get("schema_version") != INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION:
             return None
         if cached.get("investment_store") != investment_store_fingerprint:
+            return None
+        private_evidence_fingerprint = build_private_investment_evidence_fingerprint()
+        if cached.get("private_investment_evidence") != private_evidence_fingerprint:
             return None
         payload = cached.get("payload")
         if not isinstance(payload, dict):
@@ -776,17 +785,24 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         )
         if cached.get("price_stores") != price_store_fingerprints:
             return None
-        return normalize_loaded_investment_payload(payload)
+        normalized_payload = normalize_loaded_investment_payload(payload)
+        if private_evidence_fingerprint != build_private_investment_evidence_fingerprint():
+            return None
+        return normalized_payload
 
     def write_investment_transactions_cache(
         *,
         investment_store_fingerprint: dict[str, object],
         price_store_fingerprints: list[dict[str, object]],
+        private_evidence_fingerprint: dict[str, object],
         payload: dict[str, Any],
     ) -> None:
+        if private_evidence_fingerprint != build_private_investment_evidence_fingerprint():
+            return
         cache_payload = {
             "schema_version": INVESTMENT_TRANSACTIONS_CACHE_SCHEMA_VERSION,
             "investment_store": investment_store_fingerprint,
+            "private_investment_evidence": private_evidence_fingerprint,
             "price_stores": price_store_fingerprints,
             "payload": payload,
         }
@@ -794,7 +810,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
             ensure_investment_transactions_cache_dir()
             with market_store_file_lock(INVESTMENT_TRANSACTIONS_CACHE_PATH):
                 write_json_atomic(INVESTMENT_TRANSACTIONS_CACHE_PATH, cache_payload)
-        except OSError:
+        except (ValueError, RuntimeError, OSError):
             LOGGER.warning(
                 "Unable to write the derived investment transaction cache; "
                 "continuing with the portable investment ledger.",
@@ -909,7 +925,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                     f"Local dividend history is unavailable for {ticker}."
                 )
             try:
-                dataset = pd.read_parquet(path, columns=["Date", "Dividends"])
+                dataset = read_market_frame(path, columns=["Date", "Dividends"])
             except Exception as exc:
                 raise RuntimeError(
                     f"Local dividend history could not be read for {ticker}."
@@ -941,6 +957,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                 )
             ),
         }
+
 
     def build_investment_fx_rate_history_payload(
         transactions: list[dict[str, Any]],
@@ -1204,7 +1221,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         return None
 
     def load_price_history_series(path: Path) -> list[dict[str, Any]]:
-        dataset = pd.read_parquet(path, columns=["Date", "Close"])
+        dataset = read_market_frame(path, columns=["Date", "Close"])
         dataset = dataset.assign(
             _parsed_date=pd.to_datetime(dataset["Date"], errors="coerce"),
             _parsed_close=pd.to_numeric(dataset["Close"], errors="coerce"),
@@ -1222,7 +1239,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                 continue
             date_str = pd.Timestamp(date_val).date().isoformat()
             # The lowest valid close is a deterministic tie-breaker for
-            # duplicate provider prints, independent of parquet row order.
+            # duplicate provider prints, independent of persisted row order.
             prices_by_date.setdefault(date_str, float(close_val))
         return [
             {"date": date_str, "close": prices_by_date[date_str]}
@@ -1359,6 +1376,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         "build_file_fingerprint": build_file_fingerprint,
         "build_investment_fx_rate_history_payload": build_investment_fx_rate_history_payload,
         "build_investment_price_store_fingerprints": build_investment_price_store_fingerprints,
+        "build_private_investment_evidence_fingerprint": build_private_investment_evidence_fingerprint,
         "build_investment_section_freshness": build_investment_section_freshness,
         "build_investment_ticker_profiles": build_investment_ticker_profiles,
         "build_one_day_intraday_date_constraint_payload": build_one_day_intraday_date_constraint_payload,

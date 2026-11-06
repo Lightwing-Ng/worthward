@@ -1,4 +1,4 @@
-"""Build the isolated deterministic market store used by Playwright. Code version: v1.3.1."""
+"""Build the isolated deterministic market store used by Playwright. Code version: v1.4.0."""
 
 from __future__ import annotations
 
@@ -7,10 +7,14 @@ import sys
 
 import pandas as pd
 
-from tests.factories.market import ohlc_frame_for_dates
-
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.infrastructure.storage import write_market_frame_atomic  # noqa: E402
+from tests.factories.market import ohlc_frame_for_dates  # noqa: E402
+
+
 EXPECTED_STORE_DIR = (ROOT_DIR / "test-results" / "runtime-store" / "market_store").resolve()
 
 DAILY_TICKERS = (
@@ -93,7 +97,7 @@ def _write_profiles(store_dir: Path) -> None:
     )
     profiles_dir = store_dir / "profiles"
     profiles_dir.mkdir(parents=True, exist_ok=True)
-    profiles.to_parquet(profiles_dir / "profiles.parquet", index=False)
+    write_market_frame_atomic(profiles_dir / "profiles.sqlite3", profiles, index=False)
 
 
 def _write_market_cap_inputs(store_dir: Path) -> None:
@@ -102,7 +106,7 @@ def _write_market_cap_inputs(store_dir: Path) -> None:
     dates = pd.to_datetime(["2021-01-04", "2026-07-14"])
     for ticker, shares in (("AAPL", 15_000_000_000.0), ("NVDA", 24_000_000_000.0)):
         frame = pd.DataFrame({"Date": dates, "Shares": [shares, shares]})
-        frame.to_parquet(shares_dir / f"{ticker}.parquet", index=False)
+        write_market_frame_atomic(shares_dir / f"{ticker}.sqlite3", frame, index=False)
 
 
 def seed_market_store(store_dir: Path) -> None:
@@ -128,15 +132,17 @@ def seed_market_store(store_dir: Path) -> None:
         for timestamp in pd.bdate_range("2021-01-04", "2026-07-14")
     ]
     for ticker in DAILY_TICKERS:
-        _complete_price_frame(ticker, daily_dates, intraday=False).to_parquet(
-            historical_dir / f"{ticker}.parquet",
+        write_market_frame_atomic(
+            historical_dir / f"{ticker}.sqlite3",
+            _complete_price_frame(ticker, daily_dates, intraday=False),
             index=False,
         )
 
     us_intraday_dates = _us_intraday_dates()
     for ticker in US_INTRADAY_TICKERS:
-        _complete_price_frame(ticker, us_intraday_dates, intraday=True).to_parquet(
-            historical_dir / f"{ticker}_1m.parquet",
+        write_market_frame_atomic(
+            historical_dir / f"{ticker}_1m.sqlite3",
+            _complete_price_frame(ticker, us_intraday_dates, intraday=True),
             index=False,
         )
 
@@ -151,8 +157,9 @@ def seed_market_store(store_dir: Path) -> None:
         ],
     }
     for ticker, dates in cross_market_dates.items():
-        _complete_price_frame(ticker, dates, intraday=True).to_parquet(
-            historical_dir / f"{ticker}_1m.parquet",
+        write_market_frame_atomic(
+            historical_dir / f"{ticker}_1m.sqlite3",
+            _complete_price_frame(ticker, dates, intraday=True),
             index=False,
         )
 

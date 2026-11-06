@@ -1,10 +1,23 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.2.1`
+Documentation version: `v1.3.0`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
 license to revive an independent page.
+
+## Explicit legacy storage compatibility
+
+The optional browser-ablation tool and its unit tests require Node.js 22.16 or
+newer for the built-in [`node:sqlite` transaction API](https://nodejs.org/download/release/v22.23.0/docs/api/sqlite.html#databaseistransaction).
+This does not add an npm runtime dependency to the application.
+
+Canonical structured runtime paths use SQLite. Explicit Parquet/JSON paths
+remain available for controlled migration, interchange, and isolated fixtures;
+they do not enable default fallback or dual writes. Missing canonical investment
+data beside a legacy ledger requires explicit migration, and a corrupt canonical
+database fails closed. See [Local SQLite persistence](LOCAL_SQLITE.md) and the
+[investment contract](INVESTMENT_SQLITE.md) for source and rollback ownership.
 
 ## Route matrix
 

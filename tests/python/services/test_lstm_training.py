@@ -1,4 +1,4 @@
-"""Tests for the durable web-managed LSTM training runs. Code version: v0.10.1."""
+"""Tests for the durable web-managed LSTM training runs. Code version: v0.11.0."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from app.infrastructure.compute_jobs import project_compute_workspace_root
+from app.core.object_sqlite import read_structured_object, write_structured_object
 from app.services.research import lstm_training
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
 from scripts import lstm_ga_tune as ga_runner
@@ -30,7 +31,7 @@ def _run_paths(manager: lstm_training.LstmTrainingManager, tmp_path: Path, seed:
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    write_structured_object(path, payload)
 
 
 def _completed_case(manager, tmp_path, seed=42, started="2026-09-04T00:00:00Z"):
@@ -104,7 +105,7 @@ def test_delete_is_recoverable_and_does_not_renumber_survivors(tmp_path):
     outcome = manager.delete(first.state.name)
     assert outcome["recoverable"] is True
     assert not first.state.exists()
-    assert (manager._workspace_root() / ".deleted" / first.state.name / "result.json").read_bytes() == original
+    assert (manager._workspace_root() / ".deleted" / first.state.name / "result.sqlite3").read_bytes() == original
     assert [(run["id"], run["identifier"]) for run in manager.list_runs()] == [(second.state.name, "260904(02)")]
 
 
@@ -131,7 +132,7 @@ def test_delete_rejects_active_locked_and_symlink_runs(tmp_path, monkeypatch):
 def test_legacy_aggregate_and_missing_snapshot_never_invent_configuration(tmp_path):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     paths = _completed_case(manager, tmp_path)
-    saved = json.loads(paths.result.read_text())
+    saved = read_structured_object(paths.result)
     del saved["best"]["params"]["lstm_seed"]
     _write_json(paths.result, saved)
     run = manager.list_runs()[0]
@@ -143,7 +144,7 @@ def test_legacy_aggregate_and_missing_snapshot_never_invent_configuration(tmp_pa
 def test_history_restores_actual_data_dates_without_erasing_requested_period(tmp_path):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     paths = _completed_case(manager, tmp_path)
-    snapshot = json.loads(paths.snapshot.read_text())
+    snapshot = read_structured_object(paths.snapshot)
     snapshot["visible_rows"] = [{"Date": "2026-04-02T00:00:00"}, {"Date": "2026-09-03T00:00:00"}]
     _write_json(paths.snapshot, snapshot)
     run = manager.list_runs()[0]
@@ -272,7 +273,7 @@ def test_startup_failure_is_reported_without_rewriting_saved_history(tmp_path, m
     manager = lstm_training.LstmTrainingManager(tmp_path)
     paths, spec = _run_paths(manager, tmp_path)
     _write_json(paths.request, spec)
-    _write_json(paths.state / "launch.json", {"pid": 123})
+    _write_json(paths.state / "launch.sqlite3", {"pid": 123})
     paths.log.write_text("lstm_ga_tune failed: RuntimeError: worker startup failure\n")
     monkeypatch.setattr(manager, "_process_matches", lambda *_args: False)
     original = paths.log.read_bytes()
@@ -308,7 +309,7 @@ def test_exact_training_cli_receives_dates_and_general_settings(tmp_path, monkey
     sent = json.loads(captured[0][captured[0].index("--configuration") + 1])
     assert sent == ga_runner.validate_training_configuration(config)
     paths = manager._paths_for_run_id(run["id"])
-    request = json.loads(paths.request.read_text())
+    request = read_structured_object(paths.request)
     assert request["duration_seconds"] == 36_000
     assert request["minimum_training_seconds"] == 180
     assert request["objective"] == "direction"
@@ -345,7 +346,7 @@ def test_list_runs_reads_terminal_history_without_touching_market_stores(tmp_pat
     assert runs[0]["result_available"] is True
     assert runs[0]["best"] == {"holdout_median_hit_rate_pct": 58.25}
     assert runs[0]["progress"]["percent"] == 100
-    assert {item["name"] for item in runs[0]["files"]} == {"request.json", "status.json", "result.json"}
+    assert {item["name"] for item in runs[0]["files"]} == {"request.sqlite3", "status.sqlite3", "result.sqlite3"}
     assert all(item["size_bytes"] > 0 for item in runs[0]["files"])
 
 
@@ -462,7 +463,7 @@ def test_stop_only_signals_a_process_matching_the_runner_seed(tmp_path: Path, mo
 def test_launch_stays_active_before_runner_writes_request(tmp_path, monkeypatch):
     manager = lstm_training.LstmTrainingManager(tmp_path)
     paths, spec = _run_paths(manager, tmp_path)
-    _write_json(paths.state / "launch.json", {"pid": 321, "ticker": "NVDA", "ga_seed": spec["ga_seed"]})
+    _write_json(paths.state / "launch.sqlite3", {"pid": 321, "ticker": "NVDA", "ga_seed": spec["ga_seed"]})
     monkeypatch.setattr(manager, "_process_matches", lambda pid, identity: pid == 321 and identity.get("ga_seed") == spec["ga_seed"])
     signalled = []
     monkeypatch.setattr(lstm_training.os, "killpg", lambda pid, sig: signalled.append((pid, sig)))
@@ -609,7 +610,7 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
         assert actual_context.objective == spec["objective"] == "crps"
         observed.append(candidate["params"])
         progress(25, 100)
-        assert json.loads(paths.status.read_text())["progress"] == {"completed": 25, "total": 100, "unit": "origins"}
+        assert read_structured_object(paths.status)["progress"] == {"completed": 25, "total": 100, "unit": "origins"}
         return {**candidate, "status": "ok"}
     monkeypatch.setattr(ga_runner, "_evaluate_signal_result", evaluate)
     monkeypatch.setattr(ga_runner, "_build_snapshot", lambda *_args: (context, {}))
@@ -620,8 +621,8 @@ def test_selected_configuration_reaches_evaluation_unchanged(tmp_path, monkeypat
     assert observed == [spec["selected_params"]]
     assert observed[0]["use_broker_holding"] is True
     assert observed[0]["lstm_epochs"] == 3
-    assert json.loads(paths.result.read_text())["request"]["selected_params"] == observed[0]
-    assert json.loads(paths.result.read_text())["progress"]["completed"] == 100
+    assert read_structured_object(paths.result)["request"]["selected_params"] == observed[0]
+    assert read_structured_object(paths.result)["progress"]["completed"] == 100
     other = dict(spec, selected_params=dict(observed[0], lstm_epochs=4))
     assert ga_runner.build_run_paths(args, other).state != paths.state
 
@@ -701,8 +702,8 @@ def test_selected_configuration_records_terminal_state(tmp_path, monkeypatch, ou
             ga_runner._run_selected_configuration(spec, paths, context)
     else:
         assert ga_runner._run_selected_configuration(spec, paths, context) == 1
-    assert json.loads(paths.status.read_text())["status"] == outcome
-    assert json.loads(paths.status.read_text())["progress"]["completed"] == 25
+    assert read_structured_object(paths.status)["status"] == outcome
+    assert read_structured_object(paths.status)["progress"]["completed"] == 25
     assert ga_runner.signal.getsignal(ga_runner.signal.SIGTERM) == previous_handler
     assert ga_runner.signal.getitimer(ga_runner.signal.ITIMER_REAL)[0] == 0
 
@@ -724,11 +725,11 @@ def test_progress_uses_actual_work_not_elapsed_budget(progress, expected):
 
 
 def test_training_files_exclude_unknown_files_and_symlinks(tmp_path):
-    (tmp_path / "result.json").write_text("{}")
-    (tmp_path / "secret.json").write_text("{}")
-    (tmp_path / "snapshot.json").symlink_to(tmp_path / "secret.json")
+    write_structured_object(tmp_path / "result.sqlite3", {})
+    write_structured_object(tmp_path / "secret.sqlite3", {})
+    (tmp_path / "snapshot.sqlite3").symlink_to(tmp_path / "secret.sqlite3")
     assert lstm_training.LstmTrainingManager._training_files(tmp_path) == [
-        {"name": "result.json", "size_bytes": 2},
+        {"name": "result.sqlite3", "size_bytes": (tmp_path / "result.sqlite3").stat().st_size},
     ]
 
 
@@ -793,10 +794,10 @@ def test_completed_backtest_records_actual_training_with_honest_score(tmp_path, 
     assert run["configuration"]["params"] == completed_inline_training["params"]
     assert run["result_available"] is True
     paths = manager._paths_for_run_id(run["id"])
-    saved = json.loads(paths.result.read_text())
+    saved = read_structured_object(paths.result)
     assert saved["best"]["full"] == diagnostics
     assert "holdout" not in saved["best"]
-    assert "minimum_training_seconds" not in json.loads(paths.request.read_text())
+    assert "minimum_training_seconds" not in read_structured_object(paths.request)
     assert manager.list_runs()[0]["identifier"] == "260927(01)"
 
 
@@ -823,7 +824,7 @@ def test_completed_backtest_replay_retains_only_the_matching_saved_run(tmp_path,
         first = manager.record_completed_backtest(**completed_inline_training)
     else:
         paths = _completed_case(manager, tmp_path)
-        request = json.loads(paths.request.read_text())
+        request = read_structured_object(paths.request)
         request.update({
             "ticker": "QQQ", "period": "1y", "interval": "1d",
             "selected_params": completed_inline_training["params"],
@@ -833,7 +834,7 @@ def test_completed_backtest_replay_retains_only_the_matching_saved_run(tmp_path,
         _write_json(paths.snapshot, {
             "ticker": "QQQ", "start": "2025-01-02", "end": "2025-02-26", "interval": "1d",
         })
-        result = json.loads(paths.result.read_text())
+        result = read_structured_object(paths.result)
         result["best"]["params"] = completed_inline_training["params"]
         _write_json(paths.result, result)
         first = manager._read_run(paths.state)
@@ -874,7 +875,7 @@ def test_completed_backtest_nonmatching_replay_records_the_actual_result(tmp_pat
         payload["configuration"]["initial_capital"] = 30000
     elif change == "status":
         paths = manager._paths_for_run_id(first["id"])
-        status = json.loads(paths.status.read_text())
+        status = read_structured_object(paths.status)
         status["status"] = "failed_closed"
         _write_json(paths.status, status)
     else:
@@ -893,7 +894,7 @@ def test_completed_backtest_malformed_replay_metadata_does_not_discard_training(
     manager = lstm_training.LstmTrainingManager(tmp_path)
     first = manager.record_completed_backtest(**completed_inline_training)
     paths = manager._paths_for_run_id(first["id"])
-    result = json.loads(paths.result.read_text())
+    result = read_structured_object(paths.result)
     result["best"]["full"]["direction_scored_points"] = "invalid"
     _write_json(paths.result, result)
     payload = deepcopy(completed_inline_training)
@@ -915,7 +916,7 @@ def test_completed_backtest_distinguishes_data_and_keeps_deleted_run_archived(tm
     manager.delete(first["id"])
     assert manager.record_completed_backtest(**completed_inline_training) is None
     assert [run["id"] for run in manager.list_runs()] == [second["id"]]
-    assert (manager._workspace_root() / ".deleted" / first["id"] / "result.json").is_file()
+    assert (manager._workspace_root() / ".deleted" / first["id"] / "result.sqlite3").is_file()
 
 
 @pytest.mark.parametrize("change", [
@@ -939,7 +940,7 @@ def test_completed_backtest_publishes_all_artifacts_atomically(tmp_path, complet
 
     def fail_during_publication(path, payload):
         assert manager.list_runs() == []
-        if path.name == "result.json":
+        if path.name == "result.sqlite3":
             raise OSError("Simulated full isolated disk")
         write(path, payload)
 
@@ -964,7 +965,7 @@ def test_completed_backtest_rejects_symlink_workspace_without_external_writes(tm
     manager = lstm_training.LstmTrainingManager(tmp_path / "compute")
     external = tmp_path / "protected"
     external.mkdir()
-    evidence = external / "keep.json"
+    evidence = external / "keep.sqlite3"
     evidence.write_bytes(b"unchanged protected content")
     manager._workspace_root().parent.mkdir()
     manager._workspace_root().symlink_to(external, target_is_directory=True)

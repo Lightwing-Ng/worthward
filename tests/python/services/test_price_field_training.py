@@ -1,16 +1,19 @@
-"""Isolated generic probability training contracts. Code version: v1.4.3."""
+"""Isolated generic probability training contracts. Code version: v1.5.0."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
 import pandas as pd
+import pyarrow as pa
 
 from app.services.research import price_field_training as training
 from app.infrastructure.compute_jobs import project_compute_workspace_root
+from app.core.object_sqlite import write_structured_object
 from app.web.request_security import INVESTMENT_CSRF_SESSION_KEY
 from strategies.loader import instantiate_strategy
 from tests.factories.market import ohlc_frame_for_dates
@@ -30,6 +33,23 @@ def complete_diagnostics():
                          for horizon in range(1, 21)}}
 
 
+def _write_external_result(path, payload):
+    """Simulate a checksum-consistent external artifact with invalid model fields."""
+    write_structured_object(path, {})
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    digest = hashlib.sha256(raw).hexdigest()
+    manifest = json.dumps(["object", [[0, len(raw), digest]]], separators=(",", ":")).encode()
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE object_records SET raw_size=?,sha256=?,payload=? WHERE ordinal=0",
+            (len(raw), digest, pa.compress(raw, codec="zstd", asbytes=True)),
+        )
+        connection.execute(
+            "UPDATE object_state SET root_sha256=? WHERE id=1",
+            (hashlib.sha256(manifest).hexdigest(),),
+        )
+
+
 @pytest.fixture
 def prepared_manager(tmp_path, monkeypatch):
     manager = training.PriceFieldTrainingManager(tmp_path / "compute")
@@ -44,7 +64,7 @@ def prepared_manager(tmp_path, monkeypatch):
 def test_training_ticker_normalization_reuses_canonical_storage_contract(prepared_manager):
     manager, _commands = prepared_manager
     run = manager.start("patchtst-price-field", "BRK.B", "2y", {}, interval="1d")
-    request = training.read_json(manager._path(run["id"]) / "request.json")
+    request = training.read_json(manager._path(run["id"]) / "request.sqlite3")
     assert request["ticker"] == "BRK-B"
 
 
@@ -65,7 +85,7 @@ def test_each_strategy_launches_exact_configuration_and_owns_its_state(prepared_
     manager, commands = prepared_manager
     run = manager.start(strategy_id, "NVDA", "2y", {}, interval="1d",
                         configuration={"range": "exact", "from": "2024-09-04", "to": "2026-09-04"})
-    request = training.read_json(manager._path(run["id"]) / "request.json")
+    request = training.read_json(manager._path(run["id"]) / "request.sqlite3")
     assert request["strategy"] == strategy_id
     assert request["interval"] == "1d"
     assert request["configuration"]["from"] == "2024-09-04"
@@ -101,19 +121,19 @@ def test_history_requires_both_completion_artifacts_and_preserves_archives(prepa
     manager, _commands = prepared_manager
     run = manager.start(strategy_id, "NVDA", "2y", {}, interval="1d")
     path = manager._path(run["id"])
-    training.write_json(path / "status.json", {"status": "completed"})
+    training.write_json(path / "status.sqlite3", {"status": "completed"})
     assert manager.read_run(path)["status"] == "failed"
-    request = training.read_json(path / "request.json")
+    request = training.read_json(path / "request.sqlite3")
     result = {"status": "completed", "diagnostics": complete_diagnostics(),
               "configuration": {"strategy": strategy_id, "ticker": "NVDA", "period": "2y", "interval": "1d",
                                 "range": "exact", "params": request["params"], "from": "2024-09-04", "to": "2026-09-04"}}
-    training.write_json(path / "result.json", result)
+    training.write_json(path / "result.sqlite3", result)
     assert manager.read_run(path)["probability_score_pct"] == 55.25
     assert manager.read_run(path)["accuracy_pct"] is None
     assert manager.read_run(path)["result_available"] is True
-    result_bytes = (path / "result.json").read_bytes()
+    result_bytes = (path / "result.sqlite3").read_bytes()
     assert manager.delete(run["id"])["recoverable"] is True
-    assert (path.parent / ".deleted" / path.name / "result.json").read_bytes() == result_bytes
+    assert (path.parent / ".deleted" / path.name / "result.sqlite3").read_bytes() == result_bytes
     assert manager.list_runs() == []
 
 
@@ -122,7 +142,7 @@ def test_new_model_history_cannot_restore_another_models_complete_configuration(
     manager, _commands = prepared_manager
     run = manager.start(strategy_id, "NVDA", "2y", {}, interval="1d")
     path = manager._path(run["id"])
-    request = training.read_json(path / "request.json")
+    request = training.read_json(path / "request.sqlite3")
     other_strategy = "tft-price-field" if strategy_id != "tft-price-field" else "itransformer-price-field"
     result = {
         "status": "completed", "diagnostics": complete_diagnostics(),
@@ -131,8 +151,8 @@ def test_new_model_history_cannot_restore_another_models_complete_configuration(
             "range": "exact", "params": request["params"], "from": "2024-09-04", "to": "2026-09-04",
         },
     }
-    training.write_json(path / "status.json", {"status": "completed"})
-    training.write_json(path / "result.json", result)
+    training.write_json(path / "status.sqlite3", {"status": "completed"})
+    training.write_json(path / "result.sqlite3", result)
     restored = manager.read_run(path)
     assert restored["status"] == "failed"
     assert restored["result_available"] is False
@@ -152,7 +172,7 @@ def test_corrupted_or_partial_results_cannot_be_selected_as_completed(prepared_m
     manager, _commands = prepared_manager
     run = manager.start("patchtst-price-field", "NVDA", "2y", {}, interval="1d")
     path = manager._path(run["id"])
-    request = training.read_json(path / "request.json")
+    request = training.read_json(path / "request.sqlite3")
     diagnostics = complete_diagnostics()
     bad_scores = {"nan": float("nan"), "infinity": float("inf"), "negative": -1, "too_high": 101, "text_score": "55.25"}
     if corruption == "missing":
@@ -180,10 +200,10 @@ def test_corrupted_or_partial_results_cannot_be_selected_as_completed(prepared_m
               "configuration": {**request["configuration"], "strategy": request["strategy"], "ticker": "NVDA",
                                 "period": "2y", "interval": "1d", "range": "exact", "params": request["params"],
                                 "from": "2024-09-04", "to": "2026-09-04"}}
-    training.write_json(path / "status.json", {"status": "completed", "phase": "completed"})
+    training.write_json(path / "status.sqlite3", {"status": "completed", "phase": "completed"})
     # Simulate corrupted external artifacts in the isolated compute root;
     # the production writer already refuses non-finite JSON values.
-    (path / "result.json").write_text(json.dumps(result), encoding="utf-8")
+    _write_external_result(path / "result.sqlite3", result)
     restored = manager.read_run(path)
     assert restored["status"] == restored["phase"] == "failed"
     assert restored["result_available"] is False
@@ -201,7 +221,7 @@ def test_conflicting_active_jobs_and_symlink_archives_are_rejected(prepared_mana
     with pytest.raises(training.PriceFieldTrainingConflict):
         manager.delete(run["id"])
     path = manager._path(run["id"])
-    training.write_json(path / "status.json", {"status": "stopped"})
+    training.write_json(path / "status.sqlite3", {"status": "stopped"})
     (path.parent / ".deleted").symlink_to(path, target_is_directory=True)
     with pytest.raises(ValueError, match="archive"):
         manager.delete(run["id"])
@@ -288,7 +308,7 @@ def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_pa
                "configuration": {"range": "exact",
                                  "from": frame["Date"].iloc[70].date().isoformat(),
                                  "to": "2025-06-30"}}
-    path = tmp_path / "request.json"
+    path = tmp_path / "request.sqlite3"
     training.write_json(path, request)
     result = price_field_train.run(path, request["run_token"])
     assert result["status"] == "completed"
@@ -298,10 +318,10 @@ def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_pa
     assert result["configuration"]["strategy"] == strategy_id
     assert result["configuration"]["params"] == params
     assert result["configuration"]["to"] == frame["Date"].max().date().isoformat()
-    assert training.read_json(tmp_path / "status.json")["status"] == "completed"
-    assert training.read_json(tmp_path / "snapshot.json")["bundle"]["ohlcv"] == rows
-    assert training.read_json(tmp_path / "snapshot.json")["bundle"]["benchmarks"] == benchmarks
-    assert training.read_json(tmp_path / "snapshot.json")["bundle"]["benchmark_status"] == {"QQQ": "available"}
+    assert training.read_json(tmp_path / "status.sqlite3")["status"] == "completed"
+    assert training.read_json(tmp_path / "snapshot.sqlite3")["bundle"]["ohlcv"] == rows
+    assert training.read_json(tmp_path / "snapshot.sqlite3")["bundle"]["benchmarks"] == benchmarks
+    assert training.read_json(tmp_path / "snapshot.sqlite3")["bundle"]["benchmark_status"] == {"QQQ": "available"}
     restored = training.PriceFieldTrainingManager(tmp_path / "compute").read_run(tmp_path)
     assert restored["status"] == "completed" and restored["result_available"] is True
     assert {key: restored["configuration"][key] for key in result["configuration"]} == result["configuration"]
@@ -315,25 +335,25 @@ def test_exact_worker_trains_real_cpu_model_with_isolated_market_snapshot(tmp_pa
     partial_path.mkdir()
     partial_request = {**request, "configuration": {**request["configuration"],
                        "from": frame["Date"].iloc[-20].date().isoformat()}}
-    training.write_json(partial_path / "request.json", partial_request)
+    training.write_json(partial_path / "request.sqlite3", partial_request)
     with pytest.raises(ValueError, match="Insufficient scoring window"):
-        price_field_train.run(partial_path / "request.json", request["run_token"])
-    assert training.read_json(partial_path / "status.json")["status"] == "failed"
-    assert not (partial_path / "result.json").exists()
+        price_field_train.run(partial_path / "request.sqlite3", request["run_token"])
+    assert training.read_json(partial_path / "status.sqlite3")["status"] == "failed"
+    assert not (partial_path / "result.sqlite3").exists()
     # A standalone worker must classify cancellation inside an optimizer step
     # correctly even when no web manager exists to rewrite its terminal state.
     from strategies.price_field.neural import compute as engine
     cancelled_path = tmp_path / "cancelled"
     cancelled_path.mkdir()
-    training.write_json(cancelled_path / "request.json", request)
+    training.write_json(cancelled_path / "request.sqlite3", request)
     original_train = engine._train_model
 
     def stop_in_optimizer(*args, **kwargs):
-        training.write_json(cancelled_path / "stop-request.json", {"requested": True})
+        training.write_json(cancelled_path / "stop-request.sqlite3", {"requested": True})
         return original_train(*args, **kwargs)
 
     monkeypatch.setattr(engine, "_train_model", stop_in_optimizer)
     with pytest.raises(engine.NeuralTrainingCancelled):
-        price_field_train.run(cancelled_path / "request.json", request["run_token"])
-    assert training.read_json(cancelled_path / "status.json")["status"] == "stopped"
-    assert not (cancelled_path / "result.json").exists()
+        price_field_train.run(cancelled_path / "request.sqlite3", request["run_token"])
+    assert training.read_json(cancelled_path / "status.sqlite3")["status"] == "stopped"
+    assert not (cancelled_path / "result.sqlite3").exists()

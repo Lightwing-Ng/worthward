@@ -1,4 +1,4 @@
-"""Exercise the tuning CLI against every enabled engine. Code version: v1.0.2."""
+"""Exercise the tuning CLI against every enabled engine. Code version: v1.0.3."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from app.core.config import MARKET_STORE_DIR
+from app.infrastructure.storage import write_market_frame_atomic
 from app.services.market.market_data import history_store_path_for_interval
 from app.services.research.strategy_tuning import ResearchSession
 from scripts import strategy_tune
@@ -193,7 +194,7 @@ def test_subprocess_cli_reads_local_history_without_changing_input(
     frame = ohlc_frame_for_dates(
         "NVDA", pd.bdate_range("2025-01-02", periods=100).strftime("%Y-%m-%d").tolist()
     )
-    frame.to_parquet(local_history, index=False)
+    write_market_frame_atomic(local_history, frame, index=False)
     original = local_history.read_bytes()
     output = tmp_path / "research"
     environment = dict(
@@ -248,6 +249,7 @@ def test_subprocess_cli_reads_local_history_without_changing_input(
     )
     assert result["sources"] == [{"source": str(local_history), "rows": 100}]
     assert local_history.read_bytes() == original
-    assert list(market_root.rglob("*.parquet")) == [local_history]
+    assert list(market_root.rglob("*.sqlite3")) == [local_history]
+    assert not list(market_root.rglob("*.parquet"))
     assert not settings_root.exists()
     assert not compute_root.exists()

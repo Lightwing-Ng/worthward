@@ -1,9 +1,11 @@
 """Build the comparison web-runtime context.
 
-Code version: v0.2.1
+Code version: v0.3.0
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame
 
 from app.core.markets.sessions import (
     market_session_last_bar_minute,
@@ -651,7 +653,7 @@ def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
         if not path.exists() or path.stat().st_size == 0:
             raise ValueError(f"Local 1-minute market data for {ticker} is unavailable.")
         with market_store_file_lock(path):
-            dataset = pd.read_parquet(path)
+            dataset = read_market_frame(path)
         dataset = select_price_series(
             dataset, include_dividends=False, dividend_mode="price"
         )

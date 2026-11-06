@@ -1,7 +1,7 @@
 """
 Shared local settings persistence.
 
-Code version: v0.3.1
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -14,9 +14,17 @@ from typing import Any
 
 from app.core.config import SETTINGS_STORE_DIR
 from app.core.file_lock import local_file_lock
+from app.core.object_sqlite import read_structured_object, write_structured_object
 
-GENERAL_SETTINGS_PATH = SETTINGS_STORE_DIR / "settings.json"
+GENERAL_SETTINGS_PATH = SETTINGS_STORE_DIR / "settings.sqlite3"
 LEGACY_SECTION_PATHS: dict[str, Path] = {
+    "brokers": SETTINGS_STORE_DIR / "brokers.sqlite3",
+    "cash_equivalents": SETTINGS_STORE_DIR / "cash_equivalents.sqlite3",
+    "date_display": SETTINGS_STORE_DIR / "date_display.sqlite3",
+    "smtp": SETTINGS_STORE_DIR / "smtp.sqlite3",
+}
+# These source paths are reserved for explicit migration, never runtime fallback.
+LEGACY_JSON_SECTION_PATHS: dict[str, Path] = {
     "brokers": SETTINGS_STORE_DIR / "brokers.json",
     "cash_equivalents": SETTINGS_STORE_DIR / "cash_equivalents.json",
     "date_display": SETTINGS_STORE_DIR / "date_display.json",
@@ -30,7 +38,7 @@ def ensure_settings_store_dir() -> None:
 
 def _read_json_object(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_structured_object(path)
     except (json.JSONDecodeError, OSError):
         return {}
     return payload if isinstance(payload, dict) else {}
@@ -38,6 +46,9 @@ def _read_json_object(path: Path) -> dict[str, Any]:
 
 def _write_settings(payload: dict[str, Any]) -> None:
     ensure_settings_store_dir()
+    if GENERAL_SETTINGS_PATH.suffix.lower() == ".sqlite3":
+        write_structured_object(GENERAL_SETTINGS_PATH, payload)
+        return
     serialized = json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False)
     temporary_path = None
     try:
@@ -64,7 +75,7 @@ def load_all_settings() -> dict[str, Any]:
 def _load_all_settings_unlocked() -> dict[str, Any]:
     # Never replace damaged or unreadable settings with an empty configuration.
     try:
-        payload = json.loads(GENERAL_SETTINGS_PATH.read_text(encoding="utf-8"))
+        payload = read_structured_object(GENERAL_SETTINGS_PATH)
     except FileNotFoundError:
         payload = {}
     if not isinstance(payload, dict):

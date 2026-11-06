@@ -1,6 +1,6 @@
 """HTTP boundary for the independent HSBC credit-card ledger.
 
-Code version: v1.2.0
+Code version: v1.3.0
 - Fixed: Card commits return with cached dated FX instead of awaiting a provider.
 """
 
@@ -26,7 +26,7 @@ from app.web.request_security import validate_local_browser_write_request
 
 
 LOGGER = logging.getLogger(__name__)
-CREDIT_CARD_STORE_PATH = SETTINGS_STORE_DIR / "credit_cards.json"
+CREDIT_CARD_STORE_PATH = SETTINGS_STORE_DIR / "credit_cards.sqlite3"
 MAX_CREDIT_CARD_TEXT_BYTES = 1_048_576
 
 

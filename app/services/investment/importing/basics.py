@@ -1,9 +1,11 @@
 """Investment import domain: basics.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
+
+from app.core.object_sqlite import read_structured_object
 
 from app.services.investment.importing.support import (
     Any,
@@ -142,9 +144,7 @@ def _normalize_standard_transaction_description(
 def _load_local_private_investment_evidence() -> dict[str, Any]:
     """Load optional device-local broker evidence without a source-code fallback."""
     try:
-        payload = json.loads(
-            PRIVATE_INVESTMENT_EVIDENCE_PATH.read_text(encoding="utf-8")
-        )
+        payload = read_structured_object(PRIVATE_INVESTMENT_EVIDENCE_PATH)
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}

@@ -1,6 +1,6 @@
 """Read-only local market-history helpers used by the web runtime.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from app.core.config import PERIOD_OFFSETS
 from app.infrastructure.storage import (
     history_store_path_for,
     intraday_history_store_path_for,
+    read_market_frame,
     market_ticker_store_aliases,
 )
 from app.services.analysis.comparisons import market_trading_dates_for_history
@@ -126,8 +127,8 @@ def build_supported_periods_for_history_store(ticker: str, interval: str = "1d")
     if not path.exists() or path.stat().st_size == 0:
         return default_periods
     try:
-        dataset = pd.read_parquet(path, columns=["Date"])
-    except (ImportError, OSError, ValueError, KeyError, TypeError):
+        dataset = read_market_frame(path, columns=["Date"])
+    except (ImportError, OSError, ValueError, KeyError, TypeError, RuntimeError):
         return default_periods
     if dataset.empty:
         return default_periods

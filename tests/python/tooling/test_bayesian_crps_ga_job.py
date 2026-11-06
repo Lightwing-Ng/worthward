@@ -1,4 +1,4 @@
-"""Durable Bayesian CRPS GA job contracts. Code version: v1.2.1."""
+"""Durable Bayesian CRPS GA job contracts. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -7,9 +7,11 @@ import json
 from datetime import date
 from pathlib import Path
 import random
+import sqlite3
 
 import pytest
 
+from app.core.object_sqlite import read_structured_object, read_structured_jsonl
 from scripts import bayesian_crps_ga_job as job
 from scripts import prepare_bayesian_crps_ga_config as prepare
 
@@ -138,6 +140,9 @@ def _resume_state(
 
 
 def _write_resume_fixture(path: Path, checkpoint: dict[str, object]) -> None:
+    if path.suffix == ".sqlite3":
+        job._atomic_write_json(path, checkpoint)
+        return
     path.write_bytes(job._canonical_json_bytes(checkpoint) + b"\n")
 
 
@@ -389,8 +394,10 @@ def test_crps_feasibility_fails_closed_for_incomplete_evidence(mutate) -> None:
     assert job.score_is_feasible(score) is False
 
 
+@pytest.mark.parametrize("suffix", [".json", ".sqlite3"])
 def test_checkpoint_resume_restores_exact_rng_and_next_population(
     tmp_path: Path,
+    suffix: str,
 ) -> None:
     spec = _spec()
     context = _context(tmp_path)
@@ -419,7 +426,7 @@ def test_checkpoint_resume_restores_exact_rng_and_next_population(
         context,
         {"source.py": "c" * 64},
     )
-    checkpoint_path = tmp_path / "resume.json"
+    checkpoint_path = tmp_path / ("resume" + suffix)
     _write_resume_fixture(checkpoint_path, checkpoint)
 
     restored_state, restored_rng = job._load_resume(
@@ -445,6 +452,38 @@ def test_checkpoint_resume_restores_exact_rng_and_next_population(
     assert restored_state == state
     assert restored_next == original_next
     assert restored_rng.random() == original_rng.random()
+
+
+def test_json_resume_uses_newer_sqlite_peer_and_never_changes_either_input(tmp_path):
+    spec = _spec()
+    context = _context(tmp_path)
+    rng = random.Random(spec.seed)
+    record = _selection_record(spec.baseline_params, spec, skill=0.10)
+    state = _resume_state(spec, {"generation": 4, "leaderboard": [record],
+                               "seen": [record["candidate_key"]], "evaluation_count": 1,
+                               "url_baseline_validation": record})
+    older = job._checkpoint_payload(state, rng, spec, "b" * 64, context, {"source.py": "c" * 64})
+    legacy = tmp_path / "checkpoint.json"
+    canonical = legacy.with_suffix(".sqlite3")
+    _write_resume_fixture(legacy, older)
+    state["generation"] = 5
+    newer = job._checkpoint_payload(state, rng, spec, "b" * 64, context, {"source.py": "c" * 64})
+    _write_resume_fixture(canonical, newer)
+    original = {path: path.read_bytes() for path in (legacy, canonical)}
+    restored, _ = job._load_resume(legacy, spec, "b" * 64, context, {"source.py": "c" * 64})
+    assert restored["generation"] == 5
+    assert {path: path.read_bytes() for path in original} == original
+
+
+def test_damaged_sqlite_resume_never_falls_back_to_transport_json(tmp_path):
+    legacy = tmp_path / "checkpoint.json"
+    canonical = legacy.with_suffix(".sqlite3")
+    legacy.write_text('{"previous": "transport must not become authoritative"}')
+    canonical.write_bytes(b"damaged canonical SQLite")
+    original = {path: path.read_bytes() for path in (legacy, canonical)}
+    with pytest.raises(ValueError):
+        job._load_resume(legacy, _spec(), "b" * 64, _context(tmp_path), {})
+    assert {path: path.read_bytes() for path in original} == original
 
 
 def test_resume_rejects_runtime_mismatch(tmp_path: Path) -> None:
@@ -777,7 +816,7 @@ def test_infeasible_url_baseline_fails_before_ga_or_holdout(
         job.run_job(tmp_path / "config.json", tmp_path)
 
     assert [call["phase"] for call in calls] == ["selection"]
-    assert not (tmp_path / "result.json").exists()
+    assert not (tmp_path / "result.sqlite3").exists()
 
 
 def test_selection_is_frozen_before_holdout_and_holdout_cannot_reselect(
@@ -809,8 +848,59 @@ def test_selection_is_frozen_before_holdout_and_holdout_cannot_reselect(
         "winner-holdout",
         "url-baseline-holdout",
     ]
-    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    result = read_structured_object(tmp_path / "result.sqlite3")
     assert result["selection_uses_holdout"] is False
     assert result["winner"]["params"]["training_window"] == 33
     assert result["winner"]["holdout"]["crps_skill_score"] == -0.90
     assert result["url_baseline"]["holdout"]["crps_skill_score"] == 0.90
+    assert (tmp_path / "checkpoint.sqlite3").is_file()
+    assert (tmp_path / "progress.sqlite3").is_file()
+    records = read_structured_jsonl(tmp_path / "evaluations.sqlite3")
+    assert len(records) == len(calls)
+    assert not list(tmp_path.glob("*.jsonl"))
+    for name in ("checkpoint", "progress", "result"):
+        exported = json.loads((tmp_path / f"{name}.json").read_text())
+        assert exported == read_structured_object(tmp_path / f"{name}.sqlite3")
+
+
+@pytest.mark.parametrize("suffix", [".json", ".sqlite3"])
+def test_runtime_documents_and_events_use_matching_format_without_value_loss(tmp_path, suffix):
+    path = tmp_path / ("record" + suffix)
+    events = tmp_path / ("events" + (".jsonl" if suffix == ".json" else suffix))
+    payload = {"tuple": (1, None, False), "amount": "0001.2300", "date": date(2026, 1, 2)}
+    expected = job._json_safe(payload)
+    job._atomic_write_json(path, payload)
+    job._append_jsonl(events, payload)
+    job._append_jsonl(events, payload)
+    assert read_structured_object(path) == expected
+    assert read_structured_jsonl(events) == [expected, expected]
+    if suffix == ".sqlite3":
+        assert path.read_bytes().startswith(b"SQLite format 3\x00")
+        assert events.read_bytes().startswith(b"SQLite format 3\x00")
+
+
+@pytest.mark.parametrize("name", ["checkpoint", "progress", "result"])
+def test_external_protocol_snapshot_contains_same_fields_as_canonical_sqlite(tmp_path, name):
+    payload = {"generation": 4, "status": "completed", "amount": "0001.2300",
+               "nested": {"unknown": None, "flags": [False, True]}, "tuple": (1, 2)}
+    job._write_protocol_record(tmp_path, name, payload)
+    canonical = tmp_path / f"{name}.sqlite3"
+    exported = tmp_path / f"{name}.json"
+    assert canonical.read_bytes().startswith(b"SQLite format 3\x00")
+    assert json.loads(exported.read_text()) == read_structured_object(canonical) == job._json_safe(payload)
+
+
+@pytest.mark.parametrize("damage", ["garbage", "future_schema"])
+def test_protocol_export_cannot_overwrite_damaged_or_newer_schema_canonical(tmp_path, damage):
+    canonical = tmp_path / "progress.sqlite3"
+    exported = tmp_path / "progress.json"
+    job._write_protocol_record(tmp_path, "progress", {"generation": 4})
+    if damage == "garbage":
+        canonical.write_bytes(b"damaged canonical SQLite")
+    else:
+        with sqlite3.connect(canonical) as connection:
+            connection.execute("PRAGMA user_version=999")
+    original = {path: path.read_bytes() for path in (canonical, exported)}
+    with pytest.raises((ValueError, sqlite3.DatabaseError)):
+        job._write_protocol_record(tmp_path, "progress", {"generation": 5})
+    assert {path: path.read_bytes() for path in original} == original

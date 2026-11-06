@@ -1,10 +1,11 @@
 """Build the investment mutations web-runtime context.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
+from app.infrastructure.storage import read_market_frame
 from app.services.investment.dividend_attribution import update_dividend_attribution
 
 
@@ -459,7 +460,7 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
                 response.status_code = 404
                 return apply_no_store_headers(response)
 
-            df = pd.read_parquet(path)
+            df = read_market_frame(path)
             if df.empty or "Close" not in df.columns:
                 response = jsonify(
                     {"success": False, "error": f"No price data for {ticker}"}
@@ -497,7 +498,7 @@ def build_investment_mutation_context(context: dict[str, object]) -> dict[str, o
             return apply_no_store_headers(response)
 
     def investment_get_parquet():
-        """Get all date -> close price mappings from the parquet file for a ticker."""
+        """Get all date -> close price mappings from the local history for a ticker."""
         ticker = request.args.get("ticker", "").strip().upper()
         if not ticker:
             response = jsonify({"success": False, "error": "No ticker provided"})

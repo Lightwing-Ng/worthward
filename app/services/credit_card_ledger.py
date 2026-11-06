@@ -1,6 +1,6 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.2.0
+Code version: v1.3.0
 - Added: Pending CNY purchase evidence and currency-separated pending totals.
 - Fixed: Expanded page details retain source-backed metadata on duplicate capture.
 - Added: Atomic PDF/CSV bundle reconciliation with retained original bytes,
@@ -24,7 +24,11 @@ import threading
 import unicodedata
 from typing import Any, Iterator
 
+from app.core.config import SETTINGS_STORE_DIR
+from app.core.object_sqlite import read_structured_object, write_structured_object
 
+
+CREDIT_CARD_LEDGER_PATH = SETTINGS_STORE_DIR / "credit_cards.sqlite3"
 _THREAD_LOCKS: dict[str, Any] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
 _HASH = re.compile(r"[0-9a-f]{64}")
@@ -296,7 +300,7 @@ def load_credit_card_ledger(path: Path) -> dict[str, Any]:
     if not path.exists():
         return _empty_ledger()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_structured_object(path)
         return _validate_ledger(payload)
     except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError) as exc:
         raise ValueError(
@@ -694,6 +698,12 @@ def _write_lock(path: Path) -> Iterator[None]:
 
 
 def _atomic_write(path: Path, ledger: dict[str, Any]) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        _validate_ledger(deepcopy(ledger))
+        write_structured_object(path, ledger)
+        if load_credit_card_ledger(path) != ledger:
+            raise ValueError("Credit-card ledger readback verification failed.")
+        return
     encoded = json.dumps(ledger, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=path.parent

@@ -1,6 +1,6 @@
 """Shared constants and dependency bindings for investment import domains.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ TIGERTRADE_IMPORTER_VERSION = "0.1.2"
 HSBC_STATEMENT_PDF_IMPORTER_VERSION = "0.7.0"
 
 PRIVATE_INVESTMENT_EVIDENCE_PATH = (
-    SETTINGS_STORE_DIR / "private_investment_evidence.json"
+    SETTINGS_STORE_DIR / "private_investment_evidence.sqlite3"
 )
 
 LONGBRIDGE_USER_CONFIRMED_PERFORMANCE_CALIBRATION_SOURCE = (

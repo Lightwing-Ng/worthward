@@ -1,9 +1,11 @@
 """Workspace history fallback helpers.
 
-Code version: v0.1.1
+Code version: v0.2.0
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame
 
 
 def load_history_after_fetch_failure(
@@ -17,10 +19,10 @@ def load_history_after_fetch_failure(
     if path.exists():
         try:
             return ctx.select_price_series(
-                ctx.pd.read_parquet(path),
+                read_market_frame(path),
                 include_dividends_flag,
                 dividend_mode=dividend_mode,
             )
-        except (ImportError, OSError, ValueError, KeyError, TypeError):
+        except (ImportError, OSError, ValueError, KeyError, TypeError, RuntimeError):
             pass
     raise ValueError(f"No market data returned for {ticker}.")

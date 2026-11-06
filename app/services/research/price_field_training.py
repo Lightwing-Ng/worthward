@@ -1,4 +1,4 @@
-"""Strategy-neutral local probability-model training jobs. Code version: v1.2.1."""
+"""Strategy-neutral local probability-model training jobs. Code version: v1.3.0."""
 
 from __future__ import annotations
 
@@ -200,17 +200,17 @@ class PriceFieldTrainingManager:
             request = {"schema": 1, "strategy": strategy_id, "ticker": ticker, "period": period,
                        "interval": interval, "params": selected, "configuration": settings,
                        "run_token": token, "started_at": datetime.now(timezone.utc).isoformat()}
-            write_json(path / "request.json", request)
+            write_json(path / "request.sqlite3", request)
             command = [sys.executable, "-B", str(PROJECT_ROOT / "scripts/price_field_train.py"),
-                       "--request", str(path / "request.json"), "--run-token", token]
+                       "--request", str(path / "request.sqlite3"), "--run-token", token]
             with (path / "run.log").open("a", encoding="utf-8") as log:
                 try:
                     process = subprocess.Popen(command, cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL,
                                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 except OSError as exc:
-                    write_json(path / "status.json", {"status": "failed", "error": str(exc)})
+                    write_json(path / "status.sqlite3", {"status": "failed", "error": str(exc)})
                     raise
-            write_json(path / "launch.json", {"pid": process.pid, "started_at": request["started_at"]})
+            write_json(path / "launch.sqlite3", {"pid": process.pid, "started_at": request["started_at"]})
             return {**self.read_run(path), "status": "starting", "active": True}
 
     @staticmethod
@@ -223,7 +223,7 @@ class PriceFieldTrainingManager:
                        f"(Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}').CommandLine"]
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=2, check=False)
-            return ("price_field_train.py" in result.stdout and str(path / "request.json") in result.stdout
+            return ("price_field_train.py" in result.stdout and str(path / "request.sqlite3") in result.stdout
                     and token in result.stdout)
         except (OSError, subprocess.SubprocessError):
             return False
@@ -233,11 +233,11 @@ class PriceFieldTrainingManager:
         run = self.read_run(path)
         if not run["active"]:
             return run
-        request = read_json(path / "request.json")
+        request = read_json(path / "request.sqlite3")
         pid = run["pid"]
         if not self.process_matches(pid, path, request.get("run_token", "")):
             return {**run, "active": False, "status": "stale"}
-        write_json(path / "stop-request.json", {"requested_at": datetime.now(timezone.utc).isoformat()})
+        write_json(path / "stop-request.sqlite3", {"requested_at": datetime.now(timezone.utc).isoformat()})
         try:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=True, capture_output=True, timeout=5)
@@ -252,9 +252,9 @@ class PriceFieldTrainingManager:
                     os.killpg(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        status = read_json(path / "status.json")
+        status = read_json(path / "status.sqlite3")
         if status.get("status") != "completed":
-            write_json(path / "status.json", {**status, "status": "stopped", "updated_at": datetime.now(timezone.utc).isoformat()})
+            write_json(path / "status.sqlite3", {**status, "status": "stopped", "updated_at": datetime.now(timezone.utc).isoformat()})
         return self.read_run(path)
 
     def delete(self, run_id: str) -> dict:
@@ -272,10 +272,10 @@ class PriceFieldTrainingManager:
         return {"id": run_id, "deleted": True, "recoverable": True}
 
     def read_run(self, path: Path) -> dict:
-        request = read_json(path / "request.json")
-        launch = read_json(path / "launch.json")
-        status = read_json(path / "status.json")
-        result = read_json(path / "result.json")
+        request = read_json(path / "request.sqlite3")
+        launch = read_json(path / "launch.sqlite3")
+        status = read_json(path / "status.sqlite3")
+        result = read_json(path / "result.sqlite3")
         pid = launch.get("pid")
         pid = pid if type(pid) is int and pid > 0 else 0
         effective = status.get("status", "starting")
@@ -306,7 +306,7 @@ class PriceFieldTrainingManager:
         if completed:
             progress = {"percent": 100.0}
         files = [{"name": name, "size_bytes": target.stat().st_size}
-                 for name in ("request.json", "snapshot.json", "result.json", "status.json", "run.log")
+                 for name in ("request.sqlite3", "snapshot.sqlite3", "result.sqlite3", "status.sqlite3", "run.log")
                  if (target := path / name).is_file() and not target.is_symlink()]
         return {"id": path.name, "strategy": request.get("strategy", ""), "ticker": request.get("ticker", ""),
                 "period": request.get("period", ""), "interval": request.get("interval", ""), "status": effective,

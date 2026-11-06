@@ -1,19 +1,19 @@
 """
 Backtest execution preference persistence.
 
-Code version: v0.4.1
+Code version: v0.5.0
 """
 
 from __future__ import annotations
 
-import json
 from typing import Literal
 
 from app.core.config import MARKET_STORE_DIR
 from app.core.preferences.store import load_all_settings, save_setting_value
+from app.core.object_sqlite import read_structured_object
 
 BacktestExecutionMode = Literal["signal_close", "next_open"]
-BACKTEST_SETTINGS_PATH = MARKET_STORE_DIR / "backtest_settings.json"
+BACKTEST_SETTINGS_PATH = MARKET_STORE_DIR / "backtest_settings.sqlite3"
 DEFAULT_BACKTEST_EXECUTION_MODE: BacktestExecutionMode = "next_open"
 
 
@@ -29,11 +29,11 @@ def _normalize_execution_mode(mode: object) -> BacktestExecutionMode | None:
 def _load_legacy_execution_mode() -> BacktestExecutionMode | None:
     try:
         payload = (
-            json.loads(BACKTEST_SETTINGS_PATH.read_text(encoding="utf-8"))
+            read_structured_object(BACKTEST_SETTINGS_PATH)
             if BACKTEST_SETTINGS_PATH.exists()
             else {}
         )
-    except (json.JSONDecodeError, OSError):
+    except (ValueError, OSError):
         return None
     if not isinstance(payload, dict):
         return None

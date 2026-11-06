@@ -1,6 +1,6 @@
 """Build the pages settings web-runtime context.
 
-Code version: v0.3.0
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -1416,7 +1416,7 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
 
                 if history_refreshed_count > 0:
                     notice_parts.append(
-                        f"Updated {history_refreshed_count:,} historical parquet dataset"
+                        f"Updated {history_refreshed_count:,} historical SQLite dataset"
                         f"{'' if history_refreshed_count == 1 else 's'}."
                     )
                 if metadata_refreshed_count > 0:
@@ -1533,9 +1533,9 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
         try:
             if action == "investment-transactions":
                 if clear_investment_store(INVESTMENT_STORE_PATH):
-                    notice = "Cleared the local broker transaction record stored in settings_store/investment.parquet."
+                    notice = "Cleared the local broker transaction record stored in settings_store/investment.sqlite3 and legacy copies."
                 else:
-                    notice = "No local broker transaction record was found in settings_store/investment.parquet."
+                    notice = "No local broker transaction record was found in settings_store/investment.sqlite3 or legacy copies."
                 invalidate_investment_transactions_cache()
             else:
                 cache_summary = clear_non_historical_market_cache()

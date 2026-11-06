@@ -5,7 +5,7 @@ The runner snapshots one causal market-data bundle, evaluates independent
 candidate configurations in bounded spawn workers, and keeps checkpoints
 outside the repository. It never writes to the market or investment stores.
 
-Code version: v0.15.3
+Code version: v0.16.0
 - Changed: Snapshot and validation failures shared by exact training and GA now
   use model-neutral training language.
 - Fixed: Exact selected-configuration runs now apply the objective recorded in
@@ -65,6 +65,9 @@ MAX_WORKERS = 8
 
 from app.core.config import PERIOD_OFFSETS  # noqa: E402
 from app.infrastructure.compute_jobs import project_compute_workspace_root  # noqa: E402
+from app.core.object_sqlite import (  # noqa: E402
+    append_structured_jsonl, create_object, read_structured_object, write_structured_object,
+)
 from app.services.research.price_field_market_factors import (  # noqa: E402
     build_local_price_field_factor_bundle,
 )  # noqa: E402
@@ -194,6 +197,9 @@ def _record_value(record: object, key: str, default: Any = None) -> Any:
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        write_structured_object(path, _json_safe(payload), compact=True)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(
@@ -204,13 +210,16 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = read_structured_object(path)
     if not isinstance(value, dict):
         raise ValueError(f"Expected a JSON object in {path}.")
     return value
 
 
 def _append_jsonl(path: Path, payload: Mapping[str, Any]) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        append_structured_jsonl(path, [_json_safe(payload)])
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(_json_safe(payload), sort_keys=True, separators=(",", ":")))
@@ -402,14 +411,14 @@ def _build_run_paths(args: argparse.Namespace, spec: Mapping[str, Any]) -> RunPa
     return RunPaths(
         root=root,
         state=state,
-        request=state / "request.json",
-        snapshot=state / "snapshot.json",
-        checkpoint=state / "checkpoint.json",
-        status=state / "status.json",
-        baseline=state / "baseline.json",
-        evaluations=state / "evaluations.jsonl",
-        leaderboard=state / "leaderboard.json",
-        result=state / "result.json",
+        request=state / "request.sqlite3",
+        snapshot=state / "snapshot.sqlite3",
+        checkpoint=state / "checkpoint.sqlite3",
+        status=state / "status.sqlite3",
+        baseline=state / "baseline.sqlite3",
+        evaluations=state / "evaluations.sqlite3",
+        leaderboard=state / "leaderboard.sqlite3",
+        result=state / "result.sqlite3",
         log=state / "run.log",
         lock=state / "run.lock",
     )
@@ -1588,8 +1597,13 @@ def _run(args: argparse.Namespace) -> int:
             # under the same lock used by the worker and recoverable deletion.
             if any(path.exists() for path in (paths.snapshot, paths.status, paths.result, paths.checkpoint)):
                 raise RuntimeError("This prepared training request has already started; use an explicit resume.")
-            with (paths.state / "worker.json").open("x", encoding="utf-8") as handle:
-                json.dump({"pid": os.getpid(), "started_at": _now_utc().isoformat()}, handle)
+            worker_path = (paths.state / "worker.sqlite3").with_suffix(paths.request.suffix)
+            owner = {"pid": os.getpid(), "started_at": _now_utc().isoformat()}
+            if worker_path.suffix.lower() == ".sqlite3":
+                create_object(worker_path, owner)
+            else:
+                with worker_path.open("x", encoding="utf-8") as handle:
+                    json.dump(owner, handle)
         context, snapshot = _build_snapshot(args, paths)
         context.objective = spec.get("objective", "direction")
         if spec["selected_params"] is not None:
@@ -1849,7 +1863,7 @@ def _run(args: argparse.Namespace) -> int:
                     if context.objective in GRID_OBJECTIVES:
                         # Freeze selection before any holdout inference, including
                         # backend failures. Never promote a runner-up on holdout.
-                        _atomic_write_json(paths.state / "selection.json", {
+                        _atomic_write_json(paths.state / "selection.sqlite3", {
                             "selected_at": _now_utc().isoformat(),
                             "best": best_aggregate,
                             "robust_leaderboard": aggregates,

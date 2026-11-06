@@ -4,7 +4,7 @@ The entrypoint implements the fixed agenticContext compute-job protocol. Its
 configuration carries an immutable compressed market snapshot, so candidate
 evaluation never needs provider credentials, HTTP, or a child process.
 
-Code version: v1.2.1
+Code version: v1.3.0
 """
 
 from __future__ import annotations
@@ -157,6 +157,11 @@ def _json_safe(value: object) -> Any:
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        from app.core.object_sqlite import write_structured_object
+
+        write_structured_object(path, _json_safe(payload))
+        return
     encoded = _canonical_json_bytes(_json_safe(payload)) + b"\n"
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
     try:
@@ -182,6 +187,11 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 
 def _append_jsonl(path: Path, payload: Mapping[str, Any]) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        from app.core.object_sqlite import append_structured_jsonl
+
+        append_structured_jsonl(path, [_json_safe(payload)])
+        return
     encoded = _canonical_json_bytes(_json_safe(payload)) + b"\n"
     descriptor = os.open(
         path,
@@ -208,6 +218,22 @@ def _append_jsonl(path: Path, payload: Mapping[str, Any]) -> None:
             os.fsync(directory)
         finally:
             os.close(directory)
+
+
+def _write_protocol_record(runtime: Path, name: str, payload: Mapping[str, Any]) -> None:
+    """Commit canonical SQLite and export the existing external compute-job snapshot."""
+    from app.core.object_sqlite import read_structured_object
+
+    if name not in {"checkpoint", "progress", "result"}:
+        raise ValueError("Unsupported external compute-job snapshot.")
+    canonical = runtime / f"{name}.sqlite3"
+    _atomic_write_json(canonical, payload)
+    persisted = read_structured_object(canonical)
+    if _canonical_json_bytes(persisted) != _canonical_json_bytes(_json_safe(payload)):
+        raise RuntimeError("The canonical compute-job record failed persisted readback.")
+    # agenticContext consumes these three JSON paths as an explicit file protocol,
+    # equivalent to a JSON API response. They are exports of SQLite, never its fallback.
+    _atomic_write_json(runtime / f"{name}.json", persisted)
 
 
 def _read_bounded(path: Path, maximum_bytes: int, label: str) -> bytes:
@@ -1489,8 +1515,9 @@ def _write_checkpoint(
     context: EvaluationContext,
     source_hashes: Mapping[str, str],
 ) -> None:
-    _atomic_write_json(
-        runtime / "checkpoint.json",
+    _write_protocol_record(
+        runtime,
+        "checkpoint",
         _checkpoint_payload(
             state,
             rng,
@@ -1509,7 +1536,20 @@ def _load_resume(
     context: EvaluationContext,
     source_hashes: Mapping[str, str],
 ) -> tuple[dict[str, Any], random.Random]:
-    raw = _read_bounded(path, MAX_CHECKPOINT_BYTES, "Resume checkpoint")
+    peer = path.with_suffix(".sqlite3")
+    if path.suffix.lower() == ".json" and (peer.exists() or peer.is_symlink()):
+        # An old transport snapshot cannot supersede newer canonical state.
+        path = peer
+    if path.suffix.lower() == ".sqlite3":
+        from app.core.object_sqlite import read_structured_object
+
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("Resume checkpoint must be one regular non-linked file.")
+        raw = _canonical_json_bytes(read_structured_object(path))
+        if len(raw) > MAX_CHECKPOINT_BYTES:
+            raise ValueError(f"Resume checkpoint exceeds the {MAX_CHECKPOINT_BYTES:,}-byte limit.")
+    else:
+        raw = _read_bounded(path, MAX_CHECKPOINT_BYTES, "Resume checkpoint")
     try:
         checkpoint = json.loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError) as exc:
@@ -1555,7 +1595,7 @@ def _progress(
 ) -> None:
     leaderboard = list(state.get("leaderboard") or [])
     best = leaderboard[0] if leaderboard else {}
-    _atomic_write_json(runtime / "progress.json", {
+    _write_protocol_record(runtime, "progress", {
         "generation": int(state.get("generation", 0)),
         "evaluations_completed": int(state.get("evaluation_count", 0)),
         "best_objective": float(best.get("mean_validation_crps_skill", -1e308)),
@@ -1706,7 +1746,7 @@ def run_job(config_path: Path, runtime: Path, resume_path: Path | None = None) -
             f"Evaluating generation {state['generation']} candidate {state['evaluation_count'] + 1}.",
         )
         record = evaluate_candidate(candidate, spec, context, phase="selection")
-        _append_jsonl(runtime / "evaluations.jsonl", record)
+        _append_jsonl(runtime / "evaluations.sqlite3", record)
         state["inflight"] = None
         state["evaluation_count"] = int(state["evaluation_count"]) + 1
         if record.get("status") == "ok":
@@ -1774,7 +1814,7 @@ def run_job(config_path: Path, runtime: Path, resume_path: Path | None = None) -
             context,
             phase="winner-holdout",
         )
-        _append_jsonl(runtime / "evaluations.jsonl", winner_holdout)
+        _append_jsonl(runtime / "evaluations.sqlite3", winner_holdout)
         state["winner_holdout"] = winner_holdout
         state["elapsed_seconds"] = elapsed()
         _write_checkpoint(
@@ -1804,7 +1844,7 @@ def run_job(config_path: Path, runtime: Path, resume_path: Path | None = None) -
                 context,
                 phase="url-baseline-holdout",
             )
-            _append_jsonl(runtime / "evaluations.jsonl", baseline_holdout)
+            _append_jsonl(runtime / "evaluations.sqlite3", baseline_holdout)
         state["baseline_holdout"] = baseline_holdout
         state["elapsed_seconds"] = elapsed()
         _write_checkpoint(
@@ -1871,7 +1911,7 @@ def run_job(config_path: Path, runtime: Path, resume_path: Path | None = None) -
             - result["url_baseline"]["holdout"]["crps_skill_score"]
         ),
     }
-    _atomic_write_json(runtime / "result.json", result)
+    _write_protocol_record(runtime, "result", result)
     state["phase"] = "completed"
     state["elapsed_seconds"] = elapsed()
     _write_checkpoint(

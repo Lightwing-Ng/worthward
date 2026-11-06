@@ -1,7 +1,7 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.2.1
+ * Code version: v1.2.2
  * - Fixed: Native paste and clipboard buttons share HSBC capture validation.
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
  * - Fixed: HSBC paste validation refreshes the browser write session first.
@@ -1407,11 +1407,11 @@ function syncInvestmentImportMode() {
                     ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
                     : 'Paste HSBC cash-account or credit-card pages in the first field. Credit-card pages are previewed automatically; review the entries before importing. For cash accounts, supplementary captures are allowed and duplicate chunks are ignored; Portfolio and Order Status can refresh holdings.')
                 : (isLongbridgeHk
-                    ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                    ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                     : (isLongbridgeSg
-                        ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                        ? 'Imports Longbridge (SG) Fund Details text and History Orders spreadsheets into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                         : (isFutuhk
-                        ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                        ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                         : (isBocHk
                         ? 'Imports one or more BOCHK Consolidated Statement PDFs, preserving HKD Savings, HKD Current, CNH (printed CNY/RMB), and USD subaccounts in the local ledger without clearing existing records.'
                         : (isIbkrWebPaste
@@ -1419,9 +1419,9 @@ function syncInvestmentImportMode() {
                         : (isIbkrGainskeeper
                             ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
-                                ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                                ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                                 : (isUsmartHk
-                                    ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.parquet</code> without clearing existing records.'
+                                    ? 'Imports uSMART (HK) monthly statement PDFs into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                                     : (usesStandardXlsxImport
                                         ? (isStandardXlsx
                                             ? 'Upload any Worthward standard XLSX workbook. Each row retains its own broker identity and is validated before import.'
@@ -1430,7 +1430,7 @@ function syncInvestmentImportMode() {
                                 ? 'Upload the Charles Schwab Transactions and Positions CSV exports together. Exact same-day ticker and quantity matches are linked as in-kind transfers; ambiguous matches require manual binding.'
                                 : (isIbkr
                                     ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.parquet</code> without clearing existing records.')))))))))));
+                                    : 'Imports into <code>settings_store/investment.sqlite3</code> without clearing existing records.')))))))))));
         }
         if (runtime.importSubmitButton instanceof HTMLButtonElement) {
             runtime.importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';

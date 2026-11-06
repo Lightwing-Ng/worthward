@@ -1,4 +1,4 @@
-"""Read-only Backtest research adapter for every registered strategy. Code version: v1.5.0."""
+"""Read-only Backtest research adapter for every registered strategy. Code version: v1.6.0."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from app.infrastructure.storage import read_market_frame
 from app.services.analysis.dca import simulate_recurring_investment
 from app.services.analysis.comparisons import market_trading_dates_for_history
 from app.services.market.market_data import (
@@ -62,7 +63,7 @@ def load_research_history(ticker: str, interval: str) -> pd.DataFrame:
         raise ValueError(
             f"No local {interval} history for {ticker}; refresh it in Settings first."
         )
-    frame = pd.read_parquet(path)
+    frame = read_market_frame(path)
     if "Synthetic" in frame and frame["Synthetic"].fillna(False).any():
         raise ValueError(f"Synthetic prices are not eligible for tuning: {ticker}.")
     required = {"Date", "Open", "High", "Low", "Close"}

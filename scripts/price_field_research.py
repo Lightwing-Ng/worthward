@@ -1,4 +1,4 @@
-"""Frozen-input neural probability research coordinator. Code version: v1.1.3.
+"""Frozen-input neural probability research coordinator. Code version: v1.2.0.
 
 Search, replicated validation selection, and reporting have separate data
 boundaries. This process never fetches data or updates production settings.
@@ -40,6 +40,11 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402 - Numerical runtimes must see worker thread limits first.
 import pandas as pd  # noqa: E402
 
+from app.core.object_sqlite import (  # noqa: E402
+    append_structured_jsonl,
+    read_structured_object,
+    write_structured_object,
+)
 from strategies.price_field.pipeline import clip_price_field_bundle  # noqa: E402
 
 PROTOCOL_VERSION = "neural-probability-research/v1.1.0"
@@ -61,12 +66,21 @@ def _now() -> str:
 
 
 def _atomic(path: Path, payload: Any) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        # Keep the existing JSON adapter for tuples and nonstandard scalar values.
+        value = json.loads(json.dumps(payload, allow_nan=False, default=str))
+        write_structured_object(path, value)
+        return
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2, allow_nan=False, default=str) + "\n")
     os.replace(temporary, path)
 
 
 def _append(path: Path, payload: Any) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        value = json.loads(json.dumps(payload, allow_nan=False, default=str))
+        append_structured_jsonl(path, [value])
+        return
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, allow_nan=False, default=str) + "\n")
         stream.flush()
@@ -95,15 +109,15 @@ def validation_folds(count: int, *, smoke: bool = False) -> tuple[int, list[tupl
 def _load_snapshot(path: Path, *, smoke: bool = False) -> dict[str, Any]:
     from strategies.price_field.pipeline import bundle_to_price_field_ohlcv
 
-    payload = json.loads(path.read_text())
+    payload = read_structured_object(path)
     if payload.get("interval") != "1d":
         raise ValueError("Probability research requires a frozen 1d snapshot.")
     bundle = deepcopy(payload["bundle"])
     bundle.setdefault("benchmarks", {})
     for symbol in ("SPY", "QQQ", "SMH"):
-        sibling = path.with_name(symbol + ".json")
+        sibling = path.with_name(symbol + path.suffix)
         if sibling.is_file():
-            bundle["benchmarks"][symbol] = json.loads(sibling.read_text())["bundle"]["ohlcv"]
+            bundle["benchmarks"][symbol] = read_structured_object(sibling)["bundle"]["ohlcv"]
     if smoke:
         # Remove the real holdout before frame construction or feature evaluation.
         rows = bundle.get("ohlcv") or []
@@ -403,7 +417,7 @@ class ResearchRun:
             "protocol": PROTOCOL_VERSION, "started_at": self.started_at,
             "deadline_utc": deadline_utc.astimezone(timezone.utc).isoformat(),
             "snapshot": str(self.snapshot_path), "snapshot_sha256": hashlib.sha256(self.snapshot_path.read_bytes()).hexdigest(),
-            "input_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(self.snapshot_path.parent.glob("*.json"))},
+            "input_sha256": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(self.snapshot_path.parent.glob("*" + self.snapshot_path.suffix))},
             "ticker": self.data["ticker"], "bars": len(self.data["frame"]), "holdout_start": self.holdout,
             "validation_folds": self.folds, "strategies": self.ids,
             "search_choices": SEARCH_CHOICES, "strategy_search_choices": self.domains, "factor_audit": self.factor_audit,
@@ -413,7 +427,7 @@ class ResearchRun:
             "selection": f"equal-fold complete-grid score; replicated {self.final_backend} validation; holdout excluded",
             "smoke": args.smoke,
         }
-        _atomic(self.output / "protocol.json", self.manifest)
+        _atomic(self.output / "protocol.sqlite3", self.manifest)
 
     def cancelled(self) -> bool:
         return _STOP or (self.output / "STOP").exists() or time.monotonic() >= self.deadline
@@ -435,8 +449,8 @@ class ResearchRun:
                    "failures": self.failures, "cancelled_counts": self.cancelled_counts,
                    "candidate_collisions": self.candidate_collisions,
                    "elapsed_seconds": time.monotonic() - self.started, **extra}
-        _atomic(self.output / "status.json", payload)
-        _atomic(self.output / "checkpoint.json", {**payload, "leaders": {f"{key[0]}:{key[1]}": rows for key, rows in self.leaders.items()},
+        _atomic(self.output / "status.sqlite3", payload)
+        _atomic(self.output / "checkpoint.sqlite3", {**payload, "leaders": {f"{key[0]}:{key[1]}": rows for key, rows in self.leaders.items()},
                                                  "random_state": self.rng.getstate(), "resumable": False})
 
     def record(self, result: dict[str, Any]) -> None:
@@ -445,7 +459,7 @@ class ResearchRun:
         self.failures += int(result["status"] == "failed")
         self.cancelled_counts[backend] += int(result["status"] == "cancelled")
         self.consecutive_failures[backend] = self.consecutive_failures[backend] + 1 if result["status"] == "failed" else 0
-        _append(self.output / "evaluations.jsonl", result)
+        _append(self.output / "evaluations.sqlite3", result)
         if backend == self.final_backend and result["status"] == "ok":
             self.gpu_times.append(float(result["elapsed_seconds"]))
         if self.consecutive_failures[backend] >= 5:
@@ -526,7 +540,7 @@ class ResearchRun:
             self.worker_stop.set()
             try:
                 cleanup = _shutdown_owned_workers(pools, previous_children)
-                _atomic(self.output / "worker-cleanup.json", {**cleanup, "completed_at": _now()})
+                _atomic(self.output / "worker-cleanup.sqlite3", {**cleanup, "completed_at": _now()})
             except BaseException as exc:
                 self.status("failed", force=True, error=f"Worker cleanup failed: {type(exc).__name__}: {exc}")
                 raise
@@ -534,7 +548,7 @@ class ResearchRun:
             raise RuntimeError("Research cancelled or deadline reached before final completion.")
         payload = self.pending_result
         payload.update(status="completed", completed_at=_now())
-        _atomic(self.output / ("smoke.json" if self.args.smoke else "result.json"), payload)
+        _atomic(self.output / ("smoke.sqlite3" if self.args.smoke else "result.sqlite3"), payload)
         self.phase = "completed"
         self.status("completed", force=True)
 
@@ -599,7 +613,7 @@ class ResearchRun:
         replications = self.batch(gpu_pool, tasks)
         selected = replicated_selection(replications, self.ids, seeds)
         selection = {"protocol": PROTOCOL_VERSION, "selected_at": _now(), "selection_basis": "validation only", "winners": selected}
-        _atomic(self.output / "selection.json", selection)
+        _atomic(self.output / "selection.sqlite3", selection)
         ablation = {"status": "not_run", "reason": "Endogenous-only ablation is reserved for the formal three-seed run."}
         if not self.args.smoke:
             self.phase = "validation-ablation"
@@ -615,14 +629,14 @@ class ResearchRun:
                     ablation_tasks.extend({**self.task(strategy_id, dict(params, seed=seed)), "role": "endogenous-only-ablation"} for seed in seeds)
             ablation_records.extend(self.batch(gpu_pool, ablation_tasks))
             ablation = endogenous_ablation_summary(selected, ablation_records, seeds)
-            _atomic(self.output / "factor-ablation.json", ablation)
+            _atomic(self.output / "factor-ablation.sqlite3", ablation)
         self.phase = "frozen-selection-reporting"
         self.status(force=True)
         self.verify_inputs()
         report_tasks, limited = [], []
         datasets = [self.data]
         if not self.args.smoke:
-            transfer_paths = self.args.transfer_snapshot or [str(self.snapshot_path.with_name(symbol + ".json")) for symbol in ("QQQ", "MU", "DRAM")]
+            transfer_paths = self.args.transfer_snapshot or [str(self.snapshot_path.with_name(symbol + self.snapshot_path.suffix)) for symbol in ("QQQ", "MU", "DRAM")]
             for path in transfer_paths:
                 datasets.append(_load_snapshot(Path(path)))
         for data in datasets:
@@ -650,7 +664,7 @@ class ResearchRun:
                    "existing_lstm_baseline": {"status": "not_run", "reason": "Legacy executable target differs; causal zero-drift grid reference is reported for every direct horizon."},
                    "transfer_semantics": "Frozen hyperparameters are retrained causally on each ticker; this is not zero-shot weight transfer."}
         self.pending_result = payload
-        _atomic(self.output / "pending-result.json", payload)
+        _atomic(self.output / "pending-result.sqlite3", payload)
         self.phase = "cleanup"
         self.status(force=True)
 

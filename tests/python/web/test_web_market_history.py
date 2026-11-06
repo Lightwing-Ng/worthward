@@ -1,9 +1,11 @@
 """Tests for read-only web market-history helpers.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame, write_market_frame_atomic
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -53,11 +55,11 @@ class WebMarketHistoryTests(unittest.TestCase):
         expected = build_supported_periods_from_dates(dataset["Date"], interval="1d")
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ.parquet"
+            path = Path(tempdir) / "historical" / "QQQ.sqlite3"
             for production_root in (BASE_DIR / "market_store", BASE_DIR / "settings_store"):
                 self.assertFalse(path.resolve().is_relative_to(production_root.resolve()))
             path.parent.mkdir(parents=True)
-            dataset.to_parquet(path, index=False)
+            write_market_frame_atomic(path, dataset, index=False)
 
             with (
                 patch("app.web.market_history.market_ticker_store_aliases", return_value=("QQQ",)),
@@ -66,13 +68,13 @@ class WebMarketHistoryTests(unittest.TestCase):
                 periods = build_supported_periods_for_history_store("QQQ.US")
 
             self.assertEqual(periods, expected)
-            pd.testing.assert_frame_equal(pd.read_parquet(path), dataset)
+            pd.testing.assert_frame_equal(read_market_frame(path), dataset)
 
     def test_supported_periods_fall_back_when_the_isolated_cache_is_unreadable(self) -> None:
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ.parquet"
+            path = Path(tempdir) / "historical" / "QQQ.sqlite3"
             path.parent.mkdir(parents=True)
-            path.write_bytes(b"unreadable parquet cache")
+            path.write_bytes(b"unreadable SQLite cache")
             before_bytes = path.read_bytes()
 
             with (
@@ -119,9 +121,9 @@ class WebMarketHistoryTests(unittest.TestCase):
         pd.testing.assert_frame_equal(dataset, original)
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "7709.HK_1m.parquet"
+            path = Path(tempdir) / "historical" / "7709.HK_1m.sqlite3"
             path.parent.mkdir(parents=True)
-            dataset.to_parquet(path, index=False)
+            write_market_frame_atomic(path, dataset, index=False)
             with (
                 patch("app.web.market_history.market_ticker_store_aliases", return_value=("7709.HK",)),
                 patch("app.web.market_history.intraday_history_store_path_for", return_value=path),

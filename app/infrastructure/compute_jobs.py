@@ -1,6 +1,6 @@
 """Side-effect-isolated primitives for durable compute-job metadata.
 
-Code version: v1.1.1
+Code version: v1.2.0
 
 These helpers never initialize or migrate market, settings, or investment
 stores. Compute managers retain ownership of their domain-specific lifecycle.
@@ -18,6 +18,8 @@ import re
 from threading import Lock
 from typing import Iterator, Mapping, Sequence
 from uuid import uuid4
+
+from app.core.object_sqlite import read_structured_object, write_structured_object
 
 
 _THREAD_LOCKS_GUARD = Lock()
@@ -56,7 +58,7 @@ def read_json_object(path: Path) -> dict:
     if path.is_symlink():
         return {}
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = read_structured_object(path)
     except (OSError, TypeError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
@@ -69,6 +71,9 @@ def write_json_atomic(
         compact: bool = False,
 ) -> None:
     """Atomically replace one compute-job JSON object in its existing directory."""
+    if path.suffix.lower() == ".sqlite3":
+        write_structured_object(path, dict(payload), compact=compact)
+        return
     options: dict[str, object] = {
         "allow_nan": False,
         "sort_keys": True,

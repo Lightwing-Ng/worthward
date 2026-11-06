@@ -1,4 +1,4 @@
-"""Research chronology, selection, and lifecycle contracts. Code version: v1.1.2."""
+"""Research chronology, selection, and lifecycle contracts. Code version: v1.2.0."""
 
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.core.object_sqlite import read_structured_object, write_structured_object, read_structured_jsonl
 from scripts import price_field_research as research
 from tests.factories.market import ohlc_frame_for_dates
 
@@ -30,6 +31,34 @@ def _snapshot(tmp_path, count=500):
     path = tmp_path / "NVDA.json"
     path.write_text(json.dumps(payload))
     return path, payload
+
+
+@pytest.mark.parametrize("suffix", [".json", ".sqlite3"])
+def test_research_document_and_event_writes_preserve_existing_json_adapter(tmp_path, suffix):
+    path = tmp_path / ("record" + suffix)
+    events = tmp_path / ("events" + (".jsonl" if suffix == ".json" else suffix))
+    payload = {"tuple": (1, None, "a"), "number": np.float32(1.25),
+               "nested": {"amount": "0001.230000", "empty": [], "flag": False}}
+    expected = json.loads(json.dumps(payload, allow_nan=False, default=str))
+    research._atomic(path, payload)
+    research._append(events, payload)
+    research._append(events, payload)
+    assert read_structured_object(path) == expected
+    assert read_structured_jsonl(events) == [expected, expected]
+    if suffix == ".sqlite3":
+        assert path.read_bytes().startswith(b"SQLite format 3\x00")
+        assert events.read_bytes().startswith(b"SQLite format 3\x00")
+
+
+def test_sqlite_snapshot_loads_sqlite_benchmark_siblings(tmp_path):
+    old_path, payload = _snapshot(tmp_path)
+    path = old_path.with_suffix(".sqlite3")
+    write_structured_object(path, payload)
+    benchmark = {**payload, "ticker": "SPY"}
+    write_structured_object(path.with_name("SPY.sqlite3"), benchmark)
+    result = research._load_snapshot(path)
+    assert result["ticker"] == payload["ticker"]
+    assert result["bundle"]["benchmarks"]["SPY"] == payload["bundle"]["ohlcv"]
 
 
 def test_holdout_and_fold_boundaries_are_candidate_independent():
@@ -104,7 +133,7 @@ def test_smoke_exercises_search_selection_report_without_real_holdout(tmp_path, 
         assert len(task["frame"]) == expected_count
         assert len(task["bundle"]["ohlcv"]) == expected_count
         if task["phase"] == "frozen-selection-reporting":
-            assert (output / "selection.json").is_file()
+            assert (output / "selection.sqlite3").is_file()
         return {"strategy_id": task["strategy_id"], "params": task["params"], "phase": task["phase"],
                 "ticker": task["ticker"], "status": "ok", "feasible": True, "fitness": 60.0,
                 "worst_fold": 59.0, "folds": [], "elapsed_seconds": 0.001}
@@ -115,9 +144,9 @@ def test_smoke_exercises_search_selection_report_without_real_holdout(tmp_path, 
     monkeypatch.setattr(research, "ProcessPoolExecutor", lambda max_workers, **_kwargs: ThreadPoolExecutor(max_workers=max_workers))
     assert research.main(["--snapshot", str(snapshot), "--output", str(output), "--seconds", "60", "--cpu-workers", "2", "--smoke"]) == 0
     assert set(seen_phases) == {"search", "replicated-validation", "frozen-selection-reporting"}
-    assert (output / "smoke.json").is_file()
-    assert not (output / "result.json").exists()
-    assert json.loads((output / "status.json").read_text())["status"] == "completed"
+    assert (output / "smoke.sqlite3").is_file()
+    assert not (output / "result.sqlite3").exists()
+    assert read_structured_object(output / "status.sqlite3")["status"] == "completed"
     assert research.main(["--snapshot", str(snapshot), "--output", str(output), "--seconds", "60", "--cpu-workers", "2", "--smoke"]) == 1
 
 
@@ -200,8 +229,8 @@ def test_coordinator_failure_broadcasts_stop_before_pool_shutdown(tmp_path, monk
         run.run()
     assert time.monotonic() - started < 1
     assert futures[0].result(timeout=1) is True
-    assert json.loads((output / "status.json").read_text())["status"] == "failed"
-    assert json.loads((output / "worker-cleanup.json").read_text())["surviving_pids"] == []
+    assert read_structured_object(output / "status.sqlite3")["status"] == "failed"
+    assert read_structured_object(output / "worker-cleanup.sqlite3")["surviving_pids"] == []
 
 
 def _ignore_termination_until_killed(ready):
@@ -311,7 +340,7 @@ def test_cpu_only_run_never_creates_gpu_work_and_freezes_before_reporting(tmp_pa
         assert task["strategy_id"] in FRONTIER_NEURAL_STRATEGY_IDS
         phases.add(task["phase"])
         if task["phase"] == "frozen-selection-reporting":
-            assert (output / "selection.json").is_file()
+            assert (output / "selection.sqlite3").is_file()
             assert len(task["frame"]) == 400
         else:
             assert len(task["frame"]) == 300
@@ -326,10 +355,10 @@ def test_cpu_only_run_never_creates_gpu_work_and_freezes_before_reporting(tmp_pa
     shutdown = research._shutdown_owned_workers
 
     def checked_shutdown(*args, **kwargs):
-        assert not (output / "smoke.json").exists()
-        assert not (output / "result.json").exists()
-        assert json.loads((output / "status.json").read_text())["status"] == "running"
-        assert json.loads((output / "pending-result.json").read_text())["status"] == "awaiting-cleanup"
+        assert not (output / "smoke.sqlite3").exists()
+        assert not (output / "result.sqlite3").exists()
+        assert read_structured_object(output / "status.sqlite3")["status"] == "running"
+        assert read_structured_object(output / "pending-result.sqlite3")["status"] == "awaiting-cleanup"
         return shutdown(*args, **kwargs)
 
     monkeypatch.setattr(research, "_shutdown_owned_workers", checked_shutdown)
@@ -337,14 +366,14 @@ def test_cpu_only_run_never_creates_gpu_work_and_freezes_before_reporting(tmp_pa
     assert research.main(["--snapshot", str(snapshot), "--output", str(output), "--seconds", "60",
                           "--cpu-workers", "2", "--cpu-only", "--smoke", *selected]) == 0
     assert pools == [2]
-    result = json.loads((output / "smoke.json").read_text())
+    result = read_structured_object(output / "smoke.sqlite3")
     assert result["protocol"]["gpu_workers"] == 0
     assert result["protocol"]["final_backend"] == "CPU"
     assert result["protocol"]["final_workers"] == 2
     assert result["backend_counts"]["GPU"] == 0
     assert len(result["selection"]["winners"]) == 4
     assert phases == {"search", "replicated-validation", "frozen-selection-reporting"}
-    assert not (output / "result.json").exists()
+    assert not (output / "result.sqlite3").exists()
 
 
 @pytest.mark.parametrize("seconds", ["nan", "inf", "0", "-1"])
@@ -360,12 +389,14 @@ def test_partially_initialized_output_is_never_overwritten(tmp_path):
     snapshot, _ = _snapshot(tmp_path)
     output = tmp_path / "partial"
     output.mkdir()
-    evidence = output / "protocol.json"
-    evidence.write_text('{"previous": "incomplete"}')
+    evidence = output / "protocol.sqlite3"
+    write_structured_object(evidence, {"previous": "incomplete"})
+    original_bytes = evidence.read_bytes()
     args = research._parser().parse_args(["--snapshot", str(snapshot), "--output", str(output), "--seconds", "60"])
     with pytest.raises(ValueError, match="already contains"):
         research.ResearchRun(args)
-    assert evidence.read_text() == '{"previous": "incomplete"}'
+    assert evidence.read_bytes() == original_bytes
+    assert read_structured_object(evidence) == {"previous": "incomplete"}
 
 
 def test_authorized_deadline_metadata_does_not_shift_with_initialization_clock(tmp_path, monkeypatch):
@@ -406,7 +437,7 @@ def test_repeated_ga_collisions_do_not_exhaust_an_unseen_candidate(tmp_path, mon
     assert run.candidate_collisions == 4
     monkeypatch.setattr(research, "_new_params", lambda *_args: dict(first))
     assert run.unseen_candidate("tft-price-field", "CPU") is None
-    assert not (run.output / "result.json").exists()
+    assert not (run.output / "result.sqlite3").exists()
 
 
 def test_cleanup_failure_cannot_leave_a_completed_result(tmp_path, monkeypatch):
@@ -429,9 +460,9 @@ def test_cleanup_failure_cannot_leave_a_completed_result(tmp_path, monkeypatch):
     monkeypatch.setattr(research, "_shutdown_owned_workers", cleanup_failed)
     with pytest.raises(RuntimeError, match="worker did not exit"):
         run.run()
-    assert not (output / "result.json").exists()
-    assert not (output / "smoke.json").exists()
-    assert json.loads((output / "status.json").read_text())["status"] == "failed"
+    assert not (output / "result.sqlite3").exists()
+    assert not (output / "smoke.sqlite3").exists()
+    assert read_structured_object(output / "status.sqlite3")["status"] == "failed"
 
 
 def test_endogenous_ablation_reports_paired_deltas_without_reselection():
@@ -468,11 +499,11 @@ def test_formal_ablation_stays_on_validation_between_selection_and_holdout(tmp_p
         if task["phase"] == "validation-ablation":
             assert len(task["frame"]) == 400
             assert not any(value for key, value in task["params"].items() if key.startswith("use_"))
-            frozen_selection.append((output / "selection.json").read_bytes())
+            frozen_selection.append((output / "selection.sqlite3").read_bytes())
         if task["phase"] == "frozen-selection-reporting":
             assert len(task["frame"]) == 500
-            assert (output / "factor-ablation.json").is_file()
-            assert (output / "selection.json").read_bytes() == frozen_selection[0]
+            assert (output / "factor-ablation.sqlite3").is_file()
+            assert (output / "selection.sqlite3").read_bytes() == frozen_selection[0]
         return {"strategy_id": task["strategy_id"], "params": task["params"], "phase": task["phase"],
                 "ticker": task["ticker"], "role": task.get("role", "candidate"),
                 "status": "ok", "feasible": True, "fitness": 70.0 if task["phase"] == "validation-ablation" else 60.0,
@@ -482,7 +513,7 @@ def test_formal_ablation_stays_on_validation_between_selection_and_holdout(tmp_p
     monkeypatch.setattr(research, "ProcessPoolExecutor", lambda max_workers, **_kwargs: ThreadPoolExecutor(max_workers=max_workers))
     run.run()
     assert phases.count("validation-ablation") == 12
-    result = json.loads((output / "result.json").read_text())
+    result = read_structured_object(output / "result.sqlite3")
     assert result["status"] == "completed"
     assert result["factor_ablation"]["selection_unchanged"] is True
     assert all(item["selected_minus_endogenous_only_points"] == -10.0 for item in result["factor_ablation"]["by_strategy"].values())

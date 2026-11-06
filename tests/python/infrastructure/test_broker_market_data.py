@@ -1,10 +1,12 @@
 """
 Tests for broker-backed market data normalization.
 
-Code version: v0.14.1
+Code version: v0.14.2
 """
 
 from __future__ import annotations
+
+from app.infrastructure.storage import read_market_frame, write_market_frame_atomic
 
 from datetime import datetime
 from pathlib import Path
@@ -236,10 +238,10 @@ class BrokerMarketDataTests(unittest.TestCase):
 
     def test_refresh_one_minute_store_refuses_to_overwrite_an_unreadable_cache(self) -> None:
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ_1m.parquet"
+            path = Path(tempdir) / "historical" / "QQQ_1m.sqlite3"
             self._assert_isolated_store_path(path)
             path.parent.mkdir(parents=True)
-            path.write_bytes(b"unreadable parquet cache")
+            path.write_bytes(b"unreadable SQLite cache")
             before_bytes = path.read_bytes()
 
             with (
@@ -249,7 +251,7 @@ class BrokerMarketDataTests(unittest.TestCase):
                 ),
                 patch("app.infrastructure.broker_market_data.ensure_market_store_dir"),
                 patch("app.infrastructure.broker_market_data.fetch_longbridge_one_minute_history") as fetch_mock,
-                patch("app.infrastructure.broker_market_data.write_parquet_atomic") as write_mock,
+                patch("app.infrastructure.broker_market_data.write_market_frame_atomic") as write_mock,
             ):
                 with self.assertRaisesRegex(OneMinuteStoreReadError, "refusing to overwrite"):
                     refresh_longbridge_one_minute_store("QQQ", self._longbridge_settings())
@@ -263,10 +265,10 @@ class BrokerMarketDataTests(unittest.TestCase):
         refreshed_dataset = market_frame("QQQ", intraday=True).assign(Close=lambda frame: frame["Close"] + 1.0)
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ_1m.parquet"
+            path = Path(tempdir) / "historical" / "QQQ_1m.sqlite3"
             self._assert_isolated_store_path(path)
             path.parent.mkdir(parents=True)
-            existing_dataset.to_parquet(path, index=False)
+            write_market_frame_atomic(path, existing_dataset, index=False)
             before_bytes = path.read_bytes()
 
             with (
@@ -276,14 +278,14 @@ class BrokerMarketDataTests(unittest.TestCase):
                 ),
                 patch("app.infrastructure.broker_market_data.ensure_market_store_dir"),
                 patch(
-                    "app.infrastructure.broker_market_data.pd.read_parquet",
+                    "app.infrastructure.broker_market_data.read_market_frame",
                     side_effect=[existing_dataset.copy(), OSError("concurrent cache corruption")],
                 ),
                 patch(
                     "app.infrastructure.broker_market_data.fetch_longbridge_one_minute_history",
                     return_value=refreshed_dataset,
                 ) as fetch_mock,
-                patch("app.infrastructure.broker_market_data.write_parquet_atomic") as write_mock,
+                patch("app.infrastructure.broker_market_data.write_market_frame_atomic") as write_mock,
             ):
                 with self.assertRaisesRegex(OneMinuteStoreReadError, "refusing to overwrite"):
                     refresh_longbridge_one_minute_store("QQQ", self._longbridge_settings())
@@ -291,7 +293,7 @@ class BrokerMarketDataTests(unittest.TestCase):
             fetch_mock.assert_called_once()
             write_mock.assert_not_called()
             self.assertEqual(path.read_bytes(), before_bytes)
-            pd.testing.assert_frame_equal(pd.read_parquet(path), existing_dataset)
+            pd.testing.assert_frame_equal(read_market_frame(path), existing_dataset)
 
     def test_refresh_one_minute_store_writes_only_to_an_isolated_cache(self) -> None:
         dataset = market_frame("QQQ", intraday=True).assign(
@@ -300,7 +302,7 @@ class BrokerMarketDataTests(unittest.TestCase):
         )
 
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ_1m.parquet"
+            path = Path(tempdir) / "historical" / "QQQ_1m.sqlite3"
             self._assert_isolated_store_path(path)
             path.parent.mkdir(parents=True)
             with (
@@ -321,11 +323,11 @@ class BrokerMarketDataTests(unittest.TestCase):
 
             fetch_mock.assert_called_once()
             self.assertTrue(path.exists())
-            pd.testing.assert_frame_equal(pd.read_parquet(path), refreshed)
+            pd.testing.assert_frame_equal(read_market_frame(path), refreshed)
 
     def test_one_minute_store_status_is_fail_closed_and_handles_short_history(self) -> None:
         with TemporaryDirectory() as tempdir:
-            path = Path(tempdir) / "historical" / "QQQ_1m.parquet"
+            path = Path(tempdir) / "historical" / "QQQ_1m.sqlite3"
             self._assert_isolated_store_path(path)
             path.parent.mkdir(parents=True)
             with (
@@ -346,7 +348,7 @@ class BrokerMarketDataTests(unittest.TestCase):
                 short_history = pd.DataFrame({
                     "Date": pd.to_datetime(["2026-07-01", "2026-07-23"]),
                 })
-                short_history.to_parquet(path, index=False)
+                write_market_frame_atomic(path, short_history, index=False)
                 self.assertTrue(has_recent_one_minute_store("QQQ"))
                 self.assertTrue(is_one_minute_store_fresh("QQQ"))
                 self.assertFalse(is_one_minute_store_complete("QQQ"))

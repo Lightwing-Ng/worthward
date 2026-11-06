@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.4
+Code version: v0.27.5
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
@@ -139,7 +139,7 @@ class MorePageTests(unittest.TestCase):
     def setUp(self) -> None:
         self._investment_temp_dir = TemporaryDirectory()
         temp_root = Path(self._investment_temp_dir.name)
-        self.investment_store_path = temp_root / "investment.parquet"
+        self.investment_store_path = temp_root / "investment.sqlite3"
         self.investment_cache_path = temp_root / "investment_cache" / "transactions_payload.json"
         self._investment_store_patch = patch(
             "app.web.runtime.INVESTMENT_STORE_PATH",
@@ -535,7 +535,7 @@ Fees: 0.12
         self.assertIn('value="futuhk"', body)
         self.assertIn('Futu (HK)', body)
         self.assertIn('enctype="multipart/form-data"', body)
-        self.assertIn('settings_store/investment.parquet', body)
+        self.assertIn('settings_store/investment.sqlite3', body)
         self.assertIn('id="investment_import_feedback_message"', body)
         self.assertIn('notice-floating-banner', body)
         self.assertIn('id="investment_import_submit_button"', body)

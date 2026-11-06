@@ -1,7 +1,9 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.19.1
+Code version: v0.21.0
+- Added: SQLite frame and structured-document persistence for local runtime data.
+- Added: Lossless SQLite investment snapshots with explicit verified Parquet migration.
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
 - Fixed: New investment imports can commit while preserving known historical source-evidence gaps.
 """
@@ -36,17 +38,19 @@ import pandas as pd
 from app.core.config import MARKET_STORE_DIR, SETTINGS_STORE_DIR
 from app.core.settings import get_settings
 from app.core.upload_limits import MAX_INVESTMENT_SOURCE_ARTIFACT_BYTES
+from app.infrastructure import investment_sqlite
+from app.core.object_sqlite import read_structured_object, write_structured_object
 
 LEGACY_INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.json"
-INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.parquet"
+INVESTMENT_STORE_PATH = SETTINGS_STORE_DIR / "investment.sqlite3"
 HISTORICAL_STORE_DIR = MARKET_STORE_DIR / "historical"
 PROFILES_STORE_DIR = MARKET_STORE_DIR / "profiles"
-PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.parquet"
+PROFILES_PARQUET_PATH = PROFILES_STORE_DIR / "profiles.sqlite3"
 LOGOS_STORE_DIR = MARKET_STORE_DIR / "logos"
 LEGACY_SEARCH_STORE_DIR = MARKET_STORE_DIR / "search"
 SEARCH_STORE_DIR = SETTINGS_STORE_DIR / "search"
-SEARCH_CACHE_PARQUET_PATH = SEARCH_STORE_DIR / "search_cache.parquet"
-TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.json"
+SEARCH_CACHE_PARQUET_PATH = SEARCH_STORE_DIR / "search_cache.sqlite3"
+TICKER_USAGE_STORE_PATH = SEARCH_STORE_DIR / "ticker_usage.sqlite3"
 
 PROFILE_SCOPE_LOCAL = "local_store"
 PROFILE_SCOPE_SEARCH = "search_cache"
@@ -99,8 +103,7 @@ def _ensure_market_store_directories() -> None:
             SEARCH_STORE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
-    _migrate_legacy_search_store()
-    _migrate_legacy_store_filenames()
+    # Importing and moving legacy sources belongs to the explicit migration tool.
 
 
 def _canonicalize_ticker_token(value: str) -> str:
@@ -505,12 +508,12 @@ def expand_tickers_with_store_lineage(tickers: list[str] | set[str] | tuple[str,
 
 
 def history_store_path_for(ticker: str) -> Path:
-    return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}.parquet"
+    return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}.sqlite3"
 
 
 def intraday_history_store_path_for(ticker: str, interval: str = "1m") -> Path:
     normalized_interval = str(interval).strip().lower() or "1m"
-    return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.parquet"
+    return HISTORICAL_STORE_DIR / f"{normalize_ticker(ticker)}_{normalized_interval}.sqlite3"
 
 
 def _hk_ticker_code_variants(symbol: str) -> list[str]:
@@ -588,6 +591,49 @@ def _empty_frame(columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame({column: pd.Series(dtype="object") for column in columns})
 
 
+def read_market_frame(
+    path: Path,
+    columns: list[str] | None = None,
+    *,
+    tail: int | None = None,
+) -> pd.DataFrame:
+    """Read a canonical SQLite frame or an explicitly selected legacy fixture."""
+    if Path(path).suffix.lower() == ".sqlite3":
+        from app.infrastructure.frame_sqlite import read_frame
+
+        return read_frame(Path(path), columns=columns, tail=tail)
+    frame = pd.read_parquet(path, columns=columns)
+    return frame.tail(tail) if tail is not None else frame
+
+
+def market_frame_info(path: Path) -> dict[str, object]:
+    """Read frame metadata without materializing complete history columns."""
+    if Path(path).suffix.lower() == ".sqlite3":
+        from app.infrastructure.frame_sqlite import frame_info
+
+        return frame_info(Path(path))
+    import pyarrow.parquet as pq
+
+    source = pq.ParquetFile(path)
+    return {
+        "row_count": source.metadata.num_rows,
+        "rows": source.metadata.num_rows,
+        "columns": source.schema_arrow.names,
+        "schema": source.schema_arrow,
+    }
+
+
+def write_market_frame_atomic(path: Path, table: pd.DataFrame, *, index: bool = False) -> None:
+    """Persist a complete frame without changing financial values or row identity."""
+    if Path(path).suffix.lower() == ".sqlite3":
+        from app.infrastructure.frame_sqlite import write_frame
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        write_frame(Path(path), table, index=index)
+        return
+    write_parquet_atomic(path, table, index=index)
+
+
 def _read_parquet_table(
     path: Path,
     columns: list[str],
@@ -598,14 +644,14 @@ def _read_parquet_table(
     if not path.exists():
         return _empty_frame(columns)
     if path.stat().st_size == 0:
-        if strict:
+        if strict or path.suffix.lower() == ".sqlite3":
             raise RuntimeError("The investment ledger exists but is empty and cannot be read safely.")
         return _empty_frame(columns)
 
     try:
-        table = pd.read_parquet(path)
+        table = read_market_frame(path)
     except Exception as exc:
-        if strict:
+        if strict or path.suffix.lower() == ".sqlite3":
             raise RuntimeError("The investment ledger could not be read safely.") from exc
         return _empty_frame(columns)
 
@@ -626,6 +672,9 @@ def _write_parquet_table(path: Path, table: pd.DataFrame, columns: list[str]) ->
         if column not in normalized.columns:
             normalized[column] = ""
     normalized = normalized[columns].fillna("")
+    if path.suffix.lower() == ".sqlite3":
+        write_market_frame_atomic(path, normalized, index=False)
+        return
     tmp_path = path.with_name(f"{path.stem}.{uuid4().hex}.tmp{path.suffix}")
     normalized.to_parquet(tmp_path, index=False)
     tmp_path.replace(path)
@@ -646,6 +695,11 @@ def write_parquet_atomic(path: Path, table: pd.DataFrame, *, index: bool = False
 def write_json_atomic(path: Path, payload: object) -> None:
     ensure_market_store_dir()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() == ".sqlite3":
+        from app.core.object_sqlite import write_object
+
+        write_object(path, payload)
+        return
     tmp_path = path.with_name(f"{path.stem}.{uuid4().hex}.tmp{path.suffix}")
     try:
         tmp_path.write_text(
@@ -666,6 +720,10 @@ def _investment_legacy_json_path_for(path: Path = INVESTMENT_STORE_PATH) -> Path
     if path.suffix.lower() == ".json":
         return path
     return path.with_suffix(".json")
+
+
+def _investment_lock_path_for(path: Path) -> Path:
+    return path if path.suffix.lower() == ".sqlite3" else _investment_parquet_path_for(path)
 
 
 def _investment_payload_to_table(payload: dict[str, object]) -> pd.DataFrame:
@@ -736,6 +794,8 @@ def _investment_table_to_payload(table: pd.DataFrame) -> dict[str, object]:
 
 
 def investment_store_path_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
+    if path.suffix.lower() == ".sqlite3":
+        return path
     parquet_path = _investment_parquet_path_for(path)
     if parquet_path.exists() and parquet_path.stat().st_size > 0:
         return parquet_path
@@ -751,6 +811,12 @@ def investment_store_exists(path: Path = INVESTMENT_STORE_PATH) -> bool:
 
 def load_investment_store_payload(path: Path = INVESTMENT_STORE_PATH) -> dict[str, object]:
     ensure_market_store_dir()
+    if path.suffix.lower() == ".sqlite3":
+        with market_store_file_lock(path):
+            if path.exists():
+                return investment_sqlite.load_payload(path)
+            _assert_no_legacy_investment_store(path)
+            return {}
     parquet_path = _investment_parquet_path_for(path)
     legacy_path = _investment_legacy_json_path_for(path)
     with market_store_file_lock(parquet_path):
@@ -785,6 +851,11 @@ def load_investment_store_payload(path: Path = INVESTMENT_STORE_PATH) -> dict[st
 
 
 def save_investment_store_payload(payload: dict[str, object], path: Path = INVESTMENT_STORE_PATH) -> None:
+    if path.suffix.lower() == ".sqlite3":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with market_store_file_lock(path):
+            investment_sqlite.save_payload(path, payload)
+        return
     parquet_path = _investment_parquet_path_for(path)
     with market_store_file_lock(parquet_path):
         _write_parquet_table(parquet_path, _investment_payload_to_table(payload), _INVESTMENT_STORE_COLUMNS)
@@ -795,6 +866,16 @@ def update_investment_store_payload(
         path: Path = INVESTMENT_STORE_PATH,
 ) -> Any:
     ensure_market_store_dir()
+    if path.suffix.lower() == ".sqlite3":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with market_store_file_lock(path):
+            current_payload = (
+                investment_sqlite.load_payload(path)
+                if path.exists() else _new_sqlite_investment_payload(path)
+            )
+            next_payload, result = updater(current_payload)
+            investment_sqlite.save_payload(path, next_payload)
+            return result
     parquet_path = _investment_parquet_path_for(path)
     legacy_path = _investment_legacy_json_path_for(path)
     with market_store_file_lock(parquet_path):
@@ -826,6 +907,72 @@ def update_investment_store_payload(
         next_payload, result = updater(current_payload)
         _write_parquet_table(parquet_path, _investment_payload_to_table(next_payload), _INVESTMENT_STORE_COLUMNS)
         return result
+
+
+def _assert_no_legacy_investment_store(path: Path) -> None:
+    if _investment_parquet_path_for(path).exists() or _investment_legacy_json_path_for(path).exists():
+        raise RuntimeError("Explicitly migrate the legacy investment ledger before using SQLite.")
+
+
+def _new_sqlite_investment_payload(path: Path) -> dict[str, object]:
+    _assert_no_legacy_investment_store(path)
+    return {}
+
+
+def migrate_investment_store_to_sqlite(
+    path: Path = INVESTMENT_STORE_PATH,
+    *,
+    source: Path | None = None,
+) -> dict[str, object]:
+    """Publish a verified equivalent database without overwriting any source bytes."""
+    path = Path(path)
+    if path.suffix.lower() != ".sqlite3":
+        raise ValueError("The investment migration target must end in .sqlite3.")
+    source = Path(source) if source is not None else _investment_parquet_path_for(path)
+    if source.resolve() == path.resolve() or source.suffix.lower() not in {".parquet", ".json"}:
+        raise ValueError("The investment migration requires a separate Parquet or JSON source.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with market_store_file_lock(path), market_store_file_lock(source):
+        source_before = source.stat()
+        source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        if source.suffix.lower() == ".parquet":
+            payload = _investment_table_to_payload(
+                _read_parquet_table(source, _INVESTMENT_STORE_COLUMNS, strict=True)
+            )
+        else:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise RuntimeError("The legacy investment ledger could not be read safely.")
+        payload_digest = investment_sqlite.payload_sha256(payload)
+        candidate = path.with_name(f".{path.stem}.{uuid4().hex}.migration.sqlite3")
+        already_exists = path.exists()
+        try:
+            if already_exists:
+                receipt = investment_sqlite.verify_database(path)
+            else:
+                investment_sqlite.save_payload(candidate, payload)
+                receipt = investment_sqlite.verify_database(candidate)
+            if receipt["payload_sha256"] != payload_digest:
+                raise RuntimeError("The SQLite investment ledger differs from its migration source.")
+            after = source.stat()
+            if (
+                (after.st_size, after.st_mtime_ns, after.st_ino)
+                != (source_before.st_size, source_before.st_mtime_ns, source_before.st_ino)
+                or hashlib.sha256(source.read_bytes()).hexdigest() != source_sha256
+            ):
+                raise RuntimeError("The investment migration source changed during verification.")
+            if not already_exists:
+                os.link(candidate, path)
+                investment_sqlite.fsync_directory(path.parent)
+            return {
+                **receipt,
+                "source_sha256": source_sha256,
+                "source_bytes": source_before.st_size,
+                "sqlite_bytes": path.stat().st_size,
+                "already_exists": already_exists,
+            }
+        finally:
+            candidate.unlink(missing_ok=True)
 
 
 def investment_evidence_dir_for(path: Path = INVESTMENT_STORE_PATH) -> Path:
@@ -985,7 +1132,7 @@ def materialize_investment_source_artifacts(
     raw_artifacts = payload.get("source_artifacts")
     if not isinstance(raw_artifacts, list):
         return dict(payload)
-    parquet_path = _investment_parquet_path_for(path)
+    parquet_path = _investment_lock_path_for(path)
     with market_store_file_lock(parquet_path):
         evidence_dir = investment_evidence_dir_for(path)
         _investment_evidence_directory_size(evidence_dir)
@@ -1083,7 +1230,7 @@ def verify_investment_source_artifacts(
         return
     if not isinstance(raw_artifacts, list):
         raise RuntimeError("Investment source evidence manifest list is malformed.")
-    parquet_path = _investment_parquet_path_for(path)
+    parquet_path = _investment_lock_path_for(path)
     with market_store_file_lock(parquet_path):
         _verify_investment_source_artifacts_locked(
             payload,
@@ -1160,7 +1307,7 @@ def verify_persisted_investment_source_artifacts(
     path: Path = INVESTMENT_STORE_PATH,
 ) -> int:
     """Verify the source-evidence manifests stored in one persisted investment ledger."""
-    parquet_path = _investment_parquet_path_for(path)
+    parquet_path = _investment_lock_path_for(path)
     with market_store_file_lock(parquet_path):
         payload = load_investment_store_payload(path)
         return _verify_investment_source_artifacts_locked(payload, path)
@@ -1171,7 +1318,13 @@ def clear_investment_store(path: Path = INVESTMENT_STORE_PATH) -> bool:
     parquet_path = _investment_parquet_path_for(path)
     legacy_path = _investment_legacy_json_path_for(path)
     evidence_dir = investment_evidence_dir_for(path)
-    with market_store_file_lock(parquet_path):
+    with (
+        market_store_file_lock(_investment_lock_path_for(path)),
+        market_store_file_lock(parquet_path),
+    ):
+        if path.suffix.lower() == ".sqlite3" and path.exists():
+            path.unlink()
+            removed = True
         if parquet_path.exists():
             parquet_path.unlink()
             removed = True
@@ -1522,30 +1675,15 @@ def list_local_tickers() -> list[str]:
 
 def list_historical_tickers() -> list[str]:
     ensure_market_store_dir()
-    # Best-effort cleanup of Longbridge-polluted "BAC.US.parquet" etc. to bare "BAC.parquet"
-    # so the local market store page and canonical storage use the project default (no .US for US).
-    for p in list(HISTORICAL_STORE_DIR.glob("*.US.parquet")):
-        if p.is_file():
-            bare = p.stem[:-3].rstrip(".") if p.stem.upper().endswith(".US") else p.stem
-            target = HISTORICAL_STORE_DIR / f"{bare}.parquet"
-            if not target.exists():
-                try:
-                    p.rename(target)
-                except Exception:
-                    pass
-            else:
-                try:
-                    p.unlink()
-                except Exception:
-                    pass
-    return sorted(
+    return sorted({
         ticker_from_store_path(path)
-        for path in HISTORICAL_STORE_DIR.glob("*.parquet")
+        for path in HISTORICAL_STORE_DIR.glob("*.sqlite3")
         if path.is_file()
+        and not path.name.startswith(".")
         and path.stat().st_size > 0
         and _INTRADAY_STORE_SUFFIX_PATTERN.search(path.stem) is None
         and _TEMP_STORE_SUFFIX_PATTERN.search(path.stem) is None
-    )
+    })
 
 
 def has_logo_asset(ticker: str) -> bool:
@@ -1560,31 +1698,32 @@ def is_store_entry_fresh(path: Path) -> bool:
     return modified_at >= datetime.now(timezone.utc).date()
 
 
-STRATEGY_USAGE_STORE_PATH = SEARCH_STORE_DIR / "strategy_usage.json"
+STRATEGY_USAGE_STORE_PATH = SEARCH_STORE_DIR / "strategy_usage.sqlite3"
 
 
 def load_ticker_usage_store() -> dict[str, dict[str, int | str]]:
     ensure_market_store_dir()
     if not TICKER_USAGE_STORE_PATH.exists():
         return {}
-    try:
-        return json.loads(TICKER_USAGE_STORE_PATH.read_text())
-    except Exception:
-        return {}
+    payload = read_structured_object(TICKER_USAGE_STORE_PATH)
+    if not isinstance(payload, dict):
+        raise ValueError("The ticker usage store must contain an object.")
+    return payload
 
 
 def record_ticker_usage(tickers: list[str]) -> None:
     ensure_market_store_dir()
-    payload = load_ticker_usage_store()
-    now = datetime.now(timezone.utc).isoformat()
-    for ticker in tickers:
-        normalized = normalize_ticker(ticker)
-        current = payload.get(normalized, {"count": 0, "last_used_at": now})
-        payload[normalized] = {
-            "count": int(current.get("count", 0)) + 1,
-            "last_used_at": now,
-        }
-    TICKER_USAGE_STORE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    with market_store_file_lock(TICKER_USAGE_STORE_PATH):
+        payload = load_ticker_usage_store()
+        now = datetime.now(timezone.utc).isoformat()
+        for ticker in tickers:
+            normalized = normalize_ticker(ticker)
+            current = payload.get(normalized, {"count": 0, "last_used_at": now})
+            payload[normalized] = {
+                "count": int(current.get("count", 0)) + 1,
+                "last_used_at": now,
+            }
+        write_structured_object(TICKER_USAGE_STORE_PATH, payload)
 
 
 def top_used_tickers(query: str = "", limit: int = 5) -> list[str]:
@@ -1609,22 +1748,23 @@ def load_strategy_usage_store() -> dict[str, dict[str, int | str]]:
     ensure_market_store_dir()
     if not STRATEGY_USAGE_STORE_PATH.exists():
         return {}
-    try:
-        return json.loads(STRATEGY_USAGE_STORE_PATH.read_text())
-    except Exception:
-        return {}
+    payload = read_structured_object(STRATEGY_USAGE_STORE_PATH)
+    if not isinstance(payload, dict):
+        raise ValueError("The strategy usage store must contain an object.")
+    return payload
 
 
 def record_strategy_usage(strategy_id: str) -> None:
     ensure_market_store_dir()
-    payload = load_strategy_usage_store()
-    now = datetime.now(timezone.utc).isoformat()
-    current = payload.get(strategy_id, {"count": 0, "last_used_at": now})
-    payload[strategy_id] = {
-        "count": int(current.get("count", 0)) + 1,
-        "last_used_at": now,
-    }
-    STRATEGY_USAGE_STORE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    with market_store_file_lock(STRATEGY_USAGE_STORE_PATH):
+        payload = load_strategy_usage_store()
+        now = datetime.now(timezone.utc).isoformat()
+        current = payload.get(strategy_id, {"count": 0, "last_used_at": now})
+        payload[strategy_id] = {
+            "count": int(current.get("count", 0)) + 1,
+            "last_used_at": now,
+        }
+        write_structured_object(STRATEGY_USAGE_STORE_PATH, payload)
 
 
 def top_used_strategies(limit: int = 3) -> list[str]:
