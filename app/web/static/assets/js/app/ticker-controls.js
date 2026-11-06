@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.2.1 */
 (() => {
     const create = (context) => {
         const {
@@ -1361,7 +1361,9 @@
                 await showRecentItems();
             });
             input.addEventListener("blur", () => {
-                window.setTimeout(closePanel, 120);
+                window.setTimeout(() => {
+                    if (document.activeElement !== input) closePanel();
+                }, 120);
                 if (input.dataset.composing === "1") return;
                 void validateTickerExistence(input, {preferFresh: true}).then((result) => {
                     if (result !== false) finalizeTickerLoad("ticker-change");

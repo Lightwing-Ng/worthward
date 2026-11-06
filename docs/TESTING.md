@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.1`
+Documentation version: `v1.104.2`
 
 ## SQLite persistence verification
 
@@ -110,6 +110,11 @@ assets changed. Changes to ML execution require its tagged integration tests.
 Report which affected boundaries were covered and any that remain untested.
 The repository report lock, isolated pytest stores, host E2E lock, and user-owned
 port `8688` boundary remain in force for every selection.
+
+Each hosted Python matrix job has a 90-minute budget for the complete gate.
+Slower runners can exceed one hour while tests continue making progress; this
+job budget preserves all model execution, individual test timeouts, assertions,
+and coverage thresholds.
 
 ## Schwab authoritative trade reconciliation
 
