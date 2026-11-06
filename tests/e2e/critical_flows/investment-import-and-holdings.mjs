@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.3.5 */
 import {
     expect,
     test,
@@ -1969,9 +1969,14 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     await page.locator('label[for="investment_view_holdings"]').click();
 
     const bodyRows = page.locator(
-        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll tbody > tr',
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll tbody > tr:not([data-investment-rewards-breakdown-row])',
     );
     await expect(bodyRows).toHaveCount(14);
+    const rewardDetails = page.locator(
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll [data-investment-rewards-breakdown-row]',
+    );
+    await expect(rewardDetails).toHaveCount(1);
+    await expect(rewardDetails).toBeHidden();
     const rewardRow = bodyRows.last();
     await expect(rewardRow).toHaveAttribute('data-investment-broker-rewards-row', '');
     await expect(rewardRow.locator('.ticker-identity-symbol')).toHaveText('Rewards');
