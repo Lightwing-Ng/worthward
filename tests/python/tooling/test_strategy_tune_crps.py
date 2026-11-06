@@ -1,4 +1,4 @@
-"""Backtest CRPS skill objective for every Price Field strategy. Code version: v1.0.1."""
+"""Backtest CRPS skill objective for every Price Field strategy. Code version: v1.0.2."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from app.core.config import MARKET_STORE_DIR
+from app.infrastructure.storage import write_market_frame_atomic
 from app.services.market.market_data import history_store_path_for_interval
 from app.services.research import price_field_market_factors
 from app.services.research.strategy_tuning import (
@@ -345,7 +346,7 @@ def test_offline_subprocess_reports_the_kpi_without_writing_stores(tmp_path):
     frame["Adj Close"] = frame["Close"]
     frame["Dividends"] = 0.0
     frame["Stock Splits"] = 0.0
-    frame.to_parquet(local_history, index=False)
+    write_market_frame_atomic(local_history, frame, index=False)
     original = local_history.read_bytes()
     output = tmp_path / "research"
     environment = {

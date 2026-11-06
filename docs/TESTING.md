@@ -1,8 +1,19 @@
 # Testing guide
 
-Documentation version: `v1.104.0`
+Documentation version: `v1.104.1`
 
 ## SQLite persistence verification
+
+Fixtures obtained from canonical market-store path helpers must use
+`write_market_frame_atomic`, including tagged offline CLI tests. Writing
+Parquet bytes to a `.sqlite3` path is invalid even when a listing-only test
+does not open that file. Preserve explicit legacy paths for tests that actually
+exercise the legacy adapter.
+
+Current-cash FX browser fixtures pin browser wall time to their evidence date
+without pausing timers. Keep an explicit expired-rate control so a static
+historical fixture cannot become stale as the calendar advances, or accidentally
+weaken the production freshness boundary.
 
 SQLite tests use temporary stores and synthetic fixtures. Verify logical payload
 equality separately from SQLite integrity, source-byte preservation, and runtime

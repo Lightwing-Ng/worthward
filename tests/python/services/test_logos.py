@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.9.2
+Code version: v0.9.3
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from app.infrastructure.storage import (
     intraday_history_store_path_for,
     logo_store_path_for,
     resolve_logo_store_path,
+    write_market_frame_atomic,
 )
 from app.services.market.logos import (
     _load_yfinance_ticker_info,
@@ -401,12 +402,16 @@ class LogoServiceTests(unittest.TestCase):
 
         try:
             history_path.parent.mkdir(parents=True, exist_ok=True)
-            pd.DataFrame(
-                {
-                    "Date": pd.to_datetime(["2026-04-01"]),
-                    "Close": [1.23],
-                }
-            ).to_parquet(history_path, index=False)
+            write_market_frame_atomic(
+                history_path,
+                pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime(["2026-04-01"]),
+                        "Close": [1.23],
+                    }
+                ),
+                index=False,
+            )
             logo_path.parent.mkdir(parents=True, exist_ok=True)
             logo_path.write_bytes(b"\x89PNG\r\n\x1a\nfixture-logo")
 
@@ -441,18 +446,26 @@ class LogoServiceTests(unittest.TestCase):
 
         try:
             history_path.parent.mkdir(parents=True, exist_ok=True)
-            pd.DataFrame(
-                {
-                    "Date": pd.to_datetime(["2026-04-01"]),
-                    "Close": [101.23],
-                }
-            ).to_parquet(history_path, index=False)
-            pd.DataFrame(
-                {
-                    "Date": pd.to_datetime(["2026-04-01 09:30"]),
-                    "Close": [101.25],
-                }
-            ).to_parquet(intraday_path, index=False)
+            write_market_frame_atomic(
+                history_path,
+                pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime(["2026-04-01"]),
+                        "Close": [101.23],
+                    }
+                ),
+                index=False,
+            )
+            write_market_frame_atomic(
+                intraday_path,
+                pd.DataFrame(
+                    {
+                        "Date": pd.to_datetime(["2026-04-01 09:30"]),
+                        "Close": [101.25],
+                    }
+                ),
+                index=False,
+            )
             logo_path.parent.mkdir(parents=True, exist_ok=True)
             logo_path.write_bytes(b"fake-logo")
 

@@ -1,8 +1,13 @@
-/* Code version: v1.0.5 */
+/* Code version: v1.0.6 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
-const loadHoldings = async (page, {foreignCash = false, cashType = 'deposit', fx = {}} = {}) => {
+const loadHoldings = async (page, {
+    foreignCash = false, cashType = 'deposit', fx = {},
+    valuationTime = '2026-01-02T12:00:00Z',
+} = {}) => {
+    // Keep the dated fixture independent of wall time while timers advance.
+    await page.clock.setFixedTime(new Date(valuationTime));
     await page.route('**/api/investment/transactions*', async (route) => {
         if (route.request().method() !== 'GET') return route.abort();
         await route.fulfill({json: {
@@ -90,6 +95,16 @@ test('available FX restores complete Holdings valuation', async ({page}) => {
     const holdings = page.locator('#investment_holdings_panel');
     await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('10,110.00');
     await expect(holdings).not.toContainText('Partial · total unavailable');
+});
+
+test('stale market FX still withholds current Holdings cash and equity', async ({page}) => {
+    await loadHoldings(page, {
+        valuationTime: '2026-01-10T12:00:00Z',
+        fx: {HKD: {dates: ['2026-01-02'], values: {'2026-01-02': 10}}},
+    });
+    const holdings = page.locator('#investment_holdings_panel');
+    await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).toHaveText('-');
+    await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('-');
 });
 
 test('missing interest FX invalidates P&L even when every stock is calculable', async ({page}) => {
