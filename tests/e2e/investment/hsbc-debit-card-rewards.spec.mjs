@@ -1,4 +1,4 @@
-/* Code version: v1.0.2
+/* Code version: v1.0.3
  * Anonymous intercepted bank cash verifies cashback without touching a store.
  */
 import {expect, test} from '@playwright/test';
@@ -43,11 +43,15 @@ const openRewards = async (page) => {
     await rewards.locator('[data-investment-metric-breakdown-trigger]').click();
     return rewards.locator('.investment-stock-details-metric-breakdown');
 };
-const mockBank = (page, {rows = transactions(), missingFx = false} = {}) => mockInvestmentReadApis(page, {
-    transactions: rows, startingCash: 0, brokers: ['hsbc', 'ibkr'],
-    fxRateHistoryByCurrency: missingFx ? {HKD: fxHistory.HKD} : fxHistory,
-    intradayRows: () => [],
-});
+const mockBank = async (page, {rows = transactions(), missingFx = false} = {}) => {
+    // All fixture activity is dated on or before this current market FX date.
+    await page.clock.setFixedTime(new Date('2026-02-03T12:00:00Z'));
+    return mockInvestmentReadApis(page, {
+        transactions: rows, startingCash: 0, brokers: ['hsbc', 'ibkr'],
+        fxRateHistoryByCurrency: missingFx ? {HKD: fxHistory.HKD} : fxHistory,
+        intradayRows: () => [],
+    });
+};
 
 for (const width of [1280, 390]) {
     test(`HSBC debit-card cashback and campaign rewards stay separate from KOL at ${width}px`, async ({page}) => {
