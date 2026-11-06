@@ -1,6 +1,6 @@
 """Investment import domain: merge identity.
 
-Code version: v0.5.1
+Code version: v0.5.2
 - Fixed: Same-order HSBC cash imports with an unconfirmed execution price retain
   an existing final cash-derived price without replacing new cash evidence.
 - Fixed: Schwab source aliases start with the merged canonical identity so
@@ -40,10 +40,12 @@ from app.services.investment.importing.support import (
 
 import app.services.investment.importing.basics as _ii_basics
 
+# Preserve the historical module aliases independently of the pure helper exports.
+import app.services.investment.importing.brokers.bochk as _ii_bochk  # noqa: F401
+import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash  # noqa: F401
+
 from app.services.investment.importing.merge.currency_balances import (
     HSBC_CURRENCY_ALIASES as HSBC_CURRENCY_ALIASES,
-    _ii_bochk as _ii_bochk,
-    _ii_hsbc_cash as _ii_hsbc_cash,
     _decimal_to_str as _decimal_to_str,
     _normalize_hsbc_currency_code as _normalize_hsbc_currency_code,
     _normalize_currency_balance_map as _normalize_currency_balance_map,

@@ -1,13 +1,17 @@
 """The investment-import compatibility boundary is explicit and executable.
 
-Code version: v1.0.1
+Code version: v1.0.2
 """
 
 from __future__ import annotations
 
 import ast
 import importlib
+import os
 from pathlib import Path
+import subprocess
+import sys
+from textwrap import dedent
 from unittest.mock import patch
 
 import pytest
@@ -37,6 +41,83 @@ SEAM_ARGUMENTS: dict[str, tuple[tuple, dict]] = {
     "has_same_hsbc_cash_source_row": (({"a": 1}, {"a": 1}), {}),
     "build_investment_internal_transfer_binding_index": (([],), {}),
 }
+
+
+@pytest.mark.parametrize("first_module", [
+    "app.services.investment.importing.merge.currency_balances",
+    "app.services.investment.importing.merge.identity",
+    "app.services.investment_import",
+], ids=["currency-helper-first", "identity-first", "facade-first"])
+def test_currency_normalizers_preserve_cold_import_and_facade_contracts(
+    first_module, tmp_path,
+):
+    probe = dedent("""
+        import importlib
+        from pathlib import Path
+        import sys
+
+        assert not any(name.startswith('app.services.investment') for name in sys.modules)
+        first = importlib.import_module(sys.argv[1])
+        assert Path(first.__file__).resolve().is_relative_to(Path.cwd().resolve())
+        # Call before explicitly importing the other entrypoints so lazy broker
+        # dependencies must also initialize correctly from the helper-first path.
+        assert first._normalize_currency_balance_map({'USD': '0.00'}) == {'USD': '0'}
+        helper = importlib.import_module('app.services.investment.importing.merge.currency_balances')
+        identity = importlib.import_module('app.services.investment.importing.merge.identity')
+        facade = importlib.import_module('app.services.investment_import')
+        names = (
+            '_normalize_hsbc_currency_code', '_normalize_currency_balance_map',
+            '_normalize_hsbc_currency_balance_map', '_normalize_bochk_currency_balance_map',
+            '_normalize_bochk_subaccount_balance_map',
+        )
+        for name in names:
+            assert getattr(identity, name) is getattr(helper, name)
+            assert getattr(facade, name) is getattr(helper, name)
+        assert identity._ii_bochk is importlib.import_module('app.services.investment.importing.brokers.bochk')
+        assert identity._ii_hsbc_cash is importlib.import_module('app.services.investment.importing.brokers.hsbc.cash')
+        assert identity.HSBC_CURRENCY_ALIASES is helper.HSBC_CURRENCY_ALIASES
+        assert identity._decimal_to_str is helper._decimal_to_str
+        assert facade._normalize_hsbc_currency_code(' rmb ') == 'CNH'
+        assert facade._normalize_currency_balance_map({
+            ' usd ': '1.25', 'USD': '-1.25', 'HKD': '2.30', 'bad': None,
+        }) == {'USD': '0', 'HKD': '2.30'}
+        assert facade._normalize_hsbc_currency_balance_map({
+            ' cny ': '1.20', 'RMB': '2.30', 'HKD': '0.00', 'unknown': '9',
+        }) == {'CNH': '3.50', 'HKD': '0.00'}
+        assert facade._normalize_bochk_currency_balance_map({
+            'CNY': '1.20', 'RMB': '2.30', 'USD': '0.00',
+        }) == {'CNH': '3.50', 'USD': '0'}
+        original = {'old:CNY': {
+            'account_number': ' ISOLATED ', 'currency': 'CNY', 'amount': '0.00',
+            'source': {'native': True, 'unknown': None},
+        }}
+        expected = {'ISOLATED:CNH': {
+            'account_number': 'ISOLATED', 'currency': 'CNH', 'currency_raw': 'CNY',
+            'amount': '0.00', 'source': {'native': True, 'unknown': None},
+        }}
+        assert facade._normalize_bochk_subaccount_balance_map(original) == expected
+        assert original['old:CNY']['account_number'] == ' ISOLATED '
+        assert 'currency_raw' not in original['old:CNY']
+        for name in names[1:]:
+            assert getattr(facade, name)(None) == {}
+        print('cold import and currency contracts verified')
+    """)
+    environment = {
+        **os.environ,
+        "WORTHWARD_SETTINGS_STORE_DIR": str(tmp_path / "settings"),
+        "WORTHWARD_MARKET_STORE_DIR": str(tmp_path / "market"),
+        "WORTHWARD_COMPUTE_ROOT": str(tmp_path / "compute"),
+        "WORTHWARD_REMOTE_MARKET_ACCESS": "disabled",
+        "WORTHWARD_LONGBRIDGE_CLI_ACCESS": "disabled",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    completed = subprocess.run(
+        [sys.executable, "-B", "-c", probe, first_module],
+        cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True,
+        timeout=60, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "cold import and currency contracts verified"
 
 
 @pytest.mark.parametrize("seam_name", sorted(compat.PATCHABLE_SEAMS))

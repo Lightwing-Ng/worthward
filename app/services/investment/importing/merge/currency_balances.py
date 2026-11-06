@@ -1,6 +1,6 @@
 """Normalize imported currency balance maps without changing source meaning.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from __future__ import annotations
@@ -14,9 +14,6 @@ from app.services.investment.importing.support import (
     _normalize_text,
 )
 
-import app.services.investment.importing.brokers.bochk as _ii_bochk
-import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
-
 
 def _normalize_hsbc_currency_code(value: Any) -> str:
     return HSBC_CURRENCY_ALIASES.get(_normalize_text(value).upper(), "")
@@ -25,6 +22,9 @@ def _normalize_hsbc_currency_code(value: Any) -> str:
 def _normalize_currency_balance_map(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
+    # Broker modules import merge identity; resolve them after this helper is initialized.
+    import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
     normalized: dict[str, Decimal] = {}
     for raw_currency, raw_amount in value.items():
         currency = _normalize_text(raw_currency).upper()
@@ -41,6 +41,8 @@ def _normalize_currency_balance_map(value: Any) -> dict[str, str]:
 def _normalize_hsbc_currency_balance_map(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
+    import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
     normalized: dict[str, Decimal] = {}
     for raw_currency, raw_amount in value.items():
         currency = _normalize_hsbc_currency_code(raw_currency)
@@ -57,6 +59,9 @@ def _normalize_hsbc_currency_balance_map(value: Any) -> dict[str, str]:
 def _normalize_bochk_currency_balance_map(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
+    import app.services.investment.importing.brokers.bochk as _ii_bochk
+    import app.services.investment.importing.brokers.hsbc.cash as _ii_hsbc_cash
+
     normalized: dict[str, Decimal] = {}
     for raw_currency, raw_amount in value.items():
         currency = _ii_bochk._normalize_bochk_currency_code(raw_currency)
@@ -74,6 +79,8 @@ def _normalize_bochk_subaccount_balance_map(value: Any) -> dict[str, dict[str, A
     """Normalize BOCHK subaccount balances while retaining printed currency labels."""
     if not isinstance(value, dict):
         return {}
+    import app.services.investment.importing.brokers.bochk as _ii_bochk
+
     normalized: dict[str, dict[str, Any]] = {}
     for raw_key, raw_balance in value.items():
         if not isinstance(raw_balance, dict):
