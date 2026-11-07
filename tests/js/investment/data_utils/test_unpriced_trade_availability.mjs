@@ -168,3 +168,35 @@ test('existing broker-authoritative realized proof survives unknown execution pr
         assert.equal(summary.unrealizedPnl, 4);
     });
 });
+
+test('another account reconstructed cost cannot turn partial unknown aggregate cost into zero', () => {
+    withData({broker_summaries: {ibkr: {
+        broker: 'ibkr', account: 'RECONSTRUCTED',
+        position_snapshot_authoritative: true, position_snapshot_as_of: '2026-01-02',
+        position_snapshot: {SAMPLE: {quantity: '2', cost_basis: '20', cost_price: '10',
+            cost_basis_status: 'known', as_of: '2026-01-02'}},
+        performance_snapshot_authoritative: true, performance_snapshot_as_of: '2026-01-02',
+        performance_snapshot: {SAMPLE: {currency: 'USD', realized_total: '2'}},
+    }}}, (utils) => {
+        const [summary] = utils.buildTickerSummaries([
+            trade('buy', 3, 10, '2026-01-01', 'RECONSTRUCTED'),
+            trade('sell', 1, 12, '2026-01-02', 'RECONSTRUCTED'),
+            trade('buy', 1, 11, '2026-01-03', 'RECONSTRUCTED'),
+            trade('buy', 2, 10, '2026-01-01', 'UNKNOWN'),
+            trade('buy', 1, undefined, '2026-01-04', 'UNKNOWN'),
+        ], {SAMPLE: 12}, 0, {});
+        const reconstructed = summary.realizedPnlAccounts.find((row) => row.accountId === 'RECONSTRUCTED');
+        assert.equal(reconstructed.reconstructedPositionShares, 3);
+        assert.equal(reconstructed.reconstructedPositionCostBasis, 31);
+        assert.equal(reconstructed.status, 'complete');
+        assert.equal(reconstructed.realizedPnl, 2);
+        assert.equal(summary.realizedPnl, 2);
+        assert.equal(summary.realizedPnlUnavailable, false);
+        assert.equal(summary.shares, 6);
+        assert.equal(summary.costBasisStatus, 'partial');
+        assert.equal(summary.totalCost, null);
+        assert.equal(summary.averagePrice, null);
+        assert.equal(summary.unrealizedPnl, null);
+        assert.equal(summary.unrealizedPnlUnavailable, true);
+    });
+});

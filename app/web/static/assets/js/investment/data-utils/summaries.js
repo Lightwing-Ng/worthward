@@ -812,7 +812,7 @@ export function createInvestmentSummaryUtils(runtime) {
                 && Number.isFinite(Number(result.reconstructedPositionShares))
                 && Number.isFinite(Number(result.reconstructedPositionCostBasis))
             ));
-            if (reconstructedPositionResults.length && Number.isFinite(Number(totalCost))) {
+            if (reconstructedPositionResults.length && Number.isFinite(totalCost)) {
                 if (
                     snapshotEntry
                     && reconstructedPositionResults.length === 1
