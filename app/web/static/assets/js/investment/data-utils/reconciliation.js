@@ -1,7 +1,8 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.0
+ * - Fixed: Missing execution prices cannot become known zero-cost inventory or realized proof.
  * - Added: Explicit broker snapshot scopes retain positions-only accounts.
  * - Fixed: Dated gains, income, and residual basis share the verified matcher.
  * - Fixed: Known FIFO-reconstructed transfers request matching FIFO inventory
@@ -1795,8 +1796,8 @@ export function createInvestmentReconciliationUtils(runtime) {
                 return Math.abs(economicAmount) / quantity;
             }
         }
-        const price = getTransactionPrice(txn);
-        return Number.isFinite(price) ? price : null;
+        const rawPrice = txn?.normalized?.unit_price ?? txn?.price;
+        return getAuthoritativeSnapshotFiniteNumber(rawPrice);
     }
 
     function getTransactionEffectiveUnitPrice(txn, quantityOverride = null) {
@@ -1861,16 +1862,44 @@ export function createInvestmentReconciliationUtils(runtime) {
                 : getTransactionEffectiveUnitPrice(txn, quantity);
         };
         if (
-            normalizedType === 'buy'
+            ['buy', 'sell'].includes(normalizedType)
             && quantity !== null
             && !Number.isNaN(quantity)
         ) {
-            summary.buyCount += 1;
-            summary.buyQuantity += quantity;
+            const isBuy = normalizedType === 'buy';
+            const previousShares = Number(summary.shares) || 0;
+            const previousBasisStatus = summary.costBasisStatus;
+            const previousRealized = Number(summary.realizedPnl) || 0;
+            // Overrides may scale an evidenced price; a calculated zero is not source evidence.
+            const evidencedPrice = getTransactionEvidencedUnitPrice(txn, quantity);
+            const hasPriceEvidence = evidencedPrice !== null
+                && Number.isFinite(evidencedPrice) && evidencedPrice >= 0;
+            const closesPosition = isBuy ? previousShares < -1e-9 : previousShares > 1e-9;
+            summary[isBuy ? 'buyCount' : 'sellCount'] += 1;
+            summary[isBuy ? 'buyQuantity' : 'sellQuantity'] += quantity;
             summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
-            applyDirectionalTrade(summary, 'long', quantity, resolveTradeUnitPrice());
+            applyDirectionalTrade(summary, isBuy ? 'long' : 'short', quantity, resolveTradeUnitPrice());
+            const opensPosition = isBuy
+                ? summary.shares > Math.max(0, previousShares) + 1e-9
+                : summary.shares < Math.min(0, previousShares) - 1e-9;
+            if (!hasPriceEvidence && opensPosition) {
+                const retainsKnownInventory = ['known', 'partial'].includes(previousBasisStatus)
+                    && (isBuy ? previousShares > 1e-9 : previousShares < -1e-9);
+                summary.costBasisStatus = retainsKnownInventory ? 'partial' : 'unknown';
+            }
+            const brokerRealizedPnl = preferBrokerRealizedPnl && (!isBuy || closesPosition)
+                ? getTransactionBrokerRealizedPnl(txn) : null;
+            if (brokerRealizedPnl !== null) {
+                summary.realizedPnl = previousRealized + brokerRealizedPnl;
+                summary.brokerRealizedSellCount += 1;
+            } else if (
+                (closesPosition && (!hasPriceEvidence || previousBasisStatus !== 'known'))
+                || (!isBuy && (previousShares < quantity - 1e-9 || previousBasisStatus !== 'known'))
+            ) {
+                summary.realizedPnlStatus = 'incomplete';
+            }
             if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-            return 0;
+            return (Number(summary.realizedPnl) || 0) - previousRealized;
         }
         if (normalizedType === 'grant' && quantity !== null && !Number.isNaN(quantity)) {
             openPositionLots(summary, 'long', quantity, 0);
@@ -1905,29 +1934,6 @@ export function createInvestmentReconciliationUtils(runtime) {
             }
             if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
             return 0;
-        }
-        if (normalizedType === 'sell' && quantity !== null && !Number.isNaN(quantity)) {
-            const sharesBeforeSell = Number(summary.shares) || 0;
-            const costBasisStatusBeforeSell = summary.costBasisStatus;
-            const realizedBeforeSell = Number(summary.realizedPnl) || 0;
-            applyDirectionalTrade(summary, 'short', quantity, resolveTradeUnitPrice());
-            summary.sellCount += 1;
-            summary.sellQuantity += quantity;
-            summary.lastTradeDate = ledgerDate || summary.lastTradeDate;
-            const brokerRealizedPnl = preferBrokerRealizedPnl
-                ? getTransactionBrokerRealizedPnl(txn)
-                : null;
-            if (brokerRealizedPnl !== null) {
-                summary.realizedPnl = realizedBeforeSell + brokerRealizedPnl;
-                summary.brokerRealizedSellCount += 1;
-            } else if (
-                sharesBeforeSell < quantity - 1e-9
-                || costBasisStatusBeforeSell !== 'known'
-            ) {
-                summary.realizedPnlStatus = 'incomplete';
-            }
-            if (isFlatPosition(summary.shares)) summary.lastCloseDate = ledgerDate;
-            return (Number(summary.realizedPnl) || 0) - realizedBeforeSell;
         }
         if (normalizedType === 'transfer_in' && quantity !== null && !Number.isNaN(quantity)) {
             const carriedCostBasis = getTransactionDerivedCostBasis(txn, 'carried');

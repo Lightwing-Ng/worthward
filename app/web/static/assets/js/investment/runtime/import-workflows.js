@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.2.2
+ * Code version: v1.2.3
+ * - Fixed: Current unrealized uncertainty does not erase verified realized detail rows.
  * - Fixed: Native paste and clipboard buttons share HSBC capture validation.
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
  * - Fixed: HSBC paste validation refreshes the browser write session first.
@@ -534,7 +535,7 @@ function buildSafeInvestmentStockDetailRows(processedTransactions, ticker) {
         const pnlUnavailable = runtime.isInvestmentAggregateSecurityTransferPnlUnavailable(ticker)
             || runtime.state.investmentTickerSummariesCache.some((summary) => (
                 runtime.normalizeInvestmentTicker(summary?.ticker) === runtime.normalizeInvestmentTicker(ticker)
-                && summary?.pnlUnavailable === true
+                && runtime.isInvestmentRealizedPnlUnavailable(summary)
             ));
         if (!pnlUnavailable) return detailRows;
         return detailRows.map((row) => ({

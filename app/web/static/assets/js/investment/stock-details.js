@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.41.2
+ * Code version: v0.42.0
+ * - Fixed: Historical P&L uses independent realized and point-in-time basis coverage.
  * - Fixed: Personal chip bars use one uniform vertical thickness.
  * - Changed: Loads the shared current-cash FX provenance utilities.
  * - Added: Personal chips and immutable entry-price anchors share the price axis.
@@ -27,7 +28,9 @@ import '../backtest/probability-grid.js?v=backtest-probability-grid-v0.35.0';
 
 import {
     aggregateInvestmentScopedPositionStates,
-} from './data-utils.js?v=investment-data-utils-v1.124.0';
+    isInvestmentRealizedPnlUnavailable,
+    parseInvestmentOptionalNumber,
+} from './data-utils.js?v=investment-data-utils-v1.125.0';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -82,7 +85,40 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.41.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.0';
+
+export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
+    ledgerDate,
+    quoteCurrency,
+    fxTimeline,
+    baseCurrency,
+    convertAmountToBaseCurrency,
+    securityTransferPnlUnavailable = false,
+} = {}) {
+    const shares = parseInvestmentOptionalNumber(snapshot?.shares);
+    const closePrice = parseInvestmentOptionalNumber(snapshot?.close);
+    const averagePrice = parseInvestmentOptionalNumber(snapshot?.averagePrice);
+    if (
+        securityTransferPnlUnavailable
+        || !ledgerDate
+        || shares === null
+        || Math.abs(shares) <= 1e-9
+        || closePrice === null
+        || closePrice <= 0
+        || averagePrice === null
+        || averagePrice < 0
+        || snapshot?.hasMixedPositionCurrencies === true
+        || (snapshot?.costBasisStatus && snapshot.costBasisStatus !== 'known')
+    ) return null;
+
+    const unrealizedPnlLocal = shares > 0
+        ? (closePrice - averagePrice) * shares
+        : (averagePrice - closePrice) * Math.abs(shares);
+    const unrealizedPnl = convertAmountToBaseCurrency(
+        unrealizedPnlLocal, quoteCurrency, ledgerDate, fxTimeline, baseCurrency,
+    );
+    return Number.isFinite(unrealizedPnl) ? unrealizedPnl : null;
+}
 
 export {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
@@ -423,14 +459,14 @@ export function createInvestmentStockDetailsUtils({
             realizedPnlByDate,
             normalizeLedgerDate,
         );
-        const fallbackRealizedPnl = Number(
+        const fallbackRealizedPnl = parseInvestmentOptionalNumber(
             canonicalReconciliation
             && Object.prototype.hasOwnProperty.call(canonicalReconciliation, 'realizedPnl')
                 ? canonicalReconciliation.realizedPnl
                 : pnlSummary.realizedPnl,
         );
         const resolveHistoricalRealizedPnl = (ledgerDate, isLatestPoint = false) => {
-            if (pnlSummary.pnlUnavailable === true) return null;
+            if (isInvestmentRealizedPnlUnavailable(pnlSummary)) return null;
             if (realizedPnlTimeline.length) {
                 return resolveInvestmentStockDetailsCumulativeRealizedPnl(realizedPnlTimeline, ledgerDate);
             }
@@ -440,30 +476,14 @@ export function createInvestmentStockDetailsUtils({
             return null;
         };
         const resolveHistoricalUnrealizedPnl = (snapshot, ledgerDate) => {
-            if (pnlSummary.pnlUnavailable === true) return null;
-            const shares = Number(snapshot?.shares);
-            const closePrice = Number(snapshot?.close);
-            const averagePrice = Number(snapshot?.averagePrice);
-            if (
-                !ledgerDate
-                || !Number.isFinite(shares)
-                || Math.abs(shares) <= 1e-9
-                || !Number.isFinite(closePrice)
-                || !Number.isFinite(averagePrice)
-            ) {
-                return null;
-            }
-            const unrealizedPnlLocal = shares > 0
-                ? (closePrice - averagePrice) * shares
-                : (averagePrice - closePrice) * Math.abs(shares);
-            const unrealizedPnl = convertAmountToBaseCurrency(
-                unrealizedPnlLocal,
-                quoteCurrency,
+            return resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
                 ledgerDate,
+                quoteCurrency,
                 fxTimeline,
                 baseCurrency,
-            );
-            return Number.isFinite(unrealizedPnl) ? unrealizedPnl : null;
+                convertAmountToBaseCurrency,
+                securityTransferPnlUnavailable: pnlSummary.securityTransferPnlUnavailable === true,
+            });
         };
 
         const normalizedRange = normalizeInvestmentStockDetailsRange(getSelectedInvestmentStockDetailsRange());
@@ -954,10 +974,10 @@ export function createInvestmentStockDetailsUtils({
                 normalizedTicker,
                 getTickerQuoteCurrency,
             );
-            const close = Number(closeValues[index]);
-            const averagePrice = Number(aggregateState.averagePrice);
+            const close = parseInvestmentOptionalNumber(closeValues[index]);
+            const averagePrice = parseInvestmentOptionalNumber(aggregateState.averagePrice);
             averagePriceSeries.push(
-                Number.isFinite(averagePrice) && averagePrice > 0
+                averagePrice !== null && averagePrice > 0
                     ? averagePrice
                     : null,
             );
@@ -969,10 +989,10 @@ export function createInvestmentStockDetailsUtils({
                     priceAnchorsByState: chipPriceAnchorsByState,
                 }),
                 shares: Number.isFinite(aggregateState.shares) ? aggregateState.shares : 0,
-                close: Number.isFinite(close) ? close : null,
-                averagePrice: Number.isFinite(averagePrice)
-                    ? averagePrice
-                    : null,
+                close: close !== null && close > 0 ? close : null,
+                averagePrice,
+                costBasisStatus: aggregateState.costBasisStatus,
+                hasMixedPositionCurrencies: aggregateState.hasMixedPositionCurrencies === true,
                 buyQuantity,
                 sellQuantity,
                 buySellLedgerNos,
@@ -1463,8 +1483,8 @@ export function createInvestmentStockDetailsUtils({
             const parsedDate = parseRawDate(rawDate);
             const snapshot = stockSnapshotsByDate.get(String(rawDate)) || {};
             const buySellLedgerNos = Array.isArray(snapshot?.buySellLedgerNos) ? snapshot.buySellLedgerNos : [];
-            const shares = Number(snapshot?.shares);
-            const closePrice = Number(snapshot?.close);
+            const shares = parseInvestmentOptionalNumber(snapshot?.shares);
+            const closePrice = parseInvestmentOptionalNumber(snapshot?.close);
             const marketValue = Number.isFinite(shares) && Number.isFinite(closePrice) ? shares * closePrice : null;
             const buyQuantity = Number(snapshot?.buyQuantity);
             const sellQuantity = Number(snapshot?.sellQuantity);
@@ -1506,18 +1526,18 @@ export function createInvestmentStockDetailsUtils({
             const dateEl = tooltipEl.querySelector('.chart-tooltip-date');
             const listEl = tooltipEl.querySelector('.chart-tooltip-list');
             dateEl.textContent = parsedDate ? formatTooltipDate(parsedDate) : (tooltip.title?.[0] || '');
-            const averagePrice = Number(snapshot?.averagePrice);
+            const averagePrice = parseInvestmentOptionalNumber(snapshot?.averagePrice);
             const realizedPnl = resolveHistoricalRealizedPnl(
                 hoverLedgerDate,
                 pointIndex === labels.length - 1,
             );
             const unrealizedPnl = resolveHistoricalUnrealizedPnl(snapshot, hoverLedgerDate);
-            const buildPnlRow = (label, value) => {
-                const numericValue = Number(value);
-                const hasValue = Number.isFinite(numericValue);
+            const buildPnlRow = (label, value, {flat = false} = {}) => {
+                const numericValue = parseInvestmentOptionalNumber(value);
+                const hasValue = numericValue !== null;
                 return {
                     label,
-                    value: hasValue ? formatHoldingsMoney(numericValue) : '--',
+                    value: hasValue ? formatHoldingsMoney(numericValue) : (flat ? '--' : 'Unavailable'),
                     color: hasValue
                         ? (numericValue >= 0 ? resolvedTheme.accentPositive : resolvedTheme.accentSecondary)
                         : resolvedTheme.muted,
@@ -1544,7 +1564,9 @@ export function createInvestmentStockDetailsUtils({
                     color: resolvedTheme.muted,
                     bulletHtml: '<span class="chart-tooltip-dot" aria-hidden="true"></span>',
                 },
-                buildPnlRow('Unrealized P&L', unrealizedPnl),
+                buildPnlRow('Unrealized P&L', unrealizedPnl, {
+                    flat: shares !== null && Math.abs(shares) <= 1e-9,
+                }),
                 buildPnlRow('Realized P&L', realizedPnl),
             ];
             if (Number.isFinite(buyQuantity) && buyQuantity > 0) {

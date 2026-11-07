@@ -1,7 +1,8 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.7.2
+ * Code version: v1.7.3
+ * - Fixed: Realized and unrealized cards use their own availability and coverage.
  * - Fixed: Unavailable current broker equity cannot become a numeric zero.
  * - Fixed: Card progress and saved feedback synchronize the action note and field icon.
  * - Changed: Shared posted RewardCash aggregation feeds Rewards and realized
@@ -120,10 +121,28 @@ function bindInvestmentHoverContainerPersistence(container) {
 
 function isInvestmentMetricPnlUnavailable(definition, metricValues) {
         if (!/pnl/i.test(String(definition?.key || ''))) return false;
+        if (definition?.key === 'realized-pnl'
+            && typeof metricValues?.realizedPnlUnavailable === 'boolean') {
+            return metricValues.realizedPnlUnavailable;
+        }
+        if (definition?.key === 'unrealized-pnl'
+            && typeof metricValues?.unrealizedPnlUnavailable === 'boolean') {
+            return metricValues.unrealizedPnlUnavailable;
+        }
         if (definition?.key === 'unrealized-pnl' && metricValues?.creditCardRewardUnavailable === true) {
             return metricValues?.investmentPnlUnavailable === true;
         }
         return metricValues?.pnlUnavailable === true;
+    }
+
+function getInvestmentMetricPnlCoverage(definition, metricValues) {
+        if (definition?.key === 'realized-pnl') {
+            return metricValues?.realizedPnlCoverage ?? metricValues?.pnlCoverage;
+        }
+        if (definition?.key === 'unrealized-pnl') {
+            return metricValues?.unrealizedPnlCoverage ?? metricValues?.pnlCoverage;
+        }
+        return metricValues?.pnlCoverage;
     }
 
 function renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPrefix = '' } = {}) {
@@ -136,7 +155,7 @@ function renderInvestmentMetricBreakdownCard(definition, metricValues, { keyPref
             : [];
         const hasBreakdown = details.length > 0;
         const value = pnlUnavailable
-            ? (metricValues?.pnlCoverage?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
+            ? (getInvestmentMetricPnlCoverage(definition, metricValues)?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
             : (definition?.formatValue
             ? definition.formatValue(metricValues)
             : runtime.formatAmount(metricValues?.[definition?.valueKey]));
@@ -212,7 +231,7 @@ function renderMetricCards(metricDefinitions, metricValues, { keyPrefix = '' } =
                     ${runtime.renderMetricValueWithTooltip({
                         key: definition.key,
                         value: pnlUnavailable
-                            ? (metricValues?.pnlCoverage?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
+                            ? (getInvestmentMetricPnlCoverage(definition, metricValues)?.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable')
                             : (definition.formatValue
                             ? definition.formatValue(metricValues)
                             : runtime.formatAmount(metricValues?.[definition.valueKey])),

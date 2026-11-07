@@ -1,4 +1,4 @@
-/* Code version: v1.0.0
+/* Code version: v1.1.0
  * RewardCash refreshes preserve dated P&L and investment asset evidence.
  */
 import assert from 'node:assert/strict';
@@ -115,6 +115,61 @@ function makeRuntime(summaries, rewards = {}) {
     });
     return runtime;
 }
+
+function renderPnlMetricCards(values) {
+    const runtime = makeRuntime([]);
+    runtime.getSignedMetricClass = () => '';
+    runtime.renderInvestmentLiveValue = (_field, value, options) => options.formatter(value);
+    runtime.renderMetricValueWithTooltip = (options) => String(options.value);
+    const result = {};
+    for (const key of ['realized-pnl', 'unrealized-pnl', 'cumulative-pnl']) {
+        const definition = runtime.HOLDINGS_SUMMARY_METRIC_DEFINITIONS.find((item) => item.key === key);
+        result[key] = definition.renderMode === 'breakdown'
+            ? runtime.renderInvestmentMetricBreakdownCard(definition, values)
+            : runtime.renderMetricCards([definition], values);
+    }
+    return result;
+}
+
+test('Metrics retain verified unrealized P&L while historical realized coverage is partial', () => {
+    const cards = renderPnlMetricCards({
+        totalRealizedPnl: null, totalUnrealizedPnl: 20, cumulativePnl: null,
+        pnlUnavailable: true, realizedPnlUnavailable: true, unrealizedPnlUnavailable: false,
+        pnlCoverage: {status: 'partial'}, realizedPnlCoverage: {status: 'partial'},
+        unrealizedPnlCoverage: {status: 'complete'},
+    });
+    assert.match(cards['unrealized-pnl'], /20\.00/);
+    assert.doesNotMatch(cards['unrealized-pnl'], /[Uu]navailable/);
+    assert.match(cards['realized-pnl'], /Partial · total unavailable/);
+    assert.match(cards['cumulative-pnl'], /Partial · total unavailable/);
+});
+
+test('Metrics retain verified realized P&L while remaining cost is unknown', () => {
+    const cards = renderPnlMetricCards({
+        totalRealizedPnl: 15, totalUnrealizedPnl: null, cumulativePnl: null,
+        pnlUnavailable: true, realizedPnlUnavailable: false, unrealizedPnlUnavailable: true,
+        pnlCoverage: {status: 'partial'}, realizedPnlCoverage: {status: 'complete'},
+        unrealizedPnlCoverage: {status: 'unavailable'},
+    });
+    assert.match(cards['realized-pnl'], /15\.00/);
+    assert.doesNotMatch(cards['realized-pnl'], /[Uu]navailable/);
+    assert.match(cards['unrealized-pnl'], /Unavailable/);
+    assert.doesNotMatch(cards['unrealized-pnl'], /Partial ·/);
+    assert.match(cards['cumulative-pnl'], /Partial · total unavailable/);
+});
+
+test('Metrics preserve verified zero P&L without coercing unavailable values to zero', () => {
+    const cards = renderPnlMetricCards({
+        totalRealizedPnl: 0, totalUnrealizedPnl: null, cumulativePnl: null,
+        pnlUnavailable: true, realizedPnlUnavailable: false, unrealizedPnlUnavailable: true,
+        pnlCoverage: {status: 'partial'}, realizedPnlCoverage: {status: 'complete'},
+        unrealizedPnlCoverage: {status: 'unavailable'},
+    });
+    assert.match(cards['realized-pnl'], /0\.00/);
+    assert.doesNotMatch(cards['realized-pnl'], /[Uu]navailable/);
+    assert.match(cards['unrealized-pnl'], /Unavailable/);
+    assert.doesNotMatch(cards['unrealized-pnl'], /0\.00/);
+});
 
 test('quote refresh retains posted RewardCash in rewards and P&L while preserving asset values', () => {
     const runtime = makeRuntime([openSummary()], {kolRewardIncome: 5});

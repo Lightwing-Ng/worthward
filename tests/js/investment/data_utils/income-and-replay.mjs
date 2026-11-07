@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -609,7 +609,9 @@ test('aggregate ticker holdings keep in-kind transfer pairs cash-neutral', () =>
 
     assert.ok(qqqi);
     assert.equal(qqqi.shares, 315);
-    assert.equal(qqqi.realizedPnl, null);
+    assert.equal(qqqi.realizedPnl, 0);
+    assert.equal(qqqi.realizedPnlUnavailable, false);
+    assert.equal(qqqi.unrealizedPnlUnavailable, true);
     assert.equal(qqqi.pnlUnavailable, true);
     assert.equal(qqqi.pnlUnavailableReason, 'open_position_cost_basis_unknown');
 });

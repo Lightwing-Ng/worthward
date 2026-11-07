@@ -1,4 +1,4 @@
-/* Tests for Investment Stock details boundaries. Code version: v1.14.3 */
+/* Tests for Investment Stock details boundaries. Code version: v1.14.4 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,6 +26,7 @@ import {
     normalizeInvestmentRange,
     resolveInvestmentStockDetailsDailySnapshotIndex,
     resolveInvestmentStockDetailsCumulativeRealizedPnl,
+    resolveInvestmentStockDetailsHistoricalUnrealizedPnl,
     resolveInvestmentStockDetailsTrailingOffHoursAnchorDayKey,
     resolveInvestmentTradeMarkerGlowLinks,
     resolveInvestmentTradeMarkerGlowZoneFieldIntensity,
@@ -105,6 +106,35 @@ function createRealizedBreakdownBuilder() {
 
 test('module exposes a semantic cache-busting version', () => {
     assert.match(INVESTMENT_STOCK_DETAILS_MODULE_VERSION, /^v\d+\.\d+\.\d+$/);
+});
+
+test('historical unrealized P&L uses only the hovered point basis and dated FX', () => {
+    const snapshot = {shares: 10, close: 12, averagePrice: 10, costBasisStatus: 'known'};
+    const options = {
+        ledgerDate: '2026-03-02', quoteCurrency: 'HKD', baseCurrency: 'USD', fxTimeline: {},
+        convertAmountToBaseCurrency: (amount, currency, date) => {
+            assert.equal(currency, 'HKD');
+            assert.equal(date, '2026-03-02');
+            return amount / 8;
+        },
+    };
+    assert.equal(resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, options), 2.5);
+    for (const override of [
+        {averagePrice: null}, {averagePrice: undefined}, {costBasisStatus: 'unknown'},
+        {costBasisStatus: 'partial'}, {hasMixedPositionCurrencies: true}, {close: null},
+        {close: 0}, {shares: 0},
+    ]) {
+        assert.equal(resolveInvestmentStockDetailsHistoricalUnrealizedPnl({...snapshot, ...override}, options), null);
+    }
+    assert.equal(resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
+        ...options, convertAmountToBaseCurrency: () => Number.NaN,
+    }), null);
+    assert.equal(resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
+        ...options, securityTransferPnlUnavailable: true,
+    }), null);
+    assert.equal(resolveInvestmentStockDetailsHistoricalUnrealizedPnl({
+        ...snapshot, averagePrice: 0,
+    }, options), 15);
 });
 
 test('stock-details P&L timeline accumulates shared realized values through the hovered date', () => {
