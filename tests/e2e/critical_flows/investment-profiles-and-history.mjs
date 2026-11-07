@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -304,6 +304,14 @@ test('keeps the Stock details price canvas at least 16:9 through splitter limits
     await expect(canvas).toBeVisible();
     await expect.poll(() => canvas.evaluate((element) => Boolean(window.Chart?.getChart(element))))
         .toBe(true);
+    const waitForSettledView = async (view) => {
+        const surface = page.locator('#investment_view_surface');
+        await expect(surface).toHaveAttribute('data-active-view', view);
+        // View switches temporarily pin height until their asynchronous cleanup.
+        await expect.poll(() => surface.evaluate((element) => element.style.height)).toBe('');
+    };
+    await page.evaluate(() => document.fonts.ready);
+    await waitForSettledView('stock_details');
 
     const readChartGeometry = () => page.evaluate(() => {
         const panel = document.querySelector('#stock_panel');
@@ -386,12 +394,20 @@ test('keeps the Stock details price canvas at least 16:9 through splitter limits
 
     await page.locator('label[for="investment_view_holdings"]').click();
     await expect(page.locator('#investment_holdings_panel')).toBeVisible();
+    await waitForSettledView('holdings');
     await resizer.focus();
     await resizer.press('Home');
+    await expect.poll(() => resizer.evaluate((element) => {
+        const report = document.querySelector('.investment-report-card');
+        return Math.abs(report.getBoundingClientRect().height
+            - Number(element.getAttribute('aria-valuemin')));
+    }), {message: 'Holdings reaches its rendered Home minimum before the view-height comparison'})
+        .toBeLessThanOrEqual(1);
     const holdingsHeight = await page.locator('.investment-report-card')
         .evaluate((element) => element.getBoundingClientRect().height);
     await page.locator('label[for="investment_view_stock_details"]').click();
     await expect(canvas).toBeVisible();
+    await waitForSettledView('stock_details');
     const enteredStockDetails = await expectChartMinimum('Entering Stock details from the smaller Holdings split');
     expect(enteredStockDetails.report.height).toBeGreaterThan(holdingsHeight);
 

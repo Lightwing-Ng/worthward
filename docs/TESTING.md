@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.3`
+Documentation version: `v1.104.4`
 
 ## SQLite persistence verification
 
@@ -52,6 +52,12 @@ security-transfer blocks. Verify initial rendering and live quote updates use th
 cumulative values must remain unavailable when either component is incomplete.
 Private broker captures may support a local read-only acceptance audit but
 must never become versioned test fixtures or production test writes.
+
+Stock-details splitter comparisons wait for the observed view surface to release
+its temporary height and for the rendered Holdings report to reach its published
+Home minimum. A visible panel alone does not prove the view transition or its
+geometry has settled. Keep the canvas ratio, containment, and view-height growth
+assertions intact; use observable readiness rather than a fixed sleep.
 
 Select checks by the changed behavior and its affected callers. A small backend
 fix requires its Python tests and relevant contracts; unrelated browser flows
