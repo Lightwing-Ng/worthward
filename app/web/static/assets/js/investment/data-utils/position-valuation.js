@@ -1,7 +1,8 @@
 /**
  * Position lots, split adjustment, ranges, and valuation utilities.
  *
- * Code version: v1.3.6
+ * Code version: v1.3.7
+ * - Fixed: Closing all inventory clears obsolete open-position cost uncertainty.
  * - Fixed: Flat transfers clear residual basis; evidenced split factors apply
  *   to security transfers as well as fills.
  * - Fixed: Reconstructed transfers use matching FIFO inventory when available
@@ -332,6 +333,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
         state.totalCost = 0;
         state.lots = [];
         state.nextLotSequence = 0;
+        state.costBasisStatus = 'known';
     }
 
     function ensurePositionLots(state) {
@@ -519,6 +521,7 @@ export function createInvestmentPositionValuationUtils(runtime) {
         if (!Number.isFinite(quantity) || quantity <= 0) return 0;
 
         if (isFlatPosition(state.shares)) {
+            resetPositionState(state);
             openPositionLots(state, side, quantity, unitPrice);
             return 0;
         }

@@ -1,4 +1,4 @@
-/* Tests for Investment realtime polling and value transitions. Code version: v1.2.1 */
+/* Tests for Investment realtime polling and value transitions. Code version: v1.2.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +9,7 @@ import {
     parseInvestmentLiveDisplaySegments,
     resolveInvestmentLiveNumberDirection,
     createInvestmentRealtimeQuotePoller,
+    createInvestmentLiveValueAnimator,
 } from '../../../app/web/static/assets/js/investment/realtime.js';
 
 test('module exposes a semantic cache-busting version', () => {
@@ -156,4 +157,38 @@ test('stopping the poller aborts an in-flight request', async () => {
     assert.equal(capturedSignal.aborted, true);
     releaseRequest([]);
     await pending;
+});
+
+
+test('the real live updater removes unavailable numeric attributes and preserves a verified zero', () => {
+    class TestElement {
+        dataset = {investmentLiveDisplay: '7.00', investmentLiveNumber: '7'};
+        textContent = '7.00';
+        classList = {contains: () => false, remove: () => {}};
+        closest(selector) { return selector === '#investment_holdings_panel' ? this : null; }
+        replaceChildren() { this.textContent = ''; }
+    }
+    const updater = createInvestmentLiveValueAnimator({
+        HTMLElementClass: TestElement,
+        windowRef: {matchMedia: () => ({matches: true})},
+        documentRef: {},
+    });
+    for (const value of [null, undefined, '', '   ', Number.NaN, Infinity]) {
+        const node = new TestElement();
+        updater.updateInvestmentLiveValueNode(node, 'Partial · total unavailable', value);
+        assert.equal(node.dataset.investmentLiveDisplay, 'Partial · total unavailable');
+        assert.equal(Object.hasOwn(node.dataset, 'investmentLiveNumber'), false);
+        assert.equal(resolveInvestmentLiveNumberDirection(7, value), 'flat');
+        updater.updateInvestmentLiveValueNode(node, '0.00', 0);
+        assert.equal(node.dataset.investmentLiveNumber, '0');
+        assert.equal(node.textContent, '0.00');
+        updater.updateInvestmentLiveValueNode(node, 'Unavailable', null);
+        assert.equal(Object.hasOwn(node.dataset, 'investmentLiveNumber'), false);
+    }
+    const stale = new TestElement();
+    stale.dataset = {investmentLiveDisplay: 'Unavailable', investmentLiveNumber: 'null'};
+    updater.updateInvestmentLiveValueNode(stale, 'Unavailable', null);
+    assert.equal(Object.hasOwn(stale.dataset, 'investmentLiveNumber'), false);
+    assert.equal(resolveInvestmentLiveNumberDirection(7, 0), 'fall');
+    assert.equal(resolveInvestmentLiveNumberDirection(0, 7), 'rise');
 });

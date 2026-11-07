@@ -1,7 +1,8 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.6
+ * Code version: v1.3.7
+ * - Fixed: Unknown live values remove numeric metadata without becoming zero.
  * - Fixed: Stock-details live values keep a CSS-owned line box through digit
  *   transitions, and digit slots retain exact measured widths at completion.
  * - Fixed: Stock-details live metrics retain their card-owned responsive
@@ -15,9 +16,10 @@
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
+import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.0';
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.6';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.7';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -104,9 +106,9 @@ export function createInvestmentRealtimeQuotePoller({
 }
 
 export function resolveInvestmentLiveNumberDirection(previousValue, nextValue, epsilon = 1e-9) {
-    const previousNumber = Number(previousValue);
-    const nextNumber = Number(nextValue);
-    if (!Number.isFinite(previousNumber) || !Number.isFinite(nextNumber)) return 'flat';
+    const previousNumber = parseInvestmentOptionalNumber(previousValue);
+    const nextNumber = parseInvestmentOptionalNumber(nextValue);
+    if (previousNumber === null || nextNumber === null) return 'flat';
     if (Math.abs(nextNumber - previousNumber) <= epsilon) return 'flat';
     return nextNumber > previousNumber ? 'rise' : 'fall';
 }
@@ -463,7 +465,8 @@ export function createInvestmentLiveValueAnimator({
         const previousDisplay = String(node.dataset.investmentLiveDisplay || node.textContent || '').trim();
         const nextDisplayNormalized = String(nextDisplay ?? '').trim();
         const previousNumber = String(node.dataset.investmentLiveNumber || '').trim();
-        const nextNumberNormalized = Number.isFinite(Number(nextNumber)) ? String(nextNumber) : '';
+        const numericValue = parseInvestmentOptionalNumber(nextNumber);
+        const nextNumberNormalized = numericValue === null ? '' : String(numericValue);
         if (previousDisplay === nextDisplayNormalized && previousNumber === nextNumberNormalized) return;
         cancelValueAnimation(node);
         const direction = resolveInvestmentLiveNumberDirection(

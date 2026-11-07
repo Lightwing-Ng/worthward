@@ -1,4 +1,4 @@
-/* Investment equity-chart realized P&L timeline regressions. Code version: v1.0.1 */
+/* Investment equity-chart realized P&L timeline regressions. Code version: v1.1.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -111,4 +111,50 @@ test('an unavailable ticker realized value leaves the timeline unavailable', () 
     assert.equal(chart.buildInvestmentChartRealizedPnlTimeline([
         {ticker: 'AAA', realizedPnl: null, realizedPnlAccounts: []},
     ]), null);
+});
+
+test('current endpoint keeps the known component when the opposite metric is unavailable', () => {
+    const {runtime, chart} = createTimelineRuntime([], ['2026-03-02']);
+    runtime.state.investmentCurrentChartPnlMetricsRevision = 0;
+    chart.refreshInvestmentChartPnlState({
+        pnlUnavailable: true, realizedPnlUnavailable: true, unrealizedPnlUnavailable: false,
+        totalRealizedPnl: null, totalUnrealizedPnl: 20, tickerSummaries: [],
+    });
+    assert.deepEqual(runtime.state.investmentCurrentChartPnlMetrics, {
+        realizedPnl: null, unrealizedPnl: 20, cumulativePnl: null,
+    });
+    chart.refreshInvestmentChartPnlState({
+        pnlUnavailable: true, realizedPnlUnavailable: false, unrealizedPnlUnavailable: true,
+        totalRealizedPnl: 15, totalUnrealizedPnl: null, tickerSummaries: [],
+    });
+    assert.deepEqual(runtime.state.investmentCurrentChartPnlMetrics, {
+        realizedPnl: 15, unrealizedPnl: null, cumulativePnl: null,
+    });
+});
+
+test('historical P&L does not inherit an unrelated equity or realized replay coverage gap', () => {
+    const {runtime, chart} = createTimelineRuntime([], ['2026-03-02']);
+    runtime.state.investmentChartPnlMetricsByPoint = new WeakMap();
+    runtime.state.investmentChartPnlTickerPriceIndex = {};
+    runtime.state.investmentChartRealizedPnlTimeline = [{date: '2026-03-01', amount: 15}];
+    runtime.applyInvestmentAggregatePnlAvailability = (rows) => rows;
+    runtime.buildTickerSummaries = () => [{
+        ticker: 'AAA', hasOpenPosition: true, pnlUnavailable: true,
+        realizedPnl: null, realizedPnlUnavailable: true,
+        unrealizedPnl: 20, unrealizedPnlUnavailable: false,
+    }];
+    runtime.getInvestmentHistoricalRealizedPnl = () => 0;
+    const point = {date: '2026-03-02', total_equity: null, valuation_complete: false};
+    assert.deepEqual(chart.buildInvestmentHistoricalChartPnlMetrics(point), {
+        realizedPnl: 15, unrealizedPnl: 20, cumulativePnl: 35,
+    });
+
+    runtime.buildTickerSummaries = () => [{
+        ticker: 'AAA', hasOpenPosition: true, pnlUnavailable: true,
+        realizedPnl: 15, realizedPnlUnavailable: false,
+        unrealizedPnl: null, unrealizedPnlUnavailable: true,
+    }];
+    assert.deepEqual(chart.buildInvestmentHistoricalChartPnlMetrics({...point}), {
+        realizedPnl: 15, unrealizedPnl: null, cumulativePnl: null,
+    });
 });

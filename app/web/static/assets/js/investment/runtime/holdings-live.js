@@ -1,7 +1,7 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.5.0
+ * Code version: v1.6.0
  * - Added: Rewards category details refresh without closing their disclosure.
  * - Changed: Stock details shows compact total-equity allocation and personal chips.
  * - Changed: Shared two-row labels omit visible chip date and share metadata.
@@ -482,7 +482,11 @@ function resolveInvestmentHoldingDailyPnl(summary) {
             reconciliation
             && Object.prototype.hasOwnProperty.call(reconciliation, 'realizedPnlByDate')
         ) ? reconciliation.realizedPnlByDate : summary.realizedPnlByDate;
-        const realized = Number(realizedPnlByDate?.[sessionDate]) || 0;
+        const realized = runtime.isInvestmentRealizedPnlUnavailable(summary)
+            ? null : Number(realizedPnlByDate?.[sessionDate]) || 0;
+        if (runtime.isInvestmentUnrealizedPnlUnavailable(summary)) {
+            return {realized, unrealized: null};
+        }
         const lastPrice = runtime.getOptionalInvestmentNumber(summary.lastPrice);
         const shares = runtime.getOptionalInvestmentNumber(summary.shares);
         const previousClose = resolveInvestmentTickerPreviousClose(summary.ticker, sessionDate);
@@ -579,15 +583,14 @@ function getInvestmentHoldingsRealtimeState() {
             if (Number.isFinite(livePrice) && livePrice > 0) {
                 nextSummary.lastPrice = livePrice;
             }
-            if (nextSummary.pnlUnavailable) {
-                return nextSummary;
-            }
             if (!nextSummary.hasOpenPosition || !Number.isFinite(livePrice) || livePrice <= 0) {
                 return nextSummary;
             }
             const quoteCurrency = runtime.getTickerQuoteCurrency(nextSummary.ticker);
             const marketValueLocal = Number(nextSummary.shares) * livePrice;
-            const unrealizedPnlLocal = nextSummary.averagePrice === null
+            const unrealizedPnlLocal = runtime.isInvestmentUnrealizedPnlUnavailable(nextSummary)
+                || nextSummary.averagePrice === null
+                || !Number.isFinite(Number(nextSummary.averagePrice))
                 ? null
                 : (
                     Number(nextSummary.shares) >= 0
@@ -612,6 +615,7 @@ function getInvestmentHoldingsRealtimeState() {
                 );
             nextSummary.marketValue = marketValue;
             nextSummary.unrealizedPnl = unrealizedPnl;
+            nextSummary.unrealizedPnlLocal = unrealizedPnlLocal;
             nextSummary.positionWeight = Number.isFinite(safeTotalEquity)
                 && Number.isFinite(marketValue)
                 && Math.abs(safeTotalEquity) > runtime.INVESTMENT_LIVE_DIGIT_EPSILON
@@ -688,13 +692,13 @@ function syncInvestmentHoldingsRealtimeValues() {
                     summary.hasOpenPosition ? runtime.formatHoldingsMoney(summary.marketValue) : '-',
                     summary.hasOpenPosition ? summary.marketValue : null,
                 );
-                if (!summary.pnlUnavailable) {
-                    runtime.updateInvestmentLiveValueNode(
-                        unrealizedNode,
-                        summary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(summary.unrealizedPnl),
-                        summary.unrealizedPnl,
-                    );
-                }
+                const unrealizedPnlUnavailable = runtime.isInvestmentUnrealizedPnlUnavailable(summary);
+                runtime.updateInvestmentLiveValueNode(
+                    unrealizedNode,
+                    unrealizedPnlUnavailable ? 'Unavailable'
+                        : (summary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(summary.unrealizedPnl)),
+                    unrealizedPnlUnavailable ? null : summary.unrealizedPnl,
+                );
                 updateInvestmentHoldingsDailyPnlBadge(
                     dailyLastPriceNode,
                     resolveInvestmentHoldingDailyPriceChange(summary),
@@ -708,27 +712,24 @@ function syncInvestmentHoldingsRealtimeValues() {
                 );
                 updateInvestmentHoldingsDailyPnlBadge(
                     dailyRealizedNode,
-                    resolveInvestmentHoldingDailyPnl(summary).realized,
+                    runtime.isInvestmentRealizedPnlUnavailable(summary)
+                        ? null : resolveInvestmentHoldingDailyPnl(summary).realized,
                     { hideZeroValue: true },
                 );
-                if (!summary.pnlUnavailable) {
-                    updateInvestmentHoldingsDailyPnlBadge(
-                        dailyUnrealizedNode,
-                        resolveInvestmentHoldingDailyPnl(summary).unrealized,
-                        { liveEligible: runtime.shouldShowInvestmentHoldingLiveBadge(summary.ticker) },
-                    );
-                }
+                updateInvestmentHoldingsDailyPnlBadge(
+                    dailyUnrealizedNode,
+                    unrealizedPnlUnavailable ? null : resolveInvestmentHoldingDailyPnl(summary).unrealized,
+                    {liveEligible: runtime.shouldShowInvestmentHoldingLiveBadge(summary.ticker)},
+                );
                 runtime.updateInvestmentLiveValueNode(
                     weightNode,
                     summary.hasOpenPosition ? runtime.formatHoldingsPercent(summary.positionWeight) : '-',
                     summary.hasOpenPosition ? summary.positionWeight : null,
                 );
                 runtime.syncInvestmentLiveDirectionTone([lastNode, lastCell], previousLastPrice, summary.lastPrice);
-                if (!summary.pnlUnavailable) {
-                    runtime.syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
-                        enableSignedTone: summary.unrealizedPnl !== null,
-                    });
-                }
+                runtime.syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
+                    enableSignedTone: !unrealizedPnlUnavailable && summary.unrealizedPnl !== null,
+                });
             });
         });
 
@@ -758,38 +759,42 @@ function syncInvestmentHoldingsRealtimeValues() {
             summaries,
             brokerBenefitMetrics,
         );
-        const creditCardRewardUnavailable = brokerBenefitMetrics.creditCardRewardUnavailable === true;
-        const investmentAttribution = creditCardRewardUnavailable
-            ? runtime.getRealizedPnlAttribution(aggregateTransactions, summaries, {
-                ...brokerBenefitMetrics, creditCardRewardIncome: 0,
-            })
-            : realizedAttribution;
-        const investmentPnlUnavailable = runtime.isInvestmentAggregatePnlUnavailable(summaries)
-            || !Number.isFinite(investmentAttribution.totalRealizedPnl);
-        const hasPnlUnavailable = investmentPnlUnavailable
+        const realizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(summaries, {metric: 'realized'});
+        const unrealizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(summaries, {metric: 'unrealized'});
+        const hasRealizedPnlUnavailable = realizedPnlCoverage.status !== 'complete'
             || !Number.isFinite(realizedAttribution.totalRealizedPnl);
-        const totalRealizedPnl = hasPnlUnavailable ? null : realizedAttribution.totalRealizedPnl;
-        const totalUnrealizedPnl = investmentPnlUnavailable
-            ? null
+        const hasUnrealizedPnlUnavailable = unrealizedPnlCoverage.status !== 'complete';
+        const hasPnlUnavailable = hasRealizedPnlUnavailable || hasUnrealizedPnlUnavailable;
+        const totalRealizedPnl = hasRealizedPnlUnavailable ? null : realizedAttribution.totalRealizedPnl;
+        const totalUnrealizedPnl = hasUnrealizedPnlUnavailable ? null
             : summaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
-        const totalDailyPnl = investmentPnlUnavailable ? null : summaries.reduce((totals, summary) => {
-            if (summary?.pnlUnavailable === true) return totals;
+        const totalDailyPnl = summaries.reduce((totals, summary) => {
             const dailyPnl = resolveInvestmentHoldingDailyPnl(summary);
-            totals.realized += Number(dailyPnl.realized) || 0;
+            if (runtime.isInvestmentRealizedPnlUnavailable(summary)) {
+                totals.realized = null;
+            } else if (totals.realized !== null) {
+                totals.realized += Number(dailyPnl.realized) || 0;
+            }
             if (dailyPnl.unrealized === null || dailyPnl.unrealized === undefined) {
                 totals.unrealized = null;
             } else if (totals.unrealized !== null) {
                 totals.unrealized += Number(dailyPnl.unrealized) || 0;
             }
             return totals;
-        }, { realized: 0, unrealized: 0 });
+        }, {realized: 0, unrealized: 0});
         const cumulativePnl = hasPnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         runtime.setInvestmentCurrentChartPnlMetrics(totalRealizedPnl, totalUnrealizedPnl);
         const pnlCoverage = runtime.getInvestmentAggregatePnlCoverage(summaries);
-        if (!Number.isFinite(realizedAttribution.totalRealizedPnl)) {
+        if (realizedAttribution.cashFlowFxUnavailable === true) {
             pnlCoverage.cashFlowFxUnavailable = true;
             pnlCoverage.status = pnlCoverage.completeCount > 0 ? 'partial' : 'unavailable';
         }
+        const realizedPnlCoverageLabel = realizedPnlCoverage.status === 'partial' || realizedPnlCoverage.completeCount > 0
+            ? 'Partial · total unavailable' : 'Unavailable';
+        const unrealizedPnlCoverageLabel = unrealizedPnlCoverage.status === 'partial'
+            ? 'Partial · total unavailable' : 'Unavailable';
+        const pnlCoverageLabel = pnlCoverage.status === 'partial'
+            ? 'Partial · total unavailable' : 'Unavailable';
         document.querySelectorAll('#investment_holdings_panel [data-table-summary-row]').forEach((row) => {
             row.dataset.pnlCoverage = pnlCoverage.status;
             row.title = pnlCoverage.missingTickers.length
@@ -889,55 +894,56 @@ function syncInvestmentHoldingsRealtimeValues() {
         const metricsCumulativeTrigger = metricsCumulativeNode?.closest('.investment-metric-tooltip-trigger');
         const metricsUnrealizedTrigger = metricsUnrealizedNode?.closest('.investment-metric-tooltip-trigger');
 
-        if (!hasPnlUnavailable) {
-            runtime.updateInvestmentLiveValueNode(summaryRealizedNode, runtime.formatHoldingsMoney(totalRealizedPnl), totalRealizedPnl);
-            runtime.syncInvestmentLiveTone([summaryRealizedNode, summaryRealizedNode?.closest('td')], totalRealizedPnl, {
-                enableSignedTone: true,
-            });
-            runtime.updateInvestmentLiveValueNode(cumulativeNode, runtime.formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
-            runtime.updateInvestmentLiveValueNode(summaryUnrealizedNode, runtime.formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-            updateInvestmentHoldingsDailyPnlBadge(
-                summaryDailyRealizedNode,
-                totalDailyPnl.realized,
-                { hideZeroValue: true },
-            );
-            updateInvestmentHoldingsDailyPnlBadge(
-                summaryDailyUnrealizedNode,
-                totalDailyPnl.unrealized,
-                { liveEligible: runtime.hasInvestmentHoldingLiveBadgeSession(summaries) },
-            );
-        }
+        runtime.updateInvestmentLiveValueNode(
+            summaryRealizedNode,
+            hasRealizedPnlUnavailable ? realizedPnlCoverageLabel : runtime.formatHoldingsMoney(totalRealizedPnl),
+            totalRealizedPnl,
+        );
+        runtime.syncInvestmentLiveTone([summaryRealizedNode, summaryRealizedNode?.closest('td')], totalRealizedPnl, {
+            enableSignedTone: !hasRealizedPnlUnavailable,
+        });
+        runtime.updateInvestmentLiveValueNode(
+            summaryUnrealizedNode,
+            hasUnrealizedPnlUnavailable ? unrealizedPnlCoverageLabel : runtime.formatHoldingsMoney(totalUnrealizedPnl),
+            totalUnrealizedPnl,
+        );
+        runtime.syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, {
+            enableSignedTone: !hasUnrealizedPnlUnavailable,
+        });
+        runtime.updateInvestmentLiveValueNode(
+            cumulativeNode,
+            hasPnlUnavailable ? pnlCoverageLabel : runtime.formatSignedHoldingsMoney(cumulativePnl),
+            cumulativePnl,
+        );
+        runtime.syncInvestmentLiveTone(cumulativeNode, cumulativePnl, {enableSignedTone: !hasPnlUnavailable});
+        updateInvestmentHoldingsDailyPnlBadge(
+            summaryDailyRealizedNode,
+            hasRealizedPnlUnavailable ? null : totalDailyPnl.realized,
+            {hideZeroValue: true},
+        );
+        updateInvestmentHoldingsDailyPnlBadge(
+            summaryDailyUnrealizedNode,
+            hasUnrealizedPnlUnavailable ? null : totalDailyPnl.unrealized,
+            {liveEligible: runtime.hasInvestmentHoldingLiveBadgeSession(summaries)},
+        );
         runtime.updateInvestmentLiveValueNode(summaryWeightNode, runtime.formatHoldingsPercent(totalWeight), totalWeight);
-        if (!hasPnlUnavailable && runtime.getInvestmentBrokerSummarySelectedCode() === 'all') {
-            runtime.updateInvestmentLiveValueNode(metricsCumulativeNode, runtime.formatSignedHoldingsMoney(cumulativePnl), cumulativePnl);
-            runtime.updateInvestmentLiveValueNode(metricsUnrealizedNode, runtime.formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-            runtime.syncInvestmentLiveTone(cumulativeNode, cumulativePnl, { enableSignedTone: true });
-            runtime.syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, { enableSignedTone: true });
-            runtime.syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, { enableSignedTone: true });
-            runtime.syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, { enableSignedTone: true });
-        }
-        if (creditCardRewardUnavailable) {
-            const label = pnlCoverage.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable';
-            [summaryRealizedNode, cumulativeNode].forEach((node) => {
-                runtime.updateInvestmentLiveValueNode(node, label, NaN);
-                runtime.syncInvestmentLiveTone([node, node?.closest('td')], NaN, {enableSignedTone: false});
+        if (runtime.getInvestmentBrokerSummarySelectedCode() === 'all') {
+            runtime.updateInvestmentLiveValueNode(
+                metricsCumulativeNode,
+                hasPnlUnavailable ? pnlCoverageLabel : runtime.formatSignedHoldingsMoney(cumulativePnl),
+                cumulativePnl,
+            );
+            runtime.updateInvestmentLiveValueNode(
+                metricsUnrealizedNode,
+                hasUnrealizedPnlUnavailable ? unrealizedPnlCoverageLabel : runtime.formatSignedHoldingsMoney(totalUnrealizedPnl),
+                totalUnrealizedPnl,
+            );
+            runtime.syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], cumulativePnl, {
+                enableSignedTone: !hasPnlUnavailable,
             });
-            updateInvestmentHoldingsDailyPnlBadge(summaryDailyRealizedNode, null, {hideZeroValue: true});
-            if (!investmentPnlUnavailable) {
-                runtime.updateInvestmentLiveValueNode(summaryUnrealizedNode, runtime.formatHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-                runtime.syncInvestmentLiveTone([summaryUnrealizedNode, summaryUnrealizedCell], totalUnrealizedPnl, {enableSignedTone: true});
-                updateInvestmentHoldingsDailyPnlBadge(summaryDailyUnrealizedNode, totalDailyPnl.unrealized, {
-                    liveEligible: runtime.hasInvestmentHoldingLiveBadgeSession(summaries),
-                });
-            }
-            if (runtime.getInvestmentBrokerSummarySelectedCode() === 'all') {
-                runtime.updateInvestmentLiveValueNode(metricsCumulativeNode, label, NaN);
-                runtime.syncInvestmentLiveTone([metricsCumulativeNode, metricsCumulativeTrigger], NaN, {enableSignedTone: false});
-                if (!investmentPnlUnavailable) {
-                    runtime.updateInvestmentLiveValueNode(metricsUnrealizedNode, runtime.formatSignedHoldingsMoney(totalUnrealizedPnl), totalUnrealizedPnl);
-                    runtime.syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, {enableSignedTone: true});
-                }
-            }
+            runtime.syncInvestmentLiveTone([metricsUnrealizedNode, metricsUnrealizedTrigger], totalUnrealizedPnl, {
+                enableSignedTone: !hasUnrealizedPnlUnavailable,
+            });
         }
         syncInvestmentStockDetailsRealtimeMetrics();
         if (runtime.state.activeInvestmentView === 'metrics') {
@@ -971,16 +977,18 @@ function syncInvestmentStockDetailsRealtimeMetrics() {
         ));
         if (!tickerSummary) return;
 
-        const pnlUnavailable = tickerSummary?.pnlUnavailable === true;
+        const realizedPnlUnavailable = runtime.isInvestmentRealizedPnlUnavailable(tickerSummary);
+        const unrealizedPnlUnavailable = runtime.isInvestmentUnrealizedPnlUnavailable(tickerSummary);
+        const pnlUnavailable = realizedPnlUnavailable || unrealizedPnlUnavailable;
         const totalPnl = pnlUnavailable
             ? null
             : (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const updates = [
             {
                 field: 'stock_unrealized_pnl',
-                display: pnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(tickerSummary.unrealizedPnl)),
-                value: pnlUnavailable ? null : tickerSummary.unrealizedPnl,
-                signedTone: !pnlUnavailable,
+                display: unrealizedPnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(tickerSummary.unrealizedPnl)),
+                value: unrealizedPnlUnavailable ? null : tickerSummary.unrealizedPnl,
+                signedTone: !unrealizedPnlUnavailable,
             },
             {
                 field: 'stock_total_pnl',
@@ -1015,8 +1023,10 @@ function syncInvestmentStockDetailsRealtimeMetrics() {
             );
             const previousValue = Number(node?.dataset.investmentLiveNumber);
             runtime.updateInvestmentLiveValueNode(node, update.display, update.value);
-            if (update.signedTone) {
-                runtime.syncInvestmentLiveTone(node, update.value, { enableSignedTone: Number.isFinite(Number(update.value)) });
+            if (!update.directionTone) {
+                runtime.syncInvestmentLiveTone(node, update.value, {
+                    enableSignedTone: update.signedTone && update.value !== null && Number.isFinite(Number(update.value)),
+                });
             }
             if (update.directionTone) {
                 runtime.syncInvestmentLiveDirectionTone(node, previousValue, update.value);
@@ -1043,7 +1053,8 @@ function renderInvestmentStockDetailsLiveMetricValueSpan(metric, activeTicker) {
         ].filter(Boolean).join(' ');
         const display = metric?.value || '-';
         const numeric = metric?.liveNumber;
-        const numberAttr = Number.isFinite(Number(numeric))
+        const numberAttr = numeric !== null && numeric !== undefined && numeric !== ''
+            && Number.isFinite(Number(numeric))
             ? ` data-investment-live-number="${runtime.escapeHtml(String(numeric))}"`
             : '';
         const tickerAttr = activeTicker ? ` data-investment-live-ticker="${runtime.escapeHtml(activeTicker)}"` : '';
@@ -1293,17 +1304,29 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
             : aggregateRealizedDetails;
         const brokerMetricDetails = runtime.buildInvestmentStockDetailBrokerMetrics(detailRows, activeTicker, tickerSummary.lastPrice);
         const hasBrokerMetricBreakdown = brokerMetricDetails.length > 1;
-        const pnlUnavailable = tickerSummary?.pnlUnavailable === true;
+        const knownRealizedAccountDetails = (tickerSummary.realizedPnlAccounts || [])
+            .filter((account) => account?.status === 'complete'
+                && account?.reconciliation?.coverageStatus === 'complete'
+                && account?.reconciliation?.arithmeticCheck?.valid === true
+                && account.realizedPnl !== null && Number.isFinite(Number(account.realizedPnl)))
+            .map((account) => ({
+                label: `${runtime.getInvestmentBrokerMeta(account.broker).label} · ${account.account || account.accountToken || 'Verified account'}`,
+                value: runtime.formatHoldingsMoney(Number(account.realizedPnl)),
+                valueClass: runtime.getSignedMetricClass(Number(account.realizedPnl)),
+            }));
+        const realizedPnlUnavailable = runtime.isInvestmentRealizedPnlUnavailable(tickerSummary);
+        const unrealizedPnlUnavailable = runtime.isInvestmentUnrealizedPnlUnavailable(tickerSummary);
+        const pnlUnavailable = realizedPnlUnavailable || unrealizedPnlUnavailable;
         const totalPnl = pnlUnavailable
             ? null
             : (Number(tickerSummary.realizedPnl) || 0) + (Number(tickerSummary.unrealizedPnl) || 0);
         const totalPnlClass = pnlUnavailable
             ? ''
             : (totalPnl >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
-        const realizedClass = pnlUnavailable
+        const realizedClass = realizedPnlUnavailable
             ? ''
             : ((Number(tickerSummary.realizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
-        const unrealizedClass = pnlUnavailable
+        const unrealizedClass = unrealizedPnlUnavailable
             ? ''
             : ((Number(tickerSummary.unrealizedPnl) || 0) >= 0 ? 'investment-holdings-value-positive' : 'investment-holdings-value-negative');
         const lastPriceDisplay = tickerSummary.lastPrice === null ? '-' : runtime.formatHoldingsMoney(tickerSummary.lastPrice);
@@ -1312,22 +1335,22 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         const stockMetricCards = [
             {
                 label: 'Unrealized P&L',
-                value: pnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(tickerSummary.unrealizedPnl)),
-                valueClass: pnlUnavailable || tickerSummary.unrealizedPnl === null ? '' : unrealizedClass,
-                liveField: pnlUnavailable ? '' : 'stock_unrealized_pnl',
-                liveNumber: pnlUnavailable ? null : tickerSummary.unrealizedPnl,
+                value: unrealizedPnlUnavailable ? 'Unavailable' : (tickerSummary.unrealizedPnl === null ? '-' : runtime.formatHoldingsMoney(tickerSummary.unrealizedPnl)),
+                valueClass: unrealizedPnlUnavailable || tickerSummary.unrealizedPnl === null ? '' : unrealizedClass,
+                liveField: 'stock_unrealized_pnl',
+                liveNumber: unrealizedPnlUnavailable ? null : tickerSummary.unrealizedPnl,
             },
             {
                 label: 'Realized P&L',
-                value: pnlUnavailable ? 'Unavailable' : runtime.formatHoldingsMoney(tickerSummary.realizedPnl),
+                value: realizedPnlUnavailable ? 'Unavailable' : runtime.formatHoldingsMoney(tickerSummary.realizedPnl),
                 valueClass: realizedClass,
-                details: pnlUnavailable ? [] : realizedDetails,
+                details: realizedPnlUnavailable ? knownRealizedAccountDetails : realizedDetails,
             },
             {
                 label: 'Total P&L',
                 value: pnlUnavailable ? 'Unavailable' : runtime.formatHoldingsMoney(totalPnl),
                 valueClass: totalPnlClass,
-                liveField: pnlUnavailable ? '' : 'stock_total_pnl',
+                liveField: 'stock_total_pnl',
                 liveNumber: pnlUnavailable ? null : totalPnl,
             },
             {
@@ -1530,7 +1553,7 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         }
         bindInvestmentStockDetailsMetricBreakdownControls();
         runtime.bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
-        if (pnlUnavailable) {
+        if (tickerSummary.securityTransferPnlUnavailable === true) {
             const chartShell = runtime.investmentStockDetailsPanel.querySelector('[data-investment-stock-price-chart]');
             if (chartShell instanceof HTMLElement) {
                 chartShell.innerHTML = '<p class="investment-holdings-empty">Cost-basis-derived stock analysis is unavailable until the transferred position has verified carried basis.</p>';

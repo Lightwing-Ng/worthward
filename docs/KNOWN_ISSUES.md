@@ -1,5 +1,14 @@
 # Known issues and operating constraints
 
+Independent P&L availability, 7 Nov 2026: a historical realized-P&L coverage gap
+previously hid otherwise verified current unrealized P&L, and an unknown current
+cost could hide an independently verified realized result. Each component now
+uses its own proof and FX requirements across Holdings, Stock details, Metrics,
+and Overview. Cumulative totals still require both components; incomplete
+historical reconciliation and unconfirmed execution prices remain unavailable.
+Flat positions do not acquire an unknown unrealized exposure from a historical
+realized-P&L gap.
+
 Ticker lookup after rapid refocus, 6 Nov 2026: pressing Enter blurs a ticker
 field and schedules suggestion dismissal. That delayed callback now checks
 focus before closing the panel, so returning to the field and starting a new
@@ -1319,7 +1328,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.4`
+Documentation version: `v1.286.5`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

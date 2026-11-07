@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.145.0`
+Documentation version: `v1.146.0`
 
 ## Canonical SQLite persistence
 
@@ -1527,6 +1527,19 @@ realized-P&L map. The reconciliation invariant is
 map must sum to the same current value. The legacy ticker-level performance
 fallback is compatibility-only and is eligible only when the sole account has
 the same complete reconciliation and no replay requirement.
+
+Realized and unrealized P&L have independent availability contracts. Realized
+P&L requires complete account-level reconciliation and its own currency
+conversion evidence. Unrealized P&L requires current quantities, verified
+remaining cost, a usable price, and current valuation FX; a flat position has
+no unrealized exposure. Missing historical realized proof does not invalidate
+known current unrealized P&L, and missing current cost does not erase an
+independently verified realized result. A partial realized subtotal is never
+presented as the complete ticker total. Cumulative P&L requires both components
+to be complete. Explicitly unresolved security transfers retain their hard
+availability block, and unconfirmed execution prices never become verified
+cost merely to produce a number.
+
 A `grant` always opens a zero-cost lot, regardless of broker. A source-reported
 grant value remains immutable transaction evidence and cannot be replayed as a
 purchase cost basis. This includes IBKR stock grants; separately evidenced paid

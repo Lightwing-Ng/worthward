@@ -1,7 +1,7 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.2.2
+ * Code version: v1.3.0
  * - Fixed: Reward details share the title and total column boundaries.
  * - Fixed: Native reward currencies render on separate lines.
  * - Added: Expandable Rewards categories retain native amounts and dated conversions.
@@ -162,14 +162,25 @@ function renderHoldingsTable(
             ? holdingsSummaryMetrics.pnlCoverage
             : runtime.getInvestmentAggregatePnlCoverage(summarySummaries);
         const pnlCoverageLabel = pnlCoverage.status === 'partial' ? 'Partial · total unavailable' : 'Unavailable';
-        const hasPnlUnavailable = (
-            (normalizedSummaryScope === 'all' && holdingsSummaryMetrics?.pnlUnavailable === true)
-            || runtime.isInvestmentAggregatePnlUnavailable(summarySummaries)
+        const realizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(
+            summarySummaries, {metric: 'realized'},
         );
-        const hasUnrealizedPnlUnavailable = normalizedSummaryScope === 'all'
-            && holdingsSummaryMetrics?.creditCardRewardUnavailable === true
-            ? holdingsSummaryMetrics.investmentPnlUnavailable === true
-            : hasPnlUnavailable;
+        const unrealizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(
+            summarySummaries, {metric: 'unrealized'},
+        );
+        const hasRealizedPnlUnavailable = realizedPnlCoverage.status !== 'complete'
+            || (normalizedSummaryScope === 'all' && (
+                holdingsSummaryMetrics?.realizedPnlUnavailable === true
+                || holdingsSummaryMetrics?.creditCardRewardUnavailable === true
+            )) || !Number.isFinite(brokerRewardRealizedIncome);
+        const hasUnrealizedPnlUnavailable = unrealizedPnlCoverage.status !== 'complete'
+            || (normalizedSummaryScope === 'all'
+                && holdingsSummaryMetrics?.unrealizedPnlUnavailable === true);
+        const hasPnlUnavailable = hasRealizedPnlUnavailable || hasUnrealizedPnlUnavailable;
+        const realizedPnlCoverageLabel = realizedPnlCoverage.status === 'partial' || realizedPnlCoverage.completeCount > 0
+            ? 'Partial · total unavailable' : 'Unavailable';
+        const unrealizedPnlCoverageLabel = unrealizedPnlCoverage.status === 'partial'
+            ? 'Partial · total unavailable' : 'Unavailable';
         const holdingsRealizedPnl = summarySummaries.reduce(
             (sum, summary) => sum + (
                 Number(runtime.getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
@@ -177,15 +188,22 @@ function renderHoldingsTable(
             0,
         );
         const fallbackTotalRealizedPnl = holdingsRealizedPnl + brokerRewardRealizedIncome;
-        const totalRealizedPnl = normalizedSummaryScope === 'all'
-            && Number.isFinite(Number(holdingsSummaryMetrics?.totalRealizedPnl))
+        const totalRealizedPnl = hasRealizedPnlUnavailable ? null : normalizedSummaryScope === 'all'
+            && holdingsSummaryMetrics?.totalRealizedPnl !== null
+            && holdingsSummaryMetrics?.totalRealizedPnl !== undefined
+            && Number.isFinite(Number(holdingsSummaryMetrics.totalRealizedPnl))
             ? Number(holdingsSummaryMetrics.totalRealizedPnl)
             : fallbackTotalRealizedPnl;
-        const totalUnrealizedPnl = summarySummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+        const totalUnrealizedPnl = hasUnrealizedPnlUnavailable ? null : summarySummaries.reduce(
+            (sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0,
+        );
         const totalDailyPnl = summarySummaries.reduce((totals, summary) => {
-            if (summary?.pnlUnavailable === true) return totals;
             const dailyPnl = runtime.resolveInvestmentHoldingDailyPnl(summary);
-            totals.realized += Number(dailyPnl.realized) || 0;
+            if (runtime.isInvestmentRealizedPnlUnavailable(summary)) {
+                totals.realized = null;
+            } else if (totals.realized !== null) {
+                totals.realized += Number(dailyPnl.realized) || 0;
+            }
             if (dailyPnl.unrealized === null || dailyPnl.unrealized === undefined) {
                 totals.unrealized = null;
             } else if (totals.unrealized !== null) {
@@ -193,12 +211,12 @@ function renderHoldingsTable(
             }
             return totals;
         }, { realized: 0, unrealized: 0 });
-        const cumulativePnl = totalRealizedPnl + totalUnrealizedPnl;
+        const cumulativePnl = hasPnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         const totalNetMarketValue = openSummaries.reduce((sum, summary) => sum + (Number.isFinite(summary.marketValue) ? summary.marketValue : NaN), 0);
         const totalWeight = Number.isFinite(TOTAL_EQUITY) && Math.abs(TOTAL_EQUITY) > 1e-9
             ? (totalNetMarketValue / TOTAL_EQUITY) * 100
             : 0;
-        const totalRealizedClass = hasPnlUnavailable
+        const totalRealizedClass = hasRealizedPnlUnavailable
             ? ''
             : runtime.getInvestmentHoldingsRealizedToneClass(totalRealizedPnl);
         const totalUnrealizedClass = hasUnrealizedPnlUnavailable
@@ -233,13 +251,14 @@ function renderHoldingsTable(
                 `;
             const averagePriceDisplay = summary.averagePrice === null ? '-' : runtime.formatHoldingsMoney(summary.averagePrice);
             const positionDisplay = runtime.formatHoldingsPosition(summary.shares);
-            const pnlUnavailable = summary?.pnlUnavailable === true;
+            const realizedPnlUnavailable = runtime.isInvestmentRealizedPnlUnavailable(summary);
+            const unrealizedPnlUnavailable = runtime.isInvestmentUnrealizedPnlUnavailable(summary);
             const realizedPnl = runtime.getInvestmentCanonicalSummaryRealizedPnl(summary);
             const realizedPnlLocal = runtime.getInvestmentCanonicalSummaryRealizedPnlLocal(summary);
-            const realizedClass = pnlUnavailable
+            const realizedClass = realizedPnlUnavailable
                 ? ''
                 : runtime.getInvestmentHoldingsRealizedToneClass(realizedPnl);
-            const unrealizedClass = pnlUnavailable || summary.unrealizedPnl === null
+            const unrealizedClass = unrealizedPnlUnavailable || summary.unrealizedPnl === null
                 ? ''
                 : (summary.unrealizedPnl >= 0
                     ? ' investment-holdings-value-positive'
@@ -307,13 +326,13 @@ function renderHoldingsTable(
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${realizedClass}">
                         <span class="investment-holdings-pnl-stack">
-                            ${pnlUnavailable ? runtime.renderWorkspaceMetricValueContent('Unavailable') : runtime.renderHoldingsDualCurrencyValue(
+                            ${realizedPnlUnavailable ? runtime.renderWorkspaceMetricValueContent('Unavailable') : runtime.renderHoldingsDualCurrencyValue(
                                 realizedPnl,
                                 realizedPnlLocal,
                                 summary.quoteCurrency,
                                 { valueClass: realizedClass },
                             )}
-                            ${!pnlUnavailable && summary.hasOpenPosition
+                            ${!realizedPnlUnavailable && summary.hasOpenPosition
                                 ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                                     'daily_realized_pnl',
                                     summary.ticker,
@@ -325,17 +344,18 @@ function renderHoldingsTable(
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money${unrealizedClass}">
                         <span class="investment-holdings-pnl-stack">
-                            ${pnlUnavailable ? runtime.renderWorkspaceMetricValueContent('Unavailable') : runtime.renderInvestmentLiveValue('unrealized_pnl', summary.unrealizedPnl, {
+                            ${runtime.renderInvestmentLiveValue('unrealized_pnl', unrealizedPnlUnavailable ? null : summary.unrealizedPnl, {
                                 ticker: summary.ticker,
                                 className: `trade-metric-value investment-stock-details-metric-value ${unrealizedClass.trim()}`,
-                                formatter: (nextValue) => nextValue === null ? '-' : runtime.formatHoldingsMoney(nextValue),
+                                formatter: (nextValue) => unrealizedPnlUnavailable ? 'Unavailable'
+                                    : (nextValue === null ? '-' : runtime.formatHoldingsMoney(nextValue)),
                                 useSplitValue: true,
                             })}
-                            ${!pnlUnavailable && summary.hasOpenPosition
+                            ${summary.hasOpenPosition
                                 ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                                     'daily_unrealized_pnl',
                                     summary.ticker,
-                                    dailyPnl.unrealized,
+                                    unrealizedPnlUnavailable ? null : dailyPnl.unrealized,
                                     { liveEligible: liveBadgeEligible },
                                 )
                                 : ''}
@@ -461,12 +481,12 @@ function renderHoldingsTable(
                 </td>
                 <td class="investment-holdings-cell investment-holdings-cell-money${totalRealizedClass}">
                     <span class="investment-holdings-pnl-stack">
-                        ${runtime.renderInvestmentLiveValue('summary_realized_pnl', hasPnlUnavailable ? null : totalRealizedPnl, {
+                        ${runtime.renderInvestmentLiveValue('summary_realized_pnl', hasRealizedPnlUnavailable ? null : totalRealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value${totalRealizedClass}`,
-                            formatter: (nextValue) => hasPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
+                            formatter: (nextValue) => hasRealizedPnlUnavailable ? realizedPnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
-                        ${!hasPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
+                        ${!hasRealizedPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(
                             'summary_daily_realized_pnl',
                             '',
                             totalDailyPnl.realized,
@@ -478,7 +498,7 @@ function renderHoldingsTable(
                     <span class="investment-holdings-pnl-stack">
                         ${runtime.renderInvestmentLiveValue('summary_unrealized_pnl', hasUnrealizedPnlUnavailable ? null : totalUnrealizedPnl, {
                             className: `trade-metric-value investment-stock-details-metric-value ${totalUnrealizedClass.trim()}`,
-                            formatter: (nextValue) => hasUnrealizedPnlUnavailable ? pnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
+                            formatter: (nextValue) => hasUnrealizedPnlUnavailable ? unrealizedPnlCoverageLabel : runtime.formatHoldingsMoney(nextValue),
                             useSplitValue: true,
                         })}
                         ${!hasUnrealizedPnlUnavailable ? runtime.renderInvestmentHoldingsDailyPnlBadge(

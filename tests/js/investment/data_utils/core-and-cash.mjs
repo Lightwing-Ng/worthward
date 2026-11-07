@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.3.5 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -2035,22 +2035,28 @@ test('Schwab authoritative snapshots retain unknown basis and reported close pri
             assert.ok(summary);
             assert.equal(summary.totalCost, null);
             assert.equal(summary.averagePrice, null);
-            assert.equal(summary.realizedPnl, null);
-            assert.equal(summary.realizedPnlLocal, null);
             assert.equal(summary.unrealizedPnl, null);
             assert.equal(summary.unrealizedPnlLocal, null);
             assert.equal(summary.totalPnl, null);
             assert.equal(summary.totalPnlLocal, null);
-            assert.equal(summary.realizedPnlStatus, 'unavailable');
             assert.equal(summary.unrealizedPnlStatus, 'unavailable');
+            assert.equal(summary.unrealizedPnlUnavailable, true);
             assert.equal(summary.pnlUnavailable, true);
         }
+        // The separately evidenced completed trade is independent of the remaining basis gap.
+        assert.equal(qqqi.realizedPnl, 10);
+        assert.equal(qqqi.realizedPnlLocal, 10);
+        assert.equal(qqqi.realizedPnlStatus, 'complete');
+        assert.equal(qqqi.realizedPnlUnavailable, false);
+        assert.equal(partial.realizedPnl, null);
+        assert.equal(partial.realizedPnlStatus, 'unavailable');
+        assert.equal(partial.realizedPnlUnavailable, true);
         assert.equal(qqqi.lastPrice, 53.89);
         assert.equal(qqqi.marketValue, 808.35);
         assert.equal(qqqi.realizedPnlAccounts.length, 1);
-        assert.equal(qqqi.realizedPnlAccounts[0].realizedPnl, null);
-        assert.equal(qqqi.realizedPnlAccounts[0].realizedPnlLocal, null);
-        assert.equal(qqqi.realizedPnlAccounts[0].status, 'unavailable');
+        assert.equal(qqqi.realizedPnlAccounts[0].realizedPnl, 10);
+        assert.equal(qqqi.realizedPnlAccounts[0].realizedPnlLocal, 10);
+        assert.equal(qqqi.realizedPnlAccounts[0].status, 'complete');
         assert.equal(
             qqqi.pnlUnavailableReason,
             'authoritative_position_snapshot_cost_basis_unknown',
@@ -2059,10 +2065,12 @@ test('Schwab authoritative snapshots retain unknown basis and reported close pri
             partial.pnlUnavailableReason,
             'authoritative_position_snapshot_cost_basis_partial',
         );
-        assert.equal(known.pnlUnavailable, false);
+        assert.equal(known.pnlUnavailable, true);
         assert.equal(known.averagePrice, 0);
         assert.equal(known.unrealizedPnl, 2);
-        assert.equal(known.totalPnl, 2);
+        assert.equal(known.realizedPnlUnavailable, true);
+        assert.equal(known.unrealizedPnlUnavailable, false);
+        assert.equal(known.totalPnl, null);
     } finally {
         if (previousWindow === undefined) delete globalThis.window;
         else globalThis.window = previousWindow;

@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.2`
+Documentation version: `v1.104.3`
 
 ## SQLite persistence verification
 
@@ -42,6 +42,16 @@ counts for actual renders and exact-input reuse. Never commit native broker
 sources, private ledger snapshots, or account-level acceptance reports.
 
 ## Composable verification
+
+P&L availability regressions verify realized and unrealized components
+independently. Cover complete results, incomplete historical reconciliation
+with verified current cost, verified realized P&L with unknown current cost,
+flat positions, unpriced buys/sells and short covers, complete account-scoped
+realized results across currencies, missing component-specific FX, and unresolved
+security-transfer blocks. Verify initial rendering and live quote updates use the same rules;
+cumulative values must remain unavailable when either component is incomplete.
+Private broker captures may support a local read-only acceptance audit but
+must never become versioned test fixtures or production test writes.
 
 Select checks by the changed behavior and its affected callers. A small backend
 fix requires its Python tests and relevant contracts; unrelated browser flows

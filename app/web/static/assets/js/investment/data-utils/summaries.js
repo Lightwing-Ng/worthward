@@ -1,7 +1,8 @@
 /**
  * Daily equity and ticker-summary composition utilities.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Changed: Realized reconciliation and current unrealized valuation have independent coverage.
  * - Added: Current broker/all-account snapshot scope is explicit.
  * - Fixed: Dated realized amounts use each account currency and current FX.
  * - Fixed: Daily equity materializes reported interest-accrual statement dates
@@ -763,29 +764,25 @@ export function createInvestmentSummaryUtils(runtime) {
                 && result.realizedPnl !== null
             ));
             const summaryCoverageStatus = realizedPnlAccounts.length === 0
-                ? (performanceEntry ? 'unavailable' : 'complete')
+                ? (performanceEntry || snapshotEntry ? 'unavailable' : 'complete')
                 : completeRealizedPnlAccounts.length === realizedPnlAccounts.length
                     ? 'complete'
                     : (completeRealizedPnlAccounts.length ? 'partial' : 'unavailable');
             const hasOnlyUnavailableRealizedAccounts = (
                 realizedPnlAccounts.length > 0 && completeRealizedPnlAccounts.length === 0
             );
-            const hasAuthoritativeBrokerRealizedPnl = realizedPnlAccounts.some((result) => (
-                String(result.source || '').startsWith('broker_performance_snapshot')
-                && result.status === 'complete'
-                && result.reconciliation?.coverageStatus === 'complete'
-                && result.realizedPnl !== null
-            ));
             const hasMixedPositionCurrencies = !snapshotEntry && summary.hasMixedPositionCurrencies === true;
             const preserveMixedCurrencyRealizedBreakdown = hasMixedPositionCurrencies;
             const hasUnknownOpenCostBasis = !isFlatPosition(shares) && costBasisStatus !== 'known';
             const costBasisUnavailable = hasMixedPositionCurrencies || hasUnknownOpenCostBasis;
-            let pnlUnavailable = (
-                summaryCoverageStatus !== 'complete'
-                || (hasMixedPositionCurrencies && !hasAuthoritativeBrokerRealizedPnl)
-                || hasUnknownOpenCostBasis
-            );
-            let pnlUnavailableReason = !pnlUnavailable
+            let realizedPnlUnavailable = summaryCoverageStatus !== 'complete';
+            let realizedPnlUnavailableReason = !realizedPnlUnavailable
+                ? null
+                : (summaryCoverageStatus === 'partial'
+                    ? 'realized_pnl_coverage_partial'
+                    : 'realized_pnl_reconciliation_unavailable');
+            let unrealizedPnlUnavailable = !isFlatPosition(shares) && costBasisUnavailable;
+            let unrealizedPnlUnavailableReason = !unrealizedPnlUnavailable
                 ? null
                 : (hasUnknownOpenCostBasis
                     ? (costBasisStatus === 'partial'
@@ -795,11 +792,7 @@ export function createInvestmentSummaryUtils(runtime) {
                         : (snapshotEntry
                             ? 'authoritative_position_snapshot_cost_basis_unknown'
                             : 'open_position_cost_basis_unknown'))
-                    : (summaryCoverageStatus !== 'complete'
-                        ? (summaryCoverageStatus === 'partial'
-                            ? 'realized_pnl_coverage_partial'
-                            : 'realized_pnl_reconciliation_unavailable')
-                        : 'multiple_position_currencies'));
+                    : 'multiple_position_currencies');
             const costBasisUnavailableReason = !costBasisUnavailable
                 ? null
                 : (hasMixedPositionCurrencies
@@ -948,13 +941,32 @@ export function createInvestmentSummaryUtils(runtime) {
                     fxTimeline,
                     baseCurrency,
                 );
-            const missingFxRate = realizedPnlAccounts.some((result) => result.source === 'missing_fx_rate')
-                || Number.isNaN(marketValue)
-                || Number.isNaN(unrealizedPnl);
-            if (missingFxRate) {
-                pnlUnavailable = true;
-                pnlUnavailableReason = 'missing_fx_rate';
+            const missingRealizedFxRate = realizedPnlAccounts.some(
+                (result) => result.source === 'missing_fx_rate',
+            );
+            if (missingRealizedFxRate) {
+                realizedPnlUnavailable = true;
+                realizedPnlUnavailableReason = 'missing_fx_rate';
             }
+            if (hasOpenPosition && !unrealizedPnlUnavailable) {
+                if (!Number.isFinite(lastPrice) || !Number.isFinite(marketValueLocal)) {
+                    unrealizedPnlUnavailable = true;
+                    unrealizedPnlUnavailableReason = 'missing_market_price';
+                } else if (!Number.isFinite(averagePrice) || !Number.isFinite(unrealizedPnlLocal)) {
+                    unrealizedPnlUnavailable = true;
+                    unrealizedPnlUnavailableReason = 'open_position_cost_basis_unknown';
+                } else if (!Number.isFinite(marketValue) || !Number.isFinite(unrealizedPnl)) {
+                    unrealizedPnlUnavailable = true;
+                    unrealizedPnlUnavailableReason = 'missing_fx_rate';
+                }
+            }
+            const pnlUnavailable = realizedPnlUnavailable || unrealizedPnlUnavailable;
+            const pnlUnavailableReason = missingRealizedFxRate
+                || unrealizedPnlUnavailableReason === 'missing_fx_rate'
+                ? 'missing_fx_rate'
+                : (hasUnknownOpenCostBasis
+                    ? unrealizedPnlUnavailableReason
+                    : (realizedPnlUnavailableReason || unrealizedPnlUnavailableReason));
             const scopedRealizedPnlByDateLocal = completeRealizedPnlAccounts.reduce(
                 (dailyTotals, result) => {
                     Object.entries(result.reconciliation?.realizedPnlByDateLocal || {}).forEach(
@@ -968,7 +980,7 @@ export function createInvestmentSummaryUtils(runtime) {
                 },
                 {},
             );
-            const realizedPnlByDateLocal = pnlUnavailable
+            const realizedPnlByDateLocal = realizedPnlUnavailable
                 ? {}
                 : Object.fromEntries(
                     Object.entries(scopedRealizedPnlByDateLocal).map(([ledgerDate, value]) => ([
@@ -977,7 +989,7 @@ export function createInvestmentSummaryUtils(runtime) {
                     ])),
                 );
             const realizedPnlByDate = {};
-            if (!pnlUnavailable) {
+            if (!realizedPnlUnavailable) {
                 completeRealizedPnlAccounts.forEach((result) => {
                     Object.entries(result.reconciliation?.realizedPnlByDateLocal || {}).forEach(([date, amount]) => {
                         const converted = convertAmountToBaseCurrencyAtLatestRate(
@@ -987,10 +999,10 @@ export function createInvestmentSummaryUtils(runtime) {
                     });
                 });
             }
-            const safeRealizedPnl = pnlUnavailable ? null : realizedPnl;
-            const safeRealizedPnlLocal = pnlUnavailable ? null : realizedPnlLocal;
-            const safeUnrealizedPnl = pnlUnavailable ? null : unrealizedPnl;
-            const safeUnrealizedPnlLocal = pnlUnavailable ? null : unrealizedPnlLocal;
+            const safeRealizedPnl = realizedPnlUnavailable ? null : realizedPnl;
+            const safeRealizedPnlLocal = realizedPnlUnavailable ? null : realizedPnlLocal;
+            const safeUnrealizedPnl = unrealizedPnlUnavailable ? null : unrealizedPnl;
+            const safeUnrealizedPnlLocal = unrealizedPnlUnavailable ? null : unrealizedPnlLocal;
             const accountReconciliations = realizedPnlAccounts
                 .map((accountResult) => accountResult?.reconciliation)
                 .filter((reconciliation) => reconciliation && typeof reconciliation === 'object');
@@ -1075,27 +1087,12 @@ export function createInvestmentSummaryUtils(runtime) {
                     tolerance: 1e-7,
                 },
             };
-            // Partial coverage retains each account's original evidence. A
-            // separate open-position basis failure still withholds otherwise
-            // complete account totals to preserve the established contract.
+            // Current valuation gaps never erase independent account-level realized evidence.
             const preserveRealizedAccountEvidence = (
                 preserveMixedCurrencyRealizedBreakdown
                 || summaryCoverageStatus === 'partial'
+                || unrealizedPnlUnavailable
             );
-            const safeRealizedPnlAccounts = (
-                pnlUnavailable
-                && summaryCoverageStatus === 'complete'
-                && !preserveRealizedAccountEvidence
-            )
-                ? realizedPnlAccounts.map((accountResult) => ({
-                    ...accountResult,
-                    realizedPnl: null,
-                    realizedPnlLocal: null,
-                    realizedPnlByDateLocal: {},
-                    status: 'unavailable',
-                    source: 'unavailable',
-                }))
-                : realizedPnlAccounts;
             const totalPnl = pnlUnavailable || safeRealizedPnl === null || costBasisUnavailable
                 ? null
                 : Number((safeRealizedPnl + (safeUnrealizedPnl ?? 0)).toFixed(12));
@@ -1122,13 +1119,13 @@ export function createInvestmentSummaryUtils(runtime) {
                 valuationComplete: Number.isFinite(marketValue),
                 realizedPnl: safeRealizedPnl,
                 realizedPnlLocal: safeRealizedPnlLocal,
-                realizedPnlAccounts: safeRealizedPnlAccounts,
+                realizedPnlAccounts,
                 realizedPnlReconciliation: summaryReconciliation,
                 realizedPnlStatus: summaryCoverageStatus === 'unavailable'
                     ? 'unavailable'
                     : (summaryCoverageStatus === 'partial'
                         ? 'partial'
-                        : (pnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
+                        : (realizedPnlUnavailable && !preserveMixedCurrencyRealizedBreakdown
                             ? 'unavailable'
                             : (realizedPnlAccounts.some((result) => result.status !== 'complete')
                                 ? 'partial'
@@ -1140,13 +1137,15 @@ export function createInvestmentSummaryUtils(runtime) {
                 quoteCurrency,
                 unrealizedPnl: safeUnrealizedPnl,
                 unrealizedPnlLocal: safeUnrealizedPnlLocal,
-                unrealizedPnlStatus: pnlUnavailable
-                    ? 'unavailable'
-                    : (safeUnrealizedPnl === null ? 'unavailable' : 'complete'),
+                unrealizedPnlStatus: unrealizedPnlUnavailable ? 'unavailable' : 'complete',
                 totalPnl,
                 totalPnlLocal,
                 pnlUnavailable,
                 pnlUnavailableReason,
+                realizedPnlUnavailable,
+                realizedPnlUnavailableReason,
+                unrealizedPnlUnavailable,
+                unrealizedPnlUnavailableReason,
                 costBasisUnavailable,
                 costBasisUnavailableReason,
                 positionWeight,

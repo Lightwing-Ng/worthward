@@ -1,4 +1,4 @@
-/* Code version: v1.2.6 */
+/* Code version: v1.2.7 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentFundingMetricsRuntime} from '../../../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
@@ -798,7 +798,7 @@ test('dividend reinvestment opens shares at the reinvestment cost basis', () => 
     assert.equal(dram.totalPnlLocal, 0);
 });
 
-test('dividend reinvestment without value evidence fails cost basis and P&L closed', () => {
+test('dividend reinvestment without value evidence withholds basis and unrealized P&L', () => {
     setDramTestWindow();
     const reinvestment = makeScopedDramTrade({
         broker: 'schwab', account: 'SCHWAB-1', type: 'dividend_reinvestment',
@@ -815,7 +815,9 @@ test('dividend reinvestment without value evidence fails cost basis and P&L clos
     assert.equal(dram.averagePrice, null);
     assert.equal(dram.costBasisStatus, 'unknown');
     assert.equal(dram.costBasisUnavailable, true);
-    assert.equal(dram.realizedPnl, null);
+    assert.equal(dram.realizedPnl, 0);
+    assert.equal(dram.realizedPnlUnavailable, false);
+    assert.equal(dram.unrealizedPnlUnavailable, true);
     assert.equal(dram.unrealizedPnlLocal, null);
     assert.equal(dram.totalPnlLocal, null);
     assert.equal(dram.pnlUnavailable, true);
@@ -918,7 +920,9 @@ test('same-ticker positions in multiple currencies do not fabricate a combined c
         (result) => result.broker === 'ibkr',
     );
     assert.equal(mixedWithRealizedSummary.pnlUnavailable, true);
-    assert.equal(mixedWithRealizedSummary.realizedPnl, null);
+    assert.equal(mixedWithRealizedSummary.realizedPnl, 10);
+    assert.equal(mixedWithRealizedSummary.realizedPnlUnavailable, false);
+    assert.equal(mixedWithRealizedSummary.unrealizedPnlUnavailable, true);
     assert.equal(mixedWithRealizedSummary.realizedPnlBreakdownAvailable, true);
     assert.equal(ibkrRealized.realizedPnlLocal, 10);
     assert.equal(ibkrRealized.realizedPnl, 10);
@@ -946,7 +950,9 @@ test('same-ticker positions in multiple currencies do not fabricate a combined c
     const calibrated = buildTickerSummaries(calibratedTransactions, {DRAM: 120}, 0, {})[0];
     assert.equal(calibrated.realizedPnlLocal, 7.89);
     assert.equal(calibrated.realizedPnlAccounts[0].source, 'broker_performance_snapshot');
-    assert.equal(calibrated.pnlUnavailable, false);
+    assert.equal(calibrated.pnlUnavailable, true);
+    assert.equal(calibrated.realizedPnlUnavailable, false);
+    assert.equal(calibrated.unrealizedPnlUnavailable, true);
     assert.equal(calibrated.costBasisUnavailable, true);
     assert.equal(calibrated.unrealizedPnl, null);
     assert.equal(calibrated.totalPnl, null);
@@ -1361,7 +1367,7 @@ test('partial HSBC histories remain excluded from complete DRAM, BOXX, and EUV a
     }
 });
 
-test('one incomplete sold account withholds another account open-position P&L', () => {
+test('an incomplete sold account withholds realized totals but preserves known open-position P&L', () => {
     setDramTestWindow();
     const unknownTransfer = makeScopedDramTrade({
         broker: 'hsbc', account: 'HSBC-1', type: 'transfer_in',
@@ -1391,7 +1397,9 @@ test('one incomplete sold account withholds another account open-position P&L', 
     assert.equal(dram.marketValue, 600);
     assert.equal(dram.realizedPnlStatus, 'partial');
     assert.equal(dram.realizedPnl, null);
-    assert.equal(dram.unrealizedPnl, null);
+    assert.equal(dram.unrealizedPnl, 100);
+    assert.equal(dram.realizedPnlUnavailable, true);
+    assert.equal(dram.unrealizedPnlUnavailable, false);
     assert.equal(dram.totalPnl, null);
     assert.equal(dram.pnlUnavailable, true);
     assert.equal(dram.pnlUnavailableReason, 'realized_pnl_coverage_partial');
