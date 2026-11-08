@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.6.0
+ * Code version: v1.7.0
+ * - Fixed: Realized and unrealized coverage gate their own totals and disclosures.
  * - Added: Structured reward categories retain dated conversions and signed native totals.
  * - Changed: Posted RewardCash joins current and dated realized reward income
  *   while investment cash, equity, and ledger rows remain independent.
@@ -16,6 +17,11 @@
  *   of recomputing cash plus market value and dropping dated NAV components.
  * - Added: Extracted from the Investment workspace composition root.
  */
+
+import {
+    isInvestmentRealizedPnlUnavailable,
+    isInvestmentUnrealizedPnlUnavailable,
+} from '../data-utils.js?v=investment-data-utils-v1.125.0';
 
 const BROKER_REWARD_LABELS = {
     coupons: 'Coupons',
@@ -168,7 +174,7 @@ function getInvestmentHistoricalRealizedPnl(
         // the point-in-time transaction replay assembled for the hovered date.
         const pnlUnavailableTickers = new Set(
             safeTickerSummaries
-                .filter((summary) => summary?.pnlUnavailable === true)
+                .filter(isInvestmentRealizedPnlUnavailable)
                 .map((summary) => runtime.getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
@@ -221,6 +227,7 @@ function getInvestmentHistoricalRealizedPnl(
             );
         });
 
+        if (safeTickerSummaries.some(isInvestmentRealizedPnlUnavailable)) return Number.NaN;
         const holdingsRealizedPnl = safeTickerSummaries.reduce(
             (sum, summary) => sum + (
                 Number(runtime.getInvestmentCanonicalSummaryRealizedPnl(summary)) || 0
@@ -238,7 +245,7 @@ function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitM
         const safeTickerSummaries = Array.isArray(tickerSummaries) ? tickerSummaries : [];
         const pnlUnavailableTickers = new Set(
             safeTickerSummaries
-                .filter((summary) => summary?.pnlUnavailable === true)
+                .filter(isInvestmentRealizedPnlUnavailable)
                 .map((summary) => runtime.getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
@@ -432,7 +439,10 @@ function getRealizedPnlAttribution(transactions, tickerSummaries, brokerBenefitM
         }
 
         return {
-            totalRealizedPnl: conversionIncomplete ? null : totalRealizedPnl,
+            totalRealizedPnl: conversionIncomplete
+                || safeTickerSummaries.some(isInvestmentRealizedPnlUnavailable)
+                ? null : totalRealizedPnl,
+            cashFlowFxUnavailable: conversionIncomplete,
             realizedPnlRows: Array.from(realizedPnlRowSet),
             realizedPnlDetails,
         };
@@ -467,6 +477,12 @@ function getHoldingsSummaryMetrics(
             resolvedBrokerBenefitMetrics,
         );
         const pnlCoverage = runtime.getInvestmentAggregatePnlCoverage(tickerSummaries);
+        const realizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(
+            tickerSummaries, {metric: 'realized'},
+        );
+        const unrealizedPnlCoverage = runtime.getInvestmentAggregatePnlCoverage(
+            tickerSummaries, {metric: 'unrealized'},
+        );
         const creditCardRewardUnavailable = resolvedBrokerBenefitMetrics.creditCardRewardUnavailable === true;
         const investmentRealizedAttribution = creditCardRewardUnavailable
             ? getRealizedPnlAttribution(safeTransactions, tickerSummaries, {
@@ -475,16 +491,21 @@ function getHoldingsSummaryMetrics(
             : realizedPnlAttribution;
         const investmentPnlUnavailable = pnlCoverage.status !== 'complete'
             || !Number.isFinite(investmentRealizedAttribution.totalRealizedPnl);
-        if (!Number.isFinite(realizedPnlAttribution.totalRealizedPnl)) {
+        if (realizedPnlAttribution.cashFlowFxUnavailable) {
             pnlCoverage.cashFlowFxUnavailable = true;
             pnlCoverage.status = pnlCoverage.completeCount > 0 ? 'partial' : 'unavailable';
+            realizedPnlCoverage.cashFlowFxUnavailable = true;
+            realizedPnlCoverage.status = realizedPnlCoverage.completeCount > 0 ? 'partial' : 'unavailable';
         }
-        const pnlUnavailable = pnlCoverage.status !== 'complete'
+        const realizedPnlUnavailable = realizedPnlCoverage.status !== 'complete'
             || !Number.isFinite(realizedPnlAttribution.totalRealizedPnl);
-        const totalRealizedPnl = pnlUnavailable ? null : realizedPnlAttribution.totalRealizedPnl;
-        const totalUnrealizedPnl = investmentPnlUnavailable
+        const unrealizedPnlUnavailable = unrealizedPnlCoverage.status !== 'complete';
+        const pnlUnavailable = realizedPnlUnavailable || unrealizedPnlUnavailable;
+        const totalRealizedPnl = realizedPnlUnavailable ? null : realizedPnlAttribution.totalRealizedPnl;
+        const totalUnrealizedPnl = unrealizedPnlUnavailable
             ? null
-            : tickerSummaries.reduce((sum, summary) => sum + (Number(summary.unrealizedPnl) || 0), 0);
+            : tickerSummaries.filter((summary) => summary?.hasOpenPosition === true)
+                .reduce((sum, summary) => sum + summary.unrealizedPnl, 0);
         const cumulativePnl = pnlUnavailable ? null : totalRealizedPnl + totalUnrealizedPnl;
         const openSummaries = tickerSummaries.filter((summary) => summary?.hasOpenPosition === true);
         const hasUnavailableMarketValue = openSummaries.some(
@@ -513,7 +534,7 @@ function getHoldingsSummaryMetrics(
         );
         const unavailableTickers = new Set(
             tickerSummaries
-                .filter((summary) => summary?.pnlUnavailable === true)
+                .filter(isInvestmentUnrealizedPnlUnavailable)
                 .map((summary) => runtime.getInvestmentCanonicalTicker(summary?.ticker))
                 .filter(Boolean),
         );
@@ -528,8 +549,7 @@ function getHoldingsSummaryMetrics(
         const unrealizedPnlDetails = tickerSummaries
             .filter((summary) => (
                 summary?.hasOpenPosition === true
-                && summary?.pnlUnavailable !== true
-                && Number.isFinite(Number(summary?.unrealizedPnl))
+                && !isInvestmentUnrealizedPnlUnavailable(summary)
             ))
             .map((summary) => ({
                 label: runtime.formatInvestmentTickerForDisplay(summary.ticker),
@@ -559,13 +579,24 @@ function getHoldingsSummaryMetrics(
             cumulativePnl,
             pnlUnavailable,
             pnlCoverage,
+            realizedPnlUnavailable,
+            unrealizedPnlUnavailable,
+            realizedPnlCoverage,
+            unrealizedPnlCoverage,
+            realizedPnlUnavailableReason: realizedPnlAttribution.cashFlowFxUnavailable
+                ? 'missing_fx_rate'
+                : (realizedPnlCoverage.status === 'partial'
+                    ? 'realized_pnl_coverage_partial'
+                    : (realizedPnlUnavailable ? 'realized_pnl_reconciliation_unavailable' : '')),
+            unrealizedPnlUnavailableReason: tickerSummaries.find(isInvestmentUnrealizedPnlUnavailable)
+                ?.unrealizedPnlUnavailableReason || '',
             creditCardRewardUnavailable,
             investmentPnlUnavailable,
             tickerSummaries,
-            realizedPnlRows: pnlUnavailable ? [] : realizedPnlRows,
-            realizedPnlDetails: pnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
-            unrealizedPnlRows: investmentPnlUnavailable ? [] : unrealizedPnlRows,
-            unrealizedPnlDetails: investmentPnlUnavailable ? [] : unrealizedPnlDetails,
+            realizedPnlRows: realizedPnlUnavailable ? [] : realizedPnlRows,
+            realizedPnlDetails: realizedPnlUnavailable ? [] : realizedPnlAttribution.realizedPnlDetails,
+            unrealizedPnlRows: unrealizedPnlUnavailable ? [] : unrealizedPnlRows,
+            unrealizedPnlDetails: unrealizedPnlUnavailable ? [] : unrealizedPnlDetails,
             cumulativePnlRows: pnlUnavailable ? [] : Array.from(new Set([
                 ...realizedPnlRows,
                 ...unrealizedPnlRows,

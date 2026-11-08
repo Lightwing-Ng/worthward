@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.124.0
+ * Code version: v1.125.0
+ * - Changed: Realized and unrealized P&L expose independent availability and coverage.
  * - Added: Current cash conversion requires recent daily market FX provenance.
  * - Added: Strict signed HSBC debit-card cashback classification and realized income.
  * - Changed: Resolves dated account snapshots, cash anchors, and cost-conserving replay.
@@ -253,13 +254,13 @@ import {
 } from './data-utils/interest-accruals.js?v=investment-data-utils-interest-accruals-v1.0.0';
 import {
     createInvestmentPositionValuationUtils,
-} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.6';
+} from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.7';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.4.0';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.5.0';
 import {
     createInvestmentSummaryUtils,
-} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.3.0';
+} from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.4.0';
 import {
     createInvestmentTransactionPresentationUtils,
 } from './data-utils/transaction-presentation.js?v=investment-data-utils-transaction-presentation-v1.5.0';
@@ -699,6 +700,9 @@ export function createInvestmentDataUtils({
         buildTickerPriceIndex,
         buildTickerSummaries,
         buildValuationStatus,
+        getInvestmentAggregatePnlCoverage,
+        isInvestmentRealizedPnlUnavailable,
+        isInvestmentUnrealizedPnlUnavailable,
         aggregateInvestmentScopedPositionStates,
         getInvestmentCanonicalTicker,
         getInvestmentLegacyLineageTickers,
@@ -822,21 +826,49 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.124.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.125.0';
+
+export function isInvestmentRealizedPnlUnavailable(summary) {
+    if (typeof summary?.realizedPnlUnavailable === 'boolean') {
+        return summary.realizedPnlUnavailable || !Number.isFinite(summary.realizedPnl);
+    }
+    return summary?.pnlUnavailable === true
+        || Boolean(summary?.realizedPnlStatus && summary.realizedPnlStatus !== 'complete')
+        || !Number.isFinite(summary?.realizedPnl);
+}
+
+export function isInvestmentUnrealizedPnlUnavailable(summary) {
+    if (summary?.hasOpenPosition === false) return false;
+    if (typeof summary?.unrealizedPnlUnavailable === 'boolean') {
+        return summary.unrealizedPnlUnavailable || !Number.isFinite(summary.unrealizedPnl);
+    }
+    return summary?.pnlUnavailable === true
+        || Boolean(summary?.unrealizedPnlStatus && summary.unrealizedPnlStatus !== 'complete')
+        || !Number.isFinite(summary?.unrealizedPnl);
+}
 
 // Coverage is independent of the numeric subtotal; unknown components never count as zero.
-export function getInvestmentAggregatePnlCoverage(summaries = []) {
-    const rows = Array.isArray(summaries) ? summaries : [];
+export function getInvestmentAggregatePnlCoverage(summaries = [], {metric = 'combined'} = {}) {
+    if (!['combined', 'realized', 'unrealized'].includes(metric)) {
+        throw new RangeError(`Unsupported Investment P&L coverage metric: ${metric}`);
+    }
+    const inputRows = Array.isArray(summaries) ? summaries : [];
+    const rows = metric === 'unrealized'
+        ? inputRows.filter((summary) => summary?.hasOpenPosition === true)
+        : inputRows;
     const missing = rows.filter((summary) => (
-        summary?.pnlUnavailable === true
-        || (summary?.realizedPnlStatus && summary.realizedPnlStatus !== 'complete')
-        || !Number.isFinite(summary?.realizedPnl)
-        || (summary?.hasOpenPosition && !Number.isFinite(summary?.unrealizedPnl))
+        (metric !== 'unrealized' && isInvestmentRealizedPnlUnavailable(summary))
+        || (metric !== 'realized' && summary?.hasOpenPosition
+            && isInvestmentUnrealizedPnlUnavailable(summary))
+    ));
+    const hasPartialMetric = rows.some((summary) => (
+        (metric !== 'unrealized' && summary?.realizedPnlStatus === 'partial')
+        || (metric !== 'realized' && summary?.unrealizedPnlStatus === 'partial')
     ));
     return {
         status: missing.length === 0
             ? 'complete'
-            : (missing.length < rows.length || rows.some((summary) => summary?.realizedPnlStatus === 'partial')
+            : (missing.length < rows.length || hasPartialMetric
                 ? 'partial'
                 : 'unavailable'),
         completeCount: rows.length - missing.length,

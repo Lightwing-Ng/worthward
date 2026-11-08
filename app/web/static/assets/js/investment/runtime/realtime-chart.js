@@ -1,7 +1,7 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.2.1
+ * Code version: v1.3.0
  * - Fixed: Missing current cash remains unavailable during realtime quote updates.
  * - Changed: Equity axis ticks now use the one shared tick-selection owner
  *   instead of an independent copy of the same algorithm.
@@ -1331,11 +1331,10 @@ function isInvestmentAggregateSecurityTransferPnlUnavailable(ticker) {
 
 function applyInvestmentAggregatePnlAvailability(tickerSummaries = []) {
         return (Array.isArray(tickerSummaries) ? tickerSummaries : []).map((summary) => {
-            const pnlUnavailable = (
-                summary?.pnlUnavailable === true
-                || isInvestmentAggregateSecurityTransferPnlUnavailable(summary?.ticker)
-            );
-            if (!pnlUnavailable) return summary;
+            // Ordinary component gaps retain the other metric's verified value.
+            if (!isInvestmentAggregateSecurityTransferPnlUnavailable(summary?.ticker)) return summary;
+            const reason = getInvestmentSecurityTransferReconciliation()?.pnl_unavailable_reason
+                || 'security_transfer_cost_basis_unverified';
             const reconciliation = summary?.realizedPnlReconciliation;
             const unavailableReconciliation = reconciliation && typeof reconciliation === 'object'
                 ? {
@@ -1357,17 +1356,20 @@ function applyInvestmentAggregatePnlAvailability(tickerSummaries = []) {
             return {
                 ...summary,
                 pnlUnavailable: true,
-                pnlUnavailableReason: String(
-                    summary?.pnlUnavailableReason
-                    || getInvestmentSecurityTransferReconciliation()?.pnl_unavailable_reason
-                    || 'cost_basis_unverified'
-                ),
+                securityTransferPnlUnavailable: true,
+                pnlUnavailableReason: reason,
+                realizedPnlUnavailable: true,
+                realizedPnlUnavailableReason: reason,
+                unrealizedPnlUnavailable: true,
+                unrealizedPnlUnavailableReason: reason,
                 realizedPnl: null,
                 realizedPnlLocal: null,
                 realizedPnlByDate: {},
                 realizedPnlReconciliation: unavailableReconciliation,
                 unrealizedPnl: null,
                 unrealizedPnlLocal: null,
+                totalPnl: null,
+                totalPnlLocal: null,
             };
         });
     }
