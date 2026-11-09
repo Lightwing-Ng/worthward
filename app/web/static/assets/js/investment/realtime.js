@@ -1,7 +1,8 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.7
+ * Code version: v1.3.8
+ * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Unknown live values remove numeric metadata without becoming zero.
  * - Fixed: Stock-details live values keep a CSS-owned line box through digit
  *   transitions, and digit slots retain exact measured widths at completion.
@@ -16,10 +17,10 @@
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
-import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.0';
+import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.2';
 import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.7';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.8';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,

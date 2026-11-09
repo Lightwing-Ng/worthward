@@ -1,4 +1,5 @@
-{# Code version: v1.81.10
+{# Code version: v1.81.11
+   Fixed: Synchronizes Investment module cache versions after boundary extraction.
    Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
    Fixed: Loads personal chip bars with uniform vertical thickness.
    Fixed: Loads native HSBC paste and persistent card-import feedback.
@@ -966,5 +967,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.9') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.166.10') }}"></script>
 {% endblock %}

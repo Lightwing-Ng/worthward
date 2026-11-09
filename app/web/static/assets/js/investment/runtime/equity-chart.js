@@ -1,7 +1,8 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.5.0
+ * Code version: v1.5.1
+ * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Current and historical P&L preserve independent metric availability.
  * - Changed: Posted RewardCash joins current and dated historical realized P&L.
  * - Added: Card imports refresh reward views without changing asset chart points.
@@ -22,7 +23,7 @@
 import {
     isInvestmentRealizedPnlUnavailable,
     isInvestmentUnrealizedPnlUnavailable,
-} from '../data-utils.js?v=investment-data-utils-v1.125.0';
+} from '../data-utils.js?v=investment-data-utils-v1.125.2';
 
 export function createInvestmentEquityChartRuntime(runtime) {
 function updateDashboardWithEquity(
