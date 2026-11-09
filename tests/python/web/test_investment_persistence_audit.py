@@ -1,11 +1,12 @@
 """Protect ledger reads, migrations, and derived-cache boundaries.
 
-Code version: v1.1.0
+Code version: v1.1.1
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 import threading
@@ -30,6 +31,7 @@ def _get_context(context):
         load_investment_price_histories=lambda txns, open_tickers=None: ({}, []),
         build_investment_ticker_profiles=lambda txns, open_tickers: {},
         load_investment_realtime_quotes=lambda tickers: [],
+        CREDIT_CARD_STORE_PATH=context["INVESTMENT_STORE_PATH"].parent / "credit_cards.sqlite3",
     )
     return context
 
@@ -75,9 +77,11 @@ def test_get_never_labels_old_payload_with_new_ledger_version(commit_runtime):
     assert _get(context)["investment_cache"]["status"] == "hit"
 
 
-@pytest.mark.parametrize("failure_kind", ["fx", "price"])
+@pytest.mark.parametrize(
+    "failure_kind,currency", [("fx", "HKD"), ("fx", "SGD"), ("price", "USD")]
+)
 def test_transient_history_failure_is_retried_before_caching(
-    commit_runtime, failure_kind
+    commit_runtime, failure_kind, currency
 ):
     context, ledger, _cache = commit_runtime
     calls = []
@@ -92,7 +96,7 @@ def test_transient_history_failure_is_retried_before_caching(
     _get_context(context)
     payload = buy_csv_payload()
     if failure_kind == "fx":
-        payload["transactions"][0]["currency"] = "HKD"
+        payload["transactions"][0]["currency"] = currency
     else:
 
         def prices(_txns, open_tickers=None):
@@ -110,8 +114,88 @@ def test_transient_history_failure_is_retried_before_caching(
     assert recovered["investment_cache"]["status"] == "miss"
     assert len(calls) == 2
     if failure_kind == "fx":
-        assert recovered["fx_rate_history_by_currency"]["HKD"]["values"]
+        assert recovered["fx_rate_history_by_currency"][currency]["values"]
     assert _get(context)["investment_cache"]["status"] == "hit"
+
+
+def test_investment_fx_payload_uses_supported_currencies_and_canonical_rmb_aliases(
+    commit_runtime,
+):
+    context, _ledger, _cache = commit_runtime
+    requested = []
+
+    def fx(currency, _start, _end):
+        requested.append(currency)
+        return pd.DataFrame({
+            "Date": [pd.Timestamp("2026-01-02")], "UsdPerUnit": [0.75],
+        })
+
+    context["fetch_usd_exchange_rate_history"] = fx
+    _get_context(context)
+    rows = [
+        {"type": "kol_reward", "date": "2026-01-02", "currency": currency}
+        for currency in ["USD", "HKD", "CNY", "CNH", "RMB", "SGD", "KRW", "ZZZ"]
+    ]
+    histories = context["build_investment_fx_rate_history_payload"](rows)
+    assert requested == ["CNY", "HKD", "KRW", "SGD"]
+    assert histories["SGD"]["values"] == {"2026-01-02": pytest.approx(1 / 0.75)}
+    assert histories["CNH"] == histories["CNY"]
+    assert "USD" not in histories
+    assert "ZZZ" not in histories
+
+
+@pytest.mark.parametrize("cached_history", ["missing", "empty", "malformed"])
+def test_incomplete_cached_sgd_reward_fx_is_rebuilt_without_changing_ledgers(
+    commit_runtime, cached_history
+):
+    context, ledger, cache = commit_runtime
+    production_root = Path(__file__).resolve().parents[3] / "settings_store"
+    production_paths = [
+        production_root / "investment.sqlite3", production_root / "credit_cards.sqlite3",
+    ]
+    production_digests = {
+        path: hashlib.sha256(path.read_bytes()).digest() if path.exists() else None
+        for path in production_paths
+    }
+    calls = []
+
+    def fx(currency, _start, _end):
+        calls.append(currency)
+        return pd.DataFrame({
+            "Date": [pd.Timestamp("2026-01-02")], "UsdPerUnit": [0.75],
+        })
+
+    context["fetch_usd_exchange_rate_history"] = fx
+    _get_context(context)
+    storage.save_investment_store_payload({"transactions": [{
+        "id": "synthetic-sgd-reward",
+        "broker": "longbridge_sg", "account": "SYNTHETIC-SG", "ticker": "",
+        "type": "kol_reward", "currency": "SGD", "date": "2026-01-02",
+        "normalized": {"net_amount": "25", "cash_flow_amount": "25", "is_cash_flow": True},
+    }]}, ledger)
+    ledger_before = ledger.read_bytes()
+    assert _get(context)["investment_cache"]["status"] == "miss"
+    assert _get(context)["investment_cache"]["status"] == "hit"
+    cached = json.loads(cache.read_text())
+    histories = cached["payload"]["fx_rate_history_by_currency"]
+    if cached_history == "missing":
+        del histories["SGD"]
+    elif cached_history == "empty":
+        histories["SGD"] = {"dates": [], "values": {}}
+    else:
+        histories["SGD"] = "unavailable"
+    context["write_json_atomic"](cache, cached)
+
+    repaired = _get(context)
+    assert repaired["investment_cache"]["status"] == "miss"
+    assert repaired["fx_rate_history_by_currency"]["SGD"]["values"] == {
+        "2026-01-02": pytest.approx(1 / 0.75),
+    }
+    assert calls == ["SGD", "SGD"]
+    assert _get(context)["investment_cache"]["status"] == "hit"
+    assert ledger.read_bytes() == ledger_before
+    for path, digest in production_digests.items():
+        assert (hashlib.sha256(path.read_bytes()).digest() if path.exists() else None) == digest
 
 
 def test_empty_activity_import_commits_and_reimports_snapshot_evidence(commit_runtime):

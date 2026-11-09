@@ -1,6 +1,6 @@
 """Isolated HSBC credit-card persistence and reconciliation contracts.
 
-Code version: v1.1.0
+Code version: v1.1.1
 - Added: Foreign pending-currency isolation and expanded-detail provenance coverage.
 - Added: Preview isolation, replay, conservative reconciliation, concurrency,
   corruption handling, atomic failure, and browser-safe readback coverage.
@@ -499,6 +499,37 @@ def test_foreign_currency_support_is_limited_to_cny_pending_purchases(
 ) -> None:
     with pytest.raises(ValueError, match="status or currency"):
         ledger._validate_transaction(_row(status=status, kind=kind, currency=currency))
+
+
+def test_source_labelled_posted_rebate_retains_exact_liability(isolated: Path) -> None:
+    row = _row("12.50", kind="rebate", description="RETURN: SAMPLE REBATE Rebate CN")
+    text = _capture([row])
+    ledger.commit_hsbc_credit_card_import(text, isolated)
+    before = isolated.read_bytes()
+    stored = ledger.load_credit_card_ledger(isolated)
+    saved = next(iter(stored["transactions"].values()))
+    assert saved["id"] == row["id"]
+    assert saved["kind"] == "rebate"
+    assert saved["liability_delta"] == "-12.50"
+    assert next(iter(stored["sources"].values()))["text"] == json.loads(text)["source"]["text"]
+    assert ledger.read_credit_card_ledger(isolated)["transactions"][0]["kind"] == "rebate"
+    assert isolated.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"description": "RETURN: SAMPLE SHOP CN"},
+        {"description": "RETURN: SAMPLE REBATE CN"},
+        {"status": "pending", "liability_delta": None},
+        {"currency": "CNY"},
+        {"liability_delta": "12.50"},
+    ],
+)
+def test_rebate_validation_rejects_missing_label_or_posted_liability_evidence(changes) -> None:
+    row = _row("12.50", kind="rebate", description="RETURN: SAMPLE REBATE Rebate CN")
+    with pytest.raises(ValueError):
+        ledger._validate_transaction({**row, **changes})
 
 
 def test_expanded_duplicate_enriches_one_source_backed_row_without_losing_aliases(

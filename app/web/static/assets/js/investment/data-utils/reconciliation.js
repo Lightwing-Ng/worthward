@@ -1,7 +1,9 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.5.0
+ * Code version: v1.5.1
+ * - Fixed: Omitted current positions retain scoped historical boundary evidence for P&L replay.
+ * - Fixed: Supplemental sell proceeds preserve signed and zero net cash evidence.
  * - Fixed: Missing execution prices cannot become known zero-cost inventory or realized proof.
  * - Added: Explicit broker snapshot scopes retain positions-only accounts.
  * - Fixed: Dated gains, income, and residual basis share the verified matcher.
@@ -296,6 +298,25 @@ export function createInvestmentReconciliationUtils(runtime) {
         );
     }
 
+    function getHistoricalPositionSnapshotDateTime(value) {
+        const match = String(value || '').trim().match(
+            /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/,
+        );
+        if (!match) return '';
+        const [, year, month, day, hour = '23', minute = '59', second = '59'] = match;
+        const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+        if (
+            !Number.isFinite(date.getTime())
+            || date.getUTCFullYear() !== Number(year)
+            || date.getUTCMonth() + 1 !== Number(month)
+            || date.getUTCDate() !== Number(day)
+            || date.getUTCHours() !== Number(hour)
+            || date.getUTCMinutes() !== Number(minute)
+            || date.getUTCSeconds() !== Number(second)
+        ) return '';
+        return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+    }
+
     function getAuthoritativeBrokerPositionSnapshots() {
         const data = window.WORTHWARD_INVESTMENT_DATA || {};
         const snapshotsByAccount = new Map();
@@ -313,18 +334,92 @@ export function createInvestmentReconciliationUtils(runtime) {
             seenAccounts.add(key);
             const rawSnapshot = summary.position_snapshot;
             if (summary.position_snapshot_authoritative !== true || !rawSnapshot || typeof rawSnapshot !== 'object') return;
-            snapshotsByAccount.set(key, {
+            const snapshot = {
                 broker: normalizedBroker, accountId, accountToken,
                 positionSnapshotAsOf: normalizeLedgerDate(summary.position_snapshot_as_of)
                     || Object.values(rawSnapshot).map((entry) => normalizeLedgerDate(entry?.as_of ?? entry?.asOf)).filter(Boolean).sort().at(-1)
                     || '',
                 positionSnapshot: normalizeAuthoritativePositionSnapshot(rawSnapshot),
                 positionSnapshotRaw: rawSnapshot,
+                positionSnapshotEvidenceId: String(summary.position_snapshot_evidence_id || '').trim(),
                 holdingsValidation: summary.holdings_validation || null,
                 realizedPnlReconciliation: getBrokerRealizedPnlReconciliationMap(
                     normalizedBroker, accountId, summary.realized_pnl_reconciliation,
                 ),
-            });
+            };
+            const selectedBoundary = getBrokerPositionSnapshotBoundaryDateTime(snapshot);
+            snapshot.historicalPositionSnapshots = normalizedBroker === 'ibkr'
+                && accountId && getHistoricalPositionSnapshotDateTime(selectedBoundary)
+                && Array.isArray(summary.evidence)
+                ? summary.evidence.flatMap((evidence) => {
+                    if (!evidence || typeof evidence !== 'object') return [];
+                    const evidenceBroker = String(evidence.broker || '').trim().toLowerCase();
+                    const evidenceAccount = String(evidence.account_id ?? evidence.account ?? '').trim();
+                    const evidenceId = String(evidence.evidence_id || '').trim();
+                    const evidenceSource = String(evidence.position_snapshot_source || '').trim();
+                    const evidenceSnapshot = evidence.position_snapshot;
+                    if (
+                        evidenceBroker !== normalizedBroker
+                        || !evidenceAccount
+                        || normalizeInvestmentLotScopeAccount(evidenceBroker, evidenceAccount) !== accountToken
+                        || !evidenceId
+                        || !evidenceSource
+                        || evidence.position_snapshot_authoritative !== true
+                        || !evidenceSnapshot
+                        || typeof evidenceSnapshot !== 'object'
+                        || Array.isArray(evidenceSnapshot)
+                        || !Object.keys(evidenceSnapshot).length
+                    ) return [];
+                    const rawDates = [evidence.position_snapshot_as_of || evidence.snapshot_as_of];
+                    const invalidPosition = Object.values(evidenceSnapshot).some((entry) => {
+                        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true;
+                        const quantity = getAuthoritativeSnapshotFiniteNumber(entry.quantity);
+                        if (quantity === null || quantity < 0) return true;
+                        const rawDate = entry.as_of ?? entry.asOf;
+                        if (rawDate !== undefined && rawDate !== null && String(rawDate).trim()) {
+                            rawDates.push(rawDate);
+                        }
+                        return false;
+                    });
+                    if (invalidPosition) return [];
+                    const datedValues = rawDates.filter((value) => String(value || '').trim());
+                    if (!datedValues.length || datedValues.some((value) => {
+                        const normalizedDateTime = getHistoricalPositionSnapshotDateTime(value);
+                        if (!normalizedDateTime) return true;
+                        return String(value).trim().length === 10
+                            ? normalizedDateTime.slice(0, 10) > selectedBoundary.slice(0, 10)
+                            : normalizedDateTime > selectedBoundary;
+                    })) return [];
+                    const datedSnapshot = Object.fromEntries(Object.entries(evidenceSnapshot).map(
+                        ([ticker, entry]) => {
+                            const rawDate = entry.as_of ?? entry.asOf;
+                            return [ticker, rawDate && String(rawDate).trim()
+                                ? {...entry, as_of: getHistoricalPositionSnapshotDateTime(rawDate)}
+                                : entry];
+                        },
+                    ));
+                    const historicalSnapshot = {
+                        broker: evidenceBroker,
+                        accountId: evidenceAccount,
+                        accountToken,
+                        positionSnapshotAsOf: normalizeLedgerDate(
+                            evidence.position_snapshot_as_of || evidence.snapshot_as_of,
+                        ),
+                        positionSnapshot: normalizeAuthoritativePositionSnapshot(datedSnapshot),
+                        positionSnapshotRaw: datedSnapshot,
+                        positionSnapshotEvidenceId: evidenceId,
+                        holdingsValidation: evidence.holdings_validation || null,
+                    };
+                    const boundary = getBrokerPositionSnapshotBoundaryDateTime(historicalSnapshot);
+                    return getHistoricalPositionSnapshotDateTime(boundary)
+                        && boundary <= selectedBoundary ? [historicalSnapshot] : [];
+                }).sort((left, right) => (
+                    getBrokerPositionSnapshotBoundaryDateTime(right).localeCompare(
+                        getBrokerPositionSnapshotBoundaryDateTime(left),
+                    )
+                ))
+                : [];
+            snapshotsByAccount.set(key, snapshot);
         };
         Object.values(data.broker_snapshots || {}).forEach((snapshot) => addSnapshot(snapshot?.broker, snapshot));
         Object.entries(data.broker_summaries || {}).forEach(([broker, summary]) => addSnapshot(broker, summary));
@@ -365,12 +460,13 @@ export function createInvestmentReconciliationUtils(runtime) {
         const normalizedEntry = brokerPositionSnapshot.positionSnapshot?.[normalizedTicker];
         const rawEntry = brokerPositionSnapshot.positionSnapshotRaw?.[normalizedTicker]
             ?? brokerPositionSnapshot.positionSnapshotRaw?.[ticker];
-        if (!normalizedEntry || !rawEntry || typeof rawEntry !== 'object') return null;
+        if (!normalizedEntry || !rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) return null;
+        const rawQuantity = getAuthoritativeSnapshotFiniteNumber(rawEntry.quantity);
         const quantity = getAuthoritativeSnapshotFiniteNumber(normalizedEntry.quantity);
         const costPrice = normalizedEntry.costBasisStatus === 'known'
             ? getAuthoritativeSnapshotFiniteNumber(normalizedEntry.costPrice)
             : null;
-        if (quantity === null || quantity < 0 || (costPrice !== null && costPrice < 0)) return null;
+        if (rawQuantity === null || quantity === null || quantity < 0 || (costPrice !== null && costPrice < 0)) return null;
         const rawAsOf = rawEntry.as_of ?? rawEntry.asOf;
         const exactBoundaryMatch = String(rawAsOf || '')
             .trim()
@@ -580,6 +676,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         let shares = 0;
         let realizedPnl = 0;
         let priorRealizedPnl = 0;
+        let priorRealizedPnlKnown = true;
         const realizedPnlByDate = {};
         let hasLaterTransaction = false;
         let postPerformanceTransactionCount = 0;
@@ -634,13 +731,18 @@ export function createInvestmentReconciliationUtils(runtime) {
             }
 
             const brokerRealizedPnl = getTransactionBrokerRealizedPnl(txn);
-            const proceeds = getTransactionEvidencedTradeCashAmount(txn);
+            const proceeds = getInvestmentReplaySellProceeds(txn, quantity);
+            if (brokerRealizedPnl === null && !Number.isFinite(proceeds)) return false;
             const delta = brokerRealizedPnl === null
                 ? proceeds - consumption.removedCost
                 : brokerRealizedPnl;
             if (!Number.isFinite(delta)) return false;
             if (!isAfterPerformanceBoundary) {
-                priorRealizedPnl += proceeds - consumption.removedCost;
+                if (Number.isFinite(proceeds)) {
+                    priorRealizedPnl += proceeds - consumption.removedCost;
+                } else {
+                    priorRealizedPnlKnown = false;
+                }
                 return true;
             }
             realizedPnl += delta;
@@ -713,7 +815,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         return {
             status: 'complete',
             realizedPnl: hasLaterTransaction ? realizedPnl : 0,
-            priorRealizedPnl,
+            priorRealizedPnl: priorRealizedPnlKnown ? priorRealizedPnl : null,
             realizedPnlByDate,
             source: 'authoritative_position_snapshot_fifo_transaction_history_replay',
             costBasisMethod: 'FIFO reconstructed',
@@ -900,6 +1002,7 @@ export function createInvestmentReconciliationUtils(runtime) {
                 reason: replayReason,
                 source: supplemental?.source || seed?.source || source || '',
                 positionBoundarySource: supplemental?.positionBoundarySource || '',
+                positionBoundaryEvidenceId: supplemental?.positionBoundaryEvidenceId || '',
                 postPerformanceTransactionCount: Number.isFinite(postPerformanceTransactionCount)
                     ? postPerformanceTransactionCount
                     : 0,
@@ -942,7 +1045,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         scopeState,
         transactions,
     ) {
-        const positionBoundary = getAuthoritativeBrokerPositionBoundary(
+        let positionBoundary = getAuthoritativeBrokerPositionBoundary(
             brokerPositionSnapshot,
             scope?.ticker,
         ) || derivePartialBrokerPositionBoundaryFromHistory(
@@ -951,19 +1054,58 @@ export function createInvestmentReconciliationUtils(runtime) {
             scopeState,
             transactions,
         );
-        if (!positionBoundary) return null;
         const performanceAsOf = normalizeLedgerDate(
             brokerPerformanceSnapshot?.performanceSnapshotAsOf,
         );
         const performanceBoundary = performanceAsOf
             ? {boundaryDateTime: `${performanceAsOf} 23:59:59`}
             : null;
-        const fifoReplay = buildAuthoritativeBrokerFifoReplay(
-            positionBoundary,
-            performanceBoundary,
-            scope,
-            transactions,
-        );
+        let positionBoundaryEvidenceId = brokerPositionSnapshot?.positionSnapshotEvidenceId || '';
+        let fifoReplay = positionBoundary ? buildAuthoritativeBrokerFifoReplay(
+            positionBoundary, performanceBoundary, scope, transactions,
+        ) : null;
+        // A current explicit quantity remains a hard boundary. Historical
+        // evidence can supply proof only when the current snapshot omits it.
+        if (
+            !positionBoundary
+            && scope?.broker === 'ibkr'
+            && !Object.prototype.hasOwnProperty.call(
+                brokerPositionSnapshot?.positionSnapshot || {}, scope.ticker,
+            )
+            && !Object.prototype.hasOwnProperty.call(
+                brokerPositionSnapshot?.positionSnapshotRaw || {}, scope.ticker,
+            )
+        ) {
+            for (const historicalSnapshot of brokerPositionSnapshot?.historicalPositionSnapshots || []) {
+                const historicalEntry = historicalSnapshot.positionSnapshotRaw?.[scope.ticker];
+                if (
+                    historicalEntry
+                    && String(historicalEntry.currency || '').trim().toUpperCase() !== scope.currency
+                ) continue;
+                if (!historicalEntry && !Object.values(historicalSnapshot.positionSnapshotRaw).some(
+                    (entry) => String(entry.currency || '').trim().toUpperCase() === scope.currency,
+                )) continue;
+                const historicalBoundary = getAuthoritativeBrokerPositionBoundary(
+                    historicalSnapshot, scope.ticker,
+                ) || derivePartialBrokerPositionBoundaryFromHistory(
+                    historicalSnapshot, scope, scopeState, transactions,
+                );
+                if (!historicalBoundary) continue;
+                const candidateReplay = buildAuthoritativeBrokerFifoReplay(
+                    historicalBoundary, performanceBoundary, scope, transactions,
+                );
+                if (candidateReplay?.status !== 'complete') continue;
+                positionBoundary = historicalBoundary;
+                positionBoundaryEvidenceId = historicalSnapshot.positionSnapshotEvidenceId;
+                fifoReplay = {
+                    ...candidateReplay,
+                    positionBoundarySource: `historical_${candidateReplay.positionBoundarySource}`,
+                };
+                break;
+            }
+        }
+        if (!positionBoundary) return null;
+        if (fifoReplay) fifoReplay = {...fifoReplay, positionBoundaryEvidenceId};
         if (fifoReplay?.status !== 'complete' || !scopeState) return fifoReplay;
         if (!performanceAsOf) {
             // A position boundary validates quantities; it cannot replace the
@@ -980,6 +1122,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         const reportedTradingBaseline = Number(performance?.realizedTotal)
             - (performance?.includesNonperformance ? priorIncome : 0);
         const provenFifoBaseline = Number.isFinite(reportedTradingBaseline)
+            && Number.isFinite(fifoReplay.priorRealizedPnl)
             && Math.abs(reportedTradingBaseline - fifoReplay.priorRealizedPnl) <= 1e-7;
         const selectedTradingBaseline = Object.entries(scopeState.realizedPnlByDate || {}).reduce(
             (total, [date, amount]) => date <= performanceAsOf ? total + (Number(amount) || 0) : total, 0,
@@ -1768,6 +1911,26 @@ export function createInvestmentReconciliationUtils(runtime) {
     function getTransactionEvidencedTradeCashAmount(txn) {
         const amount = getTransactionAmount(txn);
         return getTransactionEvidencedTradeCashResolution(txn)?.amount ?? amount;
+    }
+
+    function getInvestmentReplaySellProceeds(txn, quantity) {
+        const rawAmount = [txn?.normalized?.net_amount, txn?.amount, txn?.cash].find(
+            (value) => value !== undefined && value !== null
+                && (typeof value !== 'string' || value.trim() !== ''),
+        );
+        if (rawAmount !== undefined) {
+            const amount = getAuthoritativeSnapshotFiniteNumber(rawAmount);
+            if (amount === null) return null;
+            // Net cash already includes fees and may be zero or negative.
+            return getTransactionEvidencedTradeCashResolution(txn)?.amount ?? amount;
+        }
+        const unitPrice = getAuthoritativeSnapshotFiniteNumber(
+            txn?.normalized?.unit_price ?? txn?.price,
+        );
+        const commission = getTransactionCommission(txn);
+        return unitPrice !== null && unitPrice >= 0 && Number.isFinite(commission)
+            ? unitPrice * quantity - Math.abs(commission)
+            : null;
     }
 
     function getTransactionEvidencedTradePrincipalAmount(txn) {

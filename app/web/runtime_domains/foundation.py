@@ -1,6 +1,6 @@
 """Build the foundation web-runtime context.
 
-Code version: v0.3.1
+Code version: v0.3.2
 """
 
 from __future__ import annotations
@@ -8,6 +8,20 @@ from __future__ import annotations
 from app.infrastructure.storage import read_market_frame
 from app.core.object_sqlite import read_structured_object
 from app.services.investment.importing.support import PRIVATE_INVESTMENT_EVIDENCE_PATH
+from app.services.market.market_cap import FX_RATE_SPECS
+
+
+def get_investment_fx_history_currencies(transactions: list[dict]) -> list[str]:
+    """Select supported canonical FX currencies for investment activity."""
+    currencies = {
+        str(transaction.get("currency") or "").strip().upper()
+        for transaction in (transactions if isinstance(transactions, list) else [])
+    }
+    return sorted({
+        "CNY" if currency in {"CNY", "CNH", "RMB"} else currency
+        for currency in currencies
+        if currency in FX_RATE_SPECS or currency in {"CNH", "RMB"}
+    })
 
 
 def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
@@ -779,6 +793,14 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
         transactions = payload.get("transactions", [])
         if not isinstance(transactions, list):
             return None
+        fx_histories = payload.get("fx_rate_history_by_currency")
+        for currency in get_investment_fx_history_currencies(transactions):
+            if (
+                not isinstance(fx_histories, dict)
+                or not isinstance(fx_histories.get(currency), dict)
+                or not fx_histories[currency].get("values")
+            ):
+                return None
         price_store_fingerprints = build_investment_price_store_fingerprints(
             cast(list[dict[str, Any]], transactions),
             section_freshness.get("open_tickers") or [],
@@ -967,11 +989,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
             str(transaction.get("currency") or "").strip().upper()
             for transaction in (transactions if isinstance(transactions, list) else [])
         }
-        requested_currencies: list[str] = []
-        if "HKD" in transaction_currencies:
-            requested_currencies.append("HKD")
-        if transaction_currencies.intersection({"CNY", "CNH", "RMB"}):
-            requested_currencies.append("CNY")
+        requested_currencies = get_investment_fx_history_currencies(transactions)
         if not requested_currencies:
             return {}
 

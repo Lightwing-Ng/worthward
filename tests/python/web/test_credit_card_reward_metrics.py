@@ -1,6 +1,6 @@
 """Keep card reward disclosures fresh and outside investment persistence.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 import json
@@ -58,6 +58,32 @@ def test_missing_card_store_is_read_only_but_corruption_is_unavailable(tmp_path)
     assert reward["status"] == "unavailable"
     assert reward["warnings"]
     assert path.read_text(encoding="utf-8") == "broken"
+
+
+def test_posted_source_labelled_rebate_is_exposed_once_without_private_card_evidence(tmp_path):
+    path = tmp_path / "credit_cards.sqlite3"
+    rows = "\n".join(
+        [
+            "12 Oct 2026\nCard ending in 1111\nRETURN: SAMPLE REBATE Rebate CN\n12.50 HKD",
+            "12 Oct 2026\nCard ending in 1111\nPAY w/RC SAMPLE SHOP HK\n25.00 HKD",
+            "12 Oct 2026\nCard ending in 1111\nPAYMENT - THANK YOU\n100.00 HKD",
+        ]
+    )
+    text = hsbc_credit_card_text(transactions=rows)
+    commit_hsbc_credit_card_import(text, path)
+    commit_hsbc_credit_card_import(text, path)
+    before = path.read_bytes()
+    reward = read_credit_card_reward_payload(path, _fx)
+    assert reward["status"] == "complete"
+    assert len(reward["transactions"]) == 2
+    rebate = next(row for row in reward["transactions"] if row.get("kind") == "rebate")
+    assert set(rebate) == {"id", "date", "amount", "currency", "kind"}
+    assert rebate["amount"] == "12.50"
+    assert rebate["date"] == "2026-10-12"
+    assert reward["fx_rate_history_by_currency"] == _fx(reward["transactions"])
+    assert path.read_bytes() == before
+    assert "SAMPLE" not in json.dumps(reward)
+    assert "1111" not in json.dumps(reward)
 
 
 def test_api_card_disclosure_bypasses_investment_cache_and_preserves_ledger(commit_runtime):
