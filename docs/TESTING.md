@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.4`
+Documentation version: `v1.104.5`
 
 ## SQLite persistence verification
 
@@ -42,6 +42,12 @@ counts for actual renders and exact-input reuse. Never commit native broker
 sources, private ledger snapshots, or account-level acceptance reports.
 
 ## Composable verification
+
+Investment helper extractions and module-version changes include
+`tests/python/architecture/test_repository_contracts.py` alongside the affected
+JavaScript and browser tests. The architecture checks enforce the 100 KiB
+first-party code limit and verify every imported-module, template, and browser
+resource cache key against its source version.
 
 P&L availability regressions verify realized and unrealized components
 independently. Cover complete results, incomplete historical reconciliation

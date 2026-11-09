@@ -1,7 +1,8 @@
 /**
  * Funding and broker-benefit metric calculations.
  *
- * Code version: v1.7.0
+ * Code version: v1.7.1
+ * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Realized and unrealized coverage gate their own totals and disclosures.
  * - Added: Structured reward categories retain dated conversions and signed native totals.
  * - Changed: Posted RewardCash joins current and dated realized reward income
@@ -21,7 +22,7 @@
 import {
     isInvestmentRealizedPnlUnavailable,
     isInvestmentUnrealizedPnlUnavailable,
-} from '../data-utils.js?v=investment-data-utils-v1.125.0';
+} from '../data-utils.js?v=investment-data-utils-v1.125.2';
 
 const BROKER_REWARD_LABELS = {
     coupons: 'Coupons',
