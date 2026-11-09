@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.5`
+Documentation version: `v1.104.6`
 
 ## SQLite persistence verification
 
@@ -48,6 +48,12 @@ Investment helper extractions and module-version changes include
 JavaScript and browser tests. The architecture checks enforce the 100 KiB
 first-party code limit and verify every imported-module, template, and browser
 resource cache key against its source version.
+
+Price comparison range changes replace canvases before the scheduled chart
+initialization frame. Before inspecting chart internals, browser tests wait for
+the exact expected canvas count and a mounted chart with populated datasets and
+labels on every canvas. A changed URL or hidden loading overlay does not prove
+chart readiness.
 
 P&L availability regressions verify realized and unrealized components
 independently. Cover complete results, incomplete historical reconciliation

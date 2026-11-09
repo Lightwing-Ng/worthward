@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -14,6 +14,20 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
+
+const waitForPriceChartDatasets = async (page, tickers) => {
+    await page.waitForFunction((expectedTickers) => {
+        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        return canvases.length === expectedTickers.length && canvases.every((canvas, index) => {
+            const chart = window.Chart?.getChart?.(canvas);
+            const dataset = chart?.data?.datasets?.[0];
+            return dataset?.label === expectedTickers[index]
+                && Array.isArray(dataset.data) && dataset.data.length > 0
+                && Array.isArray(chart.data.labels) && chart.data.labels.length > 0;
+        });
+    }, tickers);
+};
+
 test('reuses and narrows the cached chip payload when shortening Period', async ({page}) => {
     await requireChipFallback(page);
     let chipRequests = 0;
@@ -712,7 +726,7 @@ test('switches short price ranges and formats price axes by currency precision',
         await fulfillInertPriceLiveResponse(route, ['DRAM', 'MU', 'STX']);
     });
     await page.goto('/workspaces/prices?ticker=DRAM&ticker=MU&ticker=STX&period=3d');
-    await page.waitForFunction(() => Boolean(window.Chart?.getChart?.(document.querySelector('[data-price-subplot-canvas]'))));
+    await waitForPriceChartDatasets(page, ['DRAM', 'MU', 'STX']);
 
     const formattedTicks = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => window.Chart.getChart(canvas).options.scales.y.ticks.callback(1040))
@@ -754,6 +768,7 @@ test('switches short price ranges and formats price axes by currency precision',
     await expect(page).toHaveURL(/range=1d/, {timeout: 30_000});
     await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await expect(page.locator('[data-shared-select-trigger-label]')).toHaveText('1 day');
+    await waitForPriceChartDatasets(page, ['DRAM', 'MU', 'STX']);
 
     const oneDayRenderModes = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
         canvases.map((canvas) => ({
@@ -1132,6 +1147,76 @@ test('switches short price ranges and formats price axes by currency precision',
     await expect(page).toHaveURL(/range=3d/, {timeout: 30_000});
     await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await expect(page.locator('[data-shared-select-trigger-label]')).toHaveText('3 days');
+    await waitForPriceChartDatasets(page, ['DRAM', 'MU', 'STX']);
+});
+
+test('waits for every price dataset when range hydration precedes chart initialization', async ({page}) => {
+    const tickers = ['DRAM', 'MU', 'STX'];
+    await page.route('**/api/compare/live?*', async (route) => {
+        await fulfillInertPriceLiveResponse(route, tickers);
+    });
+    await page.goto('/workspaces/prices?ticker=DRAM&ticker=MU&ticker=STX&period=3d');
+    await waitForPriceChartDatasets(page, tickers);
+    await page.evaluate(() => {
+        const bootstrap = window.WORTHWARD_BOOTSTRAP;
+        const initialize = bootstrap.initPriceCompareWorkspace;
+        bootstrap.initPriceCompareWorkspace = (...args) => {
+            bootstrap.initPriceCompareWorkspace = initialize;
+            window.__releasePriceRangeCharts = () => {
+                delete window.__releasePriceRangeCharts;
+                initialize(...args);
+            };
+        };
+    });
+    await page.locator('#period').evaluate((select) => {
+        select.value = '1d';
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+    });
+    await expect(page).toHaveURL(/range=1d/, {timeout: 30_000});
+    await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
+    await page.waitForFunction(() => typeof window.__releasePriceRangeCharts === 'function');
+    await expect(page.locator('[data-price-subplot-canvas]')).toHaveCount(3);
+    const mountedBeforeRelease = await page.locator('[data-price-subplot-canvas]').evaluateAll(
+        (canvases) => canvases.filter((canvas) => window.Chart.getChart(canvas)).length,
+    );
+    expect(mountedBeforeRelease).toBe(0);
+
+    let ready = false;
+    const delayedCharts = waitForPriceChartDatasets(page, tickers).then(() => { ready = true; });
+    try {
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+        expect(ready).toBe(false);
+    } finally {
+        try {
+            await page.evaluate(() => window.__releasePriceRangeCharts());
+        } finally {
+            await delayedCharts;
+        }
+    }
+
+    // A mounted first chart cannot establish readiness for a missing final chart.
+    await page.locator('[data-price-subplot-canvas]').last().evaluate(
+        (canvas) => window.Chart.getChart(canvas).destroy(),
+    );
+    ready = false;
+    const allCharts = waitForPriceChartDatasets(page, tickers).then(() => { ready = true; });
+    try {
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+        expect(ready).toBe(false);
+    } finally {
+        try {
+            await page.evaluate(() => window.WORTHWARD_BOOTSTRAP.initPriceCompareWorkspace());
+        } finally {
+            await allCharts;
+        }
+    }
+    const rendered = await page.locator('[data-price-subplot-canvas]').evaluateAll((canvases) => (
+        canvases.map((canvas) => ({
+            ticker: window.Chart.getChart(canvas).data.datasets[0].label,
+            mode: canvas.dataset.chartRenderMode,
+        }))
+    ));
+    expect(rendered).toEqual(tickers.map((ticker) => ({ticker, mode: 'candlestick'})));
 });
 
 test('sizes Price comparison y-axes to the widest rendered labels for strict shared x alignment', async ({page}) => {
