@@ -1,5 +1,26 @@
 # Known issues and operating constraints
 
+Reward summary availability, 9 Nov 2026: investment FX payloads and cache
+completeness checks include supported SGD activity so dated Singapore-dollar
+rewards can reach the USD aggregate. The card-ledger reader also retains
+explicitly source-labeled, posted HKD rebates as rebates when reparsing
+their immutable statement evidence. These compatibility reads preserve
+transaction identity and card balances; unknown descriptions, missing FX,
+and corrupt card evidence still withhold incomplete reward and P&L totals.
+
+Historical position boundaries, 9 Nov 2026: a newer IBKR position snapshot
+can omit a closed ticker while retaining older authoritative account evidence.
+Supplemental realized-P&L replay now retains that historical evidence as a
+boundary candidate when the selected snapshot omits the ticker. Candidates
+must share the broker and account, precede the selected boundary, and pass
+the existing quantity and cost replay checks; omitted historical positions
+still require the explicit partial-history attestation. A historical boundary
+does not replace current positions or override a conflicting selected ticker
+quantity. Missing or incoherent history remains unavailable.
+Supplemental sales retain signed net cash, including zero and fee-driven
+negative proceeds; a price-only fallback deducts commission without clamping
+the net result or inventing missing execution evidence.
+
 Independent P&L availability, 7 Nov 2026: a historical realized-P&L coverage gap
 previously hid otherwise verified current unrealized P&L, and an unknown current
 cost could hide an independently verified realized result. Each component now
@@ -1328,7 +1349,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.5`
+Documentation version: `v1.286.6`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

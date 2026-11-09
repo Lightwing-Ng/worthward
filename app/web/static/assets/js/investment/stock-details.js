@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.42.0
+ * Code version: v0.42.1
+ * - Fixed: Loads retained historical evidence for omitted-ticker P&L reconciliation.
  * - Fixed: Historical P&L uses independent realized and point-in-time basis coverage.
  * - Fixed: Personal chip bars use one uniform vertical thickness.
  * - Changed: Loads the shared current-cash FX provenance utilities.
@@ -30,7 +31,7 @@ import {
     aggregateInvestmentScopedPositionStates,
     isInvestmentRealizedPnlUnavailable,
     parseInvestmentOptionalNumber,
-} from './data-utils.js?v=investment-data-utils-v1.125.0';
+} from './data-utils.js?v=investment-data-utils-v1.125.1';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -85,7 +86,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.0';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.1';
 
 export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
     ledgerDate,

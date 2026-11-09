@@ -1,6 +1,7 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.3.0
+Code version: v1.3.1
+- Fixed: Source-labeled posted HKD rebates remain readable with exact liability evidence.
 - Added: Pending CNY purchase evidence and currency-separated pending totals.
 - Fixed: Expanded page details retain source-backed metadata on duplicate capture.
 - Added: Atomic PDF/CSV bundle reconciliation with retained original bytes,
@@ -26,6 +27,7 @@ from typing import Any, Iterator
 
 from app.core.config import SETTINGS_STORE_DIR
 from app.core.object_sqlite import read_structured_object, write_structured_object
+from app.services.hsbc_credit_card import is_hsbc_credit_card_rebate_description
 
 
 CREDIT_CARD_LEDGER_PATH = SETTINGS_STORE_DIR / "credit_cards.sqlite3"
@@ -108,8 +110,14 @@ def _validate_transaction(row: Any) -> None:
         raise ValueError("Invalid credit-card suffix.")
     if not isinstance(row["description"], str) or not row["description"].strip():
         raise ValueError("Missing credit-card transaction description.")
-    if row["kind"] not in {"purchase", "repayment", "rewardcash"}:
+    if row["kind"] not in {"purchase", "repayment", "rewardcash", "rebate"}:
         raise ValueError("Invalid credit-card transaction kind.")
+    if row["kind"] == "rebate" and (
+        row["status"] != "posted"
+        or row["currency"] != "HKD"
+        or not is_hsbc_credit_card_rebate_description(row["description"])
+    ):
+        raise ValueError("Only source-labeled posted HKD card rebates are supported.")
     if row["status"] not in {"posted", "pending"} or (
         row["currency"] != "HKD"
         and not (

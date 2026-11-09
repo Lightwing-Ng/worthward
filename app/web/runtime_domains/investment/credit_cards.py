@@ -1,6 +1,7 @@
 """HTTP boundary for the independent HSBC credit-card ledger.
 
-Code version: v1.3.0
+Code version: v1.3.1
+- Fixed: Verified posted card rebates share the privacy-safe reward payload.
 - Fixed: Card commits return with cached dated FX instead of awaiting a provider.
 """
 
@@ -56,7 +57,7 @@ def _cached_credit_card_fx_history(rows: list[dict]) -> dict:
 
 
 def read_credit_card_reward_payload(path: Path, build_fx_history) -> dict:
-    """Read posted RewardCash and its dated FX without projecting card cash flows."""
+    """Read posted card rewards and dated FX without projecting card cash flows."""
     try:
         ledger = read_credit_card_ledger(path)
         rows = [
@@ -65,9 +66,10 @@ def read_credit_card_reward_payload(path: Path, build_fx_history) -> dict:
                 "date": row["transaction_date"],
                 "currency": row["currency"],
                 "amount": row["amount"],
+                **({"kind": "rebate"} if row["kind"] == "rebate" else {}),
             }
             for row in ledger["transactions"]
-            if row["kind"] == "rewardcash" and row["status"] == "posted"
+            if row["kind"] in {"rewardcash", "rebate"} and row["status"] == "posted"
         ]
         return {
             "status": "complete",

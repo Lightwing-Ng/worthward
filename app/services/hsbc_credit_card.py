@@ -1,6 +1,6 @@
 """Parse HSBC credit-card clipboard evidence without persistence or network access.
 
-Code version: v0.2.0
+Code version: v0.2.1
 """
 
 from collections import Counter
@@ -166,6 +166,17 @@ def _transaction_lines(lines: list[str]) -> list[str]:
     return rows
 
 
+def is_hsbc_credit_card_rebate_description(description: str) -> bool:
+    """Require the retained return descriptor and explicit bank rebate label."""
+    normalized = _normalize(description).upper()
+    return bool(
+        re.fullmatch(r"RETURN: \S(?:.*\S)? REBATE REBATE [A-Z]{2}", normalized)
+        and not re.search(
+            r"\b(?:REFUND|REVERSAL|REVERSED|CHARGEBACK|CREDIT)\b", normalized
+        )
+    )
+
+
 def _kind(description: str) -> tuple[str, str]:
     normalized = _normalize(description).upper()
     if normalized == "PAYMENT - THANK YOU":
@@ -174,6 +185,8 @@ def _kind(description: str) -> tuple[str, str]:
         raise ValueError(
             "The HSBC credit-card transaction has an ambiguous credit direction."
         )
+    if is_hsbc_credit_card_rebate_description(description):
+        return "rebate", "in"
     if re.match(r"^PAY W/RC \S", normalized):
         return "rewardcash", "in"
     if re.match(r"^(?:APPLEPAY |SALES: )\S", normalized):
@@ -326,6 +339,8 @@ def _transactions(lines: list[str], account_id: str, account_last4: str) -> list
             index += 1
         if currency != "HKD" and (status != "pending" or kind != "purchase"):
             raise ValueError("Only pending card purchases may retain a CNY amount.")
+        if kind == "rebate" and status != "posted":
+            raise ValueError("Only posted HKD card rebates are supported.")
         details, index = _transaction_details(
             lines,
             index,

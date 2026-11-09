@@ -1,6 +1,6 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.5.0
+Code version: v0.5.1
 - Added: Fresh card rewards disclosure outside the investment ledger cache.
 """
 
@@ -15,6 +15,7 @@ from app.services.investment.dividend_attribution import (
 from app.web.runtime_domains.investment.credit_cards import (
     read_credit_card_reward_payload,
 )
+from app.web.runtime_domains.foundation import get_investment_fx_history_currencies
 
 
 def build_investment_import_context(context: dict[str, object]) -> dict[str, object]:
@@ -316,12 +317,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                 transactions,
                 section_freshness["open_tickers"],
             )
-            required_fx_currencies = {
-                "CNY" if currency in {"CNY", "CNH", "RMB"} else currency
-                for row in transactions
-                if (currency := str(row.get("currency") or "").strip().upper())
-                in {"HKD", "CNY", "CNH", "RMB"}
-            }
+            required_fx_currencies = get_investment_fx_history_currencies(transactions)
             fx_history_complete = all(
                 data["fx_rate_history_by_currency"].get(currency, {}).get("values")
                 for currency in required_fx_currencies

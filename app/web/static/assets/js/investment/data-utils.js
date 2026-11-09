@@ -1,7 +1,8 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.125.0
+ * Code version: v1.125.1
+ * - Fixed: Retained historical position evidence validates omitted-ticker P&L boundaries.
  * - Changed: Realized and unrealized P&L expose independent availability and coverage.
  * - Added: Current cash conversion requires recent daily market FX provenance.
  * - Added: Strict signed HSBC debit-card cashback classification and realized income.
@@ -257,7 +258,7 @@ import {
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.7';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.5.0';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.5.1';
 import {
     createInvestmentSummaryUtils,
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.4.0';
@@ -826,7 +827,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.125.0';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.125.1';
 
 export function isInvestmentRealizedPnlUnavailable(summary) {
     if (typeof summary?.realizedPnlUnavailable === 'boolean') {

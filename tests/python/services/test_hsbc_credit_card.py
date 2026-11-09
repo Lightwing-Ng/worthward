@@ -1,4 +1,4 @@
-"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.2.0."""
+"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.2.1."""
 
 from collections import Counter
 from decimal import Decimal
@@ -88,6 +88,41 @@ def test_same_amount_identical_rows_retain_multiplicity():
     )
     assert [row["occurrence"] for row in result["transactions"]] == [1, 2]
     assert len({row["id"] for row in result["transactions"]}) == 2
+
+
+def test_explicit_posted_hkd_rebate_retains_identity_source_and_negative_liability():
+    description = "RETURN: SAMPLE REBATE Rebate CN"
+    text = hsbc_credit_card_text(transactions=_row(description, "12.50 HKD"))
+    capture = parse_hsbc_credit_card_text(text)
+    row = capture["transactions"][0]
+    assert (row["kind"], row["status"], row["currency"]) == ("rebate", "posted", "HKD")
+    assert row["description"] == description
+    assert row["amount"] == "12.50"
+    assert row["liability_delta"] == "-12.50"
+    identity = json.dumps(
+        [capture["account_id"], "1111", "2026-10-12", description.upper(), "rebate", "HKD", "12.50"],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    assert row["id"] == hashlib.sha256(f"{identity}:1".encode()).hexdigest()
+    assert capture["source"]["text"] == text
+
+
+@pytest.mark.parametrize(
+    "transactions",
+    [
+        _row("RETURN: SAMPLE SHOP CN"),
+        _row("RETURN: SAMPLE REBATE CN"),
+        _row("SAMPLE REBATE Rebate CN"),
+        _row("RETURN: SAMPLE REFUND REBATE Rebate CN"),
+        _row("RETURN: SAMPLE REBATE Rebate CN", pending=True),
+        _row("RETURN: SAMPLE REBATE Rebate CN", "12.50 CNY"),
+        _row("RETURN: SAMPLE REBATE Rebate CN", "Amount out: 12.50 HKD"),
+    ],
+)
+def test_unlabelled_returns_and_unposted_or_contradictory_rebates_fail_closed(transactions):
+    with pytest.raises(ValueError):
+        parse_hsbc_credit_card_text(hsbc_credit_card_text(transactions=transactions))
 
 
 def test_matching_pending_and_posted_rows_in_one_capture_are_ambiguous():
