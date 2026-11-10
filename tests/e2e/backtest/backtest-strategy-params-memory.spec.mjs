@@ -1,4 +1,4 @@
-/* Code version: v0.14.2 */
+/* Code version: v0.14.3 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -479,29 +479,25 @@ test('Leveraged Rotation exposes generic triggers and a collision-safe allocatio
     await expect(allocation.locator('[data-allocation-leveraged-name]')).toHaveText('UPRO');
 
     await page.setViewportSize({width: 390, height: 844});
-    await page.locator('[data-dismissible-notice]').evaluateAll((notices) => {
-        notices.forEach((notice) => {
-            notice.hidden = true;
-        });
-    });
-    const compactGlobalToggle = page.locator('#sidebar_toggle');
-    if (await compactGlobalToggle.getAttribute('aria-expanded') === 'true') {
-        await compactGlobalToggle.click();
-        await expect(compactGlobalToggle).toHaveAttribute('aria-expanded', 'false');
-    }
-    await expect(page.locator('[data-backtest-parameter-toggle]')).toBeVisible();
-    await page.locator('[data-backtest-parameter-toggle]').click();
+    await openBacktestParameterOverlay(page);
     await expect(allocation).toBeVisible();
     await expectAlignedBoundaries();
     await expect.poll(() => allocation.locator('[data-allocation-cash-label]')
         .getAttribute('data-allocation-label-position')).not.toBeNull();
-    const [allocationBox, panelBox, labelBoxes] = await Promise.all([
-        allocation.boundingBox(), page.locator('[data-trade-strategy-panel]').boundingBox(),
-        allocation.locator('.strategy-allocation-label').evaluateAll((labels) => labels.map((label) => {
-            const box = label.getBoundingClientRect();
-            return {left: box.left, right: box.right};
-        })),
-    ]);
+    // Compare one settled layout snapshot so an opening overlay cannot move
+    // between independent protocol reads of its parent and child bounds.
+    const {allocationBox, panelBox, labelBoxes} = await allocation.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const panel = element.closest('[data-trade-strategy-panel]').getBoundingClientRect();
+        return {
+            allocationBox: {x: box.x, width: box.width},
+            panelBox: {x: panel.x, width: panel.width},
+            labelBoxes: [...element.querySelectorAll('.strategy-allocation-label')].map((label) => {
+                const bounds = label.getBoundingClientRect();
+                return {left: bounds.left, right: bounds.right};
+            }),
+        };
+    });
     expect(allocationBox.x).toBeGreaterThanOrEqual(panelBox.x);
     expect(allocationBox.x + allocationBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width + 1);
     expect(labelBoxes[0].right + 5).toBeLessThanOrEqual(labelBoxes[1].left);
