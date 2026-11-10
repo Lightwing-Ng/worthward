@@ -1,4 +1,4 @@
-/* Code version: v1.3.7 */
+/* Code version: v1.3.8 */
 import {expect, test} from '@playwright/test';
 
 const paginationSelector = '#style_token_pagination_demo';
@@ -66,13 +66,17 @@ test('keeps the Style tokens pagination demo circular and makes both hidden rang
     await expect(leadingRange.locator('[data-pagination-range-menu]')).toBeVisible();
     await leadingRange.locator('[data-pagination-range-trigger]').click();
     await leadingRange.getByRole('menuitem', {name: 'Pages 6 through 10', exact: true}).click();
-    await expect(pagination).toHaveAttribute('data-pagination-current-page', '6');
-    await expect(pagination.locator('.local-store-page-button.is-active')).toHaveText('6');
+    await expect(pagination).toHaveAttribute('data-pagination-current-page', '10');
+    await expect(pagination.locator('.local-store-page-button.is-active')).toHaveText('10');
 
-    await trailingRange.hover();
+    await page.mouse.move(0, 0);
+    const trailingTrigger = trailingRange.locator('[data-pagination-range-trigger]');
+    await trailingTrigger.focus();
+    await trailingTrigger.press('Enter');
     await expect(trailingRange.locator('[data-pagination-range-menu]')).toBeVisible();
-    await trailingRange.locator('[data-pagination-range-trigger]').click();
-    await trailingRange.getByRole('menuitem', {name: 'Pages 31 through 35', exact: true}).click();
+    const laterOption = trailingRange.getByRole('menuitem', {name: 'Pages 31 through 35', exact: true});
+    await laterOption.focus();
+    await laterOption.press('Enter');
     await expect(pagination).toHaveAttribute('data-pagination-current-page', '31');
     await expect(pagination.locator('.local-store-page-button.is-active')).toHaveText('31');
     await expect(pagination.locator('.local-store-pagination-range-picker.is-open')).toHaveCount(0);

@@ -1,7 +1,8 @@
 /**
  * Settings style-token demos, controls, and share-preview composition.
  *
- * Code version: v1.4.1
+ * Code version: v1.4.2
+ * - Fixed: Pagination range specimens use the current page when choosing a range target.
  * - Fixed: Bind allocation specimens to the production range controller.
  * - Fixed: Keep the style-token resizer's accessible range current when its
  *   preview column changes width without a drag or key press.
@@ -837,6 +838,7 @@ export function createSettingsStyleTokenController({
                 const rangeMenuIdPrefix = pagination.id || "style_token_pagination_demo";
                 const renderOptions = {
                     rangeUnit: "pages",
+                    currentPage: state.currentPage,
                     rangeMenuIdPrefix,
                 };
                 pagination.style.setProperty("--local-store-pagination-slots", String(items.length));

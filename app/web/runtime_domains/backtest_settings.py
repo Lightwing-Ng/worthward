@@ -1,6 +1,6 @@
 """Build the backtest settings web-runtime context.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
@@ -763,15 +763,18 @@ def build_backtest_settings_context(context: dict[str, object]) -> dict[str, obj
         )
 
         if page_end < total_pages:
-            items.extend(
-                (
+            if page_end + 1 < total_pages:
+                items.append(
                     {
                         "kind": "ellipsis",
                         "position": "trailing",
                         "ranges": build_local_store_pagination_ranges(
                             page_end + 1, total_pages
                         ),
-                    },
+                    }
+                )
+            items.extend(
+                (
                     {
                         "kind": "page",
                         "page": total_pages,

@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.24.2`
+Documentation version: `v1.24.3`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -177,7 +177,9 @@ The Collapse specimen has no placeholder explanatory paragraph.
   `--local-store-pagination-button-color`; hover and focus-visible both resolve to
   the shared blue `--local-store-pagination-button-color-hover`. Arrow masks inherit
   `currentColor`, so glyph and page text cannot diverge. Reduced Motion preserves
-  state and geometry while shortening motion.
+  state and geometry while shortening motion. In a hidden-page range, the target
+  is the current page clamped to the inclusive range. Button targets and link
+  destinations agree with this rule from the central v1.21.4 layout contract.
 - A standard scrollable table is
   `.scrollable-data-table-shell.local-store-pagination-host`. Its controller may
   prepend the production `[data-table-visual-overlay]`; after that overlay, the shell

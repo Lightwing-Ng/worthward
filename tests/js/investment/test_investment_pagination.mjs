@@ -1,4 +1,4 @@
-/* Tests for shared fixed-chunk pagination. Code version: v1.4.1 */
+/* Tests for shared fixed-chunk pagination. Code version: v1.4.2 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -108,6 +108,35 @@ test('renders accessible range menus with canonical navigation targets', () => {
     assert.match(markup, /data-pagination-target="6"/);
     assert.match(markup, /data-pagination-range-end="17"/);
     assert.match(markup, />11-17<\/a>/);
+});
+
+test('range options target the nearest inclusive page in buttons and links', () => {
+    for (const [currentPage, rangeStart, rangeEnd, targetPage] of [
+        [821, 816, 820, 820],
+        [7, 11, 15, 11],
+        [12, 11, 15, 12],
+    ]) {
+        const item = {
+            kind: 'ellipsis',
+            position: 'leading',
+            ranges: [[rangeStart, rangeEnd]],
+        };
+        const button = renderLocalStorePaginationItem(item, {currentPage});
+        const anchor = renderLocalStorePaginationItem(item, {
+            currentPage,
+            hrefForPage: (page) => `/browser?page=${page}`,
+        });
+        assert.match(button, new RegExp(`data-pagination-target="${targetPage}"`));
+        assert.match(anchor, new RegExp(`href="/browser\\?page=${targetPage}"`));
+        assert.match(anchor, new RegExp(`data-pagination-target="${targetPage}"`));
+        assert.match(anchor, new RegExp(`>${rangeStart}-${rangeEnd}</a>`));
+    }
+});
+
+test('does not duplicate a directly rendered singleton final page', () => {
+    const state = buildLocalStorePagination(6, 1);
+
+    assert.deepEqual(summarizeItems(state.items), ['1', '2', '3', '4', '5', '6', '>']);
 });
 
 test('renders the final boundary-aligned chunk without trailing duplicates', () => {

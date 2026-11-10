@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.167.0
+ * Code version: v2.167.1
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -150,7 +150,7 @@ import {
     buildInvestmentHistoryPagination,
     positionLocalStorePaginationIndicator,
     renderLocalStorePagination,
-} from './investment/pagination.js?v=investment-pagination-v1.4.2';
+} from './investment/pagination.js?v=investment-pagination-v1.4.3';
 import {
     INVESTMENT_STOCK_DETAILS_MODULE_VERSION,
     buildInvestmentIntradayDayBoundaries as buildInvestmentIntradayDayBoundariesCore,
@@ -197,7 +197,7 @@ import {
     getInvestmentHistoryTotalPages,
     isInvestmentHistoryDisplayHidden,
     selectVisibleInvestmentHistoryTransactions,
-} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.3';
+} from './investment/transaction-table.js?v=investment-transaction-table-v1.0.4';
 import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
@@ -213,7 +213,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.167.0',
+    entry: 'v2.167.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

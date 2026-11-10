@@ -1,4 +1,4 @@
-{# Code version: v1.1.0 #}
+{# Code version: v1.1.1 #}
     <section class="settings-action-package settings-callout-card-primary local-store-maintain-card"
              data-action-package-live="false"
              data-action-package-default-copy="{{ labels.local_store_maintain_note }}"
@@ -167,10 +167,11 @@
                           data-pagination-range-menu>
                         <span class="local-store-pagination-range-grid">
                             {% for range_start, range_end in item.ranges %}
-                            <a href="{{ local_store_page_urls[range_start] }}"
+                            {% set target_page = [range_start, [local_store_current_page, range_end]|min]|max %}
+                            <a href="{{ local_store_page_urls[target_page] }}"
                                class="local-store-pagination-range-option"
                                role="menuitem"
-                               data-pagination-target="{{ range_start }}"
+                               data-pagination-target="{{ target_page }}"
                                data-pagination-range-start="{{ range_start }}"
                                data-pagination-range-end="{{ range_end }}"
                                aria-label="Pages {{ range_start }} through {{ range_end }}">{{ range_start }}-{{ range_end }}</a>
