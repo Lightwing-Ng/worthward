@@ -1,0 +1,105 @@
+/* Code version: v1.0.0 */
+
+[data-animated-number] {
+    position: relative;
+    isolation: isolate;
+    font-variant-numeric: tabular-nums;
+    transition: color 200ms;
+    --animated-number-flash-opacity: 0;
+    --animated-number-flash-color: transparent;
+}
+
+[data-animated-number][data-number-direction="up"] {
+    --animated-number-flash-color: var(--theme-accent-positive);
+}
+
+[data-animated-number][data-number-direction="down"] {
+    --animated-number-flash-color: var(--theme-accent-secondary);
+}
+
+[data-animated-number]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    inset-inline-start: auto;
+    inline-size: var(--animated-number-content-width, 100%);
+    z-index: -1;
+    border-radius: 0.15em;
+    background: color-mix(in srgb, var(--animated-number-flash-color) 15%, transparent);
+    opacity: var(--animated-number-flash-opacity);
+    pointer-events: none;
+}
+
+.animated-number-column {
+    position: relative;
+    display: inline-block;
+    flex: 0 0 auto;
+    vertical-align: baseline;
+    white-space: pre;
+}
+
+.animated-number-window {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+}
+
+.animated-number-column[data-number-kind="digit"] > .animated-number-window {
+    overflow: hidden;
+}
+
+[data-number-state="running"] .animated-number-column[data-number-kind="digit"] > .animated-number-window {
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+}
+
+.animated-number-measure {
+    visibility: hidden;
+}
+
+[data-number-state="idle"] .animated-number-measure {
+    visibility: inherit;
+}
+
+[data-number-state="idle"] .animated-number-window {
+    visibility: hidden;
+}
+
+.animated-number-strip {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    display: block;
+}
+
+[data-number-state="running"] .animated-number-strip {
+    will-change: transform;
+}
+
+.animated-number-face {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+}
+
+.animated-number-glyph {
+    display: block;
+    white-space: pre;
+}
+
+.animated-number-sr {
+    position: absolute !important;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-animated-number] {
+        transition-duration: 120ms;
+    }
+}

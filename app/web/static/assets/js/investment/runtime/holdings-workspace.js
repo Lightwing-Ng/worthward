@@ -1,7 +1,8 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Changed: Zero unrealized P&L uses the existing neutral value tone.
  * - Fixed: Reward details share the title and total column boundaries.
  * - Fixed: Native reward currencies render on separate lines.
  * - Added: Expandable Rewards categories retain native amounts and dated conversions.
@@ -260,9 +261,7 @@ function renderHoldingsTable(
                 : runtime.getInvestmentHoldingsRealizedToneClass(realizedPnl);
             const unrealizedClass = unrealizedPnlUnavailable || summary.unrealizedPnl === null
                 ? ''
-                : (summary.unrealizedPnl >= 0
-                    ? ' investment-holdings-value-positive'
-                    : ' investment-holdings-value-negative');
+                : runtime.getInvestmentHoldingsRealizedToneClass(summary.unrealizedPnl);
             const lastClass = runtime.resolveInvestmentLastPriceToneClass(summary.lastPrice, summary.ticker);
             const dailyPnl = runtime.resolveInvestmentHoldingDailyPnl(summary);
             const dailyLastPriceChange = runtime.resolveInvestmentHoldingDailyPriceChange(summary);

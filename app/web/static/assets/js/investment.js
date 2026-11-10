@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.166.10
+ * Code version: v2.167.0
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -97,8 +97,8 @@ import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-ch
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.1';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
-import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.6.0';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.3.0';
+import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.7.0';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.4.0';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.1';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.3';
 import {
@@ -169,7 +169,7 @@ import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.3.8';
+} from './investment/realtime.js?v=investment-realtime-v1.4.0';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -213,7 +213,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.166.10',
+    entry: 'v2.167.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -730,6 +730,7 @@ Object.assign(runtime, createInvestmentDataUtils({
 
     Object.assign(runtime, createInvestmentLiveValueAnimator({
         epsilon: runtime.INVESTMENT_LIVE_DIGIT_EPSILON,
+        neutralEpsilon: runtime.INVESTMENT_DAILY_PNL_DISPLAY_EPSILON,
         easeOutCubic: runtime.easeOutCubic,
         renderWorkspaceMetricValueContent,
         scheduler: window.WorthwardMotion?.scheduler,

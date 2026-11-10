@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.146.0`
+Documentation version: `v1.147.0`
 
 ## Canonical SQLite persistence
 
@@ -915,6 +915,41 @@ the daily P&L badges shown on other Holdings surfaces:
 
 These values may have opposite signs. A daily badge must not be used as a
 replacement for the cumulative account result.
+
+### Holdings numeric motion
+
+The annotated Unrealized P&L amount and its daily badge opt into the reusable
+`animated-number.js` controller. The existing Holdings money formatters and
+numeric-display parts remain the display authority; animation never computes
+returns or changes quote polling. The quote endpoint remains
+`/api/investment/realtime-quotes`, with the existing 60-second browser cadence.
+Other Holdings metrics retain their existing presentation.
+
+`createAnimatedNumber(element, {value, format, parts})` returns `update` and
+`destroy`. Digit strips retain position and velocity when retargeted, using
+the shared Motion Core frame scheduler. `ANIMATED_NUMBER_TUNING` owns stiffness
+`340`, damping `26`, mass `1`, least-significant-first stagger `16` ms, and a
+maximum frame step of `1/30` second. Increase damping for less overshoot or
+stiffness for a faster response; adjust `staggerMs` for the column delay.
+Sign and punctuation preserve the formatter output. The component reuses
+existing sign colors and flashes the existing direction token at 15% opacity.
+At rest it restores each original formatted text part and parks its digit strips
+off the document, preserving native glyph shaping and exact resting pixels.
+
+Initial, invalid, loading and hidden values render directly. Reduced motion
+uses a 120 ms crossfade. Visual strips are hidden from assistive technology,
+which receives one complete formatted value without a live region. Detached
+controllers release their scheduler and lifecycle resources.
+
+The development-only test page is
+[`animated-number-demo.html`](../tests/e2e/fixtures/animated-number-demo.html).
+The focused browser suite serves it through request interception; it does not
+add a product route or write financial records. It includes 50 controllers,
+rapid updates, sign changes and digit-count changes.
+
+Open the interactive development preview with
+`WORTHWARD_ANIMATED_NUMBER_DEMO=1 ./scripts/test_e2e.sh tests/e2e/shared/animated-number.spec.mjs --headed --grep 'manual preview'`.
+Resume the paused browser test to close the preview and stop its isolated server.
 
 ## Runtime flow
 

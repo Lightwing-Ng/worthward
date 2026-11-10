@@ -1,0 +1,184 @@
+<!-- Code version: v1.0.0 -->
+<!-- Preview: WORTHWARD_ANIMATED_NUMBER_DEMO=1 ./scripts/test_e2e.sh tests/e2e/shared/animated-number.spec.mjs --headed --grep 'manual preview' -->
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Animated number development specimen</title>
+    <link rel="icon" href="data:,">
+    <!-- RENDERED_THEME -->
+    <link rel="stylesheet" href="/static/assets/css/app.css">
+    <style>
+        body { height: auto; min-height: 100vh; overflow: auto; padding: 32px; }
+        main { max-width: 960px; margin-inline: auto; }
+        h1 { margin-block: 0 8px; font-size: 28px; }
+        p { color: var(--muted); }
+        .demo-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 20px; }
+        .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 18px; }
+        .demo-card { min-width: 0; border: 1px solid color-mix(in srgb, var(--muted) 20%, transparent); border-radius: 12px; padding: 14px; }
+        .demo-label { display: block; font-size: 12px; color: var(--muted); margin-block-end: 10px; }
+        .demo-value { font-size: 28px; line-height: 1.3; white-space: nowrap; }
+        .demo-reference-line { position: absolute; visibility: hidden; pointer-events: none; }
+        .demo-baseline { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
+        #demo-status { min-height: 1.4em; }
+    </style>
+    <script>
+        // Count work at the native frame boundary without changing callback timing.
+        const nativeFrame = window.requestAnimationFrame.bind(window);
+        const nativeCancel = window.cancelAnimationFrame.bind(window);
+        const pendingFrames = new Set();
+        window.__frameAudit = {requests: 0, callbacks: 0, maxPending: 0, timestamps: [], callbackDurations: []};
+        window.requestAnimationFrame = (callback) => {
+            const id = nativeFrame((now) => {
+                pendingFrames.delete(id);
+                window.__frameAudit.callbacks += 1;
+                window.__frameAudit.timestamps.push(now);
+                if (window.__frameAudit.timestamps.length > 300) window.__frameAudit.timestamps.shift();
+                const startedAt = performance.now();
+                callback(now);
+                window.__frameAudit.callbackDurations.push(performance.now() - startedAt);
+                if (window.__frameAudit.callbackDurations.length > 300) window.__frameAudit.callbackDurations.shift();
+            });
+            pendingFrames.add(id);
+            window.__frameAudit.requests += 1;
+            window.__frameAudit.maxPending = Math.max(window.__frameAudit.maxPending, pendingFrames.size);
+            return id;
+        };
+        window.cancelAnimationFrame = (id) => {
+            pendingFrames.delete(id);
+            nativeCancel(id);
+        };
+        window.__pendingFrameCount = () => pendingFrames.size;
+    </script>
+    <script src="/static/assets/js/motion.js?v=1.2.1"></script>
+</head>
+<body>
+    <main id="demo" data-ready="false">
+        <h1>Animated number</h1>
+        <p>Development specimen · 50 values · 250–1,000 ms updates</p>
+        <div class="demo-controls">
+            <button id="start" type="button">Start random walk</button>
+            <button id="stop" type="button">Stop updates</button>
+            <button id="cross-zero" type="button">Cross zero</button>
+        </div>
+        <p id="demo-status" role="status">Preparing numbers</p>
+        <div class="demo-grid" id="numbers"></div>
+    </main>
+    <script type="module">
+        import {createAnimatedNumber} from '/static/assets/js/animated-number.js?v=animated-number-v1.0.0';
+        import {getNumericDisplayParts, renderNumericDisplayContent} from '/static/assets/js/numeric-display.js?v=numeric-display-v1.3.0';
+
+        await document.fonts.ready;
+        const formatter = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true,
+        });
+        const format = (value) => formatter.format(value);
+        const values = Array.from({length: 50}, (_, index) => index === 0 ? 9.98 : 10 + index / 10);
+        const controllers = [];
+        const nodes = [];
+        const references = [];
+        const timers = new Set();
+        let generation = 0;
+        let seed = 319;
+        let hiddenOverride = null;
+        const nativeHidden = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden');
+        const nativeVisibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+        Object.defineProperty(document, 'hidden', {
+            configurable: true, get: () => hiddenOverride ?? nativeHidden.get.call(document),
+        });
+        Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            get: () => hiddenOverride === null ? nativeVisibility.get.call(document) : hiddenOverride ? 'hidden' : 'visible',
+        });
+        const random = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+        const markSign = (node, value) => {
+            node.classList.toggle('investment-holdings-value-positive', value > 0);
+            node.classList.toggle('investment-holdings-value-negative', value < 0);
+            node.classList.toggle('investment-holdings-value-neutral', value === 0);
+        };
+        values.forEach((value, index) => {
+            const card = document.createElement('div');
+            card.className = 'demo-card';
+            card.innerHTML = `<span class="demo-label">Value ${index + 1}</span><div><span class="trade-metric-value demo-value" id="value-${index}"></span><span class="demo-baseline" id="baseline-${index}"></span></div><div class="demo-reference-line" aria-hidden="true"><span class="trade-metric-value demo-value" id="reference-${index}"></span><span class="demo-baseline" id="reference-baseline-${index}"></span></div>`;
+            document.querySelector('#numbers').append(card);
+            const node = card.querySelector(`#value-${index}`);
+            const reference = card.querySelector(`#reference-${index}`);
+            markSign(node, value);
+            markSign(reference, value);
+            reference.innerHTML = renderNumericDisplayContent(format(value));
+            nodes.push(node);
+            references.push(reference);
+            controllers.push(createAnimatedNumber(node, {value, format, parts: getNumericDisplayParts}));
+        });
+        const set = (index, value, options = {}) => {
+            values[index] = value;
+            markSign(nodes[index], value);
+            markSign(references[index], value);
+            references[index].innerHTML = renderNumericDisplayContent(format(value));
+            controllers[index].update(value, options);
+        };
+        const stop = () => {
+            generation += 1;
+            timers.forEach(clearTimeout);
+            timers.clear();
+            document.querySelector('#demo-status').textContent = 'Updates stopped';
+        };
+        const later = (callback, delay) => {
+            const id = setTimeout(() => { timers.delete(id); callback(); }, delay);
+            timers.add(id);
+        };
+        const start = () => {
+            stop();
+            const activeGeneration = generation;
+            const walk = (index) => {
+                if (activeGeneration !== generation) return;
+                set(index, values[index] + (random() - 0.5) * 0.8);
+                later(() => walk(index), 250 + Math.floor(random() * 751));
+            };
+            set(0, 9.98, {animate: false});
+            later(() => set(0, 9.98), 250);
+            later(() => set(0, 10.03), 500);
+            later(() => set(0, -0.04), 750);
+            later(() => walk(0), 750 + 250 + Math.floor(random() * 751));
+            values.forEach((_value, index) => {
+                if (index > 0) later(() => walk(index), 250 + Math.floor(random() * 751));
+            });
+            document.querySelector('#demo-status').textContent = 'Random walk running';
+        };
+        const crossZero = () => {
+            stop();
+            set(0, 9.98, {animate: false});
+            later(() => set(0, 10.03), 250);
+            later(() => set(0, -0.04), 700);
+            document.querySelector('#demo-status').textContent = 'Crossing 9.98 → 10.03 → −0.04';
+        };
+        window.animatedNumberDemo = {
+            set, start, stop, crossZero,
+            setAll: (value) => controllers.forEach((_controller, index) => set(index, value + index / 100)),
+            destroy: () => { stop(); controllers.forEach((controller) => controller.destroy()); },
+            mountHidden: (index, value) => {
+                controllers[index].destroy();
+                nodes[index].closest('.demo-card').hidden = true;
+                controllers[index] = createAnimatedNumber(nodes[index], {value, format, parts: getNumericDisplayParts});
+                set(index, value, {animate: false});
+            },
+            reveal: (index) => { nodes[index].closest('.demo-card').hidden = false; },
+            setHidden: (hidden) => {
+                hiddenOverride = Boolean(hidden);
+                document.dispatchEvent(new Event('visibilitychange'));
+            },
+            audit: () => ({...window.__frameAudit, pending: window.__pendingFrameCount()}),
+        };
+        document.querySelector('#start').addEventListener('click', start);
+        document.querySelector('#stop').addEventListener('click', stop);
+        document.querySelector('#cross-zero').addEventListener('click', crossZero);
+        document.querySelector('#demo').dataset.ready = 'true';
+        if (!new URL(location.href).searchParams.has('manual')) start();
+        else stop();
+    </script>
+</body>
+</html>

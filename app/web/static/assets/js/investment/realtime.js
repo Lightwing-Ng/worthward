@@ -1,7 +1,8 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.3.8
+ * Code version: v1.4.0
+ * - Added: Holdings P&L uses interruptible, formatter-preserving spring digits.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Unknown live values remove numeric metadata without becoming zero.
  * - Fixed: Stock-details live values keep a CSS-owned line box through digit
@@ -18,9 +19,10 @@
  */
 
 import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.2';
-import {parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
+import {getNumericDisplayParts, parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
+import {createAnimatedNumber} from '../animated-number.js?v=animated-number-v1.0.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.3.8';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.4.0';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -203,6 +205,7 @@ export function buildInvestmentLiveSegmentPairs(previousDisplay, nextDisplay) {
 
 export function createInvestmentLiveValueAnimator({
     epsilon = 1e-9,
+    neutralEpsilon = epsilon,
     animationMs = 520,
     easeOutCubic,
     renderWorkspaceMetricValueContent,
@@ -213,6 +216,7 @@ export function createInvestmentLiveValueAnimator({
 } = {}) {
     const charWidthCache = new Map();
     const animationCancels = new WeakMap();
+    const springNumbers = new WeakMap();
     const isElement = (value) => (
         typeof HTMLElementClass === 'function' && value instanceof HTMLElementClass
     );
@@ -469,6 +473,25 @@ export function createInvestmentLiveValueAnimator({
         const numericValue = parseInvestmentOptionalNumber(nextNumber);
         const nextNumberNormalized = numericValue === null ? '' : String(numericValue);
         if (previousDisplay === nextDisplayNormalized && previousNumber === nextNumberNormalized) return;
+        if (node.hasAttribute?.('data-animated-number')) {
+            let ticker = springNumbers.get(node);
+            if (!ticker || ticker.destroyed) {
+                ticker = createAnimatedNumber(node, {
+                    value: parseInvestmentOptionalNumber(node.dataset.investmentLiveNumber),
+                    format: () => previousDisplay,
+                    parts: getNumericDisplayParts,
+                    windowRef,
+                    documentRef,
+                    scheduler,
+                });
+                springNumbers.set(node, ticker);
+            }
+            ticker.update(numericValue, {format: () => nextDisplayNormalized, animate: !node.closest('[hidden], [aria-busy="true"]')});
+            node.dataset.investmentLiveDisplay = nextDisplayNormalized;
+            if (nextNumberNormalized) node.dataset.investmentLiveNumber = nextNumberNormalized;
+            else delete node.dataset.investmentLiveNumber;
+            return;
+        }
         cancelValueAnimation(node);
         const direction = resolveInvestmentLiveNumberDirection(
             node.dataset.investmentLiveNumber,
@@ -515,15 +538,17 @@ export function createInvestmentLiveValueAnimator({
         else delete node.dataset.investmentLiveNumber;
     }
 
-    function syncInvestmentLiveTone(targets, numericValue, {enableSignedTone = false} = {}) {
+    function syncInvestmentLiveTone(targets, numericValue, {enableSignedTone = false, enableNeutralTone = false} = {}) {
         (Array.isArray(targets) ? targets : [targets]).forEach((element) => {
             if (!isElement(element)) return;
             if (!enableSignedTone || !Number.isFinite(Number(numericValue))) {
-                element.classList.remove('investment-holdings-value-positive', 'investment-holdings-value-negative');
+                element.classList.remove('investment-holdings-value-positive', 'investment-holdings-value-negative', 'investment-holdings-value-neutral');
                 return;
             }
-            element.classList.toggle('investment-holdings-value-positive', Number(numericValue) >= 0);
-            element.classList.toggle('investment-holdings-value-negative', Number(numericValue) < 0);
+            const neutral = enableNeutralTone && Math.abs(Number(numericValue)) < neutralEpsilon;
+            element.classList.toggle('investment-holdings-value-positive', !neutral && Number(numericValue) >= 0);
+            element.classList.toggle('investment-holdings-value-negative', !neutral && Number(numericValue) < 0);
+            element.classList.toggle('investment-holdings-value-neutral', neutral);
         });
     }
 

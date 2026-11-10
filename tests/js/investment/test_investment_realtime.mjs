@@ -1,4 +1,4 @@
-/* Tests for Investment realtime polling and value transitions. Code version: v1.2.2 */
+/* Tests for Investment realtime polling and value transitions. Code version: v1.3.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -191,4 +191,32 @@ test('the real live updater removes unavailable numeric attributes and preserves
     assert.equal(Object.hasOwn(stale.dataset, 'investmentLiveNumber'), false);
     assert.equal(resolveInvestmentLiveNumberDirection(7, 0), 'fall');
     assert.equal(resolveInvestmentLiveNumberDirection(0, 7), 'rise');
+});
+
+test('Holdings P&L keeps sign colors and uses its existing neutral display threshold', () => {
+    class TestElement {
+        classes = new Set();
+        classList = {
+            remove: (...names) => names.forEach((name) => this.classes.delete(name)),
+            toggle: (name, enabled) => enabled ? this.classes.add(name) : this.classes.delete(name),
+        };
+    }
+    const {syncInvestmentLiveTone} = createInvestmentLiveValueAnimator({
+        HTMLElementClass: TestElement,
+        neutralEpsilon: 0.005,
+    });
+    const node = new TestElement();
+    const options = {enableSignedTone: true, enableNeutralTone: true};
+    for (const value of [-10, -2]) {
+        syncInvestmentLiveTone(node, value, options);
+        assert.deepEqual([...node.classes], ['investment-holdings-value-negative']);
+    }
+    for (const value of [-0.004, 0, 0.004]) {
+        syncInvestmentLiveTone(node, value, options);
+        assert.deepEqual([...node.classes], ['investment-holdings-value-neutral']);
+    }
+    syncInvestmentLiveTone(node, 2, options);
+    assert.deepEqual([...node.classes], ['investment-holdings-value-positive']);
+    syncInvestmentLiveTone(node, null, {enableSignedTone: false});
+    assert.equal(node.classes.size, 0);
 });
