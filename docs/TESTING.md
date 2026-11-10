@@ -1,6 +1,6 @@
 # Testing guide
 
-Documentation version: `v1.104.6`
+Documentation version: `v1.104.7`
 
 ## SQLite persistence verification
 
@@ -54,6 +54,22 @@ initialization frame. Before inspecting chart internals, browser tests wait for
 the exact expected canvas count and a mounted chart with populated datasets and
 labels on every canvas. A changed URL or hidden loading overlay does not prove
 chart readiness.
+
+Mobile overlay geometry checks use the existing settled-open helper before
+measuring. Read related parent, child and label rectangles in one browser
+evaluation so an opening transform cannot mix coordinates from different frames.
+Keep the original containment and label-gap requirements.
+
+Visible-text containment checks exclude clipped screen-reader copies while
+continuing to measure accessibility-hidden visual fragments. A DOM Range reports
+text geometry even when a screen-reader copy is visually clipped.
+
+Exact numeric screenshot comparisons render the plain formatter inside the same
+host and paint context as the animated value. Relocating a reference into a fixed
+overlay can change Linux font antialiasing despite identical glyphs and geometry.
+Wait for the existing text-color transition to settle independently of the mocked
+JavaScript clock, retain the zero-pixel threshold, and restore the original child
+nodes after taking the reference screenshot.
 
 P&L availability regressions verify realized and unrealized components
 independently. Cover complete results, incomplete historical reconciliation

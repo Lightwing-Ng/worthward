@@ -1,4 +1,4 @@
-/* Code version: v1.1.8 */
+/* Code version: v1.1.9 */
 import {
     expect,
     test,
@@ -1086,8 +1086,9 @@ test('keeps Investment price and money groups equal with elastic identity column
                 const textRects = [];
                 const textWalker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
                 while (textWalker.nextNode()) {
+                    // Clipped accessibility copies have ranges; aria-hidden visual digits remain measured.
                     if (!textWalker.currentNode.textContent.trim()
-                        || textWalker.currentNode.parentElement?.closest('.sr-only')) continue;
+                        || textWalker.currentNode.parentElement?.closest('.sr-only, [data-animated-number-sr]')) continue;
                     const range = document.createRange();
                     range.selectNodeContents(textWalker.currentNode);
                     textRects.push(...Array.from(range.getClientRects(), (rect) => ({
@@ -1564,7 +1565,8 @@ test('keeps Investment price and money groups equal with elastic identity column
                     const textWalker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
                     const textRects = [];
                     while (textWalker.nextNode()) {
-                        if (!textWalker.currentNode.textContent.trim()) continue;
+                        if (!textWalker.currentNode.textContent.trim()
+                            || textWalker.currentNode.parentElement?.closest('.sr-only, [data-animated-number-sr]')) continue;
                         const range = document.createRange();
                         range.selectNodeContents(textWalker.currentNode);
                         textRects.push(...range.getClientRects());

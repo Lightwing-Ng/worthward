@@ -1,5 +1,6 @@
-/* Code version: v1.0.0
+/* Code version: v1.0.1
  * Real shared assets animate numbers without duplicate loops or stale rest geometry.
+ * Plain reference pixels share the tested value's native painting context.
  */
 import fs from 'node:fs/promises';
 import {expect, test} from '@playwright/test';
@@ -45,33 +46,31 @@ async function restGeometry(page, index = 0) {
 async function assertRestingInkMatchesReference(page, testInfo, index = 0) {
     const node = valueNode(page, index);
     const reference = page.locator(`#reference-${index}`);
+    // Browser color transitions use native paint time even when the JavaScript clock is paused.
+    await expect(node).toHaveCSS('color', await reference.evaluate((element) => getComputedStyle(element).color));
     const clip = await node.boundingBox();
     const actual = await page.screenshot({clip});
-    const originalStyles = {
-        node: await node.getAttribute('style'),
-        reference: await reference.getAttribute('style'),
-    };
-    await node.evaluate((element) => { element.style.visibility = 'hidden'; });
-    await reference.evaluate((element, bounds) => {
-        Object.assign(element.style, {
-            position: 'fixed', left: `${bounds.x}px`, top: `${bounds.y}px`,
-            visibility: 'visible', zIndex: '100000',
-        });
-    }, clip);
-    const expected = await page.screenshot({clip});
-    if (!actual.equals(expected)) {
-        await fs.writeFile(testInfo.outputPath('animated-number-resting-actual.png'), actual);
-        await fs.writeFile(testInfo.outputPath('animated-number-resting-reference.png'), expected);
-        await fs.writeFile(testInfo.outputPath('animated-number-resting-geometry.json'), `${JSON.stringify({clip, geometry: await restGeometry(page, index)}, null, 2)}\n`);
+    // A fixed overlay changes Linux text antialiasing. Compare the plain formatter
+    // inside the same host, preserving its position, style, and compositing context.
+    const originalChildren = await node.evaluateHandle((element, referenceId) => {
+        const fragment = document.createDocumentFragment();
+        fragment.append(...element.childNodes);
+        const plain = document.getElementById(referenceId);
+        element.replaceChildren(...Array.from(plain.childNodes, (child) => child.cloneNode(true)));
+        return fragment;
+    }, `reference-${index}`);
+    let expected;
+    try {
+        expected = await page.screenshot({clip});
+        if (!actual.equals(expected)) {
+            await fs.writeFile(testInfo.outputPath('animated-number-resting-actual.png'), actual);
+            await fs.writeFile(testInfo.outputPath('animated-number-resting-reference.png'), expected);
+            await fs.writeFile(testInfo.outputPath('animated-number-resting-geometry.json'), `${JSON.stringify({clip, geometry: await restGeometry(page, index)}, null, 2)}\n`);
+        }
+    } finally {
+        await node.evaluate((element, fragment) => element.replaceChildren(fragment), originalChildren);
+        await originalChildren.dispose();
     }
-    await node.evaluate((element, style) => {
-        if (style === null) element.removeAttribute('style');
-        else element.setAttribute('style', style);
-    }, originalStyles.node);
-    await reference.evaluate((element, style) => {
-        if (style === null) element.removeAttribute('style');
-        else element.setAttribute('style', style);
-    }, originalStyles.reference);
     expect(actual.equals(expected), 'Resting text pixels must match the plain formatter at the same screen position.').toBe(true);
 }
 
