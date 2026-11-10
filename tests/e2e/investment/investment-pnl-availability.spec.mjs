@@ -1,4 +1,4 @@
-/* Code version: v1.0.0
+/* Code version: v1.0.1
  * Intercepted account evidence keeps P&L component availability independent.
  */
 import {expect, test} from '@playwright/test';
@@ -91,7 +91,10 @@ test('known broker realized P&L remains visible when current native basis is unk
     });
     await page.goto('/trade/investment?view=holdings');
     await expect(holding(page).locator('td').nth(6).locator('.trade-metric-value').first()).toHaveText('7.00');
-    await expect(holding(page).locator('[data-investment-live-field="unrealized_pnl"]')).toHaveText('Unavailable');
+    const unrealized = holding(page).locator('[data-investment-live-field="unrealized_pnl"]');
+    await expect(unrealized).toHaveAttribute('data-investment-live-display', 'Unavailable');
+    await expect(unrealized.locator('[data-animated-number-sr]')).toHaveCount(1);
+    await expect(unrealized.locator('[data-animated-number-sr]')).toHaveText('Unavailable');
     await expect(total(page, 'realized')).toHaveAttribute('data-investment-live-display', '7.00');
     await expect(total(page, 'unrealized')).not.toHaveAttribute('data-investment-live-number');
     await expect(total(page, 'cumulative')).toContainText('Unavailable');
@@ -113,7 +116,10 @@ test('unverified security-transfer basis still blocks both P&L components', asyn
     });
     await page.goto('/trade/investment?view=holdings');
     await expect(holding(page).locator('td').nth(6)).toContainText('Unavailable');
-    await expect(holding(page).locator('[data-investment-live-field="unrealized_pnl"]')).toHaveText('Unavailable');
+    const unrealized = holding(page).locator('[data-investment-live-field="unrealized_pnl"]');
+    await expect(unrealized).toHaveAttribute('data-investment-live-display', 'Unavailable');
+    await expect(unrealized.locator('[data-animated-number-sr]')).toHaveCount(1);
+    await expect(unrealized.locator('[data-animated-number-sr]')).toHaveText('Unavailable');
     await expect(total(page, 'realized')).not.toHaveAttribute('data-investment-live-number');
     await expect(total(page, 'unrealized')).not.toHaveAttribute('data-investment-live-number');
     await expect(total(page, 'cumulative')).not.toHaveAttribute('data-investment-live-number');
@@ -143,7 +149,9 @@ test('an unpriced later acquisition keeps unrealized and cumulative P&L unavaila
         await expect(total(page, 'realized')).toHaveAttribute('data-investment-live-number', '0');
         await expect(total(page, 'realized')).toHaveAttribute('data-investment-live-display', '0.00');
         const unrealized = holding(page).locator('[data-investment-live-field="unrealized_pnl"]');
-        await expect(unrealized).toHaveText('Unavailable');
+        await expect(unrealized).toHaveAttribute('data-investment-live-display', 'Unavailable');
+        await expect(unrealized.locator('[data-animated-number-sr]')).toHaveCount(1);
+        await expect(unrealized.locator('[data-animated-number-sr]')).toHaveText('Unavailable');
         await expect(unrealized).not.toHaveAttribute('data-investment-live-number');
         for (const field of ['unrealized', 'cumulative']) {
             await expect(total(page, field)).toHaveText('Unavailable');

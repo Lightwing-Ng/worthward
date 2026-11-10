@@ -1,7 +1,8 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.6.0
+ * Code version: v1.7.0
+ * - Added: Unrealized P&L and daily changes opt into shared spring digits.
  * - Added: Rewards category details refresh without closing their disclosure.
  * - Changed: Stock details shows compact total-equity allocation and personal chips.
  * - Changed: Shared two-row labels omit visible chip date and share metadata.
@@ -117,7 +118,11 @@ function renderInvestmentLiveValue(field, value, {
             ? ` data-investment-live-number="${runtime.escapeHtml(String(numericValue))}"`
             : '';
         const innerHtml = useSplitValue ? runtime.renderWorkspaceMetricValueContent(displayText) : runtime.escapeHtml(displayText);
-        return `<span class="investment-live-value${classToken}" data-investment-live-field="${runtime.escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${runtime.escapeHtml(displayText)}">${innerHtml}</span>`;
+        const animatedAttr = field === 'unrealized_pnl' ? ' data-animated-number' : '';
+        const accessibleValue = animatedAttr
+            ? `<span class="animated-number-sr" data-animated-number-sr>${runtime.escapeHtml(displayText)}</span>`
+            : '';
+        return `<span class="investment-live-value${classToken}"${animatedAttr} data-investment-live-field="${runtime.escapeHtml(field)}"${tickerAttr}${numberAttr} data-investment-live-display="${runtime.escapeHtml(displayText)}">${innerHtml}${accessibleValue}</span>`;
     }
 
 function calculateHoldingsSummaryAllocation(value, totalEquity) {
@@ -200,10 +205,12 @@ function renderInvestmentHoldingsDailyPnlBadge(
         return `
             <span class="investment-holdings-daily-pnl-badge${toneClass}"${isVisible ? '' : ' hidden'}${accessibilityAttributes}>
                 <span class="trade-metric-value investment-stock-details-metric-value investment-holdings-daily-pnl-badge-value"
+                      ${field === 'daily_unrealized_pnl' ? 'data-animated-number' : ''}
                       data-investment-live-field="${runtime.escapeHtml(field)}"
                       data-investment-live-ticker="${runtime.escapeHtml(ticker)}"
                       data-investment-live-number="${runtime.escapeHtml(String(hasNumericValue ? numericValue : ''))}"
-                      data-investment-live-display="${runtime.escapeHtml(displayText)}">${runtime.renderWorkspaceMetricValueContent(displayText)}</span>
+                      data-investment-live-display="${runtime.escapeHtml(displayText)}">${runtime.renderWorkspaceMetricValueContent(displayText)}${field === 'daily_unrealized_pnl'
+                ? `<span class="animated-number-sr" data-animated-number-sr>${runtime.escapeHtml(displayText)}</span>` : ''}</span>
             </span>
         `;
     }
@@ -224,9 +231,13 @@ function updateInvestmentHoldingsDailyPnlBadge(
             hideZeroValue && Math.abs(numericValue) < runtime.INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
         );
         const displayText = hasNumericValue ? formatter(numericValue) : '-';
-        node.dataset.investmentLiveNumber = String(hasNumericValue ? numericValue : '');
-        node.dataset.investmentLiveDisplay = displayText;
-        node.innerHTML = runtime.renderWorkspaceMetricValueContent(displayText);
+        if (node.hasAttribute('data-animated-number')) {
+            runtime.updateInvestmentLiveValueNode(node, displayText, numericValue);
+        } else {
+            node.dataset.investmentLiveNumber = String(hasNumericValue ? numericValue : '');
+            node.dataset.investmentLiveDisplay = displayText;
+            node.innerHTML = runtime.renderWorkspaceMetricValueContent(displayText);
+        }
         const badge = node.closest('.investment-holdings-daily-pnl-badge');
         if (!(badge instanceof HTMLElement)) return;
         badge.hidden = !isVisible;
@@ -729,6 +740,7 @@ function syncInvestmentHoldingsRealtimeValues() {
                 runtime.syncInvestmentLiveDirectionTone([lastNode, lastCell], previousLastPrice, summary.lastPrice);
                 runtime.syncInvestmentLiveTone([unrealizedNode, unrealizedCell], summary.unrealizedPnl, {
                     enableSignedTone: !unrealizedPnlUnavailable && summary.unrealizedPnl !== null,
+                    enableNeutralTone: true,
                 });
             });
         });

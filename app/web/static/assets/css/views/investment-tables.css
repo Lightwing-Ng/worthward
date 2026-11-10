@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.6.0 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -423,6 +423,10 @@
 
 .investment-holdings-daily-pnl-badge[hidden] {
     display: none;
+}
+
+.investment-holdings-daily-pnl-badge:has([data-animated-number]) {
+    transition: background-color 200ms, color 200ms;
 }
 
 .investment-holdings-daily-pnl-badge.investment-holdings-daily-pnl-badge-negative {
