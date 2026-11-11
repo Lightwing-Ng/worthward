@@ -1,7 +1,7 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.42.2
+ * Code version: v0.42.3
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Loads retained historical evidence for omitted-ticker P&L reconciliation.
  * - Fixed: Historical P&L uses independent realized and point-in-time basis coverage.
@@ -83,11 +83,11 @@ import {
 import {
     applyInvestmentStockDetailsHorizontalGuideStyle,
     createInvestmentStockDetailsChipChart,
-} from './stock-details-chip-chart.js?v=investment-stock-details-chip-chart-v1.5.2';
+} from './stock-details-chip-chart.js?v=investment-stock-details-chip-chart-v1.5.3';
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.2';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.3';
 
 export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
     ledgerDate,

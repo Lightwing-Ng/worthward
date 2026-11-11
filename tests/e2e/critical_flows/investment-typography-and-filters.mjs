@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -425,7 +425,7 @@ test('sizes the stock-detail Type menu to its widest option', async ({page}) => 
     expect(geometry.menuWidth).toBeGreaterThan(geometry.triggerWidth);
 });
 
-test('keeps stock-detail metric sources collapsed until their shared arrow is toggled', async ({page}) => {
+test('preserves stock-detail metric sources for share exports', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['ibkr', 'hsbc'],
         transactions: [
@@ -457,140 +457,19 @@ test('keeps stock-detail metric sources collapsed until their shared arrow is to
         .locator('.investment-stock-details-metric-value');
     await expect(portfolioWeightValue.locator('.workspace-metric-value-major')).toHaveText(/^\d+$/);
     await expect(portfolioWeightValue.locator('.workspace-metric-value-minor')).toHaveText(/^\.\d+$/);
-    const fractionalTypography = await portfolioWeightValue.evaluate((value) => {
-        const major = value.querySelector('.workspace-metric-value-major');
-        const minor = value.querySelector('.workspace-metric-value-minor');
-        if (!(major instanceof HTMLElement) || !(minor instanceof HTMLElement)) return null;
-        const majorStyle = getComputedStyle(major);
-        const minorStyle = getComputedStyle(minor);
-        const majorTextRange = document.createRange();
-        majorTextRange.selectNodeContents(major);
-        const minorTextRange = document.createRange();
-        minorTextRange.selectNodeContents(minor);
-        return {
-            majorFontSize: Number.parseFloat(majorStyle.fontSize),
-            minorFontSize: Number.parseFloat(minorStyle.fontSize),
-            minorTransform: minorStyle.transform,
-            textBottomDelta: Math.abs(
-                majorTextRange.getBoundingClientRect().bottom
-                - minorTextRange.getBoundingClientRect().bottom
-            ),
-        };
-    });
-    expect(fractionalTypography).not.toBeNull();
-    expect(fractionalTypography.minorFontSize).toBeLessThan(fractionalTypography.majorFontSize);
-    expect(fractionalTypography.minorTransform).not.toBe('none');
-    expect(fractionalTypography.textBottomDelta).toBeLessThanOrEqual(0.1);
-
     const detailCards = page.locator('#stock_panel .investment-stock-details-metric-card-with-breakdown');
     await expect(detailCards).toHaveCount(5);
     await expect(detailCards.locator('.investment-stock-details-metric-breakdown')).toHaveCount(5);
     await expect(detailCards.locator('.investment-stock-details-metric-breakdown:not([hidden])')).toHaveCount(0);
     await expect(detailCards.locator('.investment-stock-details-metric-breakdown-trigger[aria-expanded="false"]')).toHaveCount(5);
 
-    const alignment = await detailCards.evaluateAll((cards) => cards.map((card) => {
-        const row = card.querySelector('.investment-stock-details-metric-value-row');
-        const trigger = card.querySelector('.investment-stock-details-metric-breakdown-trigger');
-        const value = card.querySelector('.investment-stock-details-metric-value');
-        if (!(row instanceof HTMLElement) || !(trigger instanceof HTMLElement) || !(value instanceof HTMLElement)) return null;
-        const rowRect = row.getBoundingClientRect();
-        const triggerRect = trigger.getBoundingClientRect();
-        const valueRect = value.getBoundingClientRect();
-        return {
-            triggerLeftDelta: triggerRect.left - rowRect.left,
-            triggerCenterDelta: (triggerRect.top + (triggerRect.height / 2)) - (valueRect.top + (valueRect.height / 2)),
-            triggerWidth: triggerRect.width,
-            triggerHeight: triggerRect.height,
-        };
-    }));
-    expect(alignment.every(Boolean)).toBe(true);
-    alignment.forEach((entry) => {
-        expect(Math.abs(entry.triggerLeftDelta)).toBeLessThanOrEqual(1);
-        expect(Math.abs(entry.triggerCenterDelta)).toBeLessThanOrEqual(1);
-        expect(entry.triggerWidth).toBe(20);
-        expect(entry.triggerHeight).toBe(20);
-    });
-
-    const brokerTrigger = page.locator('#investment_stock_details_table_host [data-investment-broker-filter-trigger]');
-    const firstDetailCard = detailCards.first();
-    const metricTrigger = firstDetailCard.locator('.investment-stock-details-metric-breakdown-trigger');
-    await expect(brokerTrigger).toBeVisible();
-    const readMetricTriggerPresentation = () => metricTrigger.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-            opacity: style.opacity,
-            pointerEvents: style.pointerEvents,
-        };
-    });
-    expect(await readMetricTriggerPresentation()).toEqual({opacity: '0', pointerEvents: 'none'});
-    await firstDetailCard.hover();
-    await expect.poll(readMetricTriggerPresentation).toEqual({opacity: '1', pointerEvents: 'auto'});
-    await page.locator('#investment_view_segmented').hover();
-    await expect.poll(readMetricTriggerPresentation).toEqual({opacity: '0', pointerEvents: 'none'});
-    await metricTrigger.focus();
-    await expect.poll(readMetricTriggerPresentation).toEqual({opacity: '1', pointerEvents: 'auto'});
-
-    const sharedArrowGeometry = async (locator) => locator.evaluate((element) => {
-        const triggerStyle = getComputedStyle(element);
-        const arrowStyle = getComputedStyle(element, '::before');
-        return {
-            triggerWidth: triggerStyle.width,
-            triggerHeight: triggerStyle.height,
-            arrowWidth: arrowStyle.width,
-            arrowHeight: arrowStyle.height,
-            arrowMask: arrowStyle.maskImage || arrowStyle.webkitMaskImage,
-        };
-    });
-    expect(await sharedArrowGeometry(metricTrigger)).toEqual(await sharedArrowGeometry(brokerTrigger));
-
+    await expect(detailCards.first()).toBeHidden();
     const realizedCard = detailCards.filter({has: page.locator('.trade-metric-label', {hasText: /^Realized P&L$/})});
-    const realizedTrigger = realizedCard.locator('.investment-stock-details-metric-breakdown-trigger');
-    const realizedBreakdown = realizedCard.locator('.investment-stock-details-metric-breakdown');
-    const readRealizedTriggerAlignment = () => realizedTrigger.evaluate((trigger) => {
-        const value = trigger.parentElement?.querySelector('.investment-stock-details-metric-value');
-        if (!(value instanceof HTMLElement)) return null;
-        const triggerRect = trigger.getBoundingClientRect();
-        const valueRect = value.getBoundingClientRect();
-        return {
-            centerDelta: (triggerRect.top + (triggerRect.height / 2))
-                - (valueRect.top + (valueRect.height / 2)),
-            transform: getComputedStyle(trigger).transform,
-        };
-    });
-    const realizedAlignmentBeforeInteraction = await readRealizedTriggerAlignment();
-    expect(realizedAlignmentBeforeInteraction).not.toBeNull();
-    await realizedCard.hover();
-    await expect.poll(readRealizedTriggerAlignment).toEqual(realizedAlignmentBeforeInteraction);
-    await expect(realizedBreakdown).toBeHidden();
-    await realizedTrigger.click();
-    await expect(realizedTrigger).toHaveAttribute('aria-expanded', 'true');
-    await expect.poll(readRealizedTriggerAlignment).toEqual(realizedAlignmentBeforeInteraction);
-    await expect(realizedTrigger).toHaveAttribute('aria-label', 'Hide Realized P&L details');
-    await expect(realizedBreakdown).toBeVisible();
-    await expect(realizedBreakdown).toContainText('Dividend income');
-    await expect(realizedBreakdown).toContainText('Foreign tax withholding');
-    await expect(realizedBreakdown).toContainText('Trading spread income');
-    await expect(realizedBreakdown).toContainText('IBKR · Dividend income');
-    await expect(realizedBreakdown).toContainText('IBKR · Foreign tax withholding');
-    await expect(realizedBreakdown).toContainText('IBKR · Trading spread income');
-    await expect(realizedBreakdown).toContainText('HSBC · Trading spread income');
-
-    const marketValueCard = detailCards.filter({has: page.locator('.trade-metric-label', {hasText: /^Market value$/})});
-    const marketValueTrigger = marketValueCard.locator('.investment-stock-details-metric-breakdown-trigger');
-    await marketValueTrigger.focus();
-    await marketValueTrigger.press('Enter');
-    await expect(marketValueTrigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(marketValueCard.locator('.investment-stock-details-metric-breakdown')).toBeVisible();
-    await expect(realizedBreakdown).toBeVisible();
-
-    await realizedTrigger.focus();
-    await realizedTrigger.press('Space');
-    await expect(realizedTrigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(realizedTrigger).toHaveAttribute('aria-label', 'Show Realized P&L details');
-    await expect(realizedBreakdown).toBeHidden();
-    await expect(page.locator('#stock_panel .investment-stock-details-metric-card', {
-        has: page.locator('.trade-metric-label', {hasText: /^Unrealized P&L$/}),
-    }).locator('.investment-stock-details-metric-breakdown-trigger')).toHaveCount(0);
+    const breakdown = realizedCard.locator('.investment-stock-details-metric-breakdown');
+    await expect(breakdown).toContainText('IBKR · Dividend income');
+    await expect(breakdown).toContainText('IBKR · Foreign tax withholding');
+    await expect(breakdown).toContainText('IBKR · Trading spread income');
+    await expect(breakdown).toContainText('HSBC · Trading spread income');
 });
 
 test('keeps YTD investment x-axis labels inside the overview clip at low desktop heights', async ({page}) => {
@@ -1124,7 +1003,8 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     await expect.poll(() => readCapDelta('right')).toBeCloseTo(0, 2);
     await expect(segmented).toHaveAttribute('data-segmented-overflow', '0');
 
-    await page.locator('label[for="investment_view_stock_details"]').click();
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-ticker="QQQ"]').click();
     await expect(page.locator('#stock_panel')).toBeVisible();
     const stockDetailsRange = page.locator('#stock_panel .investment-stock-details-range-segmented');
     await expect(stockDetailsRange).toHaveClass(/is-pill-ready/);

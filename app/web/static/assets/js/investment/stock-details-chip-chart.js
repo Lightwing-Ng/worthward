@@ -1,6 +1,6 @@
 /**
  * Personal remaining-lot distribution presentation.
- * Code version: v1.5.2
+ * Code version: v1.5.3
  */
 
 const quantityFormatter = new Intl.NumberFormat('en-US', {maximumFractionDigits: 6});
@@ -31,7 +31,21 @@ export function createInvestmentStockDetailsChipChart(card, {resolveTheme, getPr
     let destroyed = false;
 
     const draw = (providedChart) => {
-        if (destroyed || !canvas.isConnected) return;
+        if (destroyed) return;
+        const masked = Boolean(card.closest('.is-share-sensitive-masked'));
+        const snapshot = activeSnapshot;
+        const ready = snapshot?.status === 'ready';
+        if (masked) {
+            delete card.dataset.totalQuantity;
+        } else {
+            card.dataset.totalQuantity = String(snapshot?.totalQuantity || 0);
+        }
+        canvas.setAttribute('aria-label', ready
+            ? masked ? 'Personal cost-lot distribution' : `Cost distribution on ${formatSnapshotDate(snapshot.date)}. ${snapshot.bins.map((bin) => (
+                `${quantityFormatter.format(bin.quantity)} ${bin.side} shares at ${snapshot.currency} ${priceFormatter.format(bin.price)}${['carried-basis', 'cost-basis'].includes(bin.priceOrigin) ? ' (cost-basis anchor; original purchase price unavailable)' : ''}`
+            )).join('; ')}.${Number.isFinite(snapshot.price) ? ` Reference line: last price ${priceFormatter.format(snapshot.price)}.` : ''}`
+            : emptyLabel.textContent);
+        if (!canvas.isConnected) return;
         const rect = canvas.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
         const ratio = Math.max(1, window.devicePixelRatio || 1);
@@ -99,18 +113,20 @@ export function createInvestmentStockDetailsChipChart(card, {resolveTheme, getPr
                 x += width;
             });
         });
-        ctx.fillStyle = theme.muted || style.color;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        const labeledRows = [];
-        [...rows.values()].sort((a, b) => b.quantity - a.quantity || b.price - a.price).forEach((row) => {
-            const y = priceY(row.price);
-            if (labeledRows.some((previousY) => Math.abs(previousY - y) < 15)) return;
-            const text = quantityFormatter.format(row.quantity);
-            ctx.fillText(text, left - 6, y, Math.max(1, labelWidth - 8));
-            geometry.labels.push({text, quantity: row.quantity, price: row.price, x: left - 6, y, align: ctx.textAlign});
-            labeledRows.push(y);
-        });
+        if (!masked) {
+            ctx.fillStyle = theme.muted || style.color;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            const labeledRows = [];
+            [...rows.values()].sort((a, b) => b.quantity - a.quantity || b.price - a.price).forEach((row) => {
+                const y = priceY(row.price);
+                if (labeledRows.some((previousY) => Math.abs(previousY - y) < 15)) return;
+                const text = quantityFormatter.format(row.quantity);
+                ctx.fillText(text, left - 6, y, Math.max(1, labelWidth - 8));
+                geometry.labels.push({text, quantity: row.quantity, price: row.price, x: left - 6, y, align: ctx.textAlign});
+                labeledRows.push(y);
+            });
+        }
         if (Number.isFinite(currentPrice)) {
             const y = priceY(currentPrice);
             applyInvestmentStockDetailsHorizontalGuideStyle(ctx, theme);
@@ -129,17 +145,11 @@ export function createInvestmentStockDetailsChipChart(card, {resolveTheme, getPr
         canvas._investmentChipSnapshot = snapshot;
         card.dataset.date = snapshot?.date || '';
         card.dataset.status = snapshot?.status || 'unavailable';
-        card.dataset.totalQuantity = String(snapshot?.totalQuantity || 0);
         const ready = snapshot?.status === 'ready';
         emptyLabel.hidden = ready;
         emptyLabel.textContent = snapshot?.status === 'empty'
             ? 'No open lots at this time.'
             : 'Cost history unavailable.';
-        canvas.setAttribute('aria-label', ready
-            ? `Cost distribution on ${formatSnapshotDate(snapshot.date)}. ${snapshot.bins.map((bin) => (
-                `${quantityFormatter.format(bin.quantity)} ${bin.side} shares at ${snapshot.currency} ${priceFormatter.format(bin.price)}${['carried-basis', 'cost-basis'].includes(bin.priceOrigin) ? ' (cost-basis anchor; original purchase price unavailable)' : ''}`
-            )).join('; ')}.${Number.isFinite(snapshot.price) ? ` Reference line: last price ${priceFormatter.format(snapshot.price)}.` : ''}`
-            : emptyLabel.textContent);
         draw();
     };
     const resizeObserver = window.ResizeObserver ? new ResizeObserver(draw) : null;

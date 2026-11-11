@@ -1,7 +1,7 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.3.1
+ * Code version: v1.3.2
  * - Added: HSBC dividend matching in Description, excluded from exports.
  * - Changed: The unresolved HSBC order reference is the sole visible `*`
  *   marker; Cash and Equity retain their explanatory titles without repeating
@@ -1232,6 +1232,7 @@ function syncInvestmentShareMaskState() {
         if (runtime.investmentShareActions instanceof HTMLElement) {
             runtime.investmentShareActions.classList.toggle('is-mask-active', runtime.state.investmentShareMaskEnabled);
         }
+        runtime.state.investmentStockDetailsPriceChartInstance?.canvas?._stockDetailsChipChart?.redraw();
         syncInvestmentEquityChartAxisMask();
         syncInvestmentShareMaskButtonState();
     }

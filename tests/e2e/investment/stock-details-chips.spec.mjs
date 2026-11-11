@@ -1,4 +1,4 @@
-/* Personal Stock-details cost lots share the price-chart scale. Code version: v1.5.1 */
+/* Personal Stock-details cost lots share the price-chart scale. Code version: v1.6.0 */
 
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis, setSidebarExpanded} from '../critical_flows/support.mjs';
@@ -138,12 +138,12 @@ async function hoverDate(page, date) {
         const x = Math.max(chart.chartArea.left + 2, Math.min(chart.chartArea.right - 2, geometry.x));
         const y = Math.max(chart.chartArea.top + 2, Math.min(chart.chartArea.bottom - 2, geometry.y));
         return {
-            x: bounds.left + x * bounds.width / chart.width,
-            y: bounds.top + y * bounds.height / chart.height,
+            x: x * bounds.width / chart.width,
+            y: y * bounds.height / chart.height,
         };
     }, date);
     expect(point, `The price series contains ${date}`).not.toBeNull();
-    await page.mouse.move(point.x, point.y);
+    await canvas.hover({position: point});
     await expect(page.locator(chipsSelector)).toHaveAttribute('data-date', date);
 }
 
@@ -694,7 +694,7 @@ test('uses total equity for current-stock cash and other-stock allocation at his
         denominator: 10000, ticker: 'DRAM',
     });
     await expect(page.locator(allocationSelector)).toHaveAttribute('data-date', '2026-07-14');
-    const segments = await page.locator(allocationSelector).evaluate((element) => {
+    const readSegments = () => page.locator(allocationSelector).evaluate((element) => {
         const bar = element.querySelector('[data-investment-stock-allocation-bar]');
         const cash = element.querySelector('[data-investment-stock-allocation-cash]').getBoundingClientRect();
         const ticker = element.querySelector('[data-investment-stock-allocation-ticker]').getBoundingClientRect();
@@ -707,6 +707,11 @@ test('uses total equity for current-stock cash and other-stock allocation at his
             )),
         };
     });
+    await expect.poll(async () => {
+        const {cash, width} = await readSegments();
+        return cash / width;
+    }).toBeCloseTo(7400 / 10000, 3);
+    const segments = await readSegments();
     expect(segments.order).toEqual(['ticker', 'other', 'cash']);
     expect(segments.cash / segments.width).toBeCloseTo(7400 / 10000, 3);
     expect(segments.ticker / segments.width).toBeCloseTo(100 / 10000, 3);
@@ -826,4 +831,81 @@ test('recolors the latest personal lots with live quotes while historical hover 
         bins: [{price: 20, quantity: 10, side: 'long', profitable: true}],
     }));
     expect(writes).toEqual([]);
+});
+
+test('expands a Holdings row, scopes history and export, and restores the portfolio on collapse', async ({page}) => {
+    await mockInvestmentReadApis(page, {
+        transactions: [
+            ...transactions,
+            {...transactions[0], ledger_no: 4, ticker: 'NVDA', date: '2026-07-18'},
+        ],
+        startingCash: 10_000,
+        priceHistoryByTicker: {DRAM: priceHistory, NVDA: priceHistory},
+        tickerProfiles: {DRAM: {ticker: 'DRAM', company_name: 'Roundhill Memory ETF'}},
+    });
+    await page.addInitScript(() => {
+        window.domtoimage = {
+            toBlob: async (card) => {
+                window.__capturedHolding = {
+                    chartImages: card.querySelectorAll('.investment-community-share-stock-charts img').length,
+                    metrics: card.querySelector('.investment-stock-details-metrics')?.textContent,
+                    masked: card.querySelector('article')?.classList.contains('is-share-sensitive-masked'),
+                };
+                return new Promise((resolve) => document.createElement('canvas').toBlob(resolve));
+            },
+        };
+    });
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await page.goto('/trade/investment?view=holdings');
+    const holdings = page.locator('#investment_holdings_panel .investment-holdings-table-scroll');
+    const dram = holdings.locator('tr[data-investment-holdings-ticker="DRAM"]');
+    const expanded = holdings.locator('tr[data-investment-holding-detail="DRAM"]');
+    const share = page.getByRole('button', {name: 'Export Transactions', exact: true});
+    const stockHistory = page.locator('#investment_stock_details');
+    await expect(dram).toBeVisible();
+    await expect(page.locator('#investment_view_segmented label')).toHaveCount(3);
+    await expect(page.locator('#investment_history tr[data-investment-history-row="4"]')).toBeVisible();
+    await dram.locator('td').first().click();
+    await expect(expanded.locator(priceCanvasSelector)).toBeVisible();
+    await expect(expanded.locator(chipsCanvasSelector)).toBeVisible();
+    await expect(dram.getByRole('link')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page).toHaveURL(/view=holdings&ticker=DRAM/);
+    await expect(page.locator('#history_table_wrap')).toBeHidden();
+    await expect(stockHistory.locator('tr[data-investment-stock-detail-ledger]')).toHaveCount(3);
+    await expect(stockHistory.locator('tr[data-investment-stock-detail-ledger="3"]')).toBeVisible();
+    await expect(stockHistory.locator('tr[data-investment-stock-detail-ledger="4"]')).toHaveCount(0);
+    await expect(expanded.getByRole('button', {name: 'Export Transactions', exact: true})).toBeVisible();
+
+    const downloadPending = page.waitForEvent('download');
+    await share.click();
+    const download = await downloadPending;
+    const chunks = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+    const markdown = Buffer.concat(chunks).toString('utf8');
+    expect(markdown).toContain('DRAM Stock Details Transaction History');
+    expect(markdown).toContain('Unrealized P&L');
+
+    const getChipGeometry = () => expanded.locator(chipsCanvasSelector).evaluate((canvas) => canvas._investmentChipGeometry);
+    await share.hover();
+    await expanded.getByRole('button', {name: 'Mask Sensitive Values'}).click();
+    await expect.poll(async () => (await getChipGeometry()).labels).toHaveLength(0);
+    expect((await getChipGeometry()).bins.length).toBeGreaterThan(0);
+    const screenshotPending = page.waitForEvent('download');
+    await expanded.getByRole('button', {name: 'Save Current Screenshot'}).click();
+    expect((await screenshotPending).suggestedFilename()).toMatch(/^investment-dram-.*\.png$/);
+    expect(await page.evaluate(() => window.__capturedHolding)).toEqual({
+        chartImages: 2,
+        metrics: expect.stringContaining('Unrealized P&L'),
+        masked: true,
+    });
+    await expanded.getByRole('button', {name: 'Reveal Sensitive Values'}).click();
+    await expect.poll(async () => (await getChipGeometry()).labels.length).toBeGreaterThan(0);
+
+    await dram.getByRole('link').press('Enter');
+    await expect(expanded).toHaveCount(0);
+    await expect(dram.getByRole('link')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#investment_history tr[data-investment-history-row="4"]')).toBeVisible();
+    await expect(page.locator('.investment-view-segmented-wrap').getByRole('button', {name: 'Export Transactions', exact: true})).toBeVisible();
+    await page.goBack();
+    await expect(expanded.locator(priceCanvasSelector)).toBeVisible();
 });

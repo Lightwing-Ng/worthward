@@ -1,7 +1,7 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.1
  * - Changed: Stock details renders reconciled total-equity allocation percentages.
  * - Fixed: Price-hover exit restores the latest allocation snapshot.
  * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
@@ -309,13 +309,15 @@ function waitForInvestmentStableElementBox(element, {
 // sees first, and it is cheap, so a click runs it before the view's own rendering.
 function syncInvestmentViewPill(normalizedNextView) {
         if (!runtime.segmentedControl) return;
-        const activeIndex = Math.max(runtime.INVESTMENT_VIEW_ORDER.indexOf(normalizedNextView), 0);
-        const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(normalizedNextView)}"]`);
+        const visibleView = normalizedNextView === 'stock_details' ? 'holdings' : normalizedNextView;
+        const visibleViews = runtime.INVESTMENT_VIEW_ORDER.filter((view) => view !== 'stock_details');
+        const activeIndex = Math.max(visibleViews.indexOf(visibleView), 0);
+        const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(visibleView)}"]`);
         if (nextRadio instanceof HTMLInputElement && !nextRadio.checked) {
             nextRadio.checked = true;
         }
-        runtime.segmentedControl.dataset.active = normalizedNextView;
-        runtime.segmentedControl.style.setProperty('--segmented-option-count', String(runtime.INVESTMENT_VIEW_ORDER.length));
+        runtime.segmentedControl.dataset.active = visibleView;
+        runtime.segmentedControl.style.setProperty('--segmented-option-count', String(visibleViews.length));
         runtime.segmentedControl.style.setProperty('--segmented-active-index', String(activeIndex));
         runtime.updateInvestmentSegmentedPillNow();
     }
@@ -360,23 +362,31 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
 
         const previousInvestmentView = runtime.state.activeInvestmentView;
         if (previousInvestmentView === 'stock_details' && normalizedNextView !== 'stock_details') {
-            runtime.closeInvestmentStockTickerSelect();
+            runtime.state.investmentStockDetailsPriceChartRequestSerial += 1;
+            runtime.destroyInvestmentStockDetailsPriceChart();
+            runtime.clearInvestmentStockDetailsRangeControlBindings();
+            runtime.closeInvestmentStockDetailsTimeFilters();
         }
         const isMetricsHistoryScopeChanging = previousInvestmentView === 'metrics'
             || normalizedNextView === 'metrics';
 
         // Measure the pill while the layout is still clean, before the panels change.
         syncInvestmentViewPill(normalizedNextView);
-        lockInvestmentSurfaceHeight();
+        const isHoldingsDisclosure = [previousInvestmentView, normalizedNextView].every(
+            (view) => view === 'holdings' || view === 'stock_details',
+        );
+        if (!isHoldingsDisclosure) lockInvestmentSurfaceHeight();
         // Settling pass for a layout that keeps changing after the switch (no-op when unchanged).
         runtime.scheduleInvestmentSegmentedPillUpdate();
         if (runtime.investmentViewSurface) {
             runtime.investmentViewSurface.dataset.activeView = normalizedNextView;
         }
+        const visibleView = normalizedNextView === 'stock_details' ? 'holdings' : normalizedNextView;
         runtime.investmentPanels.forEach((panel) => {
-            panel.hidden = panel.dataset.investmentViewPanel !== normalizedNextView;
+            panel.hidden = panel.dataset.investmentViewPanel !== visibleView;
         });
         runtime.state.activeInvestmentView = normalizedNextView;
+        runtime.mountInvestmentHoldingsStockDetails();
         if (normalizedNextView === 'metrics') {
             runtime.ensureInvestmentMetricsBrokerScope();
         }
@@ -414,7 +424,7 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
             );
         }
         runtime.rememberInvestmentPageState({ view: normalizedNextView });
-        animateInvestmentSurfaceHeight();
+        if (!isHoldingsDisclosure) animateInvestmentSurfaceHeight();
         if (normalizedNextView === 'stock_details') {
             scheduleInvestmentStockDetailsVisibleLayoutSync();
         }

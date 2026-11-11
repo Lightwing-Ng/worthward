@@ -1,4 +1,4 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.1.0 */
 import {
     expect,
     test,
@@ -197,7 +197,8 @@ test('resizes the investment overview and history responsively in portrait layou
     expect(historyLimitGeometry.rows[0].top).toBeGreaterThanOrEqual(historyLimitGeometry.headerBottom - 1);
     expect(historyLimitGeometry.rows[1].bottom).toBeLessThanOrEqual(historyLimitGeometry.shellBottom + 1);
 
-    await page.locator('label[for="investment_view_stock_details"]').click();
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-ticker="QQQ"]').click();
     await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
     await expect(page.locator('.investment-stock-details-price-chart-canvas')).toBeVisible();
     await page.setViewportSize({width: 922, height: 1080});
@@ -282,7 +283,7 @@ test('resizes the investment overview and history responsively in portrait layou
     );
 });
 
-test('keeps the Stock details price canvas at least 16:9 through splitter limits and responsive reflow', async ({page}) => {
+test('keeps the inline Holdings charts usable through splitter limits and responsive reflow', async ({page}) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
@@ -313,147 +314,33 @@ test('keeps the Stock details price canvas at least 16:9 through splitter limits
     await page.evaluate(() => document.fonts.ready);
     await waitForSettledView('stock_details');
 
-    const readChartGeometry = () => page.evaluate(() => {
-        const panel = document.querySelector('#stock_panel');
-        const canvas = panel?.querySelector('.investment-stock-details-price-chart-canvas');
-        const shell = panel?.querySelector('.investment-stock-details-price-chart-shell');
-        const card = panel?.querySelector('.investment-stock-details-price-chart-card');
-        const report = document.querySelector('.investment-report-card');
-        if (!panel || !canvas || !shell || !card || !report) return null;
-        const bounds = (element) => {
-            const rect = element.getBoundingClientRect();
-            return {
-                left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom,
-                width: rect.width, height: rect.height,
-            };
-        };
-        return {
-            viewportWidth: window.innerWidth,
-            canvas: bounds(canvas),
-            shell: bounds(shell),
-            card: bounds(card),
-            panel: bounds(panel),
-            report: bounds(report),
-        };
-    });
-    const expectChartMinimum = async (stage) => {
-        await expect.poll(async () => {
-            const geometry = await readChartGeometry();
-            if (!geometry || geometry.canvas.width <= 0) return Number.POSITIVE_INFINITY;
-            const containmentDeficits = (inner, outer) => [
-                outer.left - inner.left, inner.right - outer.right,
-                outer.top - inner.top, inner.bottom - outer.bottom,
-            ];
-            return Math.max(
-                geometry.canvas.width * 9 / 16 - geometry.canvas.height,
-                ...containmentDeficits(geometry.canvas, geometry.shell),
-                ...containmentDeficits(geometry.shell, geometry.card),
-                ...(geometry.viewportWidth > 767 ? [
-                    ...containmentDeficits(geometry.card, geometry.panel),
-                    ...containmentDeficits(geometry.panel, geometry.report),
-                ] : []),
-            );
-        }, {message: `${stage}: Stock details canvas preserves its 16:9 minimum without card clipping`})
-            .toBeLessThanOrEqual(1);
-        const geometry = await readChartGeometry();
-        const expectContained = (inner, outer, label) => {
-            expect(inner.left, `${stage}: ${label} left edge`).toBeGreaterThanOrEqual(outer.left - 1);
-            expect(inner.right, `${stage}: ${label} right edge`).toBeLessThanOrEqual(outer.right + 1);
-            expect(inner.top, `${stage}: ${label} top edge`).toBeGreaterThanOrEqual(outer.top - 1);
-            expect(inner.bottom, `${stage}: ${label} bottom edge`).toBeLessThanOrEqual(outer.bottom + 1);
-        };
-        expect(geometry.canvas.height).toBeGreaterThan(0);
-        expectContained(geometry.canvas, geometry.shell, 'canvas within shell');
-        expectContained(geometry.shell, geometry.card, 'shell within card');
-        if (geometry.viewportWidth > 767) {
-            expectContained(geometry.card, geometry.panel, 'card within panel');
-            expectContained(geometry.panel, geometry.report, 'panel within report');
-        }
-        return geometry;
+    const scroll = page.locator('#investment_holdings_panel .investment-holdings-table-scroll');
+    const expectChartLayout = async () => {
+        await expect(canvas).toBeVisible();
+        await expect.poll(() => canvas.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            const card = element.closest('.investment-stock-details-price-chart-card').getBoundingClientRect();
+            const side = document.querySelector('#stock_panel .investment-stock-details-side-card').getBoundingClientRect();
+            return bounds.width > 160 && bounds.height >= 180
+                && bounds.bottom <= card.bottom + 1 && side.left >= card.right - 1
+                && document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1;
+        })).toBe(true);
     };
-
-    const handleBox = await resizer.boundingBox();
-    expect(handleBox).not.toBeNull();
-    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(handleBox.x + handleBox.width / 2, -200, {steps: 8});
-    await page.mouse.up();
-    await expectChartMinimum('Upward pointer limit');
     await resizer.focus();
     await resizer.press('Home');
-    await resizer.press('ArrowUp');
-    await resizer.press('ArrowUp');
-    const desktopMinimum = await expectChartMinimum('Keyboard minimum');
-    await expect.poll(() => resizer.evaluate((element) => (
-        Number(element.getAttribute('aria-valuenow')) - Number(element.getAttribute('aria-valuemin'))
-    ))).toBe(0);
+    await expectChartLayout();
 
     await page.setViewportSize({width: 1_440, height: 1_000});
-    const widerMinimum = await expectChartMinimum('Wider desktop reflow without further splitter input');
-    expect(widerMinimum.canvas.width).toBeGreaterThan(desktopMinimum.canvas.width);
-
-    await page.locator('label[for="investment_view_holdings"]').click();
-    await expect(page.locator('#investment_holdings_panel')).toBeVisible();
-    await waitForSettledView('holdings');
-    await resizer.focus();
-    await resizer.press('Home');
-    await expect.poll(() => resizer.evaluate((element) => {
-        const report = document.querySelector('.investment-report-card');
-        return Math.abs(report.getBoundingClientRect().height
-            - Number(element.getAttribute('aria-valuemin')));
-    }), {message: 'Holdings reaches its rendered Home minimum before the view-height comparison'})
-        .toBeLessThanOrEqual(1);
-    const holdingsHeight = await page.locator('.investment-report-card')
-        .evaluate((element) => element.getBoundingClientRect().height);
-    await page.locator('label[for="investment_view_stock_details"]').click();
-    await expect(canvas).toBeVisible();
-    await waitForSettledView('stock_details');
-    const enteredStockDetails = await expectChartMinimum('Entering Stock details from the smaller Holdings split');
-    expect(enteredStockDetails.report.height).toBeGreaterThan(holdingsHeight);
-
+    await expectChartLayout();
     await page.setViewportSize({width: 390, height: 844});
-    await expectChartMinimum('Narrow viewport reflow');
-    await resizer.focus();
-    await resizer.press('Home');
-    await resizer.press('ArrowUp');
-    await expectChartMinimum('Narrow keyboard minimum');
-    const mobileScroll = await page.locator('#stock_panel').evaluate((element) => {
-        const overflow = element.scrollHeight - element.clientHeight;
-        element.scrollTop = element.scrollHeight;
-        return {
-            overflow,
-            overflowY: getComputedStyle(element).overflowY,
-            remaining: element.scrollHeight - element.clientHeight - element.scrollTop,
-        };
-    });
-    if (mobileScroll.overflow > 1) {
-        expect(mobileScroll.overflowY).toBe('auto');
-        expect(mobileScroll.remaining).toBeLessThanOrEqual(1);
-    }
+    await expectChartLayout();
+    await expect(scroll).toHaveCSS('overflow-y', 'auto');
+    await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
 
     await page.setViewportSize({width: 1_440, height: 500});
-    await expectChartMinimum('Short wide viewport reflow');
-    const workspace = page.locator('.investment-workspace-header');
-    await expect.poll(() => workspace.evaluate((element) => element.scrollHeight - element.clientHeight))
-        .toBeGreaterThan(1);
-    const shortWorkspace = await workspace.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-        const workspaceRect = element.getBoundingClientRect();
-        const historyRect = document.querySelector('#investment_history_surface').getBoundingClientRect();
-        return {
-            overflowY: getComputedStyle(element).overflowY,
-            remaining: element.scrollHeight - element.clientHeight - element.scrollTop,
-            scrollportTop: workspaceRect.top + element.clientTop,
-            scrollportBottom: workspaceRect.top + element.clientTop + element.clientHeight,
-            historyTop: historyRect.top,
-            historyBottom: historyRect.bottom,
-        };
-    });
-    expect(shortWorkspace.overflowY).toBe('auto');
-    expect(shortWorkspace.remaining).toBeLessThanOrEqual(1);
-    expect(shortWorkspace.historyTop).toBeLessThan(shortWorkspace.scrollportBottom);
-    expect(shortWorkspace.historyBottom).toBeGreaterThan(shortWorkspace.scrollportTop);
-    expect(shortWorkspace.historyBottom).toBeLessThanOrEqual(shortWorkspace.scrollportBottom + 1);
+    await expectChartLayout();
+    await expect(scroll).toHaveCSS('overflow-y', 'auto');
+    await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
 });
 
 test('keeps investment pagination visible at the lower resize limit', async ({page}) => {

@@ -1,11 +1,11 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.5.3
+ * Code version: v1.5.4
  * - Fixed: Keep Stock-details effects visible until real workspace scrolling is required.
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.3';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.4';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -183,7 +183,7 @@ export function bindInvestmentSectionResizer({
     };
     const getStockDetailsMinimumHeight = (baselineMinimum) => {
         if (isStackedLayout()) return 0;
-        const panel = reportCard.querySelector('#stock_panel:not([hidden])');
+        const panel = reportCard.querySelector('#stock_panel:not([hidden]):not(tr *)');
         const card = panel?.querySelector('.investment-stock-details-price-chart-card');
         const shell = card?.querySelector('.investment-stock-details-price-chart-shell');
         if (!isVisibleElement(panel) || !isVisibleElement(card) || !isVisibleElement(shell)) return 0;
@@ -332,7 +332,7 @@ export function bindInvestmentSectionResizer({
     };
     const getRange = () => {
         const stockDetailsActive = !isStackedLayout() && isVisibleElement(
-            reportCard.querySelector('#stock_panel:not([hidden])'),
+            reportCard.querySelector('#stock_panel:not([hidden]):not(tr *)'),
         );
         if (stockDetailsActive && !workspaceHeader.hasAttribute('data-investment-stock-chart-minimum')) {
             workspaceHeader.setAttribute('data-investment-stock-chart-minimum', '');

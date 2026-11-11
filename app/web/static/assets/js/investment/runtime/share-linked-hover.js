@@ -1,7 +1,7 @@
 /**
  * Share-card capture and linked-hover interactions.
  *
- * Code version: v1.0.1
+ * Code version: v1.1.0
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -319,7 +319,7 @@ function buildInvestmentStockDetailsShareBody(body) {
         const identity = runtime.investmentStockDetailsPanel.querySelector('.investment-stock-details-identity');
         const chartCanvas = runtime.investmentStockDetailsPanel.querySelector('.investment-stock-details-price-chart-canvas');
         const metrics = runtime.investmentStockDetailsPanel.querySelector('.investment-stock-details-metrics');
-        if (!(chartCanvas instanceof HTMLCanvasElement) || !(metrics instanceof HTMLElement)) return false;
+        if (!(metrics instanceof HTMLElement)) return false;
 
         if (identity instanceof HTMLElement) {
             const identitySection = createInvestmentShareSection('investment-community-share-section--compact investment-community-share-section--padded');
@@ -329,6 +329,18 @@ function buildInvestmentStockDetailsShareBody(body) {
 
         const chartSection = createInvestmentShareChartSection(chartCanvas);
         if (chartSection instanceof HTMLElement) {
+            const panel = runtime.investmentStockDetailsPanel;
+            const chipsCanvas = panel.querySelector('[data-investment-stock-chips-canvas]');
+            const allocation = panel.querySelector('[data-investment-stock-allocation]');
+            const side = document.createElement('div');
+            side.className = 'investment-community-share-stock-side';
+            if (allocation) side.append(sanitizeInvestmentShareClone(allocation.cloneNode(true)));
+            const chipImage = createInvestmentShareChartImage(chipsCanvas);
+            if (chipImage) side.append(chipImage);
+            if (side.childElementCount) {
+                chartSection.classList.add('investment-community-share-stock-charts');
+                chartSection.append(side);
+            }
             body.appendChild(chartSection);
         }
 
@@ -427,7 +439,7 @@ function buildInvestmentHoldingsShareTable({ maskSensitive = false } = {}) {
         const headerRow = headerTable.querySelector('thead tr:first-child');
         const summaryRow = headerTable.querySelector('.investment-holdings-summary-row');
         const allDataRows = Array.from(bodyTable.querySelectorAll('tbody tr'))
-            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row]'));
+            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row], [data-investment-holding-detail]'));
         const brokerRewardsRow = allDataRows.find((row) => row.matches('[data-investment-broker-rewards-row]'));
         const dataRows = allDataRows
             .filter((row) => row !== brokerRewardsRow)

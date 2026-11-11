@@ -1,4 +1,4 @@
-/* Tests for the canonical Investment URL state contract. Code version: v1.2.1 */
+/* Tests for the canonical Investment URL state contract. Code version: v1.3.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,10 +98,21 @@ test('serializes a compact canonical URL and uses the stock range for Stock deta
 
     assert.equal(
         url,
-        '/trade/investment?legacy=keep&view=stock-details&ticker=NVDA&range=3m'
+        '/trade/investment?legacy=keep&view=holdings&ticker=NVDA&range=3m'
             + '&broker=ibkr%2Clongbridge_hk&type=buy%2Csell&currency=HKD'
             + '&description=unbound&date=2026-08&page=4',
     );
+});
+
+test('opens an inline Holdings detail from the canonical URL or the legacy alias', () => {
+    for (const view of ['holdings', 'stock-details']) {
+        const state = parseInvestmentUrlState(`/trade/investment?view=${view}&ticker=DRAM&range=ytd`);
+        assert.equal(state.view, 'stock_details');
+        assert.equal(state.viewSlug, 'holdings');
+        assert.equal(state.ticker, 'DRAM');
+        assert.equal(state.range, 'ytd');
+    }
+    assert.equal(parseInvestmentUrlState('/trade/investment?view=holdings').view, 'holdings');
 });
 
 test('omits default values while retaining the explicit Overview view', () => {

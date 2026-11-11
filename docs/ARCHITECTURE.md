@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.147.0`
+Documentation version: `v1.148.0`
 
 ## Canonical SQLite persistence
 
@@ -2145,6 +2145,10 @@ sets of values.
   root can also load a missing versioned factory from the same origin so a
   long-running process with a cached pre-split template does not serve a
   half-adopted browser bundle.
+- Holdings mounts the ticker-detail chart and share drawer in the selected
+  table row. The active ticker selects the existing ticker-specific history
+  renderer and ledger numbers. The URL uses `view=holdings&ticker=<symbol>`
+  and restores the expanded row on navigation.
 - `app/web/static/assets/js/investment/stock-details.js`: Stock-details
   composition with separate metrics, range, and trade-marker-glow owners.
 - `app/web/static/assets/js/investment/data-utils.js`: stable data-utility

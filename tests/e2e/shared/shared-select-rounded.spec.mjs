@@ -1,6 +1,5 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 import {expect, test} from '@playwright/test';
-import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
 const tolerance = 1;
 const variants = [
@@ -163,49 +162,6 @@ for (const colorScheme of ['light', 'dark']) {
                 await pill.scrollIntoViewIfNeeded();
                 await expect(pill).toHaveCSS('height', '30px');
                 expect(await pill.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderRadius))).toBeGreaterThan(10);
-            });
-
-            test('Stock details fits ticker identity and wraps long names with option typography', async ({page}, testInfo) => {
-                const companyName = 'Alphabet Inc. Class A common stock with a deliberately long fixture company name';
-                await mockTickerLogos(page);
-                await mockInvestmentReadApis(page, {
-                    transactions: [
-                        {ledger_no: 1, broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'GOOGL', currency: 'USD', quantity: 1, price: 180, amount: -180},
-                        {ledger_no: 2, broker: 'ibkr', date: '2026-07-11', type: 'buy', ticker: 'AAPL', currency: 'USD', quantity: 1, price: 200, amount: -200},
-                    ],
-                    priceHistoryByTicker: {
-                        GOOGL: [{date: '2026-07-10', close: 180}, {date: '2026-07-11', close: 181}],
-                        AAPL: [{date: '2026-07-10', close: 200}, {date: '2026-07-11', close: 201}],
-                    },
-                    tickerProfiles: {
-                        GOOGL: {ticker: 'GOOGL', company_name: companyName, logo_url: '/market-store/logos/GOOGL.svg'},
-                        AAPL: {ticker: 'AAPL', company_name: 'Apple Inc.', logo_url: '/market-store/logos/AAPL.svg'},
-                    },
-                });
-                await page.goto('/trade/investment?view=stock-details&ticker=GOOGL&range=1y');
-                const field = page.locator('#stock_panel .investment-stock-details-identity [data-shared-select-variant="rounded"]');
-                const trigger = field.locator('[data-shared-select-trigger]');
-                const native = field.locator('[data-investment-stock-ticker-select]');
-                await expect(native).toHaveValue('GOOGL');
-                await expect(trigger.locator('.ticker-identity-symbol.trade-strategy-dropdown-title')).toHaveText('GOOGL');
-                await expect(trigger.locator('.ticker-identity-name.trade-strategy-dropdown-desc')).toHaveText(companyName);
-                await trigger.press('ArrowDown');
-                const menu = await controlledMenu(page, trigger);
-                await expect(menu).toBeVisible();
-                await expectRoundedPresentation(trigger);
-                const descriptionLines = await trigger.locator('.trade-strategy-dropdown-desc').evaluate((element) => (
-                    element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)
-                ));
-                expect(descriptionLines).toBeGreaterThan(1.5);
-                const menuBox = await menu.boundingBox();
-                expect(menuBox).not.toBeNull();
-                expect(menuBox.x).toBeGreaterThanOrEqual(-tolerance);
-                expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(viewport.width + tolerance);
-                await page.screenshot({path: testInfo.outputPath('stock-rounded-open.png')});
-                await page.keyboard.press('Escape');
-                await expect(menu).toBeHidden();
-                await expect(trigger).toBeFocused();
-                await expect(native).toHaveValue('GOOGL');
             });
         });
     }

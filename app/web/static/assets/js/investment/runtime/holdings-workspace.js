@@ -1,7 +1,7 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.1
  * - Changed: Zero unrealized P&L uses the existing neutral value tone.
  * - Fixed: Reward details share the title and total column boundaries.
  * - Fixed: Native reward currencies render on separate lines.
@@ -271,7 +271,7 @@ function renderHoldingsTable(
                 <tr data-investment-holdings-ticker="${runtime.escapeHtml(summary.ticker)}">
                     <td class="investment-holdings-cell investment-holdings-cell-center">${index + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <a class="investment-holdings-ticker-anchor" href="${runtime.escapeHtml(runtime.buildInvestmentStockDetailsHref(summary.ticker))}" data-investment-stock-link data-investment-stock-ticker="${runtime.escapeHtml(summary.ticker)}">
+                        <a class="investment-holdings-ticker-anchor" href="${runtime.escapeHtml(runtime.buildInvestmentStockDetailsHref(summary.ticker))}" aria-controls="stock_panel" aria-expanded="false" data-investment-stock-link data-investment-stock-ticker="${runtime.escapeHtml(summary.ticker)}">
                             <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link" data-ticker="${runtime.escapeHtml(summary.ticker)}">
                                 <div class="ticker-identity-row">
                                     ${logoHtml}
@@ -588,23 +588,127 @@ function bindHoldingsHistoryInteractions(holdingsPanel) {
     }
 
 function syncSelectedStockLinkState() {
+        const expandedTicker = runtime.state.activeInvestmentView === 'stock_details'
+            ? runtime.state.selectedInvestmentStockTicker : '';
         document.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
             const ticker = runtime.normalizeInvestmentTicker(link.dataset.investmentStockTicker || '');
+            const expanded = Boolean(expandedTicker) && ticker === expandedTicker;
             link.setAttribute('href', runtime.buildInvestmentStockDetailsHref(ticker));
-            link.classList.toggle('is-active', Boolean(runtime.state.selectedInvestmentStockTicker) && ticker === runtime.state.selectedInvestmentStockTicker);
+            link.setAttribute('aria-expanded', String(expanded));
+            link.classList.toggle('is-active', expanded);
         });
+    }
+
+function mountInvestmentHoldingsStockDetails() {
+        const panel = runtime.investmentStockDetailsPanel;
+        const shareActions = runtime.investmentShareActions;
+        const toolbar = runtime.segmentedControl?.closest('.investment-view-segmented-wrap');
+        const holdings = document.getElementById('investment_holdings_panel');
+        if (!panel || !toolbar || !holdings) return;
+        const expanded = runtime.state.activeInvestmentView === 'stock_details';
+        const ticker = runtime.state.selectedInvestmentStockTicker;
+        const scroll = holdings.querySelector('.investment-holdings-table-scroll');
+        const rows = scroll?.querySelectorAll('tr[data-investment-holdings-ticker]') || [];
+        const selectedRow = expanded ? Array.from(rows).find(
+            (row) => runtime.normalizeInvestmentTicker(row.dataset.investmentHoldingsTicker) === ticker,
+        ) : null;
+        const previousRow = panel.closest('tr[data-investment-holding-detail]');
+        const revealSelection = previousRow?.dataset.investmentHoldingDetail !== ticker;
+        if (selectedRow && selectedRow.nextElementSibling === previousRow && previousRow) return;
+
+        panel.hidden = !selectedRow;
+        if (!selectedRow) {
+            document.getElementById('investment_view_surface_body')?.append(panel);
+            if (shareActions && shareActions.parentElement !== toolbar) {
+                toolbar.append(shareActions);
+                runtime.syncInvestmentShareActionsPosition();
+            }
+            previousRow?.remove();
+            syncSelectedStockLinkState();
+            return;
+        }
+        const detailRow = selectedRow.parentElement.insertRow(selectedRow.sectionRowIndex + 1);
+        detailRow.dataset.investmentHoldingDetail = ticker;
+        const cell = detailRow.insertCell();
+        cell.colSpan = selectedRow.cells.length;
+        const content = document.createElement('div');
+        content.className = 'investment-holding-detail-content';
+        const actions = document.createElement('div');
+        actions.className = 'investment-holding-detail-actions';
+        if (shareActions) actions.append(shareActions);
+        content.append(actions, panel);
+        const reveal = document.createElement('div');
+        reveal.className = 'investment-holding-detail-reveal';
+        reveal.append(content);
+        cell.append(reveal);
+        runtime.syncInvestmentShareActionsPosition();
+        previousRow?.remove();
+        if (revealSelection && !runtime.state.investmentHoldingRowOpening) {
+            window.requestAnimationFrame(() => {
+                if (!detailRow.isConnected) return;
+                const viewport = scroll.getBoundingClientRect();
+                const rowTop = selectedRow.getBoundingClientRect().top;
+                const detailBottom = detailRow.getBoundingClientRect().bottom;
+                if (rowTop < viewport.top) {
+                    scroll.scrollTop += rowTop - viewport.top;
+                } else if (detailBottom > viewport.bottom) {
+                    scroll.scrollTop += Math.min(rowTop - viewport.top, detailBottom - viewport.bottom);
+                }
+            });
+        }
+        syncSelectedStockLinkState();
     }
 
 function bindHoldingsStockDetailsLinks(holdingsPanel) {
         if (!holdingsPanel) return;
-        holdingsPanel.querySelectorAll('[data-investment-stock-link]').forEach((link) => {
-            if (link.dataset.stockDetailsBound === '1') return;
-            link.dataset.stockDetailsBound = '1';
-            link.addEventListener('click', (event) => {
+        if (holdingsPanel.dataset.stockDetailsBound !== '1') {
+            holdingsPanel.dataset.stockDetailsBound = '1';
+            holdingsPanel.addEventListener('click', (event) => {
+                const row = event.target.closest('.investment-holdings-table-scroll tr[data-investment-holdings-ticker]');
+                if (!row || !holdingsPanel.contains(row)) return;
+                const link = event.target.closest('[data-investment-stock-link]');
+                if (link && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+                if (!link && event.target.closest('a, button, input, select, textarea')) return;
                 event.preventDefault();
-                runtime.selectInvestmentStockTicker(link.dataset.investmentStockTicker || '', { focusView: true });
+                const ticker = runtime.normalizeInvestmentTicker(row.dataset.investmentHoldingsTicker);
+                if (runtime.state.activeInvestmentView === 'stock_details'
+                    && ticker === runtime.state.selectedInvestmentStockTicker) {
+                    runtime.state.investmentHistoryCurrentPage = 1;
+                    runtime.setInvestmentView('holdings');
+                    return;
+                }
+                runtime.state.investmentHistoryCurrentPage = 1;
+                runtime.state.investmentHoldingRowOpening = true;
+                try {
+                    runtime.selectInvestmentStockTicker(ticker, {focusView: true});
+                } finally {
+                    runtime.state.investmentHoldingRowOpening = false;
+                }
+                const detailRow = row.nextElementSibling;
+                if (detailRow?.dataset.investmentHoldingDetail !== ticker) return;
+                const reveal = detailRow.querySelector('.investment-holding-detail-reveal');
+                const scroll = row.closest('.investment-holdings-table-scroll');
+                const actions = reveal.querySelector('.investment-holding-detail-actions');
+                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const revealActionsIfClipped = () => {
+                    if (!detailRow.isConnected) return;
+                    const remaining = actions.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom;
+                    if (remaining > 0) {
+                        scroll.scrollBy({top: remaining, behavior: reduceMotion ? 'instant' : 'smooth'});
+                    }
+                };
+                if (reduceMotion) {
+                    revealActionsIfClipped();
+                } else {
+                    const animation = reveal.animate([
+                        {height: '0px', opacity: 0.45, overflow: 'clip'},
+                        {height: `${reveal.offsetHeight}px`, opacity: 1, overflow: 'clip'},
+                    ], {duration: 240, easing: 'cubic-bezier(0.2, 0.75, 0.25, 1)'});
+                    animation.addEventListener('finish', revealActionsIfClipped, {once: true});
+                }
             });
-        });
+        }
+        mountInvestmentHoldingsStockDetails();
         syncSelectedStockLinkState();
     }
 
@@ -707,6 +811,7 @@ function buildInvestmentStockDonutMarkup(summary, profile) {
         bindHoldingsHistoryInteractions,
         syncSelectedStockLinkState,
         bindHoldingsStockDetailsLinks,
+        mountInvestmentHoldingsStockDetails,
         bindStockDetailsHistoryInteractions,
         getAvailableInvestmentStockTickers,
         ensureSelectedInvestmentStockTicker,

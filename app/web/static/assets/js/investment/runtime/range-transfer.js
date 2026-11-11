@@ -1,7 +1,7 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.1.0
+ * Code version: v1.1.2
  * - Fixed: A pill selection moves the pill in the click's own task and no longer hides
  *   it while it is re-measured. Geometry is written once and only when a value changed,
  *   so a running pill transition is not restarted, and the view, table or chart work
@@ -299,9 +299,31 @@ function syncInvestmentShareActionsPosition() {
         if (!(runtime.investmentShareActions instanceof HTMLElement) || !(runtime.segmentedControl instanceof HTMLElement)) {
             return;
         }
+        const shareActions = runtime.investmentShareActions;
+        const anchor = document.querySelector('[data-layout-role="global-theme-anchor"]');
+        const anchorRect = anchor?.getBoundingClientRect();
+        const actionsRow = shareActions.parentElement;
+        if (actionsRow?.matches('.investment-holding-detail-actions')) {
+            shareActions.style.removeProperty('top');
+            shareActions.style.removeProperty('--investment-share-actions-top');
+            const scroll = actionsRow.closest('.investment-holdings-table-scroll');
+            const content = actionsRow.closest('.investment-holding-detail-content');
+            const buttonWidth = runtime.exportTransactionsButton?.offsetWidth;
+            if (anchorRect?.width && scroll && content && buttonWidth) {
+                const scrollRect = scroll.getBoundingClientRect();
+                const contentRight = content.getBoundingClientRect().right;
+                const visibleRight = Math.min(contentRight, scrollRect.left + scroll.clientLeft + scroll.clientWidth);
+                const anchorRight = anchorRect.left + (anchorRect.width + buttonWidth) / 2;
+                const offset = actionsRow.getBoundingClientRect().right - Math.min(anchorRight, visibleRight);
+                shareActions.style.right = `${offset}px`;
+            } else {
+                shareActions.style.removeProperty('right');
+            }
+            syncInvestmentShareActionsClearance();
+            return;
+        }
         const segmentedRect = runtime.segmentedControl.getBoundingClientRect();
         if (!segmentedRect.height) return;
-        const shareActions = runtime.investmentShareActions;
         const centerY = segmentedRect.top + (segmentedRect.height / 2);
         shareActions.style.setProperty('--investment-share-actions-top', `${centerY}px`);
         shareActions.style.top = `${centerY}px`;
@@ -315,8 +337,6 @@ function syncInvestmentShareActionsPosition() {
         if (Math.abs(offsetY) >= 0.5) {
             shareActions.style.top = `${centerY - offsetY}px`;
         }
-        const anchor = document.querySelector('[data-layout-role="global-theme-anchor"]');
-        const anchorRect = anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : null;
         if (anchorRect?.width) {
             // Right edges of equal-size round buttons coincide when centerlines do.
             const offsetX = shareRect.right - anchorRect.right;
@@ -335,7 +355,8 @@ function syncInvestmentShareActionsClearance() {
         const shareButton = runtime.exportTransactionsButton;
         if (!(wrap instanceof HTMLElement)) return;
         wrap.style.removeProperty('--investment-share-actions-clearance');
-        if (runtime.investmentShareActions?.hidden || !(shareButton instanceof HTMLElement)) return;
+        if (runtime.investmentShareActions?.parentElement !== wrap
+            || runtime.investmentShareActions.hidden || !(shareButton instanceof HTMLElement)) return;
         const buttonRect = shareButton.getBoundingClientRect();
         const controlRect = runtime.segmentedControl.getBoundingClientRect();
         if (!buttonRect.width || !controlRect.width) return;
