@@ -1,7 +1,7 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.5
+Code version: v0.27.6
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
@@ -74,6 +74,7 @@ class _LocalStorePaginationStructureParser(HTMLParser):
         self.pagination_classes: list[str] = []
         self.pagination_attributes: list[dict[str, str | None]] = []
         self.pagination_controls: list[list[dict[str, str | None]]] = []
+        self.pagination_ranges: list[list[dict[str, str | None]]] = []
         self.pagination_ellipsis_positions: list[list[str | None]] = []
         self.pagination_indicator_counts: list[int] = []
 
@@ -86,11 +87,14 @@ class _LocalStorePaginationStructureParser(HTMLParser):
             self.pagination_classes.append(attributes.get("class") or "")
             self.pagination_attributes.append(attributes)
             self.pagination_controls.append([])
+            self.pagination_ranges.append([])
             self.pagination_ellipsis_positions.append([])
             self.pagination_indicator_counts.append(0)
             self._active_pagination_index = len(self.pagination_attributes) - 1
         elif self._active_pagination_index is not None:
             class_names = set((attributes.get("class") or "").split())
+            if tag == "a" and "local-store-pagination-range-option" in class_names:
+                self.pagination_ranges[self._active_pagination_index].append(attributes)
             if tag in {"a", "button"} and "local-store-page-button" in class_names:
                 controls = self.pagination_controls[self._active_pagination_index]
                 controls.append({
@@ -1537,6 +1541,18 @@ Fees: 0.12
         self.assertIn('aria-label="Show earlier pages"', middle_body)
         self.assertIn('data-pagination-range-start="1"', middle_body)
         self.assertIn('>1-5</a>', middle_body)
+        earlier_range = next(
+            option for option in middle_parser.pagination_ranges[0]
+            if option["data-pagination-range-start"] == "1"
+        )
+        later_range = next(
+            option for option in middle_parser.pagination_ranges[0]
+            if option["data-pagination-range-start"] == "11"
+        )
+        self.assertEqual(earlier_range["data-pagination-target"], "5")
+        self.assertIn("page=5", earlier_range["href"])
+        self.assertEqual(later_range["data-pagination-target"], "11")
+        self.assertIn("page=11", later_range["href"])
         self.assertEqual(
             summarize_controls(middle_parser),
             [

@@ -1,7 +1,10 @@
 /**
  * Shared pagination primitives.
  *
- * Code version: v1.2.5
+ * Code version: v1.2.7
+ * - Fixed: A selected hidden-page range navigates to its page nearest the
+ *   current page for both button targets and link destinations.
+ * - Fixed: Omit singleton trailing ranges already covered by the direct last page.
  * - Fixed: Active indicators remeasure after viewport or container geometry
  *   changes so fractional responsive gaps cannot expose a crescent.
  * - Fixed: Range menus respect the nearest clipping ancestor when calculating
@@ -17,7 +20,7 @@
  *   that preserve an existing direct-child DOM contract.
  */
 
-const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.5';
+const LOCAL_STORE_PAGINATION_MODULE_VERSION = 'v1.2.7';
 const LOCAL_STORE_PAGINATION_CHUNK_SIZE = 5;
 const LOCAL_STORE_PAGINATION_DEFAULT_PAGE_SIZE = 10;
 const LOCAL_STORE_PAGINATION_TRANSACTION_PAGE_SIZE = 100;
@@ -135,11 +138,13 @@ export function buildLocalStorePagination(totalPages = 1, currentPage = 1) {
         }
 
         if (!isLastChunk) {
-            items.push({
-                kind: 'ellipsis',
-                position: 'trailing',
-                ranges: buildLocalStorePaginationRanges(endPage + 1, normalizedTotalPages),
-            });
+            if (endPage + 1 < normalizedTotalPages) {
+                items.push({
+                    kind: 'ellipsis',
+                    position: 'trailing',
+                    ranges: buildLocalStorePaginationRanges(endPage + 1, normalizedTotalPages),
+                });
+            }
             items.push(createPageItem(normalizedTotalPages, normalizedCurrentPage));
             items.push({kind: 'next', page: endPage + 1});
         }
@@ -202,9 +207,13 @@ export function renderLocalStorePaginationItem(item, options = {}) {
             const rangeStart = Number(range?.[0]);
             const rangeEnd = Number(range?.[1]);
             if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) return '';
-            const targetAttributes = buildPageTargetAttributes(rangeStart, options);
+            const currentPage = Number(options.currentPage);
+            const targetPage = Number.isFinite(currentPage)
+                ? Math.max(rangeStart, Math.min(rangeEnd, currentPage))
+                : rangeStart;
+            const targetAttributes = buildPageTargetAttributes(targetPage, options);
             const href = typeof options.hrefForPage === 'function'
-                ? String(options.hrefForPage(rangeStart) || '')
+                ? String(options.hrefForPage(targetPage) || '')
                 : '';
             return buildPaginationControlMarkup({
                 className: 'local-store-pagination-range-option',
@@ -705,7 +714,7 @@ export function renderLocalStorePagination(pagination, state, options = {}) {
         || pagination.id
         || `local_store_pagination_${++localStorePaginationRangeMenuId}`;
     pagination.dataset.paginationRangeMenuIdPrefix = rangeMenuIdPrefix;
-    const renderOptions = {...options, rangeMenuIdPrefix};
+    const renderOptions = {...options, currentPage: state.currentPage, rangeMenuIdPrefix};
     pagination.innerHTML = `<span class="local-store-pagination-indicator" aria-hidden="true"></span>${items.map((item) => renderLocalStorePaginationItem(item, renderOptions)).join('')}`;
     bindLocalStorePaginationRangePickers(pagination);
     positionLocalStorePaginationIndicator(
