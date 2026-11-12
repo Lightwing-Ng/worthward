@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -198,8 +198,13 @@ test('resizes the investment overview and history responsively in portrait layou
     expect(historyLimitGeometry.rows[1].bottom).toBeLessThanOrEqual(historyLimitGeometry.shellBottom + 1);
 
     await page.locator('label[for="investment_view_holdings"]').click();
-    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-ticker="QQQ"]').click();
-    await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
+    const qqqDetailsToggle = page.locator(
+        '#investment_holdings_panel [data-table-scroll] [data-investment-stock-link][data-investment-stock-ticker="QQQ"]',
+    );
+    const stockHistory = page.locator('#investment_stock_details_table_host');
+    await qqqDetailsToggle.click();
+    await expect(qqqDetailsToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(stockHistory).toBeVisible();
     await expect(page.locator('.investment-stock-details-price-chart-canvas')).toBeVisible();
     await page.setViewportSize({width: 922, height: 1080});
     await handle.press('End');
@@ -242,7 +247,10 @@ test('resizes the investment overview and history responsively in portrait layou
     expect(Math.abs(stockChartGeometry.canvasHeight - stockChartGeometry.shellHeight)).toBeLessThanOrEqual(1);
     expect(Math.abs(stockChartGeometry.canvasBottom - stockChartGeometry.shellBottom)).toBeLessThanOrEqual(1);
 
-    await page.locator('label[for="investment_view_holdings"]').click();
+    await qqqDetailsToggle.click();
+    await expect(qqqDetailsToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(stockHistory).toBeHidden();
+    await expect(page.locator('#history_table_wrap')).toBeVisible();
     await expect(page.locator('#investment_holdings_panel')).toBeVisible();
     await handle.focus();
     await handle.press('Home');

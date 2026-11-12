@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -73,10 +73,15 @@ test('slides the view pill once per selection without hiding or restarting it', 
     await page.waitForTimeout(1_500);
     const segmented = page.locator('#investment_view_segmented');
     await segmented.evaluate((control) => {
-        window.__pillMotion = {cancelled: 0, hidden: 0};
+        window.__pillMotion = {cancelled: 0, finished: 0, hidden: 0};
         control.addEventListener('transitioncancel', (event) => {
             if (event.pseudoElement === '::before' && event.propertyName === 'transform') {
                 window.__pillMotion.cancelled += 1;
+            }
+        });
+        control.addEventListener('transitionend', (event) => {
+            if (event.pseudoElement === '::before' && event.propertyName === 'transform') {
+                window.__pillMotion.finished += 1;
             }
         });
         new MutationObserver(() => {
@@ -84,23 +89,15 @@ test('slides the view pill once per selection without hiding or restarting it', 
         }).observe(control, {attributes: true, attributeFilter: ['class']});
     });
 
-    for (const view of ['holdings', 'stock_details', 'metrics', 'chart']) {
-        const slid = segmented.evaluate((control) => new Promise((resolve) => {
-            const onEnd = (event) => {
-                if (event.pseudoElement !== '::before' || event.propertyName !== 'transform') return;
-                control.removeEventListener('transitionend', onEnd);
-                resolve();
-            };
-            control.addEventListener('transitionend', onEnd);
-        }));
+    for (const [index, view] of ['holdings', 'metrics', 'chart'].entries()) {
         await page.locator(`label[for="investment_view_${view}"]`).click();
         await expect(segmented).toHaveAttribute('data-active', view);
-        await slid;
+        await expect.poll(() => page.evaluate(() => window.__pillMotion.finished)).toBe(index + 1);
     }
 
     // Each selection has one owner writing the pill, so no transition was cancelled midway
     // and the pill never faded out and back in while it was re-measured.
-    expect(await page.evaluate(() => window.__pillMotion)).toEqual({cancelled: 0, hidden: 0});
+    expect(await page.evaluate(() => window.__pillMotion)).toEqual({cancelled: 0, finished: 3, hidden: 0});
 });
 
 test('leaves the Investment view pill geometry to its own adapter', async ({page}) => {

@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.4.1 */
 import {
     expect,
     test,
@@ -769,7 +769,10 @@ test('uses placeholders without probing nonexistent investment logo files', asyn
     });
     await page.goto(`/trade/investment?view=holdings&ticker=${encodeURIComponent(ticker)}`);
     await expect(page.locator('#stock_panel')).toBeVisible();
-    await expect(page.locator('#investment_holdings_panel [data-table-scroll] .ticker-identity-logo-placeholder')).toBeVisible();
+    const holdingsRow = page.locator(
+        `#investment_holdings_panel [data-table-scroll] tr[data-investment-holdings-ticker="${ticker}"]`,
+    );
+    await expect(holdingsRow.locator('.ticker-identity-logo-placeholder')).toBeVisible();
     await expect(page.locator('#stock_panel .investment-stock-details-donut-logo')).toHaveCount(0);
     await expect(page.locator('img[loading="lazy"]')).toHaveCount(0);
 

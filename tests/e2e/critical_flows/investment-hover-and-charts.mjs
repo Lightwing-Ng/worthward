@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.0.4 */
 import {
     expect,
     test,
@@ -819,7 +819,8 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
     await page.setViewportSize({width: viewportWidth, height: 863});
     await page.goto('/trade/investment?ticker=QQQ#stock_panel');
 
-    const canvas = page.locator('.investment-stock-details-price-chart-canvas');
+    const expandedRow = page.locator('tr[data-investment-holding-detail="QQQ"]');
+    const canvas = expandedRow.locator('.investment-stock-details-price-chart-canvas');
     await expect.poll(() => canvas.evaluate((element) => Boolean(element._investmentStockDetailsChart))).toBe(true);
     const stockPriceAxisSamples = await canvas.evaluate((element) => {
         const chart = element._investmentStockDetailsChart;
@@ -846,46 +847,47 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
         await canvas.scrollIntoViewIfNeeded();
         const layout = await canvas.evaluate((element) => {
             const rect = element.getBoundingClientRect();
-            const card = element.closest('.investment-stock-details-price-chart-card').getBoundingClientRect();
+            const chartCard = element.closest('.investment-stock-details-price-chart-card');
+            const card = chartCard.getBoundingClientRect();
+            const range = chartCard.querySelector('.investment-stock-details-range-shell');
+            const rangeStyle = getComputedStyle(range);
+            const rangeHeight = range.getBoundingClientRect().height
+                + Number.parseFloat(rangeStyle.marginBlockStart) + Number.parseFloat(rangeStyle.marginBlockEnd);
             const panel = document.querySelector('#stock_panel').getBoundingClientRect();
             const allocation = document.querySelector('[data-investment-stock-allocation]').getBoundingClientRect();
             return {
-                width: rect.width,
-                height: rect.height,
+                cardHeight: card.height,
+                availableHeightDelta: Math.abs(rect.height - (card.height - rangeHeight)),
                 insideCard: rect.top >= card.top - 1 && rect.bottom <= card.bottom + 1,
                 insidePanel: rect.top >= panel.top - 1 && rect.bottom <= panel.bottom + 1,
                 allocationOverlaps: allocation.left < rect.right && allocation.right > rect.left
                     && allocation.top < rect.bottom && allocation.bottom > rect.top,
             };
         });
-        expect(layout.height).toBeGreaterThanOrEqual(199);
-        expect(layout.height).toBeGreaterThanOrEqual((layout.width * 9 / 16) - 1);
+        expect(layout.cardHeight).toBeGreaterThanOrEqual(219);
+        expect(layout.availableHeightDelta).toBeLessThanOrEqual(1);
         expect(layout.insideCard).toBe(true);
-        if (viewportWidth > 767) {
-            expect(layout.insidePanel).toBe(true);
-        } else {
+        expect(layout.insidePanel).toBe(true);
+        if (viewportWidth <= 767) {
             const scrollReachability = await canvas.evaluate((element) => {
-                const panel = document.querySelector('#stock_panel');
-                const previousScrollTop = panel.scrollTop;
+                const scrollport = element.closest('.investment-holdings-table-scroll');
+                const previousScrollTop = scrollport.scrollTop;
+                const viewportTop = scrollport.getBoundingClientRect().top + scrollport.clientTop;
+                const viewportBottom = viewportTop + scrollport.clientHeight;
                 const reachEdge = (edge) => {
-                    const canvasRect = element.getBoundingClientRect();
-                    const panelRect = panel.getBoundingClientRect();
-                    panel.scrollTop += edge === 'top'
-                        ? canvasRect.top - panelRect.top
-                        : canvasRect.bottom - panelRect.bottom;
-                    const nextCanvasRect = element.getBoundingClientRect();
-                    const nextPanelRect = panel.getBoundingClientRect();
-                    const position = edge === 'top' ? nextCanvasRect.top : nextCanvasRect.bottom;
-                    return position >= nextPanelRect.top - 1 && position <= nextPanelRect.bottom + 1;
+                    const target = edge === 'top' ? viewportTop : viewportBottom;
+                    scrollport.scrollBy({top: element.getBoundingClientRect()[edge] - target, behavior: 'instant'});
+                    const position = element.getBoundingClientRect()[edge];
+                    return position >= viewportTop - 1 && position <= viewportBottom + 1;
                 };
                 const topReachable = reachEdge('top');
                 const bottomReachable = reachEdge('bottom');
-                panel.scrollTop = previousScrollTop;
+                scrollport.scrollTo({top: previousScrollTop, behavior: 'instant'});
                 return {
                     topReachable,
                     bottomReachable,
-                    overflow: panel.scrollHeight - panel.clientHeight,
-                    overflowY: getComputedStyle(panel).overflowY,
+                    overflow: scrollport.scrollHeight - scrollport.clientHeight,
+                    overflowY: getComputedStyle(scrollport).overflowY,
                 };
             });
             expect(scrollReachability.topReachable).toBe(true);
@@ -894,16 +896,19 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
         }
         expect(layout.allocationOverlaps).toBe(false);
 
-        const hoverPoint = await canvas.evaluate((element) => {
+        const hoverOffset = await canvas.evaluate((element) => {
             const chart = element._investmentStockDetailsChart;
             const rect = element.getBoundingClientRect();
+            element.addEventListener('mousemove', (event) => {
+                element._e2eHoverPoint = {x: event.clientX, y: event.clientY};
+            }, {once: true});
             return {
-                deltaY: Math.max(1, Math.min(25, Math.floor(chart.chartArea.height / 4))),
-                x: Math.floor(rect.left + ((chart.chartArea.left + chart.chartArea.right) / 2)),
-                y: Math.floor(rect.top + ((chart.chartArea.top + chart.chartArea.bottom) / 2)),
+                x: ((chart.chartArea.left + chart.chartArea.right) / 2) * rect.width / chart.width,
+                y: ((chart.chartArea.top + chart.chartArea.bottom) / 2) * rect.height / chart.height,
+                deltaY: Math.max(1, Math.min(25, Math.floor(chart.chartArea.height * rect.height / chart.height / 4))),
             };
         });
-        await page.mouse.move(hoverPoint.x, hoverPoint.y);
+        await canvas.hover({position: {x: hoverOffset.x, y: hoverOffset.y}, timeout: 5_000});
         await expect.poll(() => canvas.evaluate((element) => (
             element._investmentStockDetailsChart?._activeInvestmentStockDetailsGuideBounds?.formattedPrice || ''
         ))).toMatch(/^-?\d{1,3}(?:,\d{3})*\.\d{2,}$/);
@@ -941,6 +946,7 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
             };
         });
         const initialIntersection = await readIntersection();
+        const hoverPoint = await canvas.evaluate((element) => element._e2eHoverPoint);
         const expectedIntersection = await canvas.evaluate((element, pointerX) => {
             const chart = element._investmentStockDetailsChart;
             const x = (pointerX - element.getBoundingClientRect().left)
@@ -954,7 +960,7 @@ test(`draws the exact-price horizontal hover guide across every stock-details ra
         }, hoverPoint.x);
         expect(initialIntersection.x).toBeCloseTo(expectedIntersection.x, 1);
         expect(initialIntersection.y).toBeCloseTo(expectedIntersection.y, 1);
-        await page.mouse.move(hoverPoint.x, hoverPoint.y + hoverPoint.deltaY);
+        await page.mouse.move(hoverPoint.x, hoverPoint.y + hoverOffset.deltaY);
         expect(await readIntersection()).toEqual(initialIntersection);
 
         await expect.poll(() => canvas.evaluate((element, injectFractionalTick) => {
