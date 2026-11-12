@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.7
+Code version: v0.25.8
 """
 
 from pathlib import Path
@@ -1093,6 +1093,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
 
     assert "overviewStageSelector: '.trade-chart-stack'," in backtest_layout
     for fragment in (
+        "import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v",
         "const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';",
         "const PROBABILITY_HISTORY_MINIMUM_PROPERTY = '--backtest-probability-history-min-height';",
         "const PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT = 'worthward:backtest-probability-stage-minimum-change';",
@@ -1102,7 +1103,6 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
         "getOverviewStageMinimum: getProbabilityStageMinimum,",
         "getAdditionalHistoryMinimumHeight: getProbabilityHistoryMinimumHeight,",
         "overviewMinimumChangeEvent: PROBABILITY_STAGE_MINIMUM_CHANGE_EVENT,",
-        "investment-layout-v1.5.3",
         "preferOverviewMinimum: () => !isProbabilityHistoryViewActive(),",
         "preferHistoryMinimum: isProbabilityHistoryViewActive,",
         "ignoreMutationSelector: '[data-backtest-probability-detail-panel]',",
@@ -1174,7 +1174,7 @@ def test_bayesian_backtest_routes_dynamic_grid_minimum_through_shared_resizer() 
             f"{_css_code_version(ASSET_ROOT / 'js/backtest/chart-controller.js')}"
         ),
         f"-backtest-{_css_code_version(ASSET_ROOT / 'js/backtest.js')}",
-        "-backtest-layout-v0.7.4",
+        "filename='assets/js/backtest/layout.js', v=version ~ '-backtest-layout-v",
     ):
         assert fragment in base_template
 
