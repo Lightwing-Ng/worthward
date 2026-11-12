@@ -1,4 +1,4 @@
-/* Code version: v1.2.2
+/* Code version: v1.2.3
  * Reward detail columns retain their headline anchors across viewport changes.
  */
 import {expect, test} from '@playwright/test';
@@ -148,6 +148,15 @@ for (const width of [1280, 843, 390]) {
         await expect(trigger).toHaveAttribute('aria-label', 'Show Rewards details');
         await expect(trigger).toHaveAttribute('aria-expanded', 'false');
         await expect(trigger).toHaveAttribute('aria-controls', 'investment_holdings_rewards_breakdown');
+        const identityLayout = await trigger.evaluate((element) => {
+            const title = element.querySelector('.ticker-identity-symbol');
+            const description = element.querySelector('.ticker-identity-name');
+            return {
+                stacked: description.getBoundingClientRect().top >= title.getBoundingClientRect().bottom - 1,
+                hasChevron: Boolean(element.querySelector('.investment-stock-details-metric-breakdown-trigger')),
+            };
+        });
+        expect(identityLayout).toEqual({stacked: true, hasChevron: false});
         await expect(holdingsRewardDetails(page)).toHaveAttribute('id', 'investment_holdings_rewards_breakdown');
         const underlayTrigger = page.locator('#investment_holdings_panel .scrollable-data-table-frosted-underlay [data-investment-rewards-breakdown-trigger]');
         await expect(underlayTrigger).toBeDisabled();
@@ -157,7 +166,28 @@ for (const width of [1280, 843, 390]) {
         await underlayTrigger.evaluate((node) => node.focus());
         await expect(trigger).toBeFocused();
         await expect(holdingsRewardDetailsRow(page)).toBeHidden();
-        await trigger.click();
+        const rewardsNumber = holdingsRewards(page).locator('td').first();
+        if (width === 843) {
+            const rowHeights = await rewardsNumber.evaluate((cell) => {
+                cell.click();
+                const details = cell.closest('tr').nextElementSibling;
+                const reveal = details.querySelector('.investment-holding-detail-reveal');
+                const animation = reveal.getAnimations()[0];
+                animation.pause();
+                const duration = animation.effect.getComputedTiming().duration;
+                const heights = [0, 0.4, 0.8].map((fraction) => {
+                    animation.currentTime = duration * fraction;
+                    return details.getBoundingClientRect().height;
+                });
+                animation.finish();
+                return heights;
+            });
+            expect(rowHeights[0]).toBeLessThanOrEqual(1);
+            expect(rowHeights[1]).toBeGreaterThan(rowHeights[0]);
+            expect(rowHeights[2]).toBeGreaterThan(rowHeights[1]);
+        } else {
+            await rewardsNumber.click();
+        }
         await expect(trigger).toHaveAttribute('aria-label', 'Hide Rewards details');
         await expect(trigger).toHaveAttribute('aria-expanded', 'true');
         await expect(holdingsRewardDetailsRow(page)).toBeVisible();
@@ -198,7 +228,7 @@ for (const width of [1280, 843, 390]) {
             expect(await holdingsRewardDetails(page).evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
             await expect(holdingsRewardValue(page)).toHaveText('23.00');
         }
-        await trigger.click();
+        await holdingsRewards(page).locator('td').first().click();
         await expect(trigger).toHaveAttribute('aria-expanded', 'false');
         await expect(holdingsRewardDetailsRow(page)).toBeHidden();
         await trigger.focus();

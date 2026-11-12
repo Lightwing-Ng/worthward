@@ -1,7 +1,8 @@
 /**
  * Export formatting and history-table presentation.
  *
- * Code version: v1.3.2
+ * Code version: v1.3.3
+ * - Fixed: Holdings disclosure rows do not enter Markdown exports or table measurement.
  * - Added: HSBC dividend matching in Description, excluded from exports.
  * - Changed: The unresolved HSBC order reference is the sole visible `*`
  *   marker; Cash and Equity retain their explanatory titles without repeating
@@ -352,7 +353,7 @@ function cloneRenderedTable(headerTable, bodyTable) {
         if (!headerTable || !bodyTable) return null;
         const headerRows = Array.from(headerTable.querySelectorAll('thead tr'));
         const bodyRows = Array.from(bodyTable.querySelectorAll('tbody tr'))
-            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row]'));
+            .filter((row) => !row.matches('[data-investment-holdings-overview-row], [data-investment-rewards-breakdown-row], [data-investment-holding-detail]'));
         const table = document.createElement('table');
         if (headerRows.length) {
             const thead = document.createElement('thead');
@@ -951,7 +952,9 @@ function buildTableAlignmentSync(tableShell, scrollContainer, scrollbarVariableN
 
         const getBodyColumnWidths = (bodyTable) => {
             if (!(bodyTable instanceof HTMLTableElement)) return [];
-            const row = Array.from(bodyTable.rows).find((candidate) => candidate.cells.length);
+            const row = Array.from(bodyTable.rows).find((candidate) => (
+                candidate.cells.length && Array.from(candidate.cells).every((cell) => cell.colSpan === 1)
+            ));
             if (!row) return [];
             return Array.from(row.cells).map((cell) => cell.getBoundingClientRect().width);
         };

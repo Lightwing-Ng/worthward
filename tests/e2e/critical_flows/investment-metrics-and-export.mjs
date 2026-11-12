@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.3 */
 import {
     expect,
     test,
@@ -606,17 +606,13 @@ test('keeps the shared Metrics broker scope local and restores it on return', as
     await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: Bank of China (Hong Kong)');
     await expect(historyRows).toHaveCount(2);
 
-    await page.locator('label[for="investment_view_chart"]').click();
-    await expect(page).toHaveURL(/view=overview/);
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await expect(page).toHaveURL(/view=holdings/);
     await expect(page).not.toHaveURL(/metrics-broker|broker=hsbc/);
     await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: All brokers');
     await expect(historyRows).toHaveCount(4);
 
     await page.reload();
-    await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: All brokers');
-    await expect(historyRows).toHaveCount(4);
-
-    await page.locator('label[for="investment_view_holdings"]').click();
     await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: All brokers');
     await expect(historyRows).toHaveCount(4);
 
@@ -637,7 +633,7 @@ test('keeps the shared Metrics broker scope local and restores it on return', as
     await expect(historyRows).toHaveCount(4);
 });
 
-test('keeps Overview and Stock details ranges isolated and remembered', async ({page}) => {
+test('keeps Holdings summary and Stock details ranges isolated and remembered', async ({page}) => {
     await mockInvestmentReadApis(page, {
         brokers: ['boc_hk', 'hsbc'],
         transactions: [
@@ -657,7 +653,7 @@ test('keeps Overview and Stock details ranges isolated and remembered', async ({
     await page.goto('/trade/investment?view=overview');
     await page.locator('label[for="investment_equity_range_3m"]').click();
     await expect(page.locator('#investment_equity_range_3m')).toBeChecked();
-    await expect(page).toHaveURL(/view=overview.*range=3m/);
+    await expect(page).toHaveURL(/view=holdings.*summary=expanded.*summary-range=3m/);
 
     await page.locator('label[for="investment_view_metrics"]').click();
     await expect(page).toHaveURL(/view=metrics/);
@@ -668,21 +664,17 @@ test('keeps Overview and Stock details ranges isolated and remembered', async ({
     await expect(page.locator('#investment_stock_details_range_max')).toBeChecked();
     await page.locator('label[for="investment_stock_details_range_1m"]').click();
     await expect(page.locator('#investment_stock_details_range_1m')).toBeChecked();
-    await expect(page).toHaveURL(/view=holdings.*range=1m/);
+    await expect(page).toHaveURL(/view=holdings.*ticker=AAPL&range=1m.*summary-range=3m/);
     const chartCanvas = page.locator('#stock_panel .investment-stock-details-price-chart-canvas');
     await expect.poll(() => chartCanvas.evaluate((canvas) => {
         const chart = window.Chart.getChart(canvas);
         return chart ? [chart.data.labels[0], chart.data.labels.at(-1), chart.config.type] : null;
     })).toEqual(['2026-06-10', '2026-07-10', 'line']);
 
-    await page.locator('label[for="investment_view_chart"]').click();
+    await page.reload();
     await expect(page.locator('#investment_equity_range_3m')).toBeChecked();
-    await expect(page).toHaveURL(/view=overview.*range=3m/);
-
-    await page.locator('label[for="investment_view_holdings"]').click();
-    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-link][data-investment-stock-ticker="AAPL"]').click();
     await expect(page.locator('#investment_stock_details_range_1m')).toBeChecked();
-    await expect(page).toHaveURL(/view=holdings.*range=1m/);
+    await expect(page).toHaveURL(/view=holdings.*ticker=AAPL&range=1m.*summary-range=3m/);
 
     await page.locator('label[for="investment_view_metrics"]').click();
     await expect(page).toHaveURL(/view=metrics/);
@@ -822,7 +814,7 @@ test('keeps Investment view, range, broker scope, and pagination in the canonica
     });
 
     await page.goto('/trade/investment?view=overview&range=3m&broker=hsbc&type=sell&page=2');
-    await expect(page).toHaveURL(/view=overview.*range=3m.*broker=hsbc.*type=sell.*page=2/);
+    await expect(page).toHaveURL(/view=holdings.*summary=expanded.*summary-range=3m.*broker=hsbc.*type=sell.*page=2/);
     await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(100);
 
     await page.locator('label[for="investment_view_metrics"]').click();
@@ -838,8 +830,8 @@ test('keeps Investment view, range, broker scope, and pagination in the canonica
     await expect(page).toHaveURL(/view=metrics.*type=sell/);
     await expect(page).not.toHaveURL(/[?&](?:metrics-)?broker=hsbc(?:&|$)/);
 
-    await page.locator('label[for="investment_view_chart"]').click();
-    await expect(page).toHaveURL(/view=overview.*range=3m.*broker=hsbc.*type=sell/);
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await expect(page).toHaveURL(/view=holdings.*summary=expanded.*summary-range=3m.*broker=hsbc.*type=sell/);
 
     await page.goto('/trade/investment?view=holdings&ticker=AAPL&range=3m&broker=hsbc&type=sell');
     await expect(page).toHaveURL(/view=holdings.*ticker=AAPL.*range=3m.*broker=hsbc.*type=sell/);

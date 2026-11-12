@@ -1,4 +1,4 @@
-/* Code version: v1.6.0 */
+/* Code version: v1.6.1 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -301,8 +301,9 @@
     border-right: 0;
 }
 
-.scrollable-data-table tbody tr:nth-child(even) td,
-.investment-holdings-table tbody tr:nth-child(even) td {
+.scrollable-data-table:not(.investment-holdings-table) tbody tr:nth-child(even) td,
+.investment-holdings-table tbody tr:nth-child(even of [data-investment-holdings-ticker], [data-investment-broker-rewards-row]) > td,
+.investment-holdings-table tbody tr:nth-child(even of [data-investment-holdings-ticker]) + tr[data-investment-holding-detail] > td {
     background: var(--investment-holdings-row-background-alt);
     background-clip: padding-box;
 }
@@ -596,34 +597,6 @@
 .investment-holdings-ticker-link .investment-broker-reward-token-logo {
     mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
     -webkit-mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
-}
-
-.investment-holdings-broker-rewards-identity {
-    cursor: default;
-}
-
-.settings-table.investment-holdings-table .investment-holdings-broker-rewards-row > td {
-    padding-block: 2px;
-}
-
-.investment-holdings-broker-rewards-identity {
-    padding-block: 0;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-copy {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-symbol {
-    flex: 0 0 auto;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-top: 0;
 }
 
 .investment-holdings-table {

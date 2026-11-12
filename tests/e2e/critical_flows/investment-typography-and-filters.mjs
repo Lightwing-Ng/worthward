@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -482,7 +482,7 @@ test('keeps YTD investment x-axis labels inside the overview clip at low desktop
         ],
     });
     await page.setViewportSize({width: 792, height: 675});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await setSidebarExpanded(page, false);
     await expect.poll(() => page.locator(
         '.investment-workspace-header > .workspace-summary-card'
@@ -819,7 +819,7 @@ test('adds desktop workspace gel motion without moving title rails or leaking in
     ))).toBeLessThanOrEqual(1);
 
     await page.setViewportSize({width: 1024, height: 863});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await expect(page.locator('#investmentEquityChart[data-investment-chart-ready="1"]')).toBeVisible();
     await setSidebarExpanded(page, true);
     await expect(page.locator('.app-shell')).not.toHaveClass(/is-sidebar-animating/);
@@ -889,16 +889,16 @@ test('keeps the selected segmented pill shadow inside the outer edge', async ({p
     await page.goto('/trade/investment');
 
     const segmented = page.locator('#investment_view_segmented');
-    await expect(segmented.locator('input[value="chart"]')).toBeChecked();
-    await expect.poll(() => segmented.evaluate((element) => (
-        getComputedStyle(element, '::before').boxShadow
-    ))).toContain('12px 12px 24px -12px');
-
-    await page.locator('label[for="investment_view_holdings"]').click();
     await expect(segmented.locator('input[value="holdings"]')).toBeChecked();
     await expect.poll(() => segmented.evaluate((element) => (
         getComputedStyle(element, '::before').boxShadow
-    ))).not.toContain('12px 12px 24px -12px');
+    ))).toMatch(/ 12px 12px 24px -12px/);
+
+    await page.locator('label[for="investment_view_metrics"]').click();
+    await expect(segmented.locator('input[value="metrics"]')).toBeChecked();
+    await expect.poll(() => segmented.evaluate((element) => (
+        getComputedStyle(element, '::before').boxShadow
+    ))).toMatch(/ -12px 12px 24px -12px/);
 });
 
 test('keeps Investment segmented effects un-clipped with concentric edge caps', async ({page}) => {
@@ -915,7 +915,7 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
         },
     });
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment?ticker=QQQ');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     const segmented = page.locator('#investment_view_segmented');
     const readCapDelta = (side) => segmented.evaluate((element, requestedSide) => {
@@ -1020,6 +1020,8 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     const segmentedMotherStyle = (selector) => page.locator(selector).evaluate((element) => {
         const computed = getComputedStyle(element);
         const firstOption = element.querySelector('.segmented-control-option');
+        const optionLabel = firstOption?.querySelector('input + span');
+        const labelStyle = optionLabel ? getComputedStyle(optionLabel) : null;
         return {
             sharedClasses: ['segmented-control', 'segmented-control--compact', 'investment-view-segmented']
                 .every((className) => element.classList.contains(className)),
@@ -1033,12 +1035,14 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
                 borderRadius: computed.borderRadius,
                 backgroundColor: computed.backgroundColor,
                 boxShadow: computed.boxShadow,
-                fontSize: computed.fontSize,
-                fontWeight: computed.fontWeight,
-                lineHeight: computed.lineHeight,
                 overflow: computed.overflow,
                 pointerEvents: computed.pointerEvents,
             },
+            labelTypography: labelStyle ? {
+                fontFamily: labelStyle.fontFamily,
+                fontSize: labelStyle.fontSize,
+                lineHeight: labelStyle.lineHeight,
+            } : null,
             optionShape: firstOption ? {
                 tagName: firstOption.tagName,
                 className: firstOption.className,
@@ -1059,6 +1063,8 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     expect(viewOverflow).toBe('visible');
     expect(stockDetailsOverflow).toBe('auto hidden');
     expect(stockDetailsSegmentedMotherStyle.optionShape).toEqual(viewSegmentedMotherStyle.optionShape);
+    expect(viewSegmentedMotherStyle.labelTypography).not.toBeNull();
+    expect(stockDetailsSegmentedMotherStyle.labelTypography).toEqual(viewSegmentedMotherStyle.labelTypography);
     // The price chart stage is created a few frames after the panel is shown. The range pill
     // used to hide and re-show itself around that moment, which made its ready class an
     // accidental wait for the stage; wait for the stage itself.

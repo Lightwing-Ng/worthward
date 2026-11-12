@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -85,7 +85,7 @@ test('resizes the investment overview and history responsively in portrait layou
         },
     });
     await page.setViewportSize({width: 825, height: 900});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await expect.poll(() => page.evaluate(() => (
         Boolean(window.WORTHWARD_INVESTMENT_DATA)
         && document.querySelector('#workspace_modal_overlay')?.hidden === true
@@ -130,7 +130,6 @@ test('resizes the investment overview and history responsively in portrait layou
     await handle.hover();
     await expect.poll(() => handle.evaluate((element) => getComputedStyle(element, '::after').opacity)).toBe('1');
 
-    const beforeHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
     const defaultAllocation = await page.evaluate(() => {
         const workspace = document.querySelector('.investment-workspace-header');
         const overviewSurface = document.querySelector('.investment-report-card');
@@ -144,18 +143,31 @@ test('resizes the investment overview and history responsively in portrait layou
     });
     expect(defaultAllocation.defaultOverviewShare).toBe('0.5');
     expect(defaultAllocation.overviewShare).toBeGreaterThanOrEqual(0.45);
+    // The inline summary can put the initial split at the chart's protected minimum.
+    // Start at the upper limit so the upward drag has room to move.
+    await handle.press('End');
+    await expect.poll(() => handle.evaluate((element) => (
+        element.getAttribute('aria-valuenow') === element.getAttribute('aria-valuemax')
+    ))).toBe(true);
+    const readOverviewHeight = () => overview.evaluate((element) => element.getBoundingClientRect().height);
+    const beforeHeight = await readOverviewHeight();
+    await handle.hover();
     const handleBox = await handle.boundingBox();
-    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
+    const x = handleBox.x + handleBox.width / 2;
+    const y = handleBox.y + handleBox.height / 2;
+    await page.mouse.move(x, y);
     await page.mouse.down();
-    await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2) - 40);
-    await page.mouse.up();
-    const draggedHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
-    expect(draggedHeight).toBeLessThan(beforeHeight);
+    try {
+        await expect(handle).toHaveClass(/is-resizing/);
+        await page.mouse.move(x, y - 40);
+        await expect.poll(readOverviewHeight).toBeLessThan(beforeHeight);
+    } finally {
+        await page.mouse.up();
+    }
+    const draggedHeight = await readOverviewHeight();
 
-    await handle.focus();
     await handle.press('ArrowDown');
-    const afterHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
-    expect(afterHeight).toBeGreaterThan(draggedHeight);
+    await expect.poll(readOverviewHeight).toBeGreaterThan(draggedHeight);
     await expect(handle).toHaveAttribute('aria-valuenow', /\d+/);
 
     await page.setViewportSize({width: 922, height: 773});
@@ -242,8 +254,10 @@ test('resizes the investment overview and history responsively in portrait layou
     expect(Math.abs(stockChartGeometry.canvasHeight - stockChartGeometry.shellHeight)).toBeLessThanOrEqual(1);
     expect(Math.abs(stockChartGeometry.canvasBottom - stockChartGeometry.shellBottom)).toBeLessThanOrEqual(1);
 
-    await page.locator('label[for="investment_view_holdings"]').click();
-    await expect(page.locator('#investment_holdings_panel')).toBeVisible();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-ticker="QQQ"]').click();
+    await expect(page.locator('#investment_stock_details_table_host')).toBeHidden();
+    await page.locator('#investment_holdings_panel [data-investment-holdings-overview-toggle]').click();
+    await expect(page.locator('#investment_chart_panel')).toBeHidden();
     await handle.focus();
     await handle.press('Home');
     await expect.poll(() => page.evaluate(() => {

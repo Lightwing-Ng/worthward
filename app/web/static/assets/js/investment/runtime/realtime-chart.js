@@ -1,7 +1,8 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Changed: Holdings remembers the portfolio overview disclosure and restores legacy Overview visits.
  * - Fixed: Missing current cash remains unavailable during realtime quote updates.
  * - Changed: Equity axis ticks now use the one shared tick-selection owner
  *   instead of an independent copy of the same algorithm.
@@ -14,7 +15,7 @@
 export function createInvestmentRealtimeChartRuntime(runtime) {
 function normalizeInvestmentView(value) {
         const normalized = String(value || '').trim().toLowerCase();
-        return runtime.INVESTMENT_VIEW_ORDER.includes(normalized) ? normalized : 'chart';
+        return normalized === 'chart' || runtime.INVESTMENT_VIEW_ORDER.includes(normalized) ? normalized : 'holdings';
     }
 
 function stopInvestmentRealtimeQuotePolling() {
@@ -966,7 +967,7 @@ function writeInvestmentPageMemory(nextMemory) {
     }
 
 function rememberInvestmentPageState({
-        view = runtime.state.activeInvestmentView || 'chart',
+        view = runtime.state.activeInvestmentView || 'holdings',
         ticker = runtime.state.selectedInvestmentStockTicker || '',
         range = runtime.state.selectedInvestmentStockDetailsRange || 'max',
         equityRange = runtime.state.selectedInvestmentEquityRange || 'max',
@@ -990,6 +991,7 @@ function rememberInvestmentPageState({
             page_path: '/trade/investment',
             last_used_at: new Date().toISOString(),
             last_view: normalizedView,
+            last_overview_expanded: runtime.state.investmentHoldingsOverviewExpanded === true,
             last_stock_ticker: normalizedTicker,
             last_stock_details_range: normalizedRange,
             last_equity_range: normalizedEquityRange,
@@ -1000,6 +1002,7 @@ function rememberInvestmentPageState({
 
 function restoreRememberedInvestmentPageState() {
         const memory = readInvestmentPageMemory();
+        const rememberedView = normalizeInvestmentView(memory.last_view);
         const rememberedTicker = runtime.normalizeInvestmentTicker(memory.last_stock_ticker || '');
         const rememberedRange = runtime.normalizeInvestmentStockDetailsRange(memory.last_stock_details_range || 'max');
         const rememberedEquityRange = runtime.normalizeInvestmentEquityRange(memory.last_equity_range || 'max');
@@ -1011,9 +1014,12 @@ function restoreRememberedInvestmentPageState() {
         }
         runtime.state.selectedInvestmentStockDetailsRange = rememberedRange;
         runtime.state.selectedInvestmentEquityRange = rememberedEquityRange;
+        runtime.state.investmentHoldingsOverviewExpanded = typeof memory.last_overview_expanded === 'boolean'
+            ? memory.last_overview_expanded
+            : rememberedView === 'chart';
         runtime.state.investmentBrokerSummarySelectedCode = rememberedMetricsBroker;
         runtime.state.investmentBrokerSummarySelectionInitialized = false;
-        return normalizeInvestmentView(memory.last_view || 'chart');
+        return rememberedView === 'chart' ? 'holdings' : rememberedView;
     }
 
 function restoreRememberedInvestmentLocation() {

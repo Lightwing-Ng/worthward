@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.0.4 */
 import {
     expect,
     test,
@@ -43,7 +43,7 @@ test('syncs the overview donut to the hovered 1W and 1M valuation point', async 
         },
     });
     await page.setViewportSize({width: 919, height: 1_090});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     const moveToChartPoint = async (index) => {
         const point = await page.evaluate((pointIndex) => {
@@ -221,18 +221,29 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
             QQQ: [{date: '2026-06-01', close: 100}],
         },
     });
-    await page.goto('/trade/investment');
-    const readPoint = () => page.evaluate(() => {
-        const canvas = document.querySelector('#investmentEquityChart');
-        const chart = window.Chart?.getChart(canvas);
-        const element = chart?.getDatasetMeta(0)?.data?.[0];
-        if (!canvas || !element) return null;
-        const center = element.getCenterPoint();
-        const rect = canvas.getBoundingClientRect();
-        return {x: rect.left + center.x, y: rect.top + center.y};
+    await page.setViewportSize({width: 836, height: 1_230});
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
+    const canvas = page.locator('#investmentEquityChart');
+    await expect(canvas).toHaveAttribute('data-investment-chart-ready', '1');
+    await page.evaluate(async () => {
+        await document.fonts.ready;
     });
-    await expect.poll(readPoint).not.toBeNull();
-    const point = await readPoint();
+    await canvas.scrollIntoViewIfNeeded();
+    let point = null;
+    await expect.poll(async () => {
+        point = await canvas.evaluate((element) => {
+            const chart = window.Chart?.getChart(element);
+            const firstPoint = chart?.getDatasetMeta(0)?.data?.[0];
+            if (!firstPoint || !chart.chartArea || !chart.width || !chart.height) return null;
+            const center = firstPoint.getCenterPoint();
+            const rect = element.getBoundingClientRect();
+            const scaleX = rect.width / chart.width;
+            const x = rect.left + Math.max(center.x * scaleX, chart.chartArea.left * scaleX + 4);
+            const y = rect.top + center.y * rect.height / chart.height;
+            return document.elementFromPoint(x, y) === element ? {x, y} : null;
+        });
+        return point;
+    }).not.toBeNull();
 
     await page.mouse.move(point.x, point.y);
     const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
@@ -277,6 +288,11 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
         textAlign: 'center',
     });
 
+    await expect(tooltip).toHaveAttribute('data-investment-pnl-state', 'ready');
+    // Include the deferred P&L layout draw in the initial hover, before counting same-point moves.
+    await page.evaluate(() => new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
     await page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
         if (!chart) return;

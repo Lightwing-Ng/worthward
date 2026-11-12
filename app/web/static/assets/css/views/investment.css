@@ -1,4 +1,4 @@
-/* Code version: v1.85.3 */
+/* Code version: v1.86.0 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2929,27 +2929,18 @@
     --workspace-metric-decimal-scale-local: var(--workspace-metric-decimal-scale);
 }
 
-.investment-holdings-rewards-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+button.investment-holdings-rewards-toggle {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: start;
+    cursor: pointer;
 }
 
-.investment-holdings-rewards-title > .investment-holdings-rewards-breakdown-trigger {
-    position: relative;
-    inset: auto;
-    flex: 0 0 20px;
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-}
-
-.investment-holdings-rewards-breakdown-trigger::before {
-    transform: translate(-50%, -50%) rotate(var(--shared-select-chevron-closed-rotation));
-}
-
-.investment-holdings-rewards-breakdown-trigger[aria-expanded="true"]::before {
-    transform: translate(-50%, -50%) rotate(var(--shared-select-chevron-open-rotation));
+button.investment-holdings-rewards-toggle:focus-visible {
+    outline: 2px solid var(--theme-accent-primary);
+    outline-offset: -2px;
 }
 
 [data-investment-rewards-breakdown-row][hidden] {
@@ -2959,11 +2950,13 @@
 .investment-holdings-table tbody [data-investment-rewards-breakdown-row] > td {
     width: auto;
     min-width: 0;
+    padding-block: 0;
+    border-top: 0;
 }
 
 .investment-holdings-table tbody td.investment-holdings-rewards-breakdown-cell {
     padding: var(--investment-holdings-cell-padding);
-    padding-block: 8px 12px;
+    padding-block: 0;
     text-align: left;
     white-space: normal;
 }
@@ -2972,6 +2965,7 @@
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
+    padding-block: 8px 12px;
     padding-inline-start: calc(var(--ticker-identity-pad-inline) + var(--ticker-identity-logo-height) + var(--ticker-identity-gap));
 }
 
@@ -3198,11 +3192,40 @@
     scroll-padding-block-start: 0;
 }
 
-#investment_holdings_panel tr[data-investment-holdings-ticker] {
+.investment-workspace-header.is-surface-resizing .investment-holdings-table-scroll {
+    overflow-anchor: none;
+}
+
+#investment_holdings_panel tr:is([data-investment-holdings-ticker], [data-investment-broker-rewards-row]) {
     cursor: pointer;
 }
 
-#investment_holdings_panel tr[data-investment-holding-detail] > td {
+#investment_holdings_panel .investment-holdings-summary-row {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+button.investment-holdings-overview-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: start;
+    cursor: inherit;
+}
+
+button.investment-holdings-overview-toggle:focus-visible {
+    outline: 2px solid var(--theme-accent-primary);
+    outline-offset: 2px;
+}
+
+#investment_chart_panel[hidden] {
+    display: none;
+}
+
+#investment_holdings_panel tr:is([data-investment-holding-detail], [data-investment-holdings-overview-row]) > td {
+    /* A leading disclosure spans the table and must not size its first column. */
+    width: auto;
+    min-width: 0;
     padding: 0;
     border-top: 0;
     overflow: visible;
@@ -3210,13 +3233,20 @@
 }
 
 .investment-holding-detail-content {
+    --investment-holding-chart-columns: minmax(0, 1fr) minmax(72px, 0.32fr);
+    --investment-holding-chart-gap: 10px;
+    --investment-holding-chart-min-height: 220px;
+    --investment-holding-chart-max-height: 440px;
+    --investment-holding-chart-context-height: var(--investment-history-row-min-height, 40px);
+    --investment-holding-detail-padding-start: 4px;
+    --investment-holding-detail-padding-end: 8px;
     position: sticky;
     inset-inline-start: 0;
     box-sizing: border-box;
     width: min(100%, 100cqw);
     min-width: 0;
     overflow-x: clip;
-    padding: 8px 18px 28px 8px;
+    padding: var(--investment-holding-detail-padding-start) 18px var(--investment-holding-detail-padding-end) 8px;
 }
 
 .investment-holding-detail-actions {
@@ -3243,10 +3273,44 @@
 }
 
 .investment-holding-detail-content #stock_panel > .investment-stock-details-overview {
-    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.32fr);
-    grid-template-rows: clamp(220px, calc(100cqh - var(--circular-icon-button-size) - 20px), 440px);
-    height: auto;
+    grid-template-columns: var(--investment-holding-chart-columns);
+    column-gap: var(--investment-holding-chart-gap);
+    grid-template-rows: minmax(0, 1fr);
+    height: clamp(
+        var(--investment-holding-chart-min-height),
+        calc(100cqh - var(--circular-icon-button-size)
+            - var(--investment-holding-chart-context-height)
+            - var(--investment-holding-detail-padding-start) - var(--investment-holding-detail-padding-end)),
+        var(--investment-holding-chart-max-height)
+    );
     overflow: visible;
+}
+
+#investment_chart_panel .investment-chart-stack {
+    display: grid;
+    grid-template-columns: var(--investment-holding-chart-columns);
+    gap: var(--investment-holding-chart-gap);
+    grid-template-rows: minmax(0, 1fr);
+    flex: none;
+    height: clamp(
+        var(--investment-holding-chart-min-height),
+        calc(100cqh - var(--investment-holding-chart-context-height)
+            - var(--investment-holding-detail-padding-start) - var(--investment-holding-detail-padding-end)),
+        var(--investment-holding-chart-max-height)
+    );
+}
+
+.investment-holdings-overview-content .investment-equity-chart {
+    box-sizing: border-box;
+    padding-inline: 4px;
+}
+
+.investment-holdings-overview-content .investment-equity-chart-stage {
+    min-height: 0;
+}
+
+.investment-holdings-overview-content .investment-dummy-chart {
+    box-sizing: border-box;
 }
 
 .investment-holding-detail-content #stock_panel .investment-stock-details-price-chart-card {

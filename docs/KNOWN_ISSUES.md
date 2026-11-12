@@ -1,5 +1,9 @@
 # Known issues and operating constraints
 
+Holdings starts with a collapsible portfolio summary. Its expanded equity chart
+and allocation donut align with the two chart columns in ticker details. The
+summary stays open independently of the single expanded ticker. Legacy Overview
+URLs open the summary and preserve its range.
 Holdings ticker rows open an inline price chart and cost-lot distribution.
 While a ticker is expanded, Transaction history and Markdown export use its
 existing ticker-scoped ledger rows and original ledger numbers. The share drawer
@@ -7,12 +11,16 @@ moves into the expanded row and aligns with the theme button as far as the
 visible table edge permits. Ticker metrics remain included in share exports.
 Closing the row restores portfolio-wide history and the top-level share drawer.
 The Holdings chart offers a 1M daily line range using the Overview month boundary.
-The expanded charts fit within the Holdings table’s existing scroll viewport.
+The Holdings chart grid grows from 220px to 440px as the divider moves.
+The splitter accounts for controls and row context at its minimum. The
+Holdings viewport scrolls during the drag to keep the complete disclosure
+visible, and added height above the chart maximum exposes preceding rows.
 In Dark mode, the chart hover tooltip uses a translucent tint and backdrop blur.
-Clicking a ticker animates its inline row without resizing the Investment
-surface. Reduced-motion preferences reveal the row immediately. The divider
+Opening and closing a ticker animates the inline row height without resizing
+the Investment surface. Reduced-motion preferences update the row immediately. The divider
 between the selected row and its expanded details is hidden.
-Old Stock details links open the matching Holdings row.
+Old Stock details links open the matching Holdings row. The Rewards row uses
+the same disclosure motion and two-line identity layout as Holdings tickers.
 
 The Investment drawer privacy toggle hides Stock details cost-lot quantity
 labels while preserving the distribution bars and price reference line.
@@ -1366,7 +1374,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.12`
+Documentation version: `v1.286.13`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

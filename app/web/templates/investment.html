@@ -1,4 +1,5 @@
-{# Code version: v1.83.3
+{# Code version: v1.84.0
+   Changed: The portfolio chart opens from the Holdings summary.
    Fixed: Synchronizes Investment module cache versions after boundary extraction.
    Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
    Fixed: Loads personal chip bars with uniform vertical thickness.
@@ -56,26 +57,25 @@
                 message_container=true
             ) }}
             <div class="investment-surface-stack investment-view-surface" id="investment_view_surface"
-                 data-active-view="chart">
+                 data-active-view="holdings">
 
                 <div class="investment-view-segmented-wrap">
                     {{ render_segmented_control(
                                 "segmented-control--compact investment-view-segmented",
                                 "investment_view_tab",
-                                "chart",
+                                "holdings",
                                 [
-                                    {"id": "investment_view_chart", "value": "chart", "label": "Overview"},
                                     {"id": "investment_view_holdings", "value": "holdings", "label": "Holdings"},
                                     {"id": "investment_view_metrics", "value": "metrics", "label": "Metrics"},
                                 ],
-                                'id="investment_view_segmented" data-active="chart" data-option-count="3" data-segmented-pill="measured" data-segmented-owner="adapter" data-segmented-overflow-mode="peek"',
+                                'id="investment_view_segmented" data-active="holdings" data-option-count="2" data-segmented-pill="measured" data-segmented-owner="adapter" data-segmented-overflow-mode="peek"',
                                 true,
                                 'investment-view-segmented-frame'
                             ) }}
                     {{ render_investment_share_actions(shell_id='investment_share_actions', show_mask=true, show_standard_xlsx=true) }}
                 </div>
                 <div class="investment-view-surface-body" id="investment_view_surface_body">
-                    <div id="investment_chart_panel" data-investment-view-panel="chart">
+                    <div id="investment_chart_panel" hidden>
                         <div class="trade-chart-stack investment-chart-stack">
                             <div id="investment_equity_chart" class="investment-equity-chart"></div>
                             <div id="investment_dummy_chart" class="investment-dummy-chart" aria-label="Dummy comparison chart">
@@ -965,5 +965,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.169.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.170.0') }}"></script>
 {% endblock %}

@@ -1,4 +1,4 @@
-/* Code version: v1.3.6 */
+/* Code version: v1.3.10 */
 import {
     expect,
     test,
@@ -1475,7 +1475,7 @@ test('renders every calendar day in the long-range Investment equity chart', asy
             ],
         },
     });
-    await page.goto('/trade/investment?range=3m');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=3m');
     await expect.poll(() => page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
         return chart?.data?.rawLabels || null;
