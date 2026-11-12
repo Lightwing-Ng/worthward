@@ -1,7 +1,8 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.4.1
+ * Code version: v1.5.0
+ * - Changed: The portfolio summary opens independently within Holdings.
  * - Changed: Stock details renders reconciled total-equity allocation percentages.
  * - Fixed: Price-hover exit restores the latest allocation snapshot.
  * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
@@ -121,7 +122,7 @@ function getInvestmentLocationTicker() {
         return normalizeInvestmentTicker(search.get('ticker') || '');
     }
 
-function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestmentView || 'chart', ticker = runtime.state.selectedInvestmentStockTicker} = {}) {
+function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestmentView || 'holdings', ticker = runtime.state.selectedInvestmentStockTicker} = {}) {
         const normalizedView = runtime.normalizeInvestmentView(view);
         const availableBrokerCodes = runtime.getAvailableInvestmentBrokerCodes();
         const selectedBrokerCodes = runtime.getInvestmentBrokerFilterSelectedCodes({view: normalizedView});
@@ -129,6 +130,7 @@ function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestm
         return {
             view: normalizedView,
             ticker: normalizeInvestmentTicker(ticker || ''),
+            overviewExpanded: runtime.state.investmentHoldingsOverviewExpanded === true,
             overviewRange: runtime.normalizeInvestmentEquityRange(runtime.state.selectedInvestmentEquityRange),
             stockDetailsRange: runtime.normalizeInvestmentStockDetailsRange(runtime.state.selectedInvestmentStockDetailsRange),
             metricsBroker: runtime.getInvestmentBrokerSummarySelectedCode(),
@@ -310,7 +312,7 @@ function waitForInvestmentStableElementBox(element, {
 function syncInvestmentViewPill(normalizedNextView) {
         if (!runtime.segmentedControl) return;
         const visibleView = normalizedNextView === 'stock_details' ? 'holdings' : normalizedNextView;
-        const visibleViews = runtime.INVESTMENT_VIEW_ORDER.filter((view) => view !== 'stock_details');
+        const visibleViews = runtime.INVESTMENT_VIEW_ORDER.filter((view) => view === 'holdings' || view === 'metrics');
         const activeIndex = Math.max(visibleViews.indexOf(visibleView), 0);
         const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(visibleView)}"]`);
         if (nextRadio instanceof HTMLInputElement && !nextRadio.checked) {
@@ -338,7 +340,9 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
             return;
         }
 
-        const normalizedNextView = runtime.normalizeInvestmentView(nextView);
+        const requestedView = runtime.normalizeInvestmentView(nextView);
+        const normalizedNextView = requestedView === 'chart' ? 'holdings' : requestedView;
+        if (requestedView === 'chart') runtime.setInvestmentHoldingsOverviewExpanded(true);
         // A direct call supersedes a selection that is still waiting for its first frame.
         const supersededPendingSelection = runtime.cancelInvestmentPillFrameWork('view');
 
@@ -425,6 +429,9 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
         }
         runtime.rememberInvestmentPageState({ view: normalizedNextView });
         if (!isHoldingsDisclosure) animateInvestmentSurfaceHeight();
+        if (visibleView === 'holdings' && runtime.state.investmentHoldingsOverviewExpanded) {
+            window.requestAnimationFrame(runtime.syncInvestmentHoldingsOverviewLayout);
+        }
         if (normalizedNextView === 'stock_details') {
             scheduleInvestmentStockDetailsVisibleLayoutSync();
         }
@@ -453,13 +460,13 @@ function initInvestmentViewTabs() {
             runtime.applyInvestmentUrlStateFromLocation({render: false});
         } else {
             runtime.syncInvestmentViewFromLocationHash(
-                restoredLocationFromMemory ? 'stock_details' : (rememberedView || checkedRadio?.value || 'chart'),
+                restoredLocationFromMemory ? 'stock_details' : (rememberedView || checkedRadio?.value || 'holdings'),
             );
         }
         if (!initialUrlState.hasExplicitState) {
             syncInvestmentUrl({historyMode: 'replace'});
         }
-        runtime.rememberInvestmentPageState({ view: runtime.state.activeInvestmentView || rememberedView || checkedRadio?.value || 'chart' });
+        runtime.rememberInvestmentPageState({ view: runtime.state.activeInvestmentView || rememberedView || checkedRadio?.value || 'holdings' });
         runtime.scheduleInvestmentSegmentedPillUpdate();
         runtime.scheduleIbkrImportSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
@@ -508,7 +515,7 @@ function initInvestmentViewTabs() {
                 runtime.applyInvestmentUrlStateFromLocation({render: true});
                 return;
             }
-            runtime.syncInvestmentViewFromLocationHash(runtime.state.activeInvestmentView || 'chart');
+            runtime.syncInvestmentViewFromLocationHash(runtime.state.activeInvestmentView || 'holdings');
         });
         window.addEventListener('popstate', () => {
             runtime.applyInvestmentUrlStateFromLocation({render: runtime.state.investmentUrlStateReady});

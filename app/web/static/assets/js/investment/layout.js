@@ -1,11 +1,12 @@
 /**
  * Shared investment and workspace split-layout and resizer helpers.
  *
- * Code version: v1.5.4
+ * Code version: v1.6.0
+ * - Fixed: Follow the measured chart bounds while dragging the Holdings divider.
  * - Fixed: Keep Stock-details effects visible until real workspace scrolling is required.
  */
 
-export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.5.4';
+export const INVESTMENT_LAYOUT_MODULE_VERSION = 'v1.6.0';
 
 export function resolveInvestmentTrackRange({
     availableHeight,
@@ -125,6 +126,8 @@ export function bindInvestmentSectionResizer({
     let overviewRatio = Number.NaN;
     let resizeFrame = 0;
     let chartResizeFrame = 0;
+    let inlineDetailFollowFrame = 0;
+    const inlineDetailHeights = new WeakMap();
     let overviewChromeHeight = 0;
     const summaryCard = workspaceHeader.querySelector(':scope > .workspace-summary-card');
     const readPixelProperty = (element, propertyName, fallback = 0) => {
@@ -181,22 +184,47 @@ export function bindInvestmentSectionResizer({
             reportChromeHeight + headerHeight + firstDataRowHeight + 1,
         );
     };
-    const getStockDetailsMinimumHeight = (baselineMinimum) => {
-        if (isStackedLayout()) return 0;
-        const panel = reportCard.querySelector('#stock_panel:not([hidden]):not(tr *)');
-        const card = panel?.querySelector('.investment-stock-details-price-chart-card');
-        const shell = card?.querySelector('.investment-stock-details-price-chart-shell');
-        if (!isVisibleElement(panel) || !isVisibleElement(card) || !isVisibleElement(shell)) return 0;
-
-        const reportRect = reportCard.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
-        const shellRect = shell.getBoundingClientRect();
-        // The shell can already exceed a compressed card, so measure the chrome
-        // above it rather than subtracting its height from the current report.
-        const chromeHeight = Math.max(0, shellRect.top - reportRect.top)
-            + Math.max(0, reportRect.bottom - cardRect.bottom)
-            + readPixelProperty(card, 'padding-bottom');
-        return Math.max(baselineMinimum, Math.ceil(chromeHeight + (shellRect.width * 9 / 16)));
+    const getInlineHoldingsDetail = () => {
+        const scroll = reportCard.querySelector('#investment_holdings_panel:not([hidden]) .investment-holdings-table-scroll');
+        return scroll?.querySelector('tr[data-investment-holding-detail] .investment-holding-detail-content')
+            || scroll?.querySelector('tr[data-investment-holdings-overview-row]:not([hidden]) .investment-holdings-overview-content');
+    };
+    const getInlineHoldingsDetailGrid = (detail) => detail?.querySelector(
+        '.investment-stock-details-overview, .investment-chart-stack',
+    );
+    const getInlineDetailControlsHeight = (detail) => (
+        (detail.querySelector('.investment-holding-detail-actions')?.offsetHeight || 0)
+        + readPixelProperty(detail, 'padding-top')
+        + readPixelProperty(detail, 'padding-bottom')
+    );
+    const getStockDetailsMinimumHeight = (detail) => {
+        if (!isVisibleElement(detail)) return 0;
+        const scroll = detail.closest('.investment-holdings-table-scroll');
+        if (!scroll) return 0;
+        const reportChrome = reportCard.getBoundingClientRect().height - scroll.clientHeight;
+        return Math.ceil(reportChrome
+            + getInlineDetailControlsHeight(detail)
+            + readPixelProperty(detail, '--investment-holding-chart-min-height')
+            + readPixelProperty(detail, '--investment-holding-chart-context-height'));
+    };
+    const layoutInlineStockDetail = (detail, followDivider = false) => {
+        const scroll = detail?.closest('.investment-holdings-table-scroll');
+        const table = scroll?.querySelector(':scope > [data-table-body]');
+        const grid = getInlineHoldingsDetailGrid(detail);
+        if (!table || !grid || !scroll.clientHeight) return;
+        // The container query sizes both charts before paint, using the actual scrollport.
+        const bounds = detail.getBoundingClientRect();
+        const previousHeight = inlineDetailHeights.get(detail);
+        inlineDetailHeights.set(detail, bounds.height);
+        if (!followDivider && bounds.height === previousHeight) return;
+        const tableTop = table.getBoundingClientRect().top;
+        const detailTop = bounds.top - tableTop;
+        const minimumScroll = Math.max(0, Math.ceil(bounds.bottom - tableTop - scroll.clientHeight));
+        const maximumScroll = Math.max(minimumScroll, Math.floor(detailTop));
+        const nextScroll = followDivider
+            ? minimumScroll
+            : Math.min(maximumScroll, Math.max(minimumScroll, scroll.scrollTop));
+        if (nextScroll !== scroll.scrollTop) scroll.scrollTo({top: nextScroll, behavior: 'instant'});
     };
     const getOverviewMinimumHeight = (baselineMinimum) => {
         const holdingsMinimumHeight = getHoldingsMinimumHeight(baselineMinimum);
@@ -212,7 +240,7 @@ export function bindInvestmentSectionResizer({
             ? Math.max(0, requestedDynamicStageMinimum)
             : 0;
         const stage = reportCard.querySelector(overviewStageSelector);
-        if (!isVisibleElement(stage)) {
+        if (!isVisibleElement(stage) || stage.closest('.investment-holdings-overview-content')) {
             return Math.max(
                 holdingsMinimumHeight,
                 declaredContentMinimum,
@@ -331,9 +359,9 @@ export function bindInvestmentSectionResizer({
         workspaceHeader.removeAttribute('data-investment-workspace-scrollable');
     };
     const getRange = () => {
-        const stockDetailsActive = !isStackedLayout() && isVisibleElement(
-            reportCard.querySelector('#stock_panel:not([hidden]):not(tr *)'),
-        );
+        const detail = isStackedLayout() ? null : getInlineHoldingsDetail();
+        const stockDetailsMinimum = getStockDetailsMinimumHeight(detail);
+        const stockDetailsActive = stockDetailsMinimum > 0;
         if (stockDetailsActive && !workspaceHeader.hasAttribute('data-investment-stock-chart-minimum')) {
             workspaceHeader.setAttribute('data-investment-stock-chart-minimum', '');
         } else if (!stockDetailsActive && workspaceHeader.hasAttribute('data-investment-stock-chart-minimum')) {
@@ -341,7 +369,6 @@ export function bindInvestmentSectionResizer({
         }
         const availableHeight = getAvailableTrackHeight();
         const baselineMinimum = Math.min(getBaselineMinimumHeight(), availableHeight / 2);
-        const stockDetailsMinimum = getStockDetailsMinimumHeight(baselineMinimum);
         const overviewMinimum = Math.max(getOverviewMinimumHeight(baselineMinimum), stockDetailsMinimum);
         const historyMinimum = getHistoryMinimumHeight(baselineMinimum);
         const needsWorkspaceScroll = stockDetailsActive
@@ -406,8 +433,10 @@ export function bindInvestmentSectionResizer({
         }
         const availableHeight = getAvailableTrackHeight();
         if (!(availableHeight > 0)) return;
+        const detail = getInlineHoldingsDetail();
         overviewRatio = height / availableHeight;
         setInlineStyleIfChanged(workspaceHeader, '--investment-overview-track', `${height}px`);
+        layoutInlineStockDetail(detail, true);
         scheduleOverviewChartResize();
         const ariaValueText = `Overview ${Math.round(overviewRatio * 100)} percent`;
         if (sectionResizer.getAttribute('aria-valuetext') !== ariaValueText) {
@@ -460,12 +489,13 @@ export function bindInvestmentSectionResizer({
             minimum: Number.isFinite(range.layoutMinimum) ? range.layoutMinimum : range.minimum,
             maximum: range.maximum,
         });
-        if (Math.abs(nextHeight - getValue()) < 0.5) {
-            syncSectionResizerAria(range);
-            return;
+        const trackChanged = Math.abs(nextHeight - getValue()) >= 0.5;
+        if (trackChanged) setInlineStyleIfChanged(workspaceHeader, '--investment-overview-track', `${nextHeight}px`);
+        const detail = getInlineHoldingsDetail();
+        if (detail && !inlineDetailFollowFrame && !detail.parentElement.getAnimations().length) {
+            layoutInlineStockDetail(detail);
         }
-        setInlineStyleIfChanged(workspaceHeader, '--investment-overview-track', `${nextHeight}px`);
-        scheduleOverviewChartResize();
+        if (trackChanged) scheduleOverviewChartResize();
         syncSectionResizerAria(range);
     };
     const scheduleRatioReflow = () => {
@@ -478,6 +508,10 @@ export function bindInvestmentSectionResizer({
     } else if (typeof stackedLayoutMedia?.addListener === 'function') {
         stackedLayoutMedia.addListener(onStackedLayoutChange);
     }
+    const followInlineDetail = () => {
+        layoutInlineStockDetail(getInlineHoldingsDetail(), true);
+        inlineDetailFollowFrame = windowRef.requestAnimationFrame(followInlineDetail);
+    };
     const unbind = windowRef.WORTHWARD_RESIZER.bind(sectionResizer, {
         axis: 'block',
         root: workspaceHeader,
@@ -487,7 +521,17 @@ export function bindInvestmentSectionResizer({
         valueFromPointer,
         step: 16,
         largeStep: 48,
-        onEnd: () => windowRef.dispatchEvent(new Event('resize')),
+        onStart: () => {
+            const scroll = getInlineHoldingsDetail()?.closest('.investment-holdings-table-scroll');
+            if (scroll && !inlineDetailFollowFrame) {
+                inlineDetailFollowFrame = windowRef.requestAnimationFrame(followInlineDetail);
+            }
+        },
+        onEnd: () => {
+            if (inlineDetailFollowFrame) windowRef.cancelAnimationFrame(inlineDetailFollowFrame);
+            inlineDetailFollowFrame = 0;
+            windowRef.dispatchEvent(new Event('resize'));
+        },
     });
     const ResizeObserverClass = windowRef.ResizeObserver || globalThis.ResizeObserver;
     const MutationObserverClass = windowRef.MutationObserver || globalThis.MutationObserver;

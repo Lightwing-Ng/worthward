@@ -1,7 +1,9 @@
 /**
  * Holdings workspace rendering and navigation.
  *
- * Code version: v1.5.1
+ * Code version: v1.6.0
+ * - Changed: Portfolio and Rewards details open in the Holdings table.
+ * - Fixed: Keep the clicked ticker in place when another disclosure closes above it.
  * - Changed: Zero unrealized P&L uses the existing neutral value tone.
  * - Fixed: Reward details share the title and total column boundaries.
  * - Fixed: Native reward currencies render on separate lines.
@@ -57,18 +59,27 @@ function bindInvestmentRewardsBreakdownControls(holdingsPanel) {
         if (holdingsPanel.dataset.investmentRewardsBreakdownBound === '1') return;
         holdingsPanel.dataset.investmentRewardsBreakdownBound = '1';
         holdingsPanel.addEventListener('click', (event) => {
-            const trigger = event.target instanceof Element
-                ? event.target.closest('[data-investment-rewards-breakdown-trigger]') : null;
-            if (!(trigger instanceof HTMLButtonElement) || !holdingsPanel.contains(trigger)) return;
-            const expanded = trigger.getAttribute('aria-expanded') !== 'true';
+            const row = event.target instanceof Element
+                ? event.target.closest('.investment-holdings-table-scroll [data-investment-broker-rewards-row]')
+                : null;
+            if (!row || !holdingsPanel.contains(row)) return;
+            const detailRow = row.nextElementSibling;
+            const reveal = detailRow?.querySelector('.investment-holding-detail-reveal');
+            if (!reveal) return;
+            const expanded = !runtime.state.investmentRewardsBreakdownExpanded;
             runtime.state.investmentRewardsBreakdownExpanded = expanded;
             holdingsPanel.querySelectorAll('[data-investment-rewards-breakdown-trigger]').forEach((button) => {
                 button.setAttribute('aria-expanded', String(expanded));
                 button.setAttribute('aria-label', `${expanded ? 'Hide' : 'Show'} Rewards details`);
             });
-            holdingsPanel.querySelectorAll('[data-investment-rewards-breakdown-row]').forEach((row) => {
-                row.hidden = !expanded;
-            });
+            holdingsPanel.querySelectorAll('.scrollable-data-table-frosted-underlay [data-investment-rewards-breakdown-row]')
+                .forEach((underlayRow) => { underlayRow.hidden = !expanded; });
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                detailRow.hidden = !expanded;
+                return;
+            }
+            detailRow.hidden = false;
+            animateHoldingDetail(reveal, expanded, () => { detailRow.hidden = !expanded; });
         });
     }
 
@@ -141,7 +152,7 @@ function renderHoldingsTable(
         const rewardClass = Number.isFinite(brokerRewardRealizedIncome)
             ? (brokerRewardRealizedIncome >= 0 ? ' investment-holdings-value-positive' : ' investment-holdings-value-negative')
             : '';
-        if (!summaries.length && !hasBrokerRewardRealizedIncome) {
+        if (!summaries.length && !hasBrokerRewardRealizedIncome && !runtime.state.investmentProcessedTransactionsCache?.length) {
             return `
                 <div class="investment-holdings-table-shell">
                     <div class="investment-holdings-empty">No holdings or ticker-linked transactions yet.</div>
@@ -376,15 +387,20 @@ function renderHoldingsTable(
                 <tr class="investment-holdings-broker-rewards-row" data-investment-broker-rewards-row>
                     <td class="investment-holdings-cell investment-holdings-cell-center">${summaries.length + 1}</td>
                     <td class="investment-holdings-cell investment-holdings-cell-ticker">
-                        <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link investment-holdings-broker-rewards-identity">
-                            <div class="ticker-identity-row">
-                                <span class="ticker-identity-logo investment-broker-reward-token-logo" aria-hidden="true"></span>
-                                <span class="ticker-identity-copy">
-                                    <span class="suggestion-symbol ticker-identity-symbol investment-holdings-rewards-title">Rewards<button type="button" class="investment-stock-details-metric-breakdown-trigger investment-holdings-rewards-breakdown-trigger" data-investment-rewards-breakdown-trigger aria-controls="investment_holdings_rewards_breakdown" aria-expanded="${runtime.state.investmentRewardsBreakdownExpanded === true}" aria-label="${runtime.state.investmentRewardsBreakdownExpanded === true ? 'Hide' : 'Show'} Rewards details"></button></span>
-                                    <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards, KOL rewards &amp; RewardCash">Coupons, cash rewards, KOL rewards &amp; RewardCash</span>
+                        <button type="button" class="investment-holdings-ticker-anchor investment-holdings-rewards-toggle"
+                                data-investment-rewards-breakdown-trigger aria-controls="investment_holdings_rewards_breakdown"
+                                aria-expanded="${runtime.state.investmentRewardsBreakdownExpanded === true}"
+                                aria-label="${runtime.state.investmentRewardsBreakdownExpanded === true ? 'Hide' : 'Show'} Rewards details">
+                            <span class="suggestion-item timing-suggestion-item ticker-identity-item investment-holdings-ticker-link">
+                                <span class="ticker-identity-row">
+                                    <span class="ticker-identity-logo investment-broker-reward-token-logo" aria-hidden="true"></span>
+                                    <span class="ticker-identity-copy">
+                                        <span class="suggestion-symbol ticker-identity-symbol investment-holdings-rewards-title">Rewards</span>
+                                        <span class="suggestion-name ticker-identity-name" title="Coupons, cash rewards, KOL rewards &amp; RewardCash">Coupons, cash rewards, KOL rewards &amp; RewardCash</span>
+                                    </span>
                                 </span>
-                            </div>
-                        </div>
+                            </span>
+                        </button>
                     </td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
                     <td class="investment-holdings-cell investment-holdings-cell-money">-</td>
@@ -399,7 +415,9 @@ function renderHoldingsTable(
                 <tr data-investment-rewards-breakdown-row${runtime.state.investmentRewardsBreakdownExpanded === true ? '' : ' hidden'}>
                     <td aria-hidden="true"></td>
                     <td colspan="6" class="investment-holdings-rewards-breakdown-cell">
-                        <div class="investment-holdings-rewards-breakdown" id="investment_holdings_rewards_breakdown" data-investment-rewards-breakdown role="region" aria-label="Rewards details">${renderInvestmentRewardsBreakdown(brokerBenefitMetrics)}</div>
+                        <div class="investment-holding-detail-reveal">
+                            <div class="investment-holdings-rewards-breakdown" id="investment_holdings_rewards_breakdown" data-investment-rewards-breakdown role="region" aria-label="Rewards details">${renderInvestmentRewardsBreakdown(brokerBenefitMetrics)}</div>
+                        </div>
                     </td>
                     <td colspan="2" aria-hidden="true"></td>
                 </tr>
@@ -425,7 +443,11 @@ function renderHoldingsTable(
                 <td class="investment-holdings-cell investment-holdings-cell-center"></td>
                 <td class="investment-holdings-cell investment-holdings-cell-ticker">
                     <span class="investment-holdings-summary-ticker-body">
-                        <span class="investment-holdings-summary-instruments">${summaryCountLabel}; ${openCount} open, ${closedCount} closed</span>
+                        <button type="button" class="investment-holdings-summary-instruments investment-holdings-overview-toggle"
+                                data-investment-holdings-overview-toggle aria-controls="investment_chart_panel"
+                                aria-expanded="${runtime.state.investmentHoldingsOverviewExpanded === true}">
+                            ${summaryCountLabel}; ${openCount} open, ${closedCount} closed
+                        </button>
                         <span class="investment-holdings-summary-metrics">
                             <span class="investment-holdings-summary-metric-row">
                                 <span class="investment-holdings-summary-metric-label">Cash</span>
@@ -659,11 +681,109 @@ function mountInvestmentHoldingsStockDetails() {
         syncSelectedStockLinkState();
     }
 
+const holdingDetailAnimations = new WeakMap();
+
+function animateHoldingDetail(reveal, expanded, onFinish) {
+        const previous = holdingDetailAnimations.get(reveal);
+        const currentHeight = Number.parseFloat(getComputedStyle(reveal).height);
+        const startHeight = expanded && !previous ? 0 : currentHeight;
+        const endHeight = expanded ? Number.parseFloat(getComputedStyle(reveal.firstElementChild).height) : 0;
+        previous?.animation.cancel();
+        reveal.style.overflow = 'clip';
+        const animation = reveal.animate([
+            {height: `${startHeight}px`},
+            {height: `${endHeight}px`},
+        ], {duration: 320, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'both'});
+        holdingDetailAnimations.set(reveal, {animation, expanded});
+        animation.addEventListener('finish', () => {
+            if (holdingDetailAnimations.get(reveal)?.animation !== animation) return;
+            holdingDetailAnimations.delete(reveal);
+            onFinish?.();
+            animation.cancel();
+            reveal.style.removeProperty('overflow');
+        }, {once: true});
+    }
+
+function syncInvestmentHoldingsOverviewLayout() {
+        const panel = runtime.investmentChartPanel;
+        if (!panel || panel.hidden || !panel.isConnected || !panel.getClientRects().length) return;
+        runtime.syncInvestmentEquityChartViewport();
+        runtime.scheduleInvestmentEquityRangePillUpdate();
+        runtime.refreshPortfolioDonutOrbits(panel);
+    }
+
+function setInvestmentHoldingsOverviewExpanded(expanded, {animate = false} = {}) {
+        runtime.state.investmentHoldingsOverviewExpanded = expanded;
+        const holdings = document.getElementById('investment_holdings_panel');
+        const panel = runtime.investmentChartPanel;
+        const scroll = holdings?.querySelector('.investment-holdings-table-scroll');
+        const body = scroll?.querySelector('tbody');
+        let row = body?.querySelector('[data-investment-holdings-overview-row]');
+        holdings?.querySelector('[data-investment-holdings-overview-toggle]')
+            ?.setAttribute('aria-expanded', String(expanded));
+        if (!panel) return;
+        const parkPanel = () => {
+            panel.hidden = true;
+            if (panel.parentElement !== runtime.investmentViewSurfaceBody) {
+                runtime.investmentViewSurfaceBody.append(panel);
+            }
+        };
+        if (!row && expanded && body) {
+            body.insertAdjacentHTML('afterbegin', `
+                <tr data-investment-holdings-overview-row>
+                    <td colspan="9">
+                        <div class="investment-holding-detail-reveal">
+                            <div class="investment-holding-detail-content investment-holdings-overview-content"></div>
+                        </div>
+                    </td>
+                </tr>
+            `);
+            row = body.firstElementChild;
+        }
+        if (!row) {
+            parkPanel();
+            return;
+        }
+        const reveal = row.querySelector('.investment-holding-detail-reveal');
+        const finish = () => {
+            if (!row.isConnected) return;
+            if (expanded) {
+                syncInvestmentHoldingsOverviewLayout();
+            } else {
+                parkPanel();
+                row.remove();
+            }
+        };
+        if (expanded) {
+            if (panel.parentElement !== reveal.firstElementChild) reveal.firstElementChild.append(panel);
+            panel.hidden = false;
+            if (animate) scroll.scrollTop = 0;
+            window.requestAnimationFrame(syncInvestmentHoldingsOverviewLayout);
+        }
+        if (animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            animateHoldingDetail(reveal, expanded, finish);
+        } else {
+            const previous = holdingDetailAnimations.get(reveal);
+            holdingDetailAnimations.delete(reveal);
+            previous?.animation.cancel();
+            reveal.style.removeProperty('overflow');
+            finish();
+        }
+    }
+
 function bindHoldingsStockDetailsLinks(holdingsPanel) {
         if (!holdingsPanel) return;
         if (holdingsPanel.dataset.stockDetailsBound !== '1') {
             holdingsPanel.dataset.stockDetailsBound = '1';
             holdingsPanel.addEventListener('click', (event) => {
+                if (!(event.target instanceof Element)) return;
+                const summary = event.target.closest('.investment-holdings-summary-row');
+                if (summary && holdingsPanel.contains(summary)) {
+                    setInvestmentHoldingsOverviewExpanded(!runtime.state.investmentHoldingsOverviewExpanded, {animate: true});
+                    runtime.syncInvestmentUrl({historyMode: 'push'});
+                    runtime.rememberInvestmentPageState();
+                    return;
+                }
                 const row = event.target.closest('.investment-holdings-table-scroll tr[data-investment-holdings-ticker]');
                 if (!row || !holdingsPanel.contains(row)) return;
                 const link = event.target.closest('[data-investment-stock-link]');
@@ -671,12 +791,29 @@ function bindHoldingsStockDetailsLinks(holdingsPanel) {
                 if (!link && event.target.closest('a, button, input, select, textarea')) return;
                 event.preventDefault();
                 const ticker = runtime.normalizeInvestmentTicker(row.dataset.investmentHoldingsTicker);
-                if (runtime.state.activeInvestmentView === 'stock_details'
-                    && ticker === runtime.state.selectedInvestmentStockTicker) {
+                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const closeDetail = () => {
                     runtime.state.investmentHistoryCurrentPage = 1;
                     runtime.setInvestmentView('holdings');
+                };
+                if (runtime.state.activeInvestmentView === 'stock_details'
+                    && ticker === runtime.state.selectedInvestmentStockTicker) {
+                    const detailRow = row.nextElementSibling;
+                    const reveal = detailRow?.querySelector('.investment-holding-detail-reveal');
+                    if (reduceMotion || !reveal) {
+                        holdingDetailAnimations.get(reveal)?.animation.cancel();
+                        closeDetail();
+                    } else {
+                        const isClosing = holdingDetailAnimations.get(reveal)?.expanded === false;
+                        animateHoldingDetail(reveal, isClosing, isClosing ? null : () => {
+                            if (detailRow.isConnected) closeDetail();
+                        });
+                    }
                     return;
                 }
+                const scroll = row.closest('.investment-holdings-table-scroll');
+                const replacingDetail = scroll.querySelector('tr[data-investment-holding-detail]');
+                const rowTop = replacingDetail ? row.getBoundingClientRect().top : null;
                 runtime.state.investmentHistoryCurrentPage = 1;
                 runtime.state.investmentHoldingRowOpening = true;
                 try {
@@ -687,9 +824,7 @@ function bindHoldingsStockDetailsLinks(holdingsPanel) {
                 const detailRow = row.nextElementSibling;
                 if (detailRow?.dataset.investmentHoldingDetail !== ticker) return;
                 const reveal = detailRow.querySelector('.investment-holding-detail-reveal');
-                const scroll = row.closest('.investment-holdings-table-scroll');
                 const actions = reveal.querySelector('.investment-holding-detail-actions');
-                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
                 const revealActionsIfClipped = () => {
                     if (!detailRow.isConnected) return;
                     const remaining = actions.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom;
@@ -697,18 +832,16 @@ function bindHoldingsStockDetailsLinks(holdingsPanel) {
                         scroll.scrollBy({top: remaining, behavior: reduceMotion ? 'instant' : 'smooth'});
                     }
                 };
-                if (reduceMotion) {
-                    revealActionsIfClipped();
-                } else {
-                    const animation = reveal.animate([
-                        {height: '0px', opacity: 0.45, overflow: 'clip'},
-                        {height: `${reveal.offsetHeight}px`, opacity: 1, overflow: 'clip'},
-                    ], {duration: 240, easing: 'cubic-bezier(0.2, 0.75, 0.25, 1)'});
-                    animation.addEventListener('finish', revealActionsIfClipped, {once: true});
+                if (!reduceMotion) animateHoldingDetail(reveal, true, revealActionsIfClipped);
+                if (rowTop !== null) {
+                    // Removing an earlier chart can pull the clicked row behind the sticky header.
+                    scroll.scrollBy({top: row.getBoundingClientRect().top - rowTop, behavior: 'instant'});
                 }
+                if (reduceMotion) revealActionsIfClipped();
             });
         }
         mountInvestmentHoldingsStockDetails();
+        setInvestmentHoldingsOverviewExpanded(Boolean(runtime.state.investmentHoldingsOverviewExpanded));
         syncSelectedStockLinkState();
     }
 
@@ -811,6 +944,8 @@ function buildInvestmentStockDonutMarkup(summary, profile) {
         bindHoldingsHistoryInteractions,
         syncSelectedStockLinkState,
         bindHoldingsStockDetailsLinks,
+        setInvestmentHoldingsOverviewExpanded,
+        syncInvestmentHoldingsOverviewLayout,
         mountInvestmentHoldingsStockDetails,
         bindStockDetailsHistoryInteractions,
         getAvailableInvestmentStockTickers,

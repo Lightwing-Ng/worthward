@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.169.1
+ * Code version: v2.170.0
+ * - Changed: The portfolio chart opens from the Holdings summary.
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -93,12 +94,12 @@ import {
     restoreInvestmentImportBroker,
 } from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.0';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.0';
-import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.1';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.2';
+import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.2';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.3';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
-import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.8.0';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.5.1';
+import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.9.0';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.6.0';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.1';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.3';
 import {
@@ -106,9 +107,9 @@ import {
     waitForInvestmentLoadingPaint,
 } from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.3';
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.2';
-import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.3.0';
-import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.1.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.4.1';
+import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.4.0';
+import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.2.0';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.5.0';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.0';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.3';
 
@@ -188,7 +189,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.5.4';
+} from './investment/layout.js?v=investment-layout-v1.6.0';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -202,7 +203,7 @@ import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
     parseInvestmentUrlState,
-} from './investment/url-state.js?v=investment-url-state-v1.3.0';
+} from './investment/url-state.js?v=investment-url-state-v1.4.0';
 import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
@@ -213,7 +214,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.169.1',
+    entry: 'v2.170.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -502,6 +503,8 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.segmentedControl = document.getElementById('investment_view_segmented');
     runtime.investmentViewSurface = document.getElementById('investment_view_surface');
     runtime.investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    runtime.investmentChartPanel = document.getElementById('investment_chart_panel');
+    runtime.state.investmentHoldingsOverviewExpanded = false;
     runtime.investmentBrokerSummarySelector = document.getElementById('investment_broker_summary_selector');
     runtime.investmentDummyChart = document.getElementById('investment_dummy_chart');
     runtime.investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
@@ -523,7 +526,10 @@ document.addEventListener('DOMContentLoaded', () => {
             historySurface: runtime.investmentHistorySurface,
             sectionResizer: runtime.investmentSectionResizer,
             minVisibleRows: runtime.INVESTMENT_HISTORY_MIN_VISIBLE_ROWS,
-            getChartInstance: () => runtime.state.investmentEquityChartInstance,
+            getChartInstances: () => [
+                runtime.state.investmentHoldingsOverviewExpanded ? runtime.state.investmentEquityChartInstance : null,
+                runtime.state.activeInvestmentView === 'stock_details' ? runtime.state.investmentStockDetailsPriceChartInstance : null,
+            ],
         });
     };
         Object.assign(runtime, createInvestmentRuntimeConfig(runtime));
@@ -548,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
 
 
-    runtime.state.activeInvestmentView = 'chart';
+    runtime.state.activeInvestmentView = 'holdings';
     runtime.state.investmentSurfaceCleanupTimer = null;
     runtime.state.investmentFormHideTimer = null;
     runtime.state.investmentImportInFlight = false;
