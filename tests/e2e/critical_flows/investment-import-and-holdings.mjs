@@ -1,4 +1,4 @@
-/* Code version: v1.3.6 */
+/* Code version: v1.3.7 */
 import {
     expect,
     test,
@@ -1831,7 +1831,19 @@ test('keeps Holdings live-value geometry stable and fixed summary cumulative P&L
         },
     });
     await page.goto('/trade/investment');
+    const surface = page.locator('#investment_view_surface');
+    await surface.evaluate((node) => {
+        const workspace = node.closest('.investment-workspace-header');
+        const eventName = 'worthward:investment-view-surface-height-released';
+        const onHeightReleased = (event) => {
+            if (event.target !== node || node.dataset.activeView !== 'holdings') return;
+            workspace.removeEventListener(eventName, onHeightReleased);
+            node.dataset.e2eHoldingsHeightReleased = String(!node.style.height && !node.style.overflow);
+        };
+        workspace.addEventListener(eventName, onHeightReleased);
+    });
     await page.locator('label[for="investment_view_holdings"]').click();
+    await expect(surface).toHaveAttribute('data-e2e-holdings-height-released', 'true');
 
     const summaryRow = page.locator(
         '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-row',
@@ -1866,7 +1878,6 @@ test('keeps Holdings live-value geometry stable and fixed summary cumulative P&L
         };
     });
     const readStableLiveValueGeometry = async () => {
-        const surface = page.locator('#investment_view_surface');
         await expect(surface).toHaveAttribute('data-active-view', 'holdings');
         // A view switch keeps a temporary surface height until its cleanup finishes.
         await expect.poll(() => surface.evaluate((node) => ({
