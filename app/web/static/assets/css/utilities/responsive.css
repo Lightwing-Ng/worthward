@@ -1,7 +1,28 @@
-/* Code version: v3.37.7 */
+/* Code version: v3.37.8 */
 .page > .sidebar-toggle {
 	top: calc(var(--layout-page-inset-top) + var(--sidebar-toggle-top));
 	left: calc(var(--layout-page-inset-left) + var(--sidebar-toggle-left));
+}
+
+@media (max-width: 1080px) {
+	/* A centered 420px notice clears the expanded sidebar hit region above 1080px. */
+	/* Below that width, keep its drop-in travel and scale overshoot below the controls. */
+	.notice-floating-banner-global {
+		top: calc(
+			var(--global-quick-actions-top)
+			+ var(--circular-icon-button-size)
+			+ var(--layout-edge-gap)
+			+ 28px
+		);
+	}
+	.notice-floating-banner-global + .notice-floating-banner-global {
+		top: calc(
+			var(--global-quick-actions-top)
+			+ var(--circular-icon-button-size)
+			+ var(--layout-edge-gap)
+			+ 28px + 88px
+		);
+	}
 }
 .sidebar-backdrop {
 	width: auto;
@@ -443,7 +464,10 @@
 	.page > #sidebar_toggle::before,
 	#global_quick_actions > .global-quick-action-button::before,
 	#circular-icon-button .style-token-demo > .circular-icon-button::before,
-	#circular-icon-button .style-token-copy-button::before {
+	#circular-icon-button .style-token-copy-button::before,
+	.workspace-controls-toggle::before,
+	#add_ticker.circular-icon-button::before,
+	#toggle_form_button.circular-icon-button::before {
 		content: "";
 		position: absolute;
 		width: var(--circular-icon-button-hit-size);
@@ -452,6 +476,21 @@
 		top: 50%;
 		transform: translate(-50%, -50%);
 		border-radius: var(--circular-icon-button-radius);
+	}
+	#toggle_form_button.circular-icon-button {
+		position: relative;
+	}
+	@media (max-width: 900px) {
+		.workspace-controls-toggle {
+			left: calc(
+				var(--layout-global-anchor-left)
+				+ var(--circular-icon-button-size)
+				+ max(
+					var(--layout-edge-gap),
+					var(--circular-icon-button-hit-size) - var(--circular-icon-button-size)
+				)
+			);
+		}
 	}
 	.page > .sidebar-toggle,
 	.page > .sidebar-toggle:hover,

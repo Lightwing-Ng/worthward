@@ -1,4 +1,4 @@
-{# Code version: v1.10.48 #}
+{# Code version: v1.10.49 #}
 <!doctype html>
 <html lang="en-US">
 <head>
@@ -115,7 +115,7 @@
         }
     </style>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.105.0') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.105.1') }}">
     <style>
         html,
         body {
@@ -149,6 +149,10 @@
             gap: 12px;
             min-height: var(--live-trading-pin-icon-size);
             padding-left: calc(var(--workspace-modal-close-size) + 10px);
+        }
+
+        .live-trading-pin-dialog > .workspace-modal-close {
+            z-index: 2;
         }
 
         .live-trading-pin-icon {

@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.24.3`
+Documentation version: `v1.24.4`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -48,7 +48,9 @@ The Collapse specimen has no placeholder explanatory paragraph.
   its heading fixed and places Dock clearance inside its navigation scroll content,
   rather than reserving a fixed bottom band on the outer sidebar. The list extends
   behind the frosted Dock pill and fades only at the sidebar's bottom edge; its
-  final item can still scroll fully above the Dock.
+  final item can still scroll fully above the Dock and receive a click. Rows
+  passing beneath the Dock are an intentional inert underlay, not a competing
+  hit target.
 - Worthward's trade strategy stepper uses `--strategy-param-control-height: 30px`,
   including its specimen input. agenticContext has no trade-strategy stepper and
   does not add a fictitious product component.
@@ -158,6 +160,11 @@ The Collapse specimen has no placeholder explanatory paragraph.
   Dense Investment share and Settings language-file groups keep their distinct
   native 32px center targets because their 10px/8px spacing cannot host adjacent
   44px hit regions without overlap; both retain keyboard operation.
+  A visible nonmodal floating notice must leave the sidebar and theme control
+  centers and their coarse-pointer hit regions clickable while the sidebar is
+  both closed and open. Its position must account for the notice drop-in travel
+  and scale overshoot as well as the expanded sidebar toggle's horizontal shift;
+  this does not change notice dismissal or modal layering.
   Modal dismiss controls, Process List markers, and topic
   icons retain their independent semantic dimensions.
   Product-specific class names are adapters only; the legacy
