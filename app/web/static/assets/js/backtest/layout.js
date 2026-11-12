@@ -1,10 +1,10 @@
 /**
  * Backtest split-layout binding.
  *
- * Code version: v0.7.4
+ * Code version: v0.7.5
  */
 
-import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.5.3';
+import {bindInvestmentSectionResizer} from '../investment/layout.js?v=investment-layout-v1.5.4';
 
 const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 const PROBABILITY_STAGE_MINIMUM_PROPERTY = '--backtest-probability-stage-min-height';

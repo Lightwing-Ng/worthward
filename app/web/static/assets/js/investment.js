@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.167.1
+ * Code version: v2.169.1
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -92,23 +92,23 @@ import {
     rememberInvestmentImportBroker,
     restoreInvestmentImportBroker,
 } from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.0';
-import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.3.0';
+import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.0';
 import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.1';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.1';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.2';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
-import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.7.0';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.4.0';
+import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.8.0';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.5.1';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.1';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.3';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
 } from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.3';
-import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.0';
+import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.2';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.3.0';
-import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.0.1';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.3.0';
+import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.1.0';
+import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.4.1';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.0';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.3';
 
@@ -164,7 +164,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.42.2';
+} from './investment/stock-details.js?v=investment-stock-details-v0.42.3';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -188,7 +188,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.5.3';
+} from './investment/layout.js?v=investment-layout-v1.5.4';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -202,7 +202,7 @@ import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
     parseInvestmentUrlState,
-} from './investment/url-state.js?v=investment-url-state-v1.2.0';
+} from './investment/url-state.js?v=investment-url-state-v1.3.0';
 import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
@@ -213,7 +213,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.167.1',
+    entry: 'v2.169.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -812,7 +812,11 @@ Object.assign(runtime, createInvestmentDataUtils({
         getInvestmentStockDetailsPanel: () => runtime.investmentStockDetailsPanel,
         getInvestmentStockDetailsPriceChartInstance: () => runtime.state.investmentStockDetailsPriceChartInstance,
         getInvestmentStockDetailsPriceChartRequestSerial: () => runtime.state.investmentStockDetailsPriceChartRequestSerial,
-        getInvestmentStockDetailsRangeLabels: runtime.getInvestmentStockDetailsRangeLabels,
+        getInvestmentStockDetailsRangeLabels: (labels, range, options) => (
+            range === '1m'
+                ? runtime.getInvestmentEquityRangeLabels(labels, range)
+                : runtime.getInvestmentStockDetailsRangeLabels(labels, range, options)
+        ),
         getInvestmentTradeSessionType: runtime.getInvestmentTradeSessionType,
         getInvestmentCanonicalTicker: runtime.getInvestmentCanonicalTicker,
         getMoneyMarketTickerSet: runtime.getMoneyMarketTickerSet,

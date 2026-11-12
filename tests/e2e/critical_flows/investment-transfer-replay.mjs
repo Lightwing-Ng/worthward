@@ -1,4 +1,4 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.3.2 */
 import {
     expect,
     test,
@@ -715,7 +715,9 @@ test('scopes an unbound Schwab receipt without blanking unaffected All brokers s
         'All brokers holdings, equity, and P&L are unavailable',
     );
 
-    await page.getByRole('radio', {name: 'Stock details'}).check({force: true});
+    await page.getByRole('radio', {name: 'Holdings'}).check({force: true});
+    await dramRow.locator('[data-investment-stock-link]').click();
+    await expect(page.locator('#stock_panel')).toBeVisible();
     await expect(page.locator('#stock_panel')).not.toContainText(
         'All brokers holdings, equity, and P&L are unavailable',
     );

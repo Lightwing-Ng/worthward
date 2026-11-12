@@ -1,18 +1,18 @@
 /**
  * Investment URL state parsing and serialization.
  *
- * Code version: v1.2.0
+ * Code version: v1.3.0
  * - Changed: Overview and Stock-details ranges stay scoped to their own tabs.
  * - Changed: Metrics uses one shared single-broker-or-All scope for its
  *   summary and Transaction history controls.
  */
 
-export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.2.0';
+export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.3.0';
 
 const INVESTMENT_URL_VIEW_SLUGS = Object.freeze({
     chart: 'overview',
     holdings: 'holdings',
-    stock_details: 'stock-details',
+    stock_details: 'holdings',
     metrics: 'metrics',
 });
 
@@ -117,9 +117,11 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
         '#stock_panel',
         '#investment_stock_details_panel',
     ].includes(url.hash);
-    const view = normalizeView(
+    const requestedView = normalizeView(
         params.get('view') || (legacyStockDetailsHash ? 'stock-details' : 'overview'),
     );
+    const ticker = tickerNormalizer(params.get('ticker') || '');
+    const view = requestedView === 'holdings' && ticker ? 'stock_details' : requestedView;
     const range = normalizeRange(params.get('range'));
     const requestedMetricsBroker = String(params.get('metrics-broker') || 'all').trim().toLowerCase() || 'all';
     const brokerSelection = parseBrokerSelection(params);
@@ -145,7 +147,7 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
     return {
         view,
         viewSlug: INVESTMENT_URL_VIEW_SLUGS[view],
-        ticker: tickerNormalizer(params.get('ticker') || ''),
+        ticker,
         range,
         metricsBroker,
         brokerSelection: effectiveBrokerSelection,

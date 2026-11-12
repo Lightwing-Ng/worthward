@@ -1,6 +1,6 @@
 # Compatibility routes and reserved source
 
-Documentation version: `v1.3.0`
+Documentation version: `v1.4.0`
 
 This document separates supported compatibility behavior from obsolete
 renderers. Compatibility is a tested redirect or normalization contract, not a
@@ -31,6 +31,7 @@ database fails closed. See [Local SQLite persistence](LOCAL_SQLITE.md) and the
 | `/workspaces/market-caps` | `/workspaces/prices?metric=market-cap` | Market Cap remains a Ticker comparison metric; redirect only |
 | `/workspaces/grid-trading` | `/workspaces/backtest?strategy=grid-trading` | Grid Trading remains a Backtest strategy; redirect only |
 | `/more`, `/more/<section>` | `/trade/investment` or normalized `/trade/<section>` | Historical Trade navigation aliases |
+| `/trade/investment?view=stock-details&ticker=<symbol>` | `/trade/investment?view=holdings&ticker=<symbol>` | Open the matching Holdings row and preserve supported ticker history filters |
 | `/invest`, `/investment` | `/trade/investment` | Historical Investment aliases |
 | `/?view=<legacy-view>` | The corresponding canonical workspace | Normalize supported legacy query state before redirecting |
 

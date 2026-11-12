@@ -1,4 +1,4 @@
-/* Code version: v1.1.9 */
+/* Code version: v1.2.1 */
 import {
     expect,
     test,
@@ -620,7 +620,7 @@ test('keeps the shared Metrics broker scope local and restores it on return', as
     await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: All brokers');
     await expect(historyRows).toHaveCount(4);
 
-    await page.locator('label[for="investment_view_stock_details"]').click();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-link][data-investment-stock-ticker="AAPL"]').click();
     await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
     await expect(lowerBroker).toHaveAttribute('aria-label', 'Broker filter: All brokers');
     await expect(page.locator('#investment_stock_details_table_host tr[data-investment-stock-detail-ledger]')).toHaveCount(4);
@@ -647,6 +647,8 @@ test('keeps Overview and Stock details ranges isolated and remembered', async ({
         priceHistoryByTicker: {
             AAPL: [
                 {date: '2026-04-10', close: 100},
+                {date: '2026-06-09', close: 105},
+                {date: '2026-06-10', close: 106},
                 {date: '2026-07-10', close: 110},
             ],
         },
@@ -661,19 +663,26 @@ test('keeps Overview and Stock details ranges isolated and remembered', async ({
     await expect(page).toHaveURL(/view=metrics/);
     await expect(page).not.toHaveURL(/range=/);
 
-    await page.locator('label[for="investment_view_stock_details"]').click();
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-link][data-investment-stock-ticker="AAPL"]').click();
     await expect(page.locator('#investment_stock_details_range_max')).toBeChecked();
-    await page.locator('label[for="investment_stock_details_range_1w"]').click();
-    await expect(page.locator('#investment_stock_details_range_1w')).toBeChecked();
-    await expect(page).toHaveURL(/view=stock-details.*range=1w/);
+    await page.locator('label[for="investment_stock_details_range_1m"]').click();
+    await expect(page.locator('#investment_stock_details_range_1m')).toBeChecked();
+    await expect(page).toHaveURL(/view=holdings.*range=1m/);
+    const chartCanvas = page.locator('#stock_panel .investment-stock-details-price-chart-canvas');
+    await expect.poll(() => chartCanvas.evaluate((canvas) => {
+        const chart = window.Chart.getChart(canvas);
+        return chart ? [chart.data.labels[0], chart.data.labels.at(-1), chart.config.type] : null;
+    })).toEqual(['2026-06-10', '2026-07-10', 'line']);
 
     await page.locator('label[for="investment_view_chart"]').click();
     await expect(page.locator('#investment_equity_range_3m')).toBeChecked();
     await expect(page).toHaveURL(/view=overview.*range=3m/);
 
-    await page.locator('label[for="investment_view_stock_details"]').click();
-    await expect(page.locator('#investment_stock_details_range_1w')).toBeChecked();
-    await expect(page).toHaveURL(/view=stock-details.*range=1w/);
+    await page.locator('label[for="investment_view_holdings"]').click();
+    await page.locator('#investment_holdings_panel [data-table-scroll] [data-investment-stock-link][data-investment-stock-ticker="AAPL"]').click();
+    await expect(page.locator('#investment_stock_details_range_1m')).toBeChecked();
+    await expect(page).toHaveURL(/view=holdings.*range=1m/);
 
     await page.locator('label[for="investment_view_metrics"]').click();
     await expect(page).toHaveURL(/view=metrics/);
@@ -832,8 +841,8 @@ test('keeps Investment view, range, broker scope, and pagination in the canonica
     await page.locator('label[for="investment_view_chart"]').click();
     await expect(page).toHaveURL(/view=overview.*range=3m.*broker=hsbc.*type=sell/);
 
-    await page.goto('/trade/investment?view=stock-details&ticker=AAPL&range=3m&broker=hsbc&type=sell');
-    await expect(page).toHaveURL(/view=stock-details.*ticker=AAPL.*range=3m.*broker=hsbc.*type=sell/);
+    await page.goto('/trade/investment?view=holdings&ticker=AAPL&range=3m&broker=hsbc&type=sell');
+    await expect(page).toHaveURL(/view=holdings.*ticker=AAPL.*range=3m.*broker=hsbc.*type=sell/);
     await expect(page.locator('#investment_stock_details_table_host')).toBeVisible();
     await expect(page.locator('.investment-stock-details-price-chart-canvas')).toBeVisible();
 });

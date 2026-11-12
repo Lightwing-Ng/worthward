@@ -1,7 +1,7 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.7.0
+ * Code version: v1.8.0
  * - Added: Unrealized P&L and daily changes opt into shared spring digits.
  * - Added: Rewards category details refresh without closing their disclosure.
  * - Changed: Stock details shows compact total-equity allocation and personal chips.
@@ -1149,86 +1149,21 @@ function bindInvestmentStockDetailsMetricBreakdownControls() {
         });
     }
 
-function renderInvestmentStockTickerOptions(tickerProfiles, activeTicker) {
-        const tickersByCanonical = new Map();
-        const availableTickers = runtime.getAvailableInvestmentStockTickers();
-        [...availableTickers, activeTicker].forEach((ticker) => {
-            const normalizedTicker = runtime.normalizeInvestmentTicker(ticker);
-            const canonicalTicker = runtime.getInvestmentCanonicalTicker(normalizedTicker);
-            if (!canonicalTicker) return;
-            if (!tickersByCanonical.has(canonicalTicker) || normalizedTicker === activeTicker) {
-                tickersByCanonical.set(canonicalTicker, normalizedTicker);
-            }
-        });
-        return Array.from(tickersByCanonical.values())
-            .map((ticker) => {
-                const displayTicker = runtime.formatInvestmentTickerForDisplay(ticker);
-                const companyName = runtime.resolveInvestmentTickerCompanyName(tickerProfiles, ticker);
-                const profile = runtime.resolveInvestmentTickerProfile(tickerProfiles, ticker);
-                const logoUrl = runtime.resolveInvestmentLogoUrl(profile, ticker);
-                return `<option value="${runtime.escapeHtml(ticker)}"
-                    data-description="${runtime.escapeHtml(companyName)}"
-                    data-icon-url="${runtime.escapeHtml(logoUrl)}"
-                    data-icon-alt="${runtime.escapeHtml(displayTicker)} logo"
-                    ${ticker === activeTicker ? 'selected' : ''}>${runtime.escapeHtml(displayTicker)}</option>`;
-            }).join('');
-    }
-
-function closeInvestmentStockTickerSelect() {
-        if (!(runtime.investmentStockDetailsPanel instanceof HTMLElement)) return false;
-        const previousTickerField = runtime.investmentStockDetailsPanel.querySelector('[data-shared-select-kind="investment-stock-ticker"]');
-        const previousTickerTrigger = previousTickerField?.querySelector('[data-shared-select-trigger]');
-        const previousTickerMenu = document.getElementById(previousTickerTrigger?.getAttribute('aria-controls') || '');
-        const restoreTickerFocus = Boolean(previousTickerField?.contains(document.activeElement)
-            || previousTickerMenu?.contains(document.activeElement));
-        // Return the owned portal before replacing its field, including background rerenders.
-        if (previousTickerField && previousTickerMenu instanceof HTMLElement) {
-            previousTickerMenu.hidden = true;
-            previousTickerTrigger?.setAttribute('aria-expanded', 'false');
-            previousTickerField.classList.remove('is-open');
-            previousTickerField.appendChild(previousTickerMenu);
-        }
-        return restoreTickerFocus;
-    }
-
 function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         if (!(runtime.investmentStockDetailsPanel instanceof HTMLElement)) return;
-        const restoreTickerFocus = closeInvestmentStockTickerSelect();
+        if (runtime.state.activeInvestmentView !== 'stock_details') return;
         if (runtime.investmentStockDetailsTableHost instanceof HTMLElement) {
             runtime.closeInvestmentStockDetailsTimeFilters();
             window.WORTHWARD_DATE_PICKERS?.dispose(runtime.investmentStockDetailsTableHost);
         }
-        if (runtime.state.investmentAggregateSecurityTransferState.blocked) {
-            runtime.clearInvestmentStockDetailsRangeControlBindings();
-            runtime.destroyInvestmentStockDetailsPriceChart();
-            runtime.investmentStockDetailsPanel.innerHTML = `
-                <div class="investment-stock-details-empty-shell">
-                    <p class="investment-holdings-empty">${runtime.escapeHtml(runtime.getInvestmentAggregateSecurityTransferBlockedMessage())}</p>
-                </div>
-            `;
-            if (runtime.investmentStockDetailsTableHost instanceof HTMLElement) {
-                runtime.investmentStockDetailsTableHost.innerHTML = '';
-                runtime.syncInvestmentStockDetailsTableVisibility();
-            }
-            runtime.syncSelectedStockLinkState();
-            return;
-        }
         const activeTicker = runtime.ensureSelectedInvestmentStockTicker();
-        runtime.destroyInvestmentStockDetailsPriceChart();
-        if (!activeTicker) {
-            runtime.clearInvestmentStockDetailsRangeControlBindings();
-            runtime.investmentStockDetailsPanel.innerHTML = `
-                <div class="investment-stock-details-empty-shell">
-                    <p class="investment-holdings-empty">Open Holdings or import transactions, then pick a ticker to inspect its stock details.</p>
-                </div>
-            `;
-            if (runtime.investmentStockDetailsTableHost instanceof HTMLElement) {
-                runtime.investmentStockDetailsTableHost.innerHTML = '';
-                runtime.syncInvestmentStockDetailsTableVisibility();
-            }
-            runtime.syncSelectedStockLinkState();
+        runtime.mountInvestmentHoldingsStockDetails();
+        if (!activeTicker || runtime.investmentStockDetailsPanel.hidden) {
+            runtime.setInvestmentView('holdings', {syncHash: false});
+            runtime.syncInvestmentUrl({historyMode: 'replace', view: 'holdings'});
             return;
         }
+        runtime.destroyInvestmentStockDetailsPriceChart();
         runtime.clearInvestmentStockDetailsRangeControlBindings();
         const tickerSummary = runtime.state.investmentTickerSummariesCache.find((summary) => runtime.normalizeInvestmentTicker(summary?.ticker) === activeTicker) || runtime.createPositionState(activeTicker);
         const profile = runtime.resolveInvestmentTickerProfile(tickerProfiles, activeTicker);
@@ -1243,22 +1178,17 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
                    hidden
                    loading="eager"
                    decoding="async"
-                   data-investment-logo-image data-shared-select-trigger-logo
+                   data-investment-logo-image
                    data-logo-url="${runtime.escapeHtml(JSON.stringify(logoUrls))}"
                    data-ticker="${runtime.escapeHtml(activeTicker)}">`;
         const identityLogoPlaceholderMarkup = moneyMarketFundTokenLogoClass
             ? ''
-            : '<span class="ticker-identity-logo ticker-identity-logo-placeholder" data-shared-select-trigger-placeholder aria-hidden="true"></span>';
+            : '<span class="ticker-identity-logo ticker-identity-logo-placeholder" aria-hidden="true"></span>';
         const detailRows = runtime.buildSafeInvestmentStockDetailRows(
             runtime.state.investmentProcessedTransactionsCache,
             activeTicker,
         );
-        const stockDetailsPageState = runtime.state.activeInvestmentView === 'stock_details'
-            ? runtime.buildInvestmentStockDetailsPage(detailRows)
-            : {
-                visibleTransactions: runtime.getVisibleInvestmentStockDetailTransactions(detailRows),
-                pageTransactions: detailRows,
-            };
+        const stockDetailsPageState = runtime.buildInvestmentStockDetailsPage(detailRows);
         const totalCommission = detailRows.reduce((sum, txn) => sum + Math.abs(runtime.getTransactionCommission(txn)), 0);
         const totalCommissionCurrency = detailRows
             .map((txn) => runtime.formatTransactionCurrency(txn))
@@ -1452,28 +1382,14 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
         runtime.investmentStockDetailsPanel.innerHTML = `
             <div class="investment-stock-details-overview">
                 <div class="suggestion-item timing-suggestion-item ticker-identity-item investment-stock-details-identity">
-                    <div class="backtest-shared-select-field investment-stock-ticker-field" data-shared-select-field data-shared-select-kind="investment-stock-ticker" data-shared-select-variant="rounded">
-                        <select id="investment_stock_ticker" class="backtest-shared-select-native" data-investment-stock-ticker-select hidden aria-hidden="true" tabindex="-1">
-                            ${renderInvestmentStockTickerOptions(tickerProfiles, activeTicker)}
-                        </select>
-                        <div class="trade-strategy-combobox backtest-shared-select-combobox">
-                            <button type="button" class="trade-strategy-select form-select trade-strategy-trigger backtest-shared-select-trigger investment-stock-ticker-trigger"
-                                data-shared-select-trigger data-shared-select-title="Choose a ticker" aria-haspopup="listbox" aria-expanded="false"
-                                aria-controls="investment_stock_ticker_dropdown" aria-label="Choose a ticker: ${runtime.escapeHtml(displayTicker)}">
-                                <span class="ticker-identity-row backtest-shared-select-content">
-                                    <span class="trade-strategy-dropdown-media-slot">
-                                        ${identityLogoMarkup}
-                                        ${identityLogoPlaceholderMarkup}
-                                    </span>
-                                    <span class="ticker-identity-copy trade-strategy-dropdown-copy">
-                                        <span class="ticker-identity-symbol trade-strategy-dropdown-title trade-strategy-trigger-label" data-shared-select-trigger-label>${runtime.escapeHtml(displayTicker)}</span>
-                                        <span class="ticker-identity-name trade-strategy-dropdown-desc" data-shared-select-trigger-description title="${runtime.escapeHtml(companyName)}"${companyName ? '' : ' hidden'}>${runtime.escapeHtml(companyName)}</span>
-                                    </span>
-                                </span>
-                            </button>
-                        </div>
-                        <div id="investment_stock_ticker_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" aria-label="Current and historical holdings" hidden></div>
-                    </div>
+                    <span class="ticker-identity-row">
+                        ${identityLogoMarkup}
+                        ${identityLogoPlaceholderMarkup}
+                        <span class="ticker-identity-copy">
+                            <span class="ticker-identity-symbol">${runtime.escapeHtml(displayTicker)}</span>
+                            <span class="ticker-identity-name">${runtime.escapeHtml(companyName)}</span>
+                        </span>
+                    </span>
                 </div>
                 <div class="trade-metrics-grid trade-view-panel-grid trade-metrics-panel-grid investment-stock-details-metrics">
                     ${stockMetricCards.map((metric, metricIndex) => (
@@ -1550,19 +1466,10 @@ function renderInvestmentStockDetailsPanel(tickerProfiles = {}) {
             runtime.mountInvestmentStockDetailsTimeFilterHeaders(runtime.investmentStockDetailsTableHost);
             runtime.bindStockDetailsHistoryInteractions(runtime.investmentStockDetailsTableHost);
             runtime.syncInvestmentStockDetailsTableVisibility();
-            if (runtime.state.activeInvestmentView === 'stock_details') {
-                runtime.mountInvestmentHistoryPagination();
-                runtime.renderInvestmentHistoryPagination(stockDetailsPageState.visibleTransactions.length, {force: true});
-            }
+            runtime.mountInvestmentHistoryPagination();
+            runtime.renderInvestmentHistoryPagination(stockDetailsPageState.visibleTransactions.length, {force: true});
         }
         window.repairSidebarControlBindings?.();
-        runtime.investmentStockDetailsPanel.querySelector('[data-investment-stock-ticker-select]')
-            ?.addEventListener('change', (event) => {
-                selectInvestmentStockTicker(event.currentTarget.value, {focusView: true});
-            });
-        if (restoreTickerFocus) {
-            runtime.investmentStockDetailsPanel.querySelector('[data-shared-select-trigger]')?.focus({preventScroll: true});
-        }
         bindInvestmentStockDetailsMetricBreakdownControls();
         runtime.bindInvestmentStockDetailsRangeControls(activeTicker, detailRows);
         if (tickerSummary.securityTransferPnlUnavailable === true) {
@@ -1727,7 +1634,6 @@ function applyInvestmentUrlStateFromLocation({render = false} = {}) {
         renderInvestmentStockDetailsLiveMetricValueSpan,
         renderInvestmentStockDetailsMetricCard,
         bindInvestmentStockDetailsMetricBreakdownControls,
-        closeInvestmentStockTickerSelect,
         renderInvestmentStockDetailsPanel,
         selectInvestmentStockTicker,
         syncInvestmentViewFromLocationHash,

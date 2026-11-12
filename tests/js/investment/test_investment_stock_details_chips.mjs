@@ -510,7 +510,9 @@ test('renders chip snapshots without visible date or summary nodes while retaini
         setAttribute(name, value) { this.attributes[name] = value; },
     };
     const emptyLabel = {hidden: false, textContent: ''};
+    let masked = false;
     const card = {
+        closest: () => masked ? card : null,
         dataset: {},
         querySelector(selector) {
             return {
@@ -531,6 +533,15 @@ test('renders chip snapshots without visible date or summary nodes while retaini
     assert.equal(emptyLabel.hidden, true);
     assert.equal(canvas.attributes['aria-label'],
         'Cost distribution on 28 Oct 2026 14:35. 1,234 long shares at USD 20. Reference line: last price 25.');
+
+    masked = true;
+    chart.redraw();
+    assert.equal(card.dataset.totalQuantity, undefined);
+    assert.equal(canvas.attributes['aria-label'], 'Personal cost-lot distribution');
+    masked = false;
+    chart.redraw();
+    assert.equal(card.dataset.totalQuantity, '1234');
+    assert.match(canvas.attributes['aria-label'], /1,234 long shares/);
 
     chart.render(snapshot([]));
     assert.equal(card.dataset.status, 'empty');

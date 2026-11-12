@@ -1,4 +1,4 @@
-/* Code version: v1.84.2 */
+/* Code version: v1.85.3 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2721,6 +2721,20 @@
     will-change: transform, opacity;
 }
 
+:root[data-theme-override="dark"] .chart-tooltip[data-investment-stock-details-tooltip="1"] {
+    background: var(--theme-tooltip-background);
+    backdrop-filter: saturate(160%) var(--tooltip-blur);
+    -webkit-backdrop-filter: saturate(160%) var(--tooltip-blur);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme-override="light"]) .chart-tooltip[data-investment-stock-details-tooltip="1"] {
+        background: var(--theme-tooltip-background);
+        backdrop-filter: saturate(160%) var(--tooltip-blur);
+        -webkit-backdrop-filter: saturate(160%) var(--tooltip-blur);
+    }
+}
+
 .investment-stock-details-price-chart-empty {
     width: 100%;
     min-height: 0;
@@ -3176,4 +3190,110 @@
     flex: 1 1 auto;
     height: auto;
     min-height: 0;
+}
+
+/* The detail row follows the visible table viewport at narrow widths. */
+#investment_holdings_panel .investment-holdings-table-scroll {
+    container-type: size;
+    scroll-padding-block-start: 0;
+}
+
+#investment_holdings_panel tr[data-investment-holdings-ticker] {
+    cursor: pointer;
+}
+
+#investment_holdings_panel tr[data-investment-holding-detail] > td {
+    padding: 0;
+    border-top: 0;
+    overflow: visible;
+    text-align: start;
+}
+
+.investment-holding-detail-content {
+    position: sticky;
+    inset-inline-start: 0;
+    box-sizing: border-box;
+    width: min(100%, 100cqw);
+    min-width: 0;
+    overflow-x: clip;
+    padding: 8px 18px 28px 8px;
+}
+
+.investment-holding-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    height: var(--circular-icon-button-size);
+    position: relative;
+    z-index: calc(var(--layer-surface-content) + 3);
+}
+
+.investment-holding-detail-actions > .investment-share-actions {
+    position: relative;
+    width: var(--circular-icon-button-size);
+    height: 100%;
+}
+
+.investment-holding-detail-actions > .investment-share-actions:is(:hover, :focus-within, .is-mask-active) {
+    width: calc((var(--circular-icon-button-size) * 4) + (var(--investment-share-action-gap) * 3));
+}
+
+.investment-holding-detail-content #stock_panel:not([hidden]) {
+    height: auto;
+    overflow: visible;
+}
+
+.investment-holding-detail-content #stock_panel > .investment-stock-details-overview {
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.32fr);
+    grid-template-rows: clamp(220px, calc(100cqh - var(--circular-icon-button-size) - 20px), 440px);
+    height: auto;
+    overflow: visible;
+}
+
+.investment-holding-detail-content #stock_panel .investment-stock-details-price-chart-card {
+    grid-area: 1 / 1;
+    height: auto;
+}
+
+.investment-holding-detail-content #stock_panel .investment-stock-details-price-chart-shell {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+}
+
+.investment-holding-detail-content #stock_panel .investment-stock-details-side-card {
+    grid-area: 1 / 2;
+    height: auto;
+}
+
+.investment-holding-detail-content #stock_panel :is(.investment-stock-details-identity, .investment-stock-details-metrics) {
+    display: none;
+}
+
+.investment-community-share-stock-charts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.32fr);
+    align-items: start;
+    gap: 8px;
+}
+
+.investment-community-share-stock-side {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+}
+
+.investment-community-share-stock-side .investment-community-share-chart-image {
+    width: 100%;
+    height: auto;
+}
+
+@media (max-width: 767px) {
+    .investment-workspace-header:has(.investment-holding-detail-content) {
+        grid-template-rows:
+            auto
+            minmax(max(var(--investment-overview-min-height), clamp(480px, 56dvh, 560px)), var(--investment-overview-track, 1fr))
+            var(--investment-section-resizer-size)
+            minmax(var(--investment-history-min-height), 1fr);
+        overflow-y: auto;
+    }
 }
