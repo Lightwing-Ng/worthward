@@ -1,7 +1,8 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.4.1
+ * Code version: v1.4.2
+ * - Fixed: Refresh splitter constraints after releasing the temporary view height.
  * - Changed: Stock details renders reconciled total-equity allocation percentages.
  * - Fixed: Price-hover exit restores the latest allocation snapshot.
  * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
@@ -13,6 +14,8 @@
  * - Fixed: Workbook validation refreshes the browser write session first.
  * - Added: Extracted from the Investment workspace composition root.
  */
+
+export const INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT = 'worthward:investment-view-surface-height-released';
 
 export function createInvestmentStockHistoryFilterRuntime(runtime) {
 function bindInvestmentEquityRangeControls(chartPoints = []) {
@@ -91,11 +94,19 @@ function getInvestmentSurfaceCappedHeight(height) {
 
 function cleanupInvestmentSurfaceHeight() {
         if (!runtime.investmentViewSurface) return;
-        runtime.investmentViewSurface.style.height = '';
-        runtime.investmentViewSurface.style.overflow = '';
+        const {style} = runtime.investmentViewSurface;
+        const wasHeightLocked = style.height !== '';
+        style.height = '';
+        style.overflow = '';
         if (runtime.state.investmentSurfaceCleanupTimer) {
             window.clearTimeout(runtime.state.investmentSurfaceCleanupTimer);
             runtime.state.investmentSurfaceCleanupTimer = null;
+        }
+        if (wasHeightLocked) {
+            runtime.investmentViewSurface.dispatchEvent(new Event(
+                INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
+                {bubbles: true},
+            ));
         }
         runtime.syncInvestmentShareActionsPosition();
     }

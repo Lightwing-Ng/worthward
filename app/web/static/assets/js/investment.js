@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.169.1
+ * Code version: v2.169.2
+ * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -108,7 +109,10 @@ import {
 import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.2';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.3.0';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.1.0';
-import {createInvestmentStockHistoryFilterRuntime} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.4.1';
+import {
+    createInvestmentStockHistoryFilterRuntime,
+    INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
+} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.4.2';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.0';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.3';
 
@@ -213,7 +217,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.169.1',
+    entry: 'v2.169.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -524,6 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sectionResizer: runtime.investmentSectionResizer,
             minVisibleRows: runtime.INVESTMENT_HISTORY_MIN_VISIBLE_ROWS,
             getChartInstance: () => runtime.state.investmentEquityChartInstance,
+            overviewMinimumChangeEvent: INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
         });
     };
         Object.assign(runtime, createInvestmentRuntimeConfig(runtime));

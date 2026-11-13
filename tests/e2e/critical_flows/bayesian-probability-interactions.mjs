@@ -1,4 +1,4 @@
-/* Code version: v1.1.3 */
+/* Code version: v1.1.4 */
 import {
     expect,
     test,
@@ -692,43 +692,51 @@ export async function exerciseBayesianProbabilityField(page, harness) {
     expect(maxRailSync.hoverLineAnchorDelta).toBeLessThanOrEqual(0.1);
 
     await expect(probabilityTooltip).toHaveClass(/is-visible/);
-    const interruptedReturnPromise = page.evaluate(() => new Promise((resolve, reject) => {
+    // Keep the pending result in the page so observer installation completes before the mouse moves.
+    const returnObservation = await page.evaluateHandle(() => {
         const stack = document.querySelector('#tradePriceChart')?.closest('.trade-chart-stack');
         const scrollPort = document.querySelector('[data-backtest-probability-scrollport]');
         if (!(stack instanceof HTMLElement) || !(scrollPort instanceof HTMLElement)) {
-            reject(new Error('The native probability scroll port is unavailable.'));
-            return;
+            throw new Error('The native probability scroll port is unavailable.');
         }
-        const timeoutId = window.setTimeout(() => {
-            observer.disconnect();
-            reject(new Error('The probability field did not enter its active return state.'));
-        }, 1_000);
-        const observer = new MutationObserver(() => {
-            const target = Number(stack.dataset.probabilityPanTarget || 0);
-            const previous = scrollPort.scrollLeft;
-            if (target > 0.01 || scrollPort.hidden || stack.scrollLeft <= 0 || previous <= 1) return;
-            const next = Math.max(1, Math.floor(previous / 2));
-            if (next >= previous) {
+        const result = new Promise((resolve) => {
+            const finish = (outcome) => {
                 observer.disconnect();
                 window.clearTimeout(timeoutId);
-                reject(new Error('The active return state has no smaller native rail position.'));
-                return;
-            }
-            observer.disconnect();
-            window.clearTimeout(timeoutId);
-            // This changes the browser-native scroll position. It deliberately
-            // does not construct or dispatch a synthetic scroll event.
-            scrollPort.scrollLeft = next;
-            resolve({next, previous, target});
+                resolve(outcome);
+            };
+            const observer = new MutationObserver(() => {
+                const target = Number(stack.dataset.probabilityPanTarget || 0);
+                const previous = scrollPort.scrollLeft;
+                if (target > 0.01 || scrollPort.hidden || stack.scrollLeft <= 0 || previous <= 1) return;
+                const next = Math.max(1, Math.floor(previous / 2));
+                if (next >= previous) {
+                    finish({error: 'The active return state has no smaller native rail position.'});
+                    return;
+                }
+                // The browser delivers the native scroll event after this position change.
+                scrollPort.scrollLeft = next;
+                finish({next, previous, target});
+            });
+            const timeoutId = window.setTimeout(() => {
+                finish({error: 'The probability field did not enter its active return state.'});
+            }, 1_000);
+            observer.observe(stack, {
+                attributes: true,
+                attributeFilter: ['data-probability-pan-target'],
+            });
         });
-        observer.observe(stack, {
-            attributes: true,
-            attributeFilter: ['data-probability-pan-target'],
-        });
-    }));
-    await page.mouse.move(8, 800);
-    const interruptedReturn = await interruptedReturnPromise;
+        return {result};
+    });
+    let interruptedReturn;
+    try {
+        await page.mouse.move(8, 800);
+        interruptedReturn = await returnObservation.evaluate(({result}) => result);
+    } finally {
+        await returnObservation.dispose();
+    }
     expect(interruptedReturn).not.toBeNull();
+    expect(interruptedReturn.error, interruptedReturn.error).toBeUndefined();
     expect(interruptedReturn.target).toBeLessThanOrEqual(0.01);
     expect(interruptedReturn.next).toBeLessThan(interruptedReturn.previous);
     await expect(probabilityTooltip).not.toHaveClass(/is-visible/);

@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.1.1 */
 import {
     expect,
     test,
@@ -151,7 +151,7 @@ test('exports the filtered Stock details scope as a standard XLSX workbook', asy
     expect(exportRequest.transactions[0].ledger_no).toBe(2);
 });
 
-test('uses Longbridge extended-hours quotes for the Stock details live position without animating metric-card chrome', async ({page}) => {
+test('uses Longbridge extended-hours quotes for inline Holdings charts without rolling price digits', async ({page}) => {
     await page.addInitScript(() => {
         const RealDate = Date;
         const fixedTimestamp = new RealDate('2026-07-20T21:30:00Z').valueOf();
@@ -221,6 +221,7 @@ test('uses Longbridge extended-hours quotes for the Stock details live position 
     const marker = page.locator('[data-investment-stock-details-live-marker]');
     await expect.poll(() => marker.evaluate((element) => !element.hidden)).toBe(true);
     const metricGrid = page.locator('.investment-stock-details-metrics');
+    await expect(metricGrid).toBeHidden();
     await expect(metricGrid).not.toHaveClass(/is-investment-realtime-pulse/);
     await expect(metricGrid.locator('.investment-stock-details-metric-card').first()).toHaveCSS('animation-name', 'none');
     await expect.poll(() => page.evaluate(() => Boolean(
@@ -249,70 +250,26 @@ test('uses Longbridge extended-hours quotes for the Stock details live position 
     await expect(lastPrice).toHaveAttribute('data-investment-live-number', '55.54');
     await expect(lastPrice).toHaveAttribute('data-investment-live-display', '55.54');
     await expect(lastPrice).not.toHaveAttribute('data-investment-live-animation-token', /.+/);
-    const liveMetricOverflow = await metricGrid.locator('[data-investment-live-field]').evaluateAll((nodes) => (
-        nodes.map((node) => {
-            const cardRect = node.closest('.investment-stock-details-metric-card')?.getBoundingClientRect();
-            const valueRect = node.getBoundingClientRect();
-            return cardRect ? Math.max(0, valueRect.right - cardRect.right) : Number.POSITIVE_INFINITY;
-        })
-    ));
-    expect(Math.max(...liveMetricOverflow)).toBeLessThanOrEqual(1);
-    await expect(lastPrice).not.toHaveAttribute('data-investment-live-reserve-width', /.+/);
-    await expect.poll(() => page.evaluate(() => (
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ))).toBe(false);
-    const freezeLiveDigitAnimations = () => page.evaluate(() => {
-        const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
-        window.__testNativeInvestmentRequestAnimationFrame = nativeRequestAnimationFrame;
-        window.__testPendingInvestmentAnimationFrames = [];
-        window.requestAnimationFrame = (callback) => {
-            window.__testPendingInvestmentAnimationFrames.push(callback);
-            return window.__testPendingInvestmentAnimationFrames.length;
-        };
-    });
-    const resumeLiveDigitAnimations = () => page.evaluate(() => {
-        const nativeRequestAnimationFrame = window.__testNativeInvestmentRequestAnimationFrame;
-        const pendingFrames = window.__testPendingInvestmentAnimationFrames || [];
-        if (typeof nativeRequestAnimationFrame === 'function') {
-            window.requestAnimationFrame = nativeRequestAnimationFrame;
-            pendingFrames.forEach((callback) => nativeRequestAnimationFrame(callback));
-        }
-        delete window.__testNativeInvestmentRequestAnimationFrame;
-        delete window.__testPendingInvestmentAnimationFrames;
-    });
+    await expect(holdingsLastPrice).toBeVisible();
+    await expect(holdingsLastPrice).toHaveAttribute('data-investment-live-number', '55.54');
     await expect.poll(() => page.evaluate(() => typeof window.__testTriggerInvestmentRealtimePoll)).toBe('function');
-    quotePrice = 56.54;
-    await freezeLiveDigitAnimations();
-    const risingQuoteResponse = page.waitForResponse((response) => (
-        response.url().includes('/api/investment/realtime-quotes')
-    ));
-    await page.evaluate(() => window.__testTriggerInvestmentRealtimePoll());
-    await risingQuoteResponse;
-    await expect(lastPrice).toHaveClass(/is-live-rise/);
-    await expect(lastPrice.locator('.investment-live-digit--rise .investment-live-digit-face--new').first())
-        .toHaveCSS('color', 'rgb(22, 163, 74)');
-    await expect(holdingsLastPrice).toHaveAttribute('data-investment-live-number', '56.54');
-    await expect(holdingsLastPrice).not.toHaveClass(/is-live-rise/);
-    await expect(holdingsLastPrice.locator('.investment-live-digit')).toHaveCount(0);
-    await expect(metricGrid.locator('.investment-stock-details-metric-card').first()).toHaveCSS('animation-name', 'none');
-    await resumeLiveDigitAnimations();
-    await expect(lastPrice).not.toHaveClass(/is-live-rise/);
 
-    quotePrice = 54.54;
-    await freezeLiveDigitAnimations();
-    const fallingQuoteResponse = page.waitForResponse((response) => (
-        response.url().includes('/api/investment/realtime-quotes')
-    ));
-    await page.evaluate(() => window.__testTriggerInvestmentRealtimePoll());
-    await fallingQuoteResponse;
-    await expect(lastPrice).toHaveClass(/is-live-fall/);
-    await expect(lastPrice.locator('.investment-live-digit--fall .investment-live-digit-face--new').first())
-        .toHaveCSS('color', 'rgb(255, 47, 146)');
-    await expect(holdingsLastPrice).toHaveAttribute('data-investment-live-number', '54.54');
-    await expect(holdingsLastPrice).not.toHaveClass(/is-live-fall/);
-    await expect(holdingsLastPrice.locator('.investment-live-digit')).toHaveCount(0);
-    await resumeLiveDigitAnimations();
-    await expect(lastPrice).not.toHaveClass(/is-live-fall/);
+    for (const [price, direction] of [[56.54, 'positive'], [54.54, 'negative']]) {
+        quotePrice = price;
+        const quoteResponse = page.waitForResponse((response) => (
+            response.url().includes('/api/investment/realtime-quotes')
+        ));
+        await page.evaluate(() => window.__testTriggerInvestmentRealtimePoll());
+        await quoteResponse;
+        for (const priceNode of [holdingsLastPrice, lastPrice]) {
+            await expect(priceNode).toHaveAttribute('data-investment-live-number', String(price));
+            await expect(priceNode).toHaveClass(new RegExp(`investment-holdings-value-${direction}`));
+            await expect(priceNode).not.toHaveClass(/is-live-(rise|fall)/);
+            await expect(priceNode.locator('.investment-live-digit')).toHaveCount(0);
+        }
+        await expect(metricGrid.locator('.investment-stock-details-metric-card').first())
+            .toHaveCSS('animation-name', 'none');
+    }
 
     quoteSource = 'yfinance';
     const secondSessionResponse = page.waitForResponse((response) => (
@@ -1020,6 +977,8 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     const segmentedMotherStyle = (selector) => page.locator(selector).evaluate((element) => {
         const computed = getComputedStyle(element);
         const firstOption = element.querySelector('.segmented-control-option');
+        const label = firstOption?.querySelector('input + span');
+        const labelStyle = label ? getComputedStyle(label) : null;
         return {
             sharedClasses: ['segmented-control', 'segmented-control--compact', 'investment-view-segmented']
                 .every((className) => element.classList.contains(className)),
@@ -1033,9 +992,6 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
                 borderRadius: computed.borderRadius,
                 backgroundColor: computed.backgroundColor,
                 boxShadow: computed.boxShadow,
-                fontSize: computed.fontSize,
-                fontWeight: computed.fontWeight,
-                lineHeight: computed.lineHeight,
                 overflow: computed.overflow,
                 pointerEvents: computed.pointerEvents,
             },
@@ -1043,8 +999,14 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
                 tagName: firstOption.tagName,
                 className: firstOption.className,
                 inputTagName: firstOption.querySelector('input')?.tagName || '',
-                labelTagName: firstOption.querySelector('input + span')?.tagName || '',
-                nestedLabelCount: firstOption.querySelector('input + span')?.children.length || 0,
+                labelTagName: label?.tagName || '',
+                nestedLabelCount: label?.children.length || 0,
+            } : null,
+            // The rail inherits its host typography. The painted label uses the shared control styles.
+            labelTypography: labelStyle ? {
+                fontFamily: labelStyle.fontFamily,
+                fontSize: labelStyle.fontSize,
+                lineHeight: labelStyle.lineHeight,
             } : null,
         };
     });
@@ -1059,6 +1021,8 @@ test('keeps Investment segmented effects un-clipped with concentric edge caps', 
     expect(viewOverflow).toBe('visible');
     expect(stockDetailsOverflow).toBe('auto hidden');
     expect(stockDetailsSegmentedMotherStyle.optionShape).toEqual(viewSegmentedMotherStyle.optionShape);
+    expect(stockDetailsSegmentedMotherStyle.labelTypography).not.toBeNull();
+    expect(stockDetailsSegmentedMotherStyle.labelTypography).toEqual(viewSegmentedMotherStyle.labelTypography);
     // The price chart stage is created a few frames after the panel is shown. The range pill
     // used to hide and re-show itself around that moment, which made its ready class an
     // accidental wait for the stage; wait for the stage itself.

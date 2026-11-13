@@ -1,4 +1,4 @@
-/* Code version: v1.6.0 */
+/* Code version: v1.6.1 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -643,9 +643,16 @@
     container-type: inline-size;
 }
 
-#investment_holdings_panel .investment-holdings-table,
+@property --investment-table-grid-unit {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 16px;
+}
+
+#investment_holdings_panel .investment-holdings-table-scroll,
+#investment_holdings_panel .investment-holdings-table:not([data-table-body]),
 #history_table_wrap .investment-ledger-table {
-    /* Bound the shared grid so identity columns absorb the remaining width. */
+    /* Resolve against the shell before the Holdings body inherits the length. */
     --investment-table-grid-unit: clamp(16px, 2cqi, 20px);
 }
 
