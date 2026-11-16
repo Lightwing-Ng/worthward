@@ -1,6 +1,7 @@
 """Investment import domain: hsbc reconciliation.
 
-Code version: v0.7.1
+Code version: v0.8.0
+- Added: Paste validation can project the matched payload into a read-only preview.
 - Fixed: Composite cash pastes retain hidden settlement postings so merges can
   reconcile older orders absent from the current visible Order Status page.
 - Fixed: Settlement repair uses bounded identity-matched fees and shared staged
@@ -2076,6 +2077,7 @@ def validate_hsbc_pasted_text(
     cash_account_text: str,
     dividend_action_loader: Callable[[set[str]], dict[str, list[dict[str, str]]]]
     | None = None,
+    build_preview: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Validate one HSBC paste capture without persisting ledger or evidence data."""
     portfolio_text = str(portfolio_text or "").strip()
@@ -2133,25 +2135,7 @@ def validate_hsbc_pasted_text(
         for currency in available_by_currency
         if currency in {"USD", "HKD", "CNH"}
     )
-    if "USD" in cash_currencies:
-        if not portfolio_text and not order_status_text:
-            payload = build_investment_payload_from_hsbc_pasted_text(
-                portfolio_text="",
-                order_status_text="",
-                cash_account_text=cash_account_text,
-                dividend_action_loader=dividend_action_loader,
-            )
-            return {
-                "ready": True,
-                "mode": "cash_only_usd",
-                "field_status": field_status,
-                "cash_currencies": cash_currencies,
-                "transaction_count": len(payload.get("transactions", [])),
-                "message": (
-                    "Validated the HSBC USD cash-only settlement refresh. "
-                    "Existing Portfolio holdings will be preserved during merge."
-                ),
-            }
+    if "USD" in cash_currencies and (portfolio_text or order_status_text):
         required_fields = [
             field_name
             for field_name, raw_text in (
@@ -2168,37 +2152,34 @@ def validate_hsbc_pasted_text(
                 "cash_currencies": cash_currencies,
                 "required_fields": required_fields,
             }
-        payload = build_investment_payload_from_hsbc_pasted_text(
-            portfolio_text=portfolio_text,
-            order_status_text=order_status_text,
-            cash_account_text=cash_account_text,
-            dividend_action_loader=dividend_action_loader,
+        mode = "usd_composite"
+        message = "Validated the HSBC USD cash, Portfolio, and Order Status snapshot."
+    elif "USD" in cash_currencies:
+        mode = "cash_only_usd"
+        message = (
+            "Validated the HSBC USD cash-only settlement refresh. "
+            "Existing Portfolio holdings will be preserved during merge."
         )
-        return {
-            "ready": True,
-            "mode": "usd_composite",
-            "field_status": field_status,
-            "cash_currencies": cash_currencies,
-            "transaction_count": len(payload.get("transactions", [])),
-            "message": "Validated the HSBC USD cash, Portfolio, and Order Status snapshot.",
-        }
-
-    if portfolio_text or order_status_text:
+    elif portfolio_text or order_status_text:
         raise ValueError(
             "HKD/CNH cash-only HSBC sync requires Portfolio and Order Status to be empty. "
             "Use HSBC statements for non-USD investment activity."
         )
+    else:
+        mode = "cash_only_non_usd"
+        message = "Validated the HSBC HKD/CNH cash-account snapshot."
     payload = build_investment_payload_from_hsbc_pasted_text(
-        portfolio_text="",
-        order_status_text="",
+        portfolio_text=portfolio_text,
+        order_status_text=order_status_text,
         cash_account_text=cash_account_text,
         dividend_action_loader=dividend_action_loader,
     )
     return {
         "ready": True,
-        "mode": "cash_only_non_usd",
+        "mode": mode,
         "field_status": field_status,
         "cash_currencies": cash_currencies,
         "transaction_count": len(payload.get("transactions", [])),
-        "message": "Validated the HSBC HKD/CNH cash-account snapshot.",
+        "message": message,
+        **({"preview": build_preview(payload)} if build_preview else {}),
     }

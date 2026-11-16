@@ -1,4 +1,4 @@
-"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.2.1."""
+"""HSBC credit-card parser evidence and direction boundaries. Code version: v0.3.0."""
 
 from collections import Counter
 from decimal import Decimal
@@ -90,17 +90,35 @@ def test_same_amount_identical_rows_retain_multiplicity():
     assert len({row["id"] for row in result["transactions"]}) == 2
 
 
-def test_explicit_posted_hkd_rebate_retains_identity_source_and_negative_liability():
-    description = "RETURN: SAMPLE REBATE Rebate CN"
+@pytest.mark.parametrize(
+    "description",
+    [
+        "RETURN: SAMPLE REBATE Rebate CN",
+        "RETURN: MastercardTravelmeitua Rebate HK",
+        "return:  MastercardTravelmeitua   rebate hk",
+    ],
+)
+def test_explicit_posted_hkd_rebate_retains_identity_source_and_negative_liability(
+    description,
+):
     text = hsbc_credit_card_text(transactions=_row(description, "12.50 HKD"))
     capture = parse_hsbc_credit_card_text(text)
     row = capture["transactions"][0]
     assert (row["kind"], row["status"], row["currency"]) == ("rebate", "posted", "HKD")
-    assert row["description"] == description
+    normalized_description = " ".join(description.split())
+    assert row["description"] == normalized_description
     assert row["amount"] == "12.50"
     assert row["liability_delta"] == "-12.50"
     identity = json.dumps(
-        [capture["account_id"], "1111", "2026-10-12", description.upper(), "rebate", "HKD", "12.50"],
+        [
+            capture["account_id"],
+            "1111",
+            "2026-10-12",
+            normalized_description.upper(),
+            "rebate",
+            "HKD",
+            "12.50",
+        ],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -118,6 +136,15 @@ def test_explicit_posted_hkd_rebate_retains_identity_source_and_negative_liabili
         _row("RETURN: SAMPLE REBATE Rebate CN", pending=True),
         _row("RETURN: SAMPLE REBATE Rebate CN", "12.50 CNY"),
         _row("RETURN: SAMPLE REBATE Rebate CN", "Amount out: 12.50 HKD"),
+        _row("RETURN: MastercardTravelmeitua Rebate CN"),
+        _row("RETURN: MastercardTravelmeituaExtra Rebate HK"),
+        _row("RETURN: MastercardTravelmeitua HK"),
+        _row("MastercardTravelmeitua Rebate HK"),
+        _row("RETURN: MastercardTravelmeitua Rebate HK REFUND"),
+        _row("RETURN: MastercardTravelmeitua Rebate HK REVERSAL"),
+        _row("RETURN: MastercardTravelmeitua Rebate HK", pending=True),
+        _row("RETURN: MastercardTravelmeitua Rebate HK", "12.50 CNY"),
+        _row("RETURN: MastercardTravelmeitua Rebate HK", "Amount out: 12.50 HKD"),
     ],
 )
 def test_unlabelled_returns_and_unposted_or_contradictory_rebates_fail_closed(transactions):

@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -91,19 +91,23 @@ APPLEPAY SAMPLE TRANSIT Shenzhen CN
 Download`;
 
 // Writes are always intercepted. One case exercises the isolated read-only preview.
-const parsedCard = () => ({
-    success: true, ready: true, source_sha256: 'a'.repeat(64),
-    account: {last4: '6789', name: 'HSBC Red Credit Card', currency: 'HKD'},
-    snapshot: {account_balance: '4850.50', current_amount_due: '0', minimum_payment: '0', payment_due_date: '2026-11-06', rewardcash_balance: '0'},
-    transactions: [
+const parsedCard = () => {
+    const transactions = [
         {transaction_date: '2026-10-13', card_last4: '6789', description: 'PAYMENT - THANK YOU', kind: 'repayment', status: 'posted', currency: 'HKD', amount: '3000'},
         {transaction_date: '2026-10-12', card_last4: '6789', description: 'APPLEPAY SAMPLE ELECTRONICS HONG KONG HK', kind: 'purchase', status: 'pending', currency: 'HKD', amount: '2450'},
         {transaction_date: '2026-10-12', card_last4: '6789', description: 'PAY w/RC SAMPLE ELECTRONICS HONG KONG HK', kind: 'rewardcash', status: 'posted', currency: 'HKD', amount: '25'},
         {transaction_date: '2026-10-11', card_last4: '6789', description: '<img src=x onerror=alert(1)>', kind: 'purchase', status: 'posted', currency: 'HKD', amount: '18.50'},
-    ],
-    summary: {posted_purchase_count: 1, posted_purchase_total: '18.50', repayment_count: 1, repayment_total: '3000', rewardcash_count: 1, rewardcash_total: '25', pending_count: 1, pending_total: '2450', added_count: 4, promoted_count: 0, duplicate_count: 0},
-    warnings: [],
-});
+    ];
+    return {
+        success: true, ready: true, source_sha256: 'a'.repeat(64),
+        account: {last4: '6789', name: 'HSBC Red Credit Card', currency: 'HKD'},
+        snapshot: {account_balance: '4850.50', current_amount_due: '0', minimum_payment: '0', payment_due_date: '2026-11-06', rewardcash_balance: '0'},
+        transactions,
+        preview_transactions: transactions,
+        summary: {posted_purchase_count: 1, posted_purchase_total: '18.50', repayment_count: 1, repayment_total: '3000', rewardcash_count: 1, rewardcash_total: '25', pending_count: 1, pending_total: '2450', added_count: 4, promoted_count: 0, duplicate_count: 0},
+        warnings: [],
+    };
+};
 const validCash = () => ({success: true, ready: true, mode: 'cash_only', field_status: {cash: true}, cash_currencies: ['HKD']});
 
 async function openAccountImport(page, width = 1280, url = '/trade/investment', height = 900, {realSession = false} = {}) {
@@ -202,7 +206,7 @@ test('native keyboard paste previews sales and pending CNY without a Clipboard A
     await openAccountImport(page, 1280, '/trade/investment', 900, {realSession: true});
     await pasteDisplayClipboard(page, '#hsbc_cash_account_display', expandedCardPage);
     await expect(page.locator('#hsbc_cash_account_text')).toHaveValue(expandedCardPage);
-    await expect(page.locator('#hsbc_credit_card_status')).toContainText('Preview ready. Nothing has been saved.');
+    await expect(page.locator('#hsbc_credit_card_status')).toContainText('Preview ready. Review the entries');
     await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
     await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(3);
     const rows = page.locator('#hsbc_credit_card_rows tr');
@@ -227,26 +231,44 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
     const calls = await guardRoutingRequests(page);
     const validations = [];
     const writes = [];
-    await page.route('**/api/investment/import', (route) => {
-        writes.push(route.request().url());
-        return route.abort();
-    });
     await page.route('**/api/investment/imports/hsbc-paste/validate', (route) => {
         const body = route.request().postDataJSON();
         validations.push(body);
+        const fields = {
+            cash: Boolean(body.cash_account_text),
+            portfolio: Boolean(body.portfolio_text),
+            order_status: Boolean(body.order_status_text),
+        };
+        if (fields.portfolio && !fields.order_status) {
+            return route.fulfill({json: {success: true, ready: false, mode: 'usd_composite', field_status: fields, cash_currencies: ['USD']}});
+        }
+        const composite = fields.portfolio && fields.order_status;
         return route.fulfill({json: {
-            ...validCash(),
-            field_status: {
-                cash: Boolean(body.cash_account_text),
-                portfolio: Boolean(body.portfolio_text),
-                order_status: Boolean(body.order_status_text),
+            success: true,
+            ready: true,
+            mode: composite ? 'usd_composite' : 'cash_only_usd',
+            field_status: fields,
+            cash_currencies: ['USD'],
+            preview: {
+                transactions: composite
+                    ? [{date: '2026-11-13', ticker: 'QQQI', description: 'Sample trade', type: 'buy', amount: '-94.25', currency: 'USD', quantity: '5', change: 'updated', settlement_date: '2026-11-16', settlement_amount: '-94.25'}]
+                    : [],
+                balances: [{account_type: 'SAVINGS', currency: 'USD', previous_amount: '1000', amount: '1250', date: '2026-11-16'}],
+                positions: composite ? [{ticker: 'QQQI', currency: 'USD', previous_quantity: '10', quantity: '15', previous_cost_price: '18.5', cost_price: '18.75'}] : [],
+                warnings: [],
             },
         }});
     });
     await openAccountImport(page);
+    await page.route('**/api/investment/transactions*', (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        writes.push(route.request().url());
+        return route.abort();
+    });
     await disableClipboardReader(page);
+    const usdSavings = completeCashPage.replace('HSBC HKD Savings', 'USD Savings').replace('1,250.00 HKD', '1,250.00 USD');
     const fields = [
-        ['#hsbc_cash_account_display', '#hsbc_cash_account_text', 'cash_account_text', completeCashPage],
+        ['#hsbc_cash_account_display', '#hsbc_cash_account_text', 'cash_account_text', usdSavings],
         ['#hsbc_portfolio_text_display', '#hsbc_portfolio_text', 'portfolio_text', 'Portfolio\nSample holdings capture'],
         ['#hsbc_order_status_display', '#hsbc_order_status_text', 'order_status_text', 'Order Status\nSample order capture'],
     ];
@@ -256,12 +278,41 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
         expected[key] = text;
         await expect(page.locator(source)).toHaveValue(text);
         await expect.poll(() => validations.at(-1)).toEqual({...expected});
-        await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+        const submit = page.locator('#investment_import_submit_button');
+        if (key === 'portfolio_text') {
+            await expect(submit).toBeDisabled();
+            await expect(page.locator('#hsbc_paste_preview')).toBeHidden();
+            continue;
+        }
+        await expect(submit).toBeEnabled();
+        await expect(page.locator('#hsbc_paste_preview_balances tr')).toHaveCount(1);
+        await expect(page.locator('#hsbc_paste_preview_balances tr')).toContainText('USD Savings');
+        await expect(page.locator('#hsbc_paste_preview_balances tr')).toContainText('USD 1,250.00');
+        await expect(page.locator('#hsbc_paste_preview_transactions tr')).toHaveCount(key === 'order_status_text' ? 1 : 0);
+        await expect(page.locator('#hsbc_paste_preview_positions tr')).toHaveCount(key === 'order_status_text' ? 1 : 0);
     }
+    await expect(page.locator('#hsbc_paste_preview_transactions tr')).toContainText('Sample trade');
+    await expect(page.locator('#hsbc_paste_preview_transactions tr')).toContainText('USD -94.25 settled');
+    await expect(page.locator('#hsbc_paste_preview_positions tr')).toContainText('Shares 10 → 15');
     for (const [, source, , text] of fields) await expect(page.locator(source)).toHaveValue(text);
     await expect(page.locator('#hsbc_credit_card_panel')).toBeHidden();
     expect(calls).toEqual({cash: 0, card: 0, preview: 0});
     expect(writes).toEqual([]);
+});
+
+test('an unchanged HSBC cash capture shows a summary and keeps sync available', async ({page}) => {
+    const calls = await guardRoutingRequests(page);
+    await page.route('**/api/investment/imports/hsbc-paste/validate', (route) => route.fulfill({json: {
+        ...validCash(),
+        preview: {transactions: [], balances: [], positions: [], warnings: []},
+    }}));
+    await openAccountImport(page, 390, '/trade/investment?view=holdings');
+    await pasteAccountClipboard(page, completeCashPage.replace('HSBC HKD Savings', 'HKD Current'));
+    const preview = page.getByRole('region', {name: 'HSBC sync preview'});
+    await expect(preview.getByRole('status')).toContainText('No changes to transactions, cash balances, or holdings.');
+    await expect(preview.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('button', {name: 'Sync now'})).toBeEnabled();
+    expect(calls).toEqual({cash: 0, card: 0, preview: 0});
 });
 
 for (const [label, text, status] of [
@@ -303,6 +354,7 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     const duplicateResult = () => {
         const result = parsedCard();
         result.source_already_imported = true;
+        result.preview_transactions = [];
         result.summary = {...result.summary, added_count: 0, promoted_count: 0, duplicate_count: 4};
         return result;
     };
@@ -339,10 +391,11 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     await expect(submit).toBeDisabled();
     await expect(page.locator('#hsbc_credit_card_results')).toBeHidden();
     releasePreview();
-    await expect(status).toContainText('Preview ready. Nothing has been saved.');
-    await expect(status).toContainText('4 captured transactions.');
-    await expect(status).toContainText('0 added, 0 updated, 4 duplicates.');
-    await expect(status).toContainText('select Import now');
+    await expect(status).toContainText('Preview ready. No transaction changes.');
+    await expect(status).toContainText('4 already saved.');
+    await expect(status).toContainText('Select Import now to save the capture.');
+    await expect(page.locator('#hsbc_credit_card_results')).toBeHidden();
+    await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(0);
     await expect(note).toHaveText(await status.textContent());
     await expect(icon).not.toHaveClass(/suggestion-loading-spinner/);
     await expect(submit).toBeEnabled();
@@ -381,7 +434,10 @@ for (const width of [1280, 390]) {
         await page.route('**/api/credit-cards/hsbc/preview', (route) => {
             previews += 1;
             expect(route.request().postDataJSON()).toEqual({text: completeCardPage});
-            return route.fulfill({json: parsedCard()});
+            const result = parsedCard();
+            result.preview_transactions = result.transactions.slice(1);
+            Object.assign(result.summary, {added_count: 3, duplicate_count: 1});
+            return route.fulfill({json: result});
         });
         await openAccountImport(page, width, STOCK_DETAILS_URL);
         await expect(page.locator('#hsbc_credit_card_panel')).toBeHidden();
@@ -392,13 +448,14 @@ for (const width of [1280, 390]) {
         await expect(page.locator('#hsbc_credit_card_preview_button')).toHaveCount(0);
         await expect(page.locator('#hsbc_credit_card_saved_button')).toHaveCount(0);
         await expect(page.locator('#hsbc_credit_card_summary')).toHaveCount(0);
-        await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(4);
-        await expect(page.locator('#hsbc_credit_card_rows tr').nth(0)).toContainText('Repayment');
-        await expect(page.locator('#hsbc_credit_card_rows tr').nth(1)).toContainText('Pending');
-        await expect(page.locator('#hsbc_credit_card_rows tr').nth(2)).toContainText('RewardCash');
-        await expect(page.locator('#hsbc_credit_card_rows tr').nth(3)).toContainText('Purchase');
+        await expect(page.locator('#hsbc_credit_card_caption')).toHaveText('Transaction changes');
+        await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(3);
+        await expect(page.locator('#hsbc_credit_card_rows')).not.toContainText('Repayment');
+        await expect(page.locator('#hsbc_credit_card_rows tr').nth(0)).toContainText('Pending');
+        await expect(page.locator('#hsbc_credit_card_rows tr').nth(1)).toContainText('RewardCash');
+        await expect(page.locator('#hsbc_credit_card_rows tr').nth(2)).toContainText('Purchase');
         await expect(page.locator('#hsbc_credit_card_rows img')).toHaveCount(0);
-        await expect(page.locator('#hsbc_credit_card_status')).toContainText('Nothing has been saved');
+        await expect(page.locator('#hsbc_credit_card_status')).toContainText('1 already saved.');
         await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
         expect(previews).toBe(1);
         expect(calls).toEqual({cash: 0, card: 0, preview: 0});
@@ -702,7 +759,15 @@ test('a stale cash response cannot authorize a newly pasted card', async ({page}
     await page.route('**/api/investment/imports/hsbc-paste/validate', async (route) => {
         received();
         await responseAllowed;
-        await route.fulfill({json: validCash()}).catch(() => {});
+        await route.fulfill({json: {
+            ...validCash(),
+            preview: {
+                transactions: [],
+                balances: [{account_type: 'CURRENT', currency: 'HKD', amount: '1250'}],
+                positions: [],
+                warnings: [],
+            },
+        }}).catch(() => {});
         completed();
     });
     await openAccountImport(page);
@@ -717,6 +782,7 @@ test('a stale cash response cannot authorize a newly pasted card', async ({page}
     await expect(page.locator('#hsbc_cash_account_display')).not.toHaveValue(/Checking/);
     await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
     await expect(page.locator('#hsbc_credit_card_results')).toBeHidden();
+    await expect(page.locator('#hsbc_paste_preview')).toBeHidden();
     expect(calls.card).toBe(0);
     releaseCard();
     await expect(page.locator('#investment_import_submit_button')).toBeEnabled();

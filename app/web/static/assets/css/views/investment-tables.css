@@ -1,4 +1,4 @@
-/* Code version: v1.6.1 */
+/* Code version: v1.6.2 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -834,7 +834,7 @@
 .investment-holdings-summary-metrics {
     display: grid;
     grid-template-columns: 105px minmax(0, 1fr) var(--investment-holdings-allocation-badge-inline-size);
-    align-items: end;
+    align-items: baseline;
     column-gap: 6px;
     row-gap: 2px;
     flex: 0 0 auto;
@@ -851,6 +851,11 @@
     opacity: 1;
     text-align: left;
     white-space: nowrap;
+}
+
+.investment-holdings-summary-metric-row .investment-live-value {
+    /* Expose the numeric text baseline to the summary layout. */
+    contain: style;
 }
 
 .investment-holdings-summary-metric-row > [data-investment-live-field] {

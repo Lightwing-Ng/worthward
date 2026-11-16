@@ -1,6 +1,7 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.3.1
+Code version: v1.4.0
+- Added: Preview account activity changes and rows that need review.
 - Fixed: Source-labeled posted HKD rebates remain readable with exact liability evidence.
 - Added: Pending CNY purchase evidence and currency-separated pending totals.
 - Fixed: Expanded page details retain source-backed metadata on duplicate capture.
@@ -538,14 +539,26 @@ def _merge_capture(
         for row in incoming
         if row["id"] not in matches
     }
-    ambiguous = any(candidates.values()) or any(
-        _cross_date_match(left, right)
+    review_ids = {
+        row_id for row_id, matching_keys in candidates.items() if matching_keys
+    }
+    review_ids.update(
+        row_id
         for index, left in enumerate(incoming)
         for right in incoming[index + 1 :]
+        if _cross_date_match(left, right)
+        for row_id in (left["id"], right["id"])
     )
+    ambiguous = bool(review_ids)
     counts = {"added_count": 0, "promoted_count": 0, "duplicate_count": 0}
+    preview_rows: dict[str, dict[str, Any]] = {}
     warnings = list(capture.get("warnings", []))
     if ambiguous:
+        preview_rows = {
+            row["id"]: _public_transaction(row)
+            for row in incoming
+            if row["id"] in review_ids
+        }
         warnings.append(
             "Pending and posted card transactions on different dates may refer to the same purchase. A matching merchant and amount cannot prove this without a bank transaction reference. Review the original statements before importing; no records were committed."
         )
@@ -564,8 +577,10 @@ def _merge_capture(
                     ),
                 }
                 counts["added_count"] += 1
+                preview_rows[row["id"]] = _public_transaction(merged["transactions"][row["id"]])
                 continue
             old = merged["transactions"][key]
+            previous = _public_transaction(old)
             if row["id"] not in old["capture_ids"]:
                 old["capture_ids"].append(row["id"])
             if digest not in old["source_sha256s"]:
@@ -602,6 +617,9 @@ def _merge_capture(
                     # optional details that no retained source contains together.
                     old.update({**row, "id": key})
                 counts["duplicate_count"] += 1
+            updated = _public_transaction(old)
+            if updated != previous:
+                preview_rows[key] = updated
         if digest not in merged["sources"]:
             captured_at = datetime.now(timezone.utc).isoformat()
             merged["sources"][digest] = {
@@ -670,6 +688,7 @@ def _merge_capture(
         .get(account_id, {})
         .get("captured_at"),
         "transactions": [_public_transaction(row) for row in incoming],
+        "preview_transactions": list(preview_rows.values()),
         "merged_transactions": [_public_transaction(row) for row in rows],
         "capture_summary": _summary(incoming),
         "summary": {**_summary(rows), **counts},

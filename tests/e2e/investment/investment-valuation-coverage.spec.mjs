@@ -1,4 +1,4 @@
-/* Code version: v1.0.6 */
+/* Code version: v1.0.7 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
@@ -95,6 +95,56 @@ test('available FX restores complete Holdings valuation', async ({page}) => {
     const holdings = page.locator('#investment_holdings_panel');
     await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('10,110.00');
     await expect(holdings).not.toContainText('Partial · total unavailable');
+});
+
+test('Holdings summary shares text baselines for inline labels and split amounts', async ({page}) => {
+    await page.setViewportSize({width: 1099, height: 1216});
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await loadHoldings(page, {fx: {HKD: {dates: ['2026-01-02'], values: {'2026-01-02': 10}}}});
+    const toggle = page.locator('#sidebar_toggle');
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const metrics = page.locator('#investment_holdings_panel .investment-holdings-summary-metric-row');
+    await expect(metrics).toHaveCount(4);
+    await page.evaluate(() => document.fonts.ready);
+
+    for (const width of [1099, 1440]) {
+        await page.setViewportSize({width, height: 1216});
+        const rows = await metrics.evaluateAll((elements) => {
+            const textBaseline = (element) => {
+                const text = [...element.childNodes].find((child) => child.nodeType === Node.TEXT_NODE);
+                const content = document.createElement('span');
+                const marker = document.createElement('span');
+                marker.style.cssText = 'display: inline-block; width: 0; height: 0; vertical-align: baseline;';
+                text.before(content);
+                content.append(text, marker);
+                const baseline = marker.getBoundingClientRect().top;
+                content.before(text);
+                content.remove();
+                return baseline;
+            };
+            return elements.map((row) => {
+                const label = row.querySelector('.investment-holdings-summary-metric-label');
+                const value = row.querySelector('[data-investment-live-field]');
+                const major = value.querySelector('.workspace-metric-value-major');
+                const minor = value.querySelector('.workspace-metric-value-minor');
+                const labelRect = label.getBoundingClientRect();
+                const valueRect = value.getBoundingClientRect();
+                const baseline = textBaseline(major);
+                return {
+                    label: label.textContent,
+                    inline: labelRect.bottom > valueRect.top && valueRect.bottom > labelRect.top,
+                    labelOffset: Math.abs(textBaseline(label) - baseline),
+                    decimalOffset: Math.abs(textBaseline(minor) - baseline),
+                };
+            });
+        });
+        if (width === 1440) expect(rows.every(({inline}) => inline)).toBe(true);
+        for (const {label, inline, labelOffset, decimalOffset} of rows) {
+            if (inline) expect(labelOffset, `${label} label baseline at ${width}px`).toBeLessThanOrEqual(1);
+            expect(decimalOffset, `${label} decimal baseline at ${width}px`).toBeLessThanOrEqual(1);
+        }
+    }
 });
 
 test('stale market FX still withholds current Holdings cash and equity', async ({page}) => {

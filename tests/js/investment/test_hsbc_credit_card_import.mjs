@@ -1,4 +1,4 @@
-/* Code version: v1.5.1 */
+/* Code version: v1.5.2 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -50,14 +50,18 @@ class Element {
     appendChild(child) { this.children.push(child); }
     replaceChildren() { this.children = []; }
 }
-const fixture = () => ({
-    success: true, ready: true, source_sha256: 'a'.repeat(64),
-    account: {last4: '6789', name: 'HSBC Red Credit Card', currency: 'HKD'},
-    snapshot: {account_balance: '4850.50', current_amount_due: '0', minimum_payment: '0', payment_due_date: '2026-11-06', rewardcash_balance: '0'},
-    transactions: [{transaction_date: '2026-10-12', card_last4: '6789', description: '<img src=x onerror=alert(1)>', kind: 'purchase', status: 'pending', amount: '2450', currency: 'HKD'}],
-    summary: {posted_purchase_count: 0, posted_purchase_total: '0', repayment_count: 0, repayment_total: '0', rewardcash_count: 0, rewardcash_total: '0', pending_count: 1, pending_total: '2450', added_count: 1, promoted_count: 0, duplicate_count: 0},
-    warnings: [],
-});
+const fixture = () => {
+    const transactions = [{transaction_date: '2026-10-12', card_last4: '6789', description: '<img src=x onerror=alert(1)>', kind: 'purchase', status: 'pending', amount: '2450', currency: 'HKD'}];
+    return {
+        success: true, ready: true, source_sha256: 'a'.repeat(64),
+        account: {last4: '6789', name: 'HSBC Red Credit Card', currency: 'HKD'},
+        snapshot: {account_balance: '4850.50', current_amount_due: '0', minimum_payment: '0', payment_due_date: '2026-11-06', rewardcash_balance: '0'},
+        transactions,
+        preview_transactions: transactions,
+        summary: {posted_purchase_count: 0, posted_purchase_total: '0', repayment_count: 0, repayment_total: '0', rewardcash_count: 0, rewardcash_total: '0', pending_count: 1, pending_total: '2450', added_count: 1, promoted_count: 0, duplicate_count: 0},
+        warnings: [],
+    };
+};
 const response = (value) => ({ok: true, json: async () => value});
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return {promise, resolve}; };
 const settle = () => new Promise(setImmediate);
@@ -128,7 +132,10 @@ test('formats dates, amounts, and unavailable values without coercing missing da
 
 test('complete shared account text previews automatically without an import request', async (t) => {
     const requests = [];
-    const {runtime, elements} = setup(t, async (url, options) => { requests.push({url, options}); return response(fixture()); });
+    const result = fixture();
+    result.transactions = [...result.transactions, {...result.transactions[0], description: 'Previously imported'}];
+    result.summary.duplicate_count = 1;
+    const {runtime, elements} = setup(t, async (url, options) => { requests.push({url, options}); return response(result); });
     assert.equal(runtime.mode, 'paste');
     assert.equal(runtime.isHsbcCreditCardInput(), true);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
@@ -138,12 +145,14 @@ test('complete shared account text previews automatically without an import requ
     assert.equal(requests[0].url, '/api/credit-cards/hsbc/preview');
     assert.deepEqual(JSON.parse(requests[0].options.body), {text: cardPage});
     assert.equal(requests[0].options.headers['X-CSRF-Token'], 'test-token');
-    const cells = elements.get('hsbc_credit_card_rows').children[0].children;
+    const rows = elements.get('hsbc_credit_card_rows').children;
+    assert.equal(rows.length, 1);
+    const cells = rows[0].children;
     assert.equal(cells[2].textContent, '<img src=x onerror=alert(1)>');
     assert.equal(cells[2].children.length, 0);
     assert.equal(cells[4].textContent, 'Pending');
     assert.equal(cells[5].textContent, 'HKD 2,450.00');
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Review the entries/);
     for (const removedId of ['hsbc_credit_card_preview_button', 'hsbc_credit_card_saved_button', 'hsbc_credit_card_summary']) {
         assert.equal(elements.has(removedId), false);
     }
@@ -157,17 +166,19 @@ test('pending preview reports progress and successful duplicate preview gives an
     assert.equal(initial.phase, 'previewing');
     assert.equal(initial.validationState, 'pending');
     assert.match(initial.summaryLabel, /preview/i);
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Previewing/);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Previewing credit-card activity/);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     await settle();
-    pending.resolve(response({...fixture(), summary: {...fixture().summary, added_count: 0, duplicate_count: 1}}));
+    pending.resolve(response({...fixture(), preview_transactions: [], summary: {...fixture().summary, added_count: 0, duplicate_count: 1}}));
     await settle();
     const ready = runtime.getHsbcCreditCardFeedback();
     assert.equal(ready.phase, 'ready');
     assert.equal(ready.validationState, 'valid');
-    assert.match(ready.message, /^Preview ready\. Nothing has been saved\./);
+    assert.match(ready.message, /^Preview ready\. No transaction changes\./);
     assert.match(ready.message, /Import now/);
     assert.match(ready.message, /1.*(?:duplicate|already saved)/i);
+    assert.equal(elements.get('hsbc_credit_card_results').hidden, true);
+    assert.equal(elements.get('hsbc_credit_card_rows').children.length, 0);
     assert.equal(elements.get('investment_import_note').textContent, ready.message);
     assert.equal(runtime.isHsbcCreditCardReady(), true);
     assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview']);
@@ -475,7 +486,7 @@ test('new card text entered during a commit previews afterward without another w
     await settle();
     assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import', '/api/credit-cards/hsbc/preview']);
     assert.equal(runtime.isHsbcCreditCardReady(), true);
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Nothing has been saved/);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Preview ready/);
     assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
     assert.equal(runtime.rewardViewRefreshes, 0);

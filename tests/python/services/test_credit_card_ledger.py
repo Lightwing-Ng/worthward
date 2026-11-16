@@ -1,6 +1,8 @@
 """Isolated HSBC credit-card persistence and reconciliation contracts.
 
-Code version: v1.1.1
+Code version: v1.1.3
+- Added: Named Mastercard rebate parsing and replay coverage.
+- Added: Preview coverage for changed rows and transactions requiring review.
 - Added: Foreign pending-currency isolation and expanded-detail provenance coverage.
 - Added: Preview isolation, replay, conservative reconciliation, concurrency,
   corruption handling, atomic failure, and browser-safe readback coverage.
@@ -117,6 +119,7 @@ def test_preview_never_creates_store_parent_or_lock(isolated: Path) -> None:
     result = ledger.preview_hsbc_credit_card_import(_capture(), isolated)
     assert result["ready"] is True
     assert result["summary"]["added_count"] == 1
+    assert result["preview_transactions"] == result["transactions"]
     assert not isolated.parent.exists()
 
 
@@ -124,8 +127,12 @@ def test_commit_readback_replay_and_private_evidence(isolated: Path) -> None:
     text = _capture()
     result = ledger.commit_hsbc_credit_card_import(text, isolated)
     before = isolated.read_bytes()
+    preview = ledger.preview_hsbc_credit_card_import(text, isolated)
     repeated = ledger.commit_hsbc_credit_card_import(text, isolated)
     assert result["committed"] is True
+    assert preview["summary"]["duplicate_count"] == 1
+    assert len(preview["transactions"]) == 1
+    assert preview["preview_transactions"] == []
     assert repeated["summary"]["duplicate_count"] == 1
     assert repeated["summary"]["added_count"] == 0
     assert isolated.read_bytes() == before
@@ -156,13 +163,23 @@ def test_reordered_and_overlapping_captures_keep_occurrence_multiplicity(
     assert reversed_result["summary"]["duplicate_count"] == 2
     assert subset_result["summary"]["posted_purchase_total"] == "20.00"
     assert subset_result["capture_summary"]["posted_purchase_count"] == 1
+    third = _row(occurrence=3)
+    mixed = ledger.preview_hsbc_credit_card_import(
+        _capture([first, third, second]), isolated
+    )
+    assert [row["id"] for row in mixed["preview_transactions"]] == [third["id"]]
+    assert mixed["summary"]["duplicate_count"] == 2
 
 
 def test_same_day_pending_promotes_once_without_downgrade(isolated: Path) -> None:
     pending, posted = _capture([_row(status="pending")]), _capture([_row()])
     ledger.commit_hsbc_credit_card_import(pending, isolated)
+    preview = ledger.preview_hsbc_credit_card_import(posted, isolated)
     promotion = ledger.commit_hsbc_credit_card_import(posted, isolated)
+    replay_preview = ledger.preview_hsbc_credit_card_import(pending, isolated)
     replay = ledger.commit_hsbc_credit_card_import(pending, isolated)
+    assert [row["status"] for row in preview["preview_transactions"]] == ["posted"]
+    assert replay_preview["preview_transactions"] == []
     assert promotion["summary"]["promoted_count"] == 1
     assert promotion["summary"]["pending_count"] == 0
     assert replay["summary"]["posted_purchase_total"] == "10.00"
@@ -174,23 +191,23 @@ def test_same_day_pending_promotes_once_without_downgrade(isolated: Path) -> Non
 def test_even_unique_cross_date_match_requires_review_in_either_order(
     isolated: Path, reverse: bool
 ) -> None:
-    pending = _capture([_row(day="2026-10-10", status="pending")])
-    posted = _capture([_row(day="2026-10-13")])
+    pending = _row(day="2026-10-10", status="pending")
+    posted = _row(day="2026-10-13")
+    duplicate = _row("5.00")
+    unrelated = _row("6.00")
     first, second = (posted, pending) if reverse else (pending, posted)
-    ledger.commit_hsbc_credit_card_import(first, isolated)
+    ledger.commit_hsbc_credit_card_import(_capture([first, duplicate]), isolated)
     before = isolated.read_bytes()
-    result = ledger.commit_hsbc_credit_card_import(second, isolated)
+    capture = _capture([duplicate, second, unrelated])
+    preview = ledger.preview_hsbc_credit_card_import(capture, isolated)
+    result = ledger.commit_hsbc_credit_card_import(capture, isolated)
     assert result["ready"] is False
     assert result["review_required"] is True
+    assert [row["id"] for row in preview["preview_transactions"]] == [second["id"]]
     assert result["summary"]["promoted_count"] == 0
     assert isolated.read_bytes() == before
-    assert len(ledger.load_credit_card_ledger(isolated)["transactions"]) == 1
-    assert (
-        ledger.commit_hsbc_credit_card_import(second, isolated)["summary"][
-            "added_count"
-        ]
-        == 0
-    )
+    assert len(ledger.load_credit_card_ledger(isolated)["transactions"]) == 2
+    assert result["summary"]["added_count"] == 0
 
 
 @pytest.mark.parametrize("posted_day", ["2026-10-09", "2026-10-18"])
@@ -247,6 +264,12 @@ def test_snapshot_capture_order_does_not_use_transaction_date(isolated: Path) ->
     assert replay["capture_snapshot"]["account_balance"] == "100.00"
     assert replay["snapshot"]["account_balance"] == "200.00"
     assert replay["merged_snapshot"]["account_balance"] == "200.00"
+    snapshot_only = ledger.preview_hsbc_credit_card_import(
+        _capture([_row(day="2026-10-01")], balance="300.00"), isolated
+    )
+    assert snapshot_only["ready"] is True
+    assert snapshot_only["preview_transactions"] == []
+    assert snapshot_only["merged_snapshot"]["account_balance"] == "300.00"
 
 
 def test_repayment_rewardcash_and_pending_are_separate(isolated: Path) -> None:
@@ -405,15 +428,15 @@ def test_cross_date_match_cannot_reuse_an_exact_match(isolated: Path) -> None:
 def test_cross_date_ambiguity_inside_first_capture_blocks_store_creation(
     isolated: Path,
 ) -> None:
-    result = ledger.commit_hsbc_credit_card_import(
-        _capture(
-            [
-                _row(day="2026-10-10", status="pending"),
-                _row(day="2026-10-12"),
-            ]
-        ),
-        isolated,
-    )
+    pending = _row(day="2026-10-10", status="pending")
+    posted = _row(day="2026-10-12")
+    capture = _capture([pending, _row("20.00"), posted])
+    preview = ledger.preview_hsbc_credit_card_import(capture, isolated)
+    assert [row["id"] for row in preview["preview_transactions"]] == [
+        pending["id"],
+        posted["id"],
+    ]
+    result = ledger.commit_hsbc_credit_card_import(capture, isolated)
     assert result["ready"] is False
     assert not isolated.exists()
 
@@ -516,6 +539,44 @@ def test_source_labelled_posted_rebate_retains_exact_liability(isolated: Path) -
     assert isolated.read_bytes() == before
 
 
+def test_named_bank_rebate_source_round_trip_and_replay(tmp_path: Path) -> None:
+    from tests.factories.hsbc_credit_card import hsbc_credit_card_text
+
+    description = "RETURN: MastercardTravelmeitua Rebate HK"
+    text = hsbc_credit_card_text(
+        transactions=f"12 Oct 2026\nCard ending in 1111\n{description}\n12.50 HKD"
+    )
+    path = tmp_path / "named-rebate" / "credit_cards.sqlite3"
+    preview = ledger.preview_hsbc_credit_card_import(text, path)
+    assert preview["ready"] is True
+    assert preview["summary"]["added_count"] == 1
+    assert preview["preview_transactions"] == preview["transactions"]
+    assert not path.parent.exists()
+
+    result = ledger.commit_hsbc_credit_card_import(text, path)
+    assert result["committed"] is True
+    before_replay = path.read_bytes()
+    public = ledger.read_credit_card_ledger(path)
+    assert len(public["transactions"]) == 1
+    saved = public["transactions"][0]
+    assert saved["description"] == description
+    assert saved["kind"] == "rebate"
+    assert saved["status"] == "posted"
+    assert saved["liability_delta"] == "-12.50"
+    stored = ledger.load_credit_card_ledger(path)
+    assert len(stored["sources"]) == 1
+    source = stored["sources"][hashlib.sha256(text.encode()).hexdigest()]
+    assert source["text"] == text
+
+    replay = ledger.commit_hsbc_credit_card_import(text, path)
+    assert replay["summary"]["added_count"] == 0
+    assert replay["summary"]["duplicate_count"] == 1
+    assert replay["preview_transactions"] == []
+    assert replay["source_already_imported"] is True
+    assert ledger.read_credit_card_ledger(path)["transactions"] == [saved]
+    assert path.read_bytes() == before_replay
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -548,11 +609,16 @@ def test_expanded_duplicate_enriches_one_source_backed_row_without_losing_aliase
     collapsed = _capture([row])
     expanded = _capture([{**row, **details}])
     ledger.commit_hsbc_credit_card_import(collapsed, isolated)
+    preview = ledger.preview_hsbc_credit_card_import(expanded, isolated)
     result = ledger.commit_hsbc_credit_card_import(expanded, isolated)
     assert result["summary"]["duplicate_count"] == 1
     assert result["summary"]["added_count"] == 0
     public = ledger.read_credit_card_ledger(isolated)["transactions"]
     assert len(public) == 1
+    assert preview["preview_transactions"] == public
+    assert ledger.preview_hsbc_credit_card_import(expanded, isolated)[
+        "preview_transactions"
+    ] == []
     assert all(public[0][field] == value for field, value in details.items())
     assert public[0]["post_dates"] == ["2026-10-13"]
     before = isolated.read_bytes()

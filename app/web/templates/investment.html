@@ -1,4 +1,5 @@
-{# Code version: v1.83.4
+{# Code version: v1.84.0
+   Added: Shows pending changes in HSBC clipboard previews.
    Fixed: Synchronizes Investment module cache versions after boundary extraction.
    Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
    Fixed: Loads personal chip bars with uniform vertical thickness.
@@ -706,7 +707,7 @@
                                                 <span class="investment-import-help-step">1. Sign in to HSBC Online Banking.</span>
                                                 <span class="investment-import-help-step">2. Open a cash account or a credit card.</span>
                                                 <span class="investment-import-help-step">3. Copy the full page, including account number, balances, transactions, dates, and any Pending labels.</span>
-                                                <span class="investment-import-help-step">4. Paste here. Credit cards are previewed automatically before import; keep them separate from cash pages. Cash-only captures can sync on their own; use Portfolio and Order Status below when refreshing holdings too. HSBC CNY cash is stored as CNH.</span>
+                                                <span class="investment-import-help-step">4. Paste here to preview changes. Keep credit-card pages separate from cash pages. Cash-only captures can sync on their own. Use Portfolio and Order Status below to refresh holdings. HSBC CNY cash is stored as CNH.</span>
                                             </span>
                                         </span>
                                     </label>
@@ -744,7 +745,7 @@
                                             <div id="hsbc_credit_card_results" hidden>
                                                 <div class="hsbc-credit-card-table-wrap" role="region" aria-label="Credit-card transactions">
                                                     <table class="settings-table hsbc-credit-card-table" aria-label="HSBC credit-card activity">
-                                                        <caption id="hsbc_credit_card_caption">Captured transactions</caption>
+                                                        <caption id="hsbc_credit_card_caption">Transaction changes</caption>
                                                         <colgroup>
                                                             <col style="width: 14%;">
                                                             <col style="width: 10%;">
@@ -851,6 +852,27 @@
                                               hidden
                                               spellcheck="false"></textarea>
                                 </div>
+                                <section id="hsbc_paste_preview" class="settings-table-wrap" aria-label="HSBC sync preview" hidden>
+                                    <p id="hsbc_paste_preview_status" class="settings-service-note" role="status"></p>
+                                    <table class="settings-table" hidden>
+                                        <caption>Transaction changes</caption>
+                                        <colgroup><col style="width: 19%;"><col style="width: 39%;"><col style="width: 17%;"><col style="width: 25%;"></colgroup>
+                                        <thead><tr><th scope="col">Date</th><th scope="col">Activity</th><th scope="col">Change</th><th scope="col">Amount</th></tr></thead>
+                                        <tbody id="hsbc_paste_preview_transactions"></tbody>
+                                    </table>
+                                    <table class="settings-table" hidden>
+                                        <caption>Cash balance changes</caption>
+                                        <thead><tr><th scope="col">Account</th><th scope="col">Date</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead>
+                                        <tbody id="hsbc_paste_preview_balances"></tbody>
+                                    </table>
+                                    <table class="settings-table" hidden>
+                                        <caption>Holding changes</caption>
+                                        <colgroup><col style="width: 22%;"><col style="width: 78%;"></colgroup>
+                                        <thead><tr><th scope="col">Ticker</th><th scope="col">Changes</th></tr></thead>
+                                        <tbody id="hsbc_paste_preview_positions"></tbody>
+                                    </table>
+                                    <ul id="hsbc_paste_preview_warnings" class="settings-service-note" hidden></ul>
+                                </section>
                                 </div>
                                 <div data-hsbc-import-mode-panel="statement_pdf" hidden>
                                     <div class="investment-import-field investment-import-bridge-field investment-import-plain-field">
@@ -965,5 +987,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.169.2') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.170.0') }}"></script>
 {% endblock %}
