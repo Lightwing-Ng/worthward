@@ -30,5 +30,5 @@ torch==2.15.0
 # Development and quality dependencies pinned for the supported runtime and quality gate.
 pytest==9.2.0
 pytest-cov==7.1.0
-ruff==0.16.10
+ruff==0.17.4
 playwright==1.64.0
