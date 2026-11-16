@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.2.3
+ * Code version: v1.3.0
+ * - Added: Read-only previews of HSBC cash and securities changes.
  * - Fixed: Current unrealized uncertainty does not erase verified realized detail rows.
  * - Fixed: Native paste and clipboard buttons share HSBC capture validation.
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
@@ -1003,6 +1004,90 @@ function isHsbcPasteValidationActive() {
             && !runtime.isHsbcCreditCardInput?.();
     }
 
+function formatHsbcPreviewAmount(value, currency = '') {
+        if (value == null || value === '' || !Number.isFinite(Number(value))) return '—';
+        const amount = Number(value).toLocaleString('en-US', {
+            minimumFractionDigits: currency ? 2 : 0,
+            maximumFractionDigits: 12,
+        });
+        return currency ? `${currency} ${amount}` : amount;
+    }
+
+function renderHsbcPastePreviewTable(id, entries, formatRow) {
+        const rows = document.getElementById(id);
+        if (!rows) return;
+        const records = Array.isArray(entries) ? entries : [];
+        rows.replaceChildren(...records.map((entry) => {
+            const row = document.createElement('tr');
+            formatRow(entry).forEach((value) => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+            return row;
+        }));
+        rows.closest('table').hidden = records.length === 0;
+    }
+
+function syncHsbcPastePreview() {
+        const panel = document.getElementById('hsbc_paste_preview');
+        if (!panel) return;
+        const {state, preview} = runtime.state.hsbcPasteValidation;
+        const formatDate = (date) => date
+            ? runtime.formatInvestmentFullDateParts(runtime.parseInvestmentDateParts(date))
+            : '—';
+        const pending = state === 'pending';
+        panel.hidden = !pending && !preview;
+        const hasChanges = preview?.transactions?.length || preview?.balances?.length || preview?.positions?.length;
+        panel.querySelector('#hsbc_paste_preview_status').textContent = pending
+            ? 'Checking HSBC activity…'
+            : hasChanges ? 'Review the changes, then select Sync now.'
+                : 'No changes to transactions, cash balances, or holdings. Select Sync now to save the capture.';
+        renderHsbcPastePreviewTable('hsbc_paste_preview_transactions', preview?.transactions, (row) => {
+            const type = String(row.type || '').replaceAll('_', ' ');
+            const trade = [type && type[0].toUpperCase() + type.slice(1), row.ticker,
+                row.quantity == null ? '' : `${formatHsbcPreviewAmount(row.quantity)} shares`].filter(Boolean).join(' ');
+            const details = [trade, row.description, row.settlement_date && `Settled ${formatDate(row.settlement_date)}`]
+                .filter(Boolean).join(' · ');
+            const amount = formatHsbcPreviewAmount(row.amount, row.currency);
+            return [
+                formatDate(row.date), details, row.change === 'updated' ? 'Updated' : 'Added',
+                row.settlement_amount == null ? amount : `${amount} · ${formatHsbcPreviewAmount(row.settlement_amount, row.currency)} settled`,
+            ];
+        });
+        renderHsbcPastePreviewTable('hsbc_paste_preview_balances', preview?.balances, (row) => {
+            const accountType = String(row.account_type || '').toLowerCase().replaceAll('_', ' ');
+            const label = accountType && accountType !== 'legacy' ? accountType[0].toUpperCase() + accountType.slice(1) : 'Cash';
+            return [
+                `${row.currency || ''} ${label}`.trim(), formatDate(row.date),
+                formatHsbcPreviewAmount(row.previous_amount, row.currency),
+                formatHsbcPreviewAmount(row.amount, row.currency),
+            ];
+        });
+        renderHsbcPastePreviewTable('hsbc_paste_preview_positions', preview?.positions, (row) => {
+            const details = [
+                ['Shares', 'quantity', ''],
+                ['Average cost', 'cost_price', row.currency],
+                ['Last price', 'last_price', row.currency],
+                ['Market value', 'market_value', row.currency],
+            ].flatMap(([label, field, currency]) => {
+                const previous = formatHsbcPreviewAmount(row[`previous_${field}`], currency);
+                const current = formatHsbcPreviewAmount(row[field], currency);
+                return previous === current ? [] : [`${label} ${previous} → ${current}`];
+            });
+            return [row.ticker, details.join(' · ')];
+        });
+        const warnings = panel.querySelector('#hsbc_paste_preview_warnings');
+        const messages = Array.isArray(preview?.warnings) ? preview.warnings : [];
+        warnings.hidden = messages.length === 0;
+        warnings.replaceChildren(...messages.map((message) => {
+            const item = document.createElement('li');
+            item.textContent = message;
+            return item;
+        }));
+        runtime.syncInvestmentImportContainerHeight?.();
+    }
+
 function resetHsbcPasteValidation() {
         cancelHsbcPasteValidation();
         runtime.state.hsbcPasteValidation = {
@@ -1017,6 +1102,7 @@ function resetHsbcPasteValidation() {
             },
             cashCurrencies: [],
         };
+        syncHsbcPastePreview();
     }
 
 function requestHsbcPasteValidation({ debounce = true } = {}) {
@@ -1040,6 +1126,7 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                 },
                 cashCurrencies: [],
             };
+            syncHsbcPastePreview();
             syncHsbcPasteDisplaySummaries();
             runtime.syncImportValidationState();
             return;
@@ -1057,6 +1144,7 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
             },
             cashCurrencies: [],
         };
+        syncHsbcPastePreview();
         syncHsbcPasteDisplaySummaries();
         runtime.syncImportValidationState();
 
@@ -1125,6 +1213,8 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                     cashCurrencies: Array.isArray(result.cash_currencies)
                         ? result.cash_currencies.map((currency) => String(currency || '').trim()).filter(Boolean)
                         : [],
+                    preview: result.ready && result.preview && typeof result.preview === 'object'
+                        ? result.preview : null,
                 };
                 runtime.clearImportFeedback();
             } catch (error) {
@@ -1134,6 +1224,7 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                 if (
                     !isHsbcPasteValidationActive()
                     || signature !== getHsbcPasteValidationSignature()
+                    || runtime.state.hsbcPasteValidationAbortController !== abortController
                 ) {
                     return;
                 }
@@ -1157,6 +1248,7 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                 if (runtime.state.hsbcPasteValidationAbortController === abortController) {
                     runtime.state.hsbcPasteValidationAbortController = null;
                 }
+                syncHsbcPastePreview();
                 syncHsbcPasteDisplaySummaries();
                 runtime.syncImportValidationState();
             }
@@ -1406,7 +1498,7 @@ function syncInvestmentImportMode() {
                 : isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
                     ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
-                    : 'Paste HSBC cash-account or credit-card pages in the first field. Credit-card pages are previewed automatically; review the entries before importing. For cash accounts, supplementary captures are allowed and duplicate chunks are ignored; Portfolio and Order Status can refresh holdings.')
+                    : 'Paste HSBC cash-account or credit-card pages in the first field to preview changes. Add Portfolio and Order Status to refresh holdings.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                     : (isLongbridgeSg

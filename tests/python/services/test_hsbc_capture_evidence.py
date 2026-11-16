@@ -1,6 +1,6 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.2.0
+Code version: v0.2.1
 """
 
 import hashlib
@@ -15,6 +15,7 @@ from app.services.investment.importing.brokers.hsbc import (
     reconciliation,
     statements,
 )
+from app.services.investment.importing.brokers.hsbc.preview import build_hsbc_paste_preview
 import app.services.investment_import as investment_import
 from tests.support.investment_import.investment_import_test_support import (
     InvestmentImportFixtureMixin,
@@ -348,7 +349,28 @@ def test_composite_cash_settles_older_order_absent_from_visible_order_page(
     assert Decimal(summary["hsbc_broker_cash_estimate"]) == Decimal("1001.48")
     assert len([row for row in merged["transactions"] if row["type"] == "buy"]) == 1
 
+    preview = build_hsbc_paste_preview(existing, merged, incoming)
+    changes = {row["type"]: row for row in preview["transactions"]}
+    assert set(changes) == {"buy", "sell"}
+    assert changes["buy"]["change"] == "added"
+    assert changes["sell"]["change"] == "updated"
+    assert changes["sell"]["settlement_date"] == "2026-07-15"
+    assert changes["sell"]["settlement_amount"] == "62.48"
+    assert preview["balances"] == [
+        {
+            "account_type": "SAVINGS",
+            "currency": "USD",
+            "previous_amount": "1000.00",
+            "amount": "1062.48",
+            "date": "2026-07-15",
+        }
+    ]
+
     repeated = investment_import.merge_investment_payloads(merged, incoming)
+    repeated_preview = build_hsbc_paste_preview(merged, repeated, incoming)
+    assert not repeated_preview["transactions"]
+    assert not repeated_preview["balances"]
+    assert not repeated_preview["positions"]
     assert len(repeated["transactions"]) == len(merged["transactions"])
     assert [
         row for row in repeated["transactions"] if row["type"] in {"buy", "sell"}
@@ -366,6 +388,32 @@ def test_composite_cash_settles_older_order_absent_from_visible_order_page(
         "hsbc_broker_cash_estimate",
     ):
         assert repeated_summary[key] == summary[key]
+
+
+def test_composite_preview_shows_portfolio_quantity_change(composite_with_older_unsettled_sell):
+    existing, _ = composite_with_older_unsettled_sell
+    portfolio, orders, cash = InvestmentImportFixtureMixin._synthetic_hsbc_paste_snapshot(
+        portfolio_updated_date="15 Jul 2026"
+    )
+    portfolio = (
+        portfolio.replace("DRAM", "ALFA")
+        .replace("ROUNDHILL MEMORY", "ANONYMOUS FUND")
+        .replace("PortfolioMarket valueUSD 61.000", "PortfolioMarket valueUSD 122.000")
+        .replace("0.00%1USD 61.000", "0.00%2USD 122.000")
+    )
+    incoming = reconciliation.build_investment_payload_from_hsbc_pasted_text(
+        portfolio_text=portfolio,
+        order_status_text=orders.replace("DRAM", "ALFA").replace(
+            "ROUNDHILL MEMORY", "ANONYMOUS FUND"
+        ),
+        cash_account_text=cash,
+    )
+    merged = investment_import.merge_investment_payloads(existing, incoming)
+    (position,) = build_hsbc_paste_preview(existing, merged, incoming)["positions"]
+    assert position["ticker"] == "ALFA"
+    assert Decimal(position["previous_quantity"]) == 1
+    assert Decimal(position["quantity"]) == 2
+    assert Decimal(position["market_value"]) == 122
 
 
 @pytest.mark.parametrize("invalidity", ["wrong_account", "ambiguous_principal"])

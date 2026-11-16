@@ -17,6 +17,14 @@ Old Stock details links open the matching Holdings row.
 The Investment drawer privacy toggle hides Stock details cost-lot quantity
 labels while preserving the distribution bars and price reference line.
 
+Inline labels and split amounts in the Holdings summary share a text baseline.
+
+The HSBC Copy/paste card preview lists additions, updated transactions, and
+entries requiring review. An unchanged transaction is summarized without a
+detail row. Bank-cash pastes preview cash activity and balance changes. A
+complete securities capture previews trade, settlement, balance, and position
+changes. The preview is read-only and saving requires the dialog's import action.
+
 Reward summary availability, 9 Nov 2026: investment FX payloads and cache
 completeness checks include supported SGD activity so dated Singapore-dollar
 rewards can reach the USD aggregate. The card-ledger reader also retains
@@ -1366,7 +1374,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.286.12`
+Documentation version: `v1.287.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

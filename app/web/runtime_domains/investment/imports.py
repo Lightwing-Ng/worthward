@@ -1,15 +1,20 @@
 """Build the investment imports web-runtime context.
 
-Code version: v0.5.1
+Code version: v0.6.0
+- Added: HSBC paste validation previews changes against the current ledger.
 - Added: Fresh card rewards disclosure outside the investment ledger cache.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from app.services.investment.dividend_attribution import (
     annotate_dividend_attribution_choices,
+)
+from app.services.investment.importing.brokers.hsbc.preview import (
+    build_hsbc_paste_preview,
 )
 
 from app.web.runtime_domains.investment.credit_cards import (
@@ -101,6 +106,8 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
 
     load_investment_realtime_quotes = context["load_investment_realtime_quotes"]
 
+    load_investment_store_payload = context["load_investment_store_payload"]
+
     load_local_investment_dividend_actions = context[
         "load_local_investment_dividend_actions"
     ]
@@ -110,6 +117,10 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
     market_store_file_lock = context["market_store_file_lock"]
 
     merge_and_write_investment_payload = context["merge_and_write_investment_payload"]
+
+    merge_investment_payloads = context["merge_investment_payloads"]
+
+    normalize_investment_payload_tickers = context["normalize_investment_payload_tickers"]
 
     parse_investment_payload = context["parse_investment_payload"]
 
@@ -531,6 +542,17 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
             response.status_code = 500
             return apply_no_store_headers(response)
 
+    def preview_hsbc_import(incoming):
+        before = normalize_investment_payload_tickers(
+            load_investment_store_payload(INVESTMENT_STORE_PATH)
+        )
+        after = merge_investment_payloads(
+            deepcopy(before),
+            deepcopy(incoming),
+            hsbc_dividend_action_loader=load_local_investment_dividend_actions,
+        )
+        return build_hsbc_paste_preview(before, after, incoming)
+
     def investment_validate_hsbc_pasted_text():
         """Validate HSBC paste content without writing ledger or evidence data."""
         try:
@@ -558,6 +580,7 @@ def build_investment_import_context(context: dict[str, object]) -> dict[str, obj
                     request_payload.get("cash_account_text", "") or ""
                 ),
                 dividend_action_loader=load_local_investment_dividend_actions,
+                build_preview=preview_hsbc_import,
             )
             return apply_no_store_headers(jsonify({"success": True, **validation}))
         except RequestEntityTooLarge:

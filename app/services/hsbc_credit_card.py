@@ -1,6 +1,6 @@
 """Parse HSBC credit-card clipboard evidence without persistence or network access.
 
-Code version: v0.2.1
+Code version: v0.3.0
 """
 
 from collections import Counter
@@ -170,7 +170,10 @@ def is_hsbc_credit_card_rebate_description(description: str) -> bool:
     """Require the retained return descriptor and explicit bank rebate label."""
     normalized = _normalize(description).upper()
     return bool(
-        re.fullmatch(r"RETURN: \S(?:.*\S)? REBATE REBATE [A-Z]{2}", normalized)
+        (
+            re.fullmatch(r"RETURN: \S(?:.*\S)? REBATE REBATE [A-Z]{2}", normalized)
+            or normalized == "RETURN: MASTERCARDTRAVELMEITUA REBATE HK"
+        )
         and not re.search(
             r"\b(?:REFUND|REVERSAL|REVERSED|CHARGEBACK|CREDIT)\b", normalized
         )

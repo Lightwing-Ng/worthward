@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.169.2
+ * Code version: v2.170.0
+ * - Added: HSBC paste previews show changes before explicit import.
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
@@ -100,8 +101,8 @@ import {createInvestmentFundingMetricsRuntime} from './investment/runtime/fundin
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.8.0';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.5.1';
-import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.4.1';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.2.3';
+import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.5.0';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.3.0';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
@@ -217,7 +218,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.169.2',
+    entry: 'v2.170.0',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -1338,6 +1339,9 @@ Object.assign(runtime, createInvestmentDataUtils({
                         ? `Some open positions could not be refreshed yet: ${result.freshness_refresh_failures.map((ticker) => runtime.formatInvestmentTickerForDisplay(ticker)).join(', ')}.`
                         : '';
                     runtime.closeInvestmentImportForm();
+                    if (formData.get('hsbc_import_mode') === 'paste') {
+                        runtime.resetHsbcPasteValidation();
+                    }
                     runtime.setImportFeedback('Import committed. Refreshing the transaction table…', 'loading');
                     try {
                         const {

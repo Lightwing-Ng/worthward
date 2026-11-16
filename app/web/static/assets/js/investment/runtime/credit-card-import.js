@@ -1,6 +1,7 @@
 /**
  * HSBC credit-card automatic preview, isolated import, and ledger readback.
- * Code version: v1.4.1
+ * Code version: v1.5.0
+ * - Changed: Preview shows transaction changes and entries requiring review.
  * - Fixed: Card progress, duplicate counts, and saved feedback remain visible before view refresh.
  * - Changed: Successful imports refresh Holdings, Metrics, and chart reward P&L.
  * - Added: Successful card imports refresh the Metrics rewards disclosure.
@@ -148,9 +149,12 @@ export function createHsbcCreditCardImportRuntime(runtime) {
 
     function renderResult(result, mode = 'preview') {
         const imported = mode === 'imported';
-        if (caption) caption.textContent = imported ? 'Saved transactions' : 'Captured transactions';
+        if (caption) {
+            caption.textContent = imported ? 'Saved transactions'
+                : result.review_required ? 'Transactions to review' : 'Transaction changes';
+        }
         rows?.replaceChildren();
-        const transactions = imported ? (result.merged_transactions || result.transactions || []) : (result.transactions || []);
+        const transactions = imported ? (result.merged_transactions || result.transactions || []) : (result.preview_transactions || []);
         transactions.forEach((transaction) => {
             const row = document.createElement('tr');
             const card = /^\d{4}$/.test(String(transaction.card_last4 || '')) ? transaction.card_last4 : 'Unavailable';
@@ -169,7 +173,7 @@ export function createHsbcCreditCardImportRuntime(runtime) {
             });
             rows?.appendChild(row);
         });
-        if (results) results.hidden = false;
+        if (results) results.hidden = !imported && !transactions.length;
         runtime.syncInvestmentImportContainerHeight?.();
     }
 
@@ -202,9 +206,14 @@ export function createHsbcCreditCardImportRuntime(runtime) {
             state.result = result;
             renderResult(result);
             const ready = result.ready === true && result.review_required !== true;
-            const captured = (result.transactions || []).length.toLocaleString('en-US');
+            const changed = (result.preview_transactions || []).length;
+            const unchanged = Math.max(0, (result.transactions || []).length - changed);
+            const alreadySaved = unchanged ? ` ${unchanged.toLocaleString('en-US')} already saved.` : '';
+            const readyMessage = changed
+                ? `Review the entries, then select Import now.${alreadySaved}`
+                : `No transaction changes.${alreadySaved} Select Import now to save the capture.`;
             setStatus(resultStatus(ready
-                ? `Preview ready. Nothing has been saved. ${captured} captured transactions. ${importCounts(result)} Review the entries, then select Import now.`
+                ? `Preview ready. ${readyMessage}`
                 : 'Preview needs review. Nothing has been saved.', result), ready ? 'ready' : 'review');
         } catch (error) {
             if (current(epoch, text)) {
