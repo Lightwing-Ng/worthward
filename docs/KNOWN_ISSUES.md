@@ -6,6 +6,8 @@ existing ticker-scoped ledger rows and original ledger numbers. The share drawer
 moves into the expanded row and aligns with the theme button as far as the
 visible table edge permits. Ticker metrics remain included in share exports.
 Closing the row restores portfolio-wide history and the top-level share drawer.
+The Holdings summary count uses the table body size and medium weight across
+viewport widths.
 The Holdings chart offers a 1M daily line range using the Overview month boundary.
 The expanded charts fit within the Holdings table’s existing scroll viewport.
 In Dark mode, the chart hover tooltip uses a translucent tint and backdrop blur.
@@ -1374,7 +1376,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.287.0`
+Documentation version: `v1.288.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,4 @@
-/* Code version: v1.6.2 */
+/* Code version: v1.6.3 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -821,6 +821,12 @@
     font-size: var(--font-ui-xs);
     font-variant-numeric: tabular-nums;
     line-height: 1.3;
+}
+
+#investment_holdings_panel [data-table-header] .investment-holdings-summary-instruments {
+    font-family: inherit;
+    font-size: var(--font-table-body);
+    font-weight: var(--font-weight-medium);
 }
 
 .investment-holdings-summary-instruments {
