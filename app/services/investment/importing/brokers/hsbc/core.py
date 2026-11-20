@@ -1,6 +1,7 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.6.2
+Code version: v0.6.3
+- Fixed: Equal running balances cannot establish a collapsed cash amount's direction.
 - Fixed: Sale references alone do not establish a collapsed cash amount's direction.
 - Fixed: Page-level market-index timestamps do not date Portfolio holdings.
 - Added: Verified bank cashback and reversals remain distinct from interest.
@@ -1959,9 +1960,15 @@ def _build_hsbc_pasted_cash_account_section(
                 amount_out = transaction_amount
             elif previous_balance is not None:
                 balance_delta = balance_after - previous_balance
-                if abs(balance_delta - transaction_amount) <= Decimal("0.01"):
+                if (
+                    balance_delta > ZERO
+                    and abs(balance_delta - transaction_amount) <= Decimal("0.01")
+                ):
                     amount_in = transaction_amount
-                elif abs(balance_delta + transaction_amount) <= Decimal("0.01"):
+                elif (
+                    balance_delta < ZERO
+                    and abs(balance_delta + transaction_amount) <= Decimal("0.01")
+                ):
                     amount_out = transaction_amount
             direction_hint = _infer_hsbc_cash_account_direction_from_description(
                 row["description"]

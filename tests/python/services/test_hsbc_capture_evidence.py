@@ -1,6 +1,6 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.2.2
+Code version: v0.2.3
 """
 
 import hashlib
@@ -142,6 +142,35 @@ def test_ambiguous_oldest_pasted_cash_does_not_invent_direction(
         if row["description"] == description
     ]
     assert row["net_amount_raw"] == f"-{amount}"
+
+
+@pytest.mark.parametrize(
+    ("older_balance", "posted_amount"),
+    [("999.99", "0.01"), ("1000.00", None), ("1000.01", "-0.01")],
+)
+def test_collapsed_sale_reference_uses_direction_of_cent_balance_change(
+    older_balance, posted_amount
+):
+    description = "REF S100001001 SEC"
+    warnings = []
+    text = _cash(
+        [
+            ("16 Jul 2026", description, "0.01", "1000.00"),
+            ("15 Jul 2026", "CREDIT INTEREST", older_balance, older_balance),
+        ]
+    )
+
+    capture = core._build_hsbc_cash_account_capture_from_text(text, warnings=warnings)
+
+    amounts = [
+        row["net_amount_raw"]
+        for row in capture["records"]
+        if row["description"] == description
+    ]
+    assert amounts == ([posted_amount] if posted_amount is not None else [])
+    assert any("ambiguous cash direction" in warning for warning in warnings) == (
+        posted_amount is None
+    )
 
 
 @pytest.mark.parametrize("reverse", [False, True])
