@@ -1,7 +1,7 @@
 """
 Canonical broker metadata and alphabetical sort order.
 
-Code version: v0.12.0
+Code version: v0.14.0
 """
 
 from __future__ import annotations
@@ -154,7 +154,6 @@ BROKER_CATALOG: dict[str, BrokerCatalogEntry] = {
     ),
 }
 
-SETTINGS_BROKER_CODES = ("ibkr", "longbridge")
 LIVE_TRADING_BROKER_CODES = ("ibkr", "longbridge")
 INVESTMENT_IMPORT_BROKER_CODES = (
     "boc_cn",
@@ -167,7 +166,6 @@ INVESTMENT_IMPORT_BROKER_CODES = (
     "futuhk",
     "icbc_cn",
     "icbc_hk",
-    "ibkr",
     "longbridge_hk",
     "longbridge_sg",
     "standard_xlsx",

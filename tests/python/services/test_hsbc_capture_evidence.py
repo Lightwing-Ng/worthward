@@ -1,6 +1,6 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 import hashlib
@@ -97,33 +97,51 @@ def _order(status, quantity):
     )
 
 
-def test_ambiguous_oldest_pasted_cash_does_not_invent_direction():
+@pytest.mark.parametrize(
+    ("description", "amount", "older_balance"),
+    [
+        ("FPS TRANSFER TEST", "500.00", "1500.00"),
+        ("REF S100001001 SEC", "0.01", "1000.01"),
+    ],
+)
+def test_ambiguous_oldest_pasted_cash_does_not_invent_direction(
+    description, amount, older_balance
+):
     warnings = []
     text = _cash(
         [
             ("16 Jul 2026", "CREDIT INTEREST", "300.00", "1300.00"),
-            ("15 Jul 2026", "FPS TRANSFER TEST", "500.00", "1000.00"),
+            ("15 Jul 2026", description, amount, "1000.00"),
         ]
     )
     capture = core._build_hsbc_cash_account_capture_from_text(text, warnings=warnings)
-    assert not any(
-        row["description"] == "FPS TRANSFER TEST" for row in capture["records"]
-    )
+    assert not any(row["description"] == description for row in capture["records"])
     assert any(
         "direction" in warning.lower() and "ambiguous" in warning.lower()
         for warning in warnings
     )
     wider = text.replace(
-        "Download", "14 Jul 2026\nCREDIT INTEREST\n1500.00\n1500.00\nDownload"
+        "Download",
+        f"14 Jul 2026\nCREDIT INTEREST\n{older_balance}\n{older_balance}\nDownload",
     )
     (row,) = [
         r
         for r in core._build_hsbc_cash_account_capture_from_text(wider, warnings=[])[
             "records"
         ]
-        if r["description"] == "FPS TRANSFER TEST"
+        if r["description"] == description
     ]
-    assert row["net_amount_raw"] == "-500.00"
+    assert row["net_amount_raw"] == f"-{amount}"
+
+    explicit_debit = text.replace(f"\n{amount}\n", f"\n{amount}DR\n")
+    (row,) = [
+        row
+        for row in core._build_hsbc_cash_account_capture_from_text(
+            explicit_debit, warnings=[]
+        )["records"]
+        if row["description"] == description
+    ]
+    assert row["net_amount_raw"] == f"-{amount}"
 
 
 @pytest.mark.parametrize("reverse", [False, True])

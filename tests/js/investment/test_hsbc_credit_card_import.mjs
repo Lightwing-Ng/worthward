@@ -1,4 +1,4 @@
-/* Code version: v1.5.2 */
+/* Code version: v1.5.3 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -166,7 +166,7 @@ test('pending preview reports progress and successful duplicate preview gives an
     assert.equal(initial.phase, 'previewing');
     assert.equal(initial.validationState, 'pending');
     assert.match(initial.summaryLabel, /preview/i);
-    assert.match(elements.get('hsbc_credit_card_status').textContent, /Previewing credit-card activity/);
+    assert.match(elements.get('hsbc_credit_card_status').textContent, /Parsing credit-card activity/);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     await settle();
     pending.resolve(response({...fixture(), preview_transactions: [], summary: {...fixture().summary, added_count: 0, duplicate_count: 1}}));

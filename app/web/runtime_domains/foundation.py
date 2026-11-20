@@ -1,14 +1,19 @@
 """Build the foundation web-runtime context.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
+import math
+
 from app.infrastructure.storage import read_market_frame
 from app.core.object_sqlite import read_structured_object
 from app.services.investment.importing.support import PRIVATE_INVESTMENT_EVIDENCE_PATH
-from app.services.market.market_cap import FX_RATE_SPECS
+from app.services.market.market_cap import FX_RATE_SPECS, load_fx_history
+
+
+INVESTMENT_FX_FALLBACK_MAX_GAP_DAYS = 7
 
 
 def get_investment_fx_history_currencies(transactions: list[dict]) -> list[str]:
@@ -1005,32 +1010,15 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                 ).tz_localize(None)
             parsed_dates.append(parsed_timestamp.normalize())
 
-        end_date = pd.Timestamp.now(tz="America/New_York").tz_localize(None).normalize()
+        # Before today's close, yesterday's dated rates still cover settled history.
+        end_date = latest_completed_nyse_trading_day().normalize()
         start_date = min(parsed_dates) if parsed_dates else end_date
         if start_date > end_date:
             start_date = end_date
+        start_key, end_key = start_date.date().isoformat(), end_date.date().isoformat()
+        max_gap = pd.Timedelta(days=INVESTMENT_FX_FALLBACK_MAX_GAP_DAYS)
 
-        payload: dict[str, dict[str, Any]] = {}
-        for currency in requested_currencies:
-            try:
-                history = fetch_usd_exchange_rate_history(
-                    currency, start_date, end_date
-                )
-            except Exception as exc:  # noqa: BLE001
-                LOGGER.warning(
-                    "Unable to build investment %s FX history: %s", currency, exc
-                )
-                continue
-
-            history = history.copy()
-            history["Date"] = pd.to_datetime(
-                history["Date"], errors="coerce"
-            ).dt.normalize()
-            history = history.loc[
-                history["Date"].notna()
-                & (history["Date"] >= start_date)
-                & (history["Date"] <= end_date)
-            ]
+        def serialize_history(history, *, required_boundary_gap=None):
             values: dict[str, float] = {}
             for row in history.itertuples(index=False):
                 row_date = pd.to_datetime(getattr(row, "Date", None), errors="coerce")
@@ -1040,6 +1028,7 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                 if (
                     pd.isna(row_date)
                     or pd.isna(usd_per_unit)
+                    or not math.isfinite(float(usd_per_unit))
                     or float(usd_per_unit) <= 0
                 ):
                     continue
@@ -1049,12 +1038,46 @@ def build_foundation_context(context: dict[str, object]) -> dict[str, object]:
                         "America/New_York"
                     ).tz_localize(None)
                 values[normalized_date.date().isoformat()] = 1.0 / float(usd_per_unit)
-            if values:
-                dates = sorted(values)
-                payload[currency] = {
-                    "dates": dates,
-                    "values": {date: values[date] for date in dates},
-                }
+
+            dates = sorted(day for day in values if start_key <= day <= end_key)
+            # A weekend start can use the preceding observed close, under its own date.
+            anchor = max((day for day in values if day <= start_key), default=None)
+            if anchor and start_date - pd.Timestamp(anchor) <= max_gap:
+                if anchor < start_key:
+                    dates.insert(0, anchor)
+            else:
+                anchor = None
+            if not dates or (
+                required_boundary_gap is not None
+                and (
+                    anchor is None
+                    or end_date - pd.Timestamp(dates[-1]) > required_boundary_gap
+                )
+            ):
+                return None
+            return {
+                "dates": dates,
+                "values": {day: values[day] for day in dates},
+            }
+
+        payload: dict[str, dict[str, Any]] = {}
+        for currency in requested_currencies:
+            cached = load_fx_history(currency)
+            # Complete local observations do not need a network refresh just
+            # because the file was downloaded more than a day ago.
+            series = serialize_history(cached, required_boundary_gap=pd.Timedelta(0))
+            if series is None:
+                try:
+                    history = fetch_usd_exchange_rate_history(currency, start_date, end_date)
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.warning(
+                        "Unable to refresh investment %s FX history: %s", currency, exc
+                    )
+                    series = serialize_history(cached, required_boundary_gap=max_gap)
+                else:
+                    series = serialize_history(history)
+            if series is not None:
+                payload[currency] = series
 
         # Yahoo has a CNY history but no separate CNH mapping in this project.
         # Use it as the RMB fallback; transaction- or statement-specific rates

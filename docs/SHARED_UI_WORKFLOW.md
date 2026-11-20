@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.3.2`
+Documentation version: `v1.4.0`
 
 This is the public entrypoint for shared visual and interaction work. A private
 sibling synchronization ledger may exist in a maintainer checkout, but it is not
@@ -15,11 +15,14 @@ required to build, run, test, or contribute to Worthward.
    `../../shared_docs/SHARED_UI_LAYOUT_CONTRACT.md` when the change crosses projects.
 3. Read [`../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md`](../../shared_docs/SHARED_UI_TYPOGRAPHY_CONTRACT.md)
    for every typography-family or font-asset change.
-4. Read this file.
-5. Read the central ledger's `Fast path for agents` section and the matching row.
-6. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
+4. Read [`../../shared_docs/SHARED_UI_MOTION_CONTRACT.md`](../../shared_docs/SHARED_UI_MOTION_CONTRACT.md)
+   for every cross-project finite acceleration or gesture release change. It
+   uses damping ratio `0.80` and owns the shared spring sampling token.
+5. Read this file.
+6. Read the central ledger's `Fast path for agents` section and the matching row.
+7. For a cross-cutting change, follow `docs/AGENTS.md` and read `README.md`,
    `docs/ARCHITECTURE.md`, `docs/TESTING.md`, and `docs/KNOWN_ISSUES.md`.
-7. Inspect the current `Worthward`, `agenticContext`, and `neoMe`
+8. Inspect the current `Worthward`, `agenticContext`, and `neoMe`
    implementations before editing a shared three-project pattern.
 
 ## Contract
@@ -42,6 +45,11 @@ required to build, run, test, or contribute to Worthward.
   applicable ledger row to `Pending` and include the exact synchronization
   reminders in the handoff.
 - Never declare parity from source text, one green test, or visual similarity alone.
+- The central shared layout contract at `v1.23.0` retains responsibility for
+  geometry and hit regions. Worthward's `--motion-spring-080` and
+  `WorthwardMotion.springState` implement the motion contract without changing
+  clamped model values. The resizer applies release velocity to its decorative
+  pseudo-element; boundary stretch never moves its button hit region.
 
 ## Shared select keyboard controller
 
@@ -104,6 +112,31 @@ callback; dynamically hydrated Worthward fields use weakly keyed adapters.
 
 Run `node --test tests/js/shared/test_select_controller.mjs` and the isolated
 `tests/e2e/shared/select-keyboard.spec.mjs` tests for this migration.
+
+## Spring motion adoption
+
+Worthward defines the shared 33-stop spring token in
+`app/web/static/assets/css/foundation/tokens.css` and its analytic state and
+velocity sampler in `app/web/static/assets/js/motion.js`. CSS aliases and
+first-party finite animation consumers use the shared spring. The numeric digit
+spring and Backtest scroll fallback recompute damping from the same ratio.
+Previously keyed decorative pulses and the sidebar impulse interpolate their authored
+samples linearly so a second spring does not amplify the rebound. Infinite
+rotation, shimmer, and live marker breathing remain linear and Reduced Motion
+continues to skip their transient effects. `app/web/static/assets/js/resizer.js`
+keeps committed width and ARIA values clamped while animating a bounded
+pseudo-element after pointer release. Validate the physics with
+`node --test tests/js/shared/test_motion_core.mjs`, then run focused resizer
+and rendered-style checks on an isolated server. Source tests, browser proof,
+and the separately served `8688` version must be recorded independently in
+the central ledger before marking three-project parity.
+
+The Price Compare subplot reorder follows the pointer without nonlinear
+distance amplification. Its release velocity initializes sampled spring frames
+for the moved panel. At the first or last slot, only the handle's decorative
+pseudo-element stretches; cancellation leaves the order unchanged and clears
+the transient. The focused browser check lives in
+`tests/e2e/critical_flows/comparison-and-portfolio.mjs`.
 
 ## Verification evidence
 

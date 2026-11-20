@@ -85,7 +85,7 @@ test('resizes the investment overview and history responsively in portrait layou
         },
     });
     await page.setViewportSize({width: 825, height: 900});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await expect.poll(() => page.evaluate(() => (
         Boolean(window.WORTHWARD_INVESTMENT_DATA)
         && document.querySelector('#workspace_modal_overlay')?.hidden === true

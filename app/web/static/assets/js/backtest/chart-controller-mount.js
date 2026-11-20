@@ -1,4 +1,4 @@
-/* Code version: v1.5.0 */
+/* Code version: v1.5.1 */
 /**
  * Owns the synchronized Price/Equity chart runtime, including probability-field
  * DOM, pointer capture, caches, animation frames, observers, and teardown.
@@ -1360,7 +1360,7 @@
 		const preset = window.WorthwardMotion?.springPresets?.bouncy || {
 				mass: 1,
 				stiffness: 180,
-				damping: 18,
+				damping: 2 * 0.8 * Math.sqrt(180),
 			};
 		probabilityScrollCleanup = scheduler.frame(
 				"backtest-probability-scroll",

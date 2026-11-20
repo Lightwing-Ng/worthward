@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.0.4 */
 import {
     expect,
     test,
@@ -371,7 +371,7 @@ test('keeps HSBC buy and sell equity conserved across 30 Jun–2 Jul settlement 
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -868,7 +868,7 @@ test('keeps mixed-broker aggregate cash continuous when current HSBC cash postda
             },
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -1195,7 +1195,7 @@ test('keeps actual aggregate cash after an internal subaccount bridge', async ({
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await page.locator('label[for="investment_view_holdings"]').click();
 
     const liveSummary = new Map([
@@ -1242,7 +1242,7 @@ test('renders incomplete historical valuations as unavailable instead of zero', 
         ],
     });
 
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
 
     const row = page.locator('#investment_history_row_1');
     await expect(row.locator('td').nth(8)).toHaveText('--');
@@ -1307,7 +1307,7 @@ test('keeps the latest yfinance post-market quote when Longbridge overnight data
         },
     });
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await page.locator('label[for="investment_view_holdings"]').click();
 
     const holdingRow = page.locator(
@@ -1362,7 +1362,7 @@ test('anchors the Overview live marker to Hong Kong\'s current date after the US
         },
     });
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     const marker = page.locator('[data-investment-equity-live-marker]');
     await expect.poll(() => marker.evaluate((element) => !element.hidden)).toBe(true);

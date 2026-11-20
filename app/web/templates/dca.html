@@ -1,4 +1,4 @@
-{# Code version: v0.1.8 #}
+{# Code version: v0.2.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_segmented_control, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -18,7 +18,7 @@
             <article class="chart-surface workspace-mode-controls-surface">
                 {% include "_dca_form.html" %}
             </article>
-            <article class="workspace-mode-main">
+            <article class="workspace-mode-main" data-layout-role="content-grid">
                 {% if dca_result %}
                 {{ render_investment_share_actions(shell_id='workspace_share_drawer_dca', share_drawer='dca', show_mask=false, capture_label='Save DCA screenshot', anchor_label='Share DCA') }}
                 {% endif %}

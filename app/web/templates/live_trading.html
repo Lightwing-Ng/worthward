@@ -1,4 +1,4 @@
-{# Code version: v1.12.0 #}
+{# Code version: v1.13.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_broker_select_options, render_notice_banner, render_segmented_control with context %}
 {% set sidebar_title = "Trade" %}
@@ -21,7 +21,7 @@
 {% endblock %}
 
 {% block workspace_content %}
-    <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell" data-mobile-summary-fixed>
+    <section class="workspace-header investment-workspace-header workspace-mobile-summary-shell" data-layout-role="content-grid" data-mobile-summary-fixed>
         <article class="report-card workspace-article-card workspace-summary-card">
             <div class="report-heading-row">
                 <p class="report-heading">Live trading</p>

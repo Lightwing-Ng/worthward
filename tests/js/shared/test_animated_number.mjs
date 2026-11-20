@@ -1,4 +1,4 @@
-/* AnimatedNumber spring invariants. Code version: v1.0.0 */
+/* AnimatedNumber spring invariants. Code version: v1.1.0 */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -9,9 +9,11 @@ import {
 } from '../../../app/web/static/assets/js/animated-number.js';
 
 test('the shared numeric spring exposes the requested physical and staggering constants', () => {
-    assert.equal(ANIMATED_NUMBER_VERSION, 'v1.0.0');
+    assert.equal(ANIMATED_NUMBER_VERSION, 'v1.1.0');
     assert.equal(ANIMATED_NUMBER_TUNING.stiffness, 340);
-    assert.equal(ANIMATED_NUMBER_TUNING.damping, 26);
+    assert.equal(ANIMATED_NUMBER_TUNING.damping, 2 * 0.8 * Math.sqrt(340));
+    assert.ok(Math.abs(ANIMATED_NUMBER_TUNING.damping
+        / (2 * Math.sqrt(ANIMATED_NUMBER_TUNING.stiffness * ANIMATED_NUMBER_TUNING.mass)) - 0.8) < 1e-12);
     assert.equal(ANIMATED_NUMBER_TUNING.mass, 1);
     assert.equal(ANIMATED_NUMBER_TUNING.staggerMs, 16);
     assert.equal(ANIMATED_NUMBER_TUNING.signDurationMs, 200);

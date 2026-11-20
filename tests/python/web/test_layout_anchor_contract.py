@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.25.8
+Code version: v0.26.1
 """
 
 from pathlib import Path
@@ -1431,8 +1431,8 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
     for fragment in (
         "--settings-shell-content-max-width: var(--layout-content-width);",
         ".settings-shell-material-tokens,\n.settings-shell-strategies {",
-        ".settings-shell-network > .settings-content-scrollport > .settings-action-package,",
-        ".settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,",
+        ".settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package,",
+        ".settings-shell-material-tokens > .settings-content-scrollport > .settings-content-grid > .style-token-shell,",
         ".settings-shell-material-tokens .style-token-card {\n    overflow: visible;\n}",
         ".settings-content-scrollport {",
         "padding-block-end: var(--layout-physical-effect-bleed);",
@@ -1442,11 +1442,11 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         "max-width: var(--layout-control-width);",
         "grid-template-columns: minmax(0, 1fr);",
         "width: min(100%, var(--layout-content-width));",
-        ".settings-shell-investment > .settings-content-scrollport > .settings-general-panel {",
-        ".settings-shell-strategies > .settings-content-scrollport > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-investment > .settings-content-scrollport > .settings-content-grid > .settings-general-panel {",
+        ".settings-shell-strategies > .settings-content-scrollport > .settings-content-grid > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
         "width: min(100%, var(--settings-shell-content-max-width));\n    max-width: 100%;\n    border-radius: var(--radius-panel);",
-        ".settings-shell-local-market-store > .settings-content-scrollport > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
-        ".settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .settings-summary {\n    width: min(100%, var(--settings-shell-content-max-width));",
+        ".settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .local-store-table-shell {\n    width: min(100%, var(--settings-shell-content-max-width));",
         ".font-preview-card {\n    border: 0;\n}",
     ):
         assert fragment in settings_css
@@ -1471,6 +1471,42 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
         'class="settings-color-token-group settings-card"'
     )
     assert intro_position < sidebar_position < group_position
+
+
+def test_workspace_routes_publish_the_twelve_track_content_owner() -> None:
+    tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
+    grid_css = _read(ASSET_ROOT / "css/components/workspace-grid.css")
+    manifest = _read(ASSET_ROOT / "css/app.css")
+
+    for fragment in (
+        "--layout-grid-columns: 12;",
+        "--layout-grid-gutter: 12px;",
+        "--layout-grid-row-gap: 12px;",
+    ):
+        assert fragment in tokens
+    assert 'repeat(var(--layout-grid-columns), minmax(0, 1fr))' in grid_css
+    assert 'grid-column: 1 / -1;' in grid_css
+    assert 'components/workspace-grid.css?v=1.0.0' in manifest
+
+    for template in (
+        "price_compare.html",
+        "compare.html",
+        "portfolio.html",
+        "backtest.html",
+        "dca.html",
+        "investment.html",
+        "live_trading.html",
+        "beta.html",
+        "settings.html",
+        "settings/_style_tokens.html",
+    ):
+        assert 'data-layout-role="content-grid"' in _read(TEMPLATE_ROOT / template)
+
+    settings = _read(TEMPLATE_ROOT / "settings.html")
+    beta = _read(TEMPLATE_ROOT / "beta.html")
+    assert 'data-layout-role="content-scrollport"' in settings
+    assert 'data-layout-role="content-scrollport"' in beta
+    assert '.workspace-mode-layout' not in grid_css
 
 
 def test_period_controls_use_the_shared_dropdown_width_token() -> None:

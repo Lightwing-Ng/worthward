@@ -1,4 +1,4 @@
-{# Code version: v0.4.1 #}
+{# Code version: v0.5.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -26,7 +26,7 @@
         <aside class="chart-surface workspace-mode-controls-surface" aria-labelledby="return_comparison_heading">
             {% include "_compare_portfolio_sidebar.html" %}
         </aside>
-        <section class="workspace-mode-main" aria-labelledby="return_performance_heading">
+        <section class="workspace-mode-main" data-layout-role="content-grid" aria-labelledby="return_performance_heading">
             {% if series %}
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <header class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">

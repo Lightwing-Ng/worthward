@@ -1,12 +1,12 @@
 /**
  * Formatter-preserving cyclic numeric animation with shared scheduling.
- * Code version: v1.0.0
+ * Code version: v1.1.0
  */
 
-export const ANIMATED_NUMBER_VERSION = 'v1.0.0';
+export const ANIMATED_NUMBER_VERSION = 'v1.1.0';
 export const ANIMATED_NUMBER_TUNING = Object.freeze({
     stiffness: 340,
-    damping: 26,
+    damping: 2 * 0.8 * Math.sqrt(340),
     mass: 1,
     staggerMs: 16,
     maxDeltaSeconds: 1 / 30,

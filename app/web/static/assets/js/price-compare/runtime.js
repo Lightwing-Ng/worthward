@@ -1,4 +1,4 @@
-/* Code version: v1.1.0 */
+/* Code version: v1.2.0 */
 ((globalScope) => {
 	const createSessionAxis = ({bootstrap, state, chartAxis, yAxisMinWidth}) => {
 		const Y_AXIS_MIN_WIDTH = yAxisMinWidth;
@@ -463,7 +463,7 @@
 				ease: (progress) => motion.easing.spring(progress, springPreset),
 				update(easedProgress, rawProgress) {
 					if (generation !== chipRevealMotion.generation) return;
-					chipRevealMotion.profileProgress = Math.max(0, Number(easedProgress) || 0);
+					chipRevealMotion.profileProgress = Math.max(0, Math.min(1, Number(easedProgress) || 0));
 					chipRevealMotion.logoProgress = constrainJellyTravel(easedProgress);
 					chipRevealMotion.rawProgress = Math.max(0, Math.min(1, Number(rawProgress) || 0));
 					redrawPriceCharts();
@@ -491,8 +491,125 @@
 		};
 	};
 
+	const animatePriceSubplotOrder = (sections, previousTopBySection, sourceSection, releaseVelocity = 0) => {
+		sections.forEach((section) => {
+			const previousTop = previousTopBySection.get(section);
+			const nextTop = section.getBoundingClientRect().top;
+			const deltaY = Number(previousTop) - nextTop;
+			if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
+			const motion = window.WorthwardMotion;
+			const duration = motion?.durations?.emphasized ?? 420;
+			if (section === sourceSection && Math.abs(releaseVelocity) > 24
+				&& motion?.springState && !motion.isReducedMotion()) {
+				const reference = motion.springPresets.bouncy;
+				const mass = reference.mass;
+				const stiffness = reference.stiffness * Math.pow(reference.duration / duration, 2);
+				const damping = 2 * 0.8 * Math.sqrt(stiffness * mass);
+				const boundedVelocity = Math.max(-1600, Math.min(1600, releaseVelocity));
+				const travelLimit = Math.abs(deltaY) + 12;
+				const frames = Array.from({length: 41}, (_, index) => {
+					const progress = index / 40;
+					const state = motion.springState(progress * duration / 1000, {
+						from: deltaY, to: 0, velocity: boundedVelocity,
+						mass, stiffness, damping,
+					});
+					const position = index === 40 ? 0
+						: Math.max(-travelLimit, Math.min(travelLimit, state.position));
+					const springProgress = motion.easing.spring(progress, {duration, mass, stiffness, damping});
+					const remainder = Math.max(0, Math.min(1, 1 - springProgress));
+					return {
+						offset: progress,
+						transform: `translate3d(0, ${position.toFixed(3)}px, 0) scale(${(0.985 + 0.015 * springProgress).toFixed(5)})`,
+						filter: `drop-shadow(0 ${(18 * remainder).toFixed(3)}px ${(30 * remainder).toFixed(3)}px rgba(15, 23, 42, ${(0.14 * remainder).toFixed(4)}))`,
+					};
+				});
+				motion.animate(section, frames, {duration, easing: 'linear'});
+				return;
+			}
+			motion?.animate?.(
+				section,
+				[
+					{
+						transform: `translate3d(0, ${deltaY}px, 0) scale(0.985)`,
+						filter: "drop-shadow(0 18px 30px rgba(15, 23, 42, 0.14))",
+					},
+					{
+						transform: "translate3d(0, 0, 0) scale(1)",
+						filter: "drop-shadow(0 0 0 rgba(15, 23, 42, 0))",
+					},
+				],
+				{
+					duration,
+					easing: motion?.easingTokens?.emphasized,
+				},
+			);
+		});
+	};
+
+	const createPriceSubplotHandleJelly = (motion) => {
+		const handleJelly = new Map();
+
+		const pauseHandleJelly = (handle) => {
+			const state = handleJelly.get(handle);
+			state?.cancel?.();
+			if (state) state.cancel = null;
+		};
+		const clearHandleJelly = (handle) => {
+			pauseHandleJelly(handle);
+			handleJelly.delete(handle);
+			handle.classList.remove('is-order-jelly-active');
+			handle.style.removeProperty('--price-subplot-order-jelly-y');
+			handle.style.removeProperty('--price-subplot-order-jelly-axis-scale');
+			handle.style.removeProperty('--price-subplot-order-jelly-cross-scale');
+		};
+		const settleHandleJelly = (handle, releaseVelocity, atBoundary, direction) => {
+			pauseHandleJelly(handle);
+			if (!motion?.springState || !motion?.scheduler?.frame || motion.isReducedMotion()) {
+				clearHandleJelly(handle);
+				return;
+			}
+			const state = handleJelly.get(handle) || {offset: 0, velocity: 0, cancel: null};
+			let impulse = releaseVelocity * (atBoundary ? 0.32 : 0.16);
+			if (atBoundary && Math.abs(impulse) < 140) impulse = direction * 140;
+			const initialOffset = state.offset;
+			const initialVelocity = Math.max(-800, Math.min(800, state.velocity + impulse));
+			if (Math.abs(initialOffset) < 0.01 && Math.abs(initialVelocity) < 24) {
+				clearHandleJelly(handle);
+				return;
+			}
+			const limit = atBoundary ? 8 : 5;
+			const preset = motion.springPresets.bouncy;
+			let startedAt = null;
+			handleJelly.set(handle, state);
+			handle.classList.add('is-order-jelly-active');
+			state.cancel = motion.scheduler.frame(handle, (now, reduced) => {
+				if (startedAt === null) startedAt = now;
+				const seconds = Math.max(0, (now - startedAt) / 1000);
+				if (reduced || seconds >= preset.duration / 1000 || !handle.isConnected) {
+					clearHandleJelly(handle);
+					return false;
+				}
+				const next = motion.springState(seconds, {
+					from: initialOffset, to: 0, velocity: initialVelocity,
+					mass: preset.mass, stiffness: preset.stiffness, damping: preset.damping,
+				});
+				state.offset = Math.max(-limit, Math.min(limit, next.position));
+				state.velocity = state.offset === next.position ? next.velocity : 0;
+				const stretch = Math.min(atBoundary ? 0.12 : 0.07, Math.abs(state.offset) / 72);
+				handle.style.setProperty('--price-subplot-order-jelly-y', `${state.offset.toFixed(3)}px`);
+				handle.style.setProperty('--price-subplot-order-jelly-axis-scale', (1 + stretch).toFixed(4));
+				handle.style.setProperty('--price-subplot-order-jelly-cross-scale', (1 - stretch * 0.5).toFixed(4));
+				return true;
+			});
+		};
+
+		return {pauseHandleJelly, clearHandleJelly, settleHandleJelly};
+	};
+
 	globalScope.WORTHWARD_PRICE_COMPARE_RUNTIME = Object.freeze({
-		VERSION: "v1.1.0",
+		VERSION: "v1.2.0",
+		animatePriceSubplotOrder,
+		createPriceSubplotHandleJelly,
 		createChipRevealController,
 		createSessionAxis,
 	});

@@ -1,7 +1,7 @@
 """
 Historical market-cap derivation from authoritative prices and reported shares.
 
-Code version: v0.14.0
+Code version: v0.14.1
 """
 
 from __future__ import annotations
@@ -222,12 +222,12 @@ def _normalize_fx_history(values: pd.DataFrame | None) -> pd.DataFrame:
 
 def load_fx_history(currency: str) -> pd.DataFrame:
     path = fx_store_path_for(currency)
-    if not path.exists() or path.stat().st_size == 0:
-        return _normalize_fx_history(None)
     try:
-        return _normalize_fx_history(read_market_frame(path))
-    except (ImportError, OSError, ValueError, KeyError, TypeError):
-        return _normalize_fx_history(None)
+        if path.stat().st_size:
+            return _normalize_fx_history(read_market_frame(path))
+    except (ImportError, OSError, RuntimeError, ValueError, KeyError, TypeError):
+        pass
+    return _normalize_fx_history(None)
 
 
 def fetch_usd_exchange_rate_history(
@@ -259,7 +259,10 @@ def fetch_usd_exchange_rate_history(
         and cached["Date"].min() <= requested_start
         and cached["Date"].max() >= requested_end
     )
-    cache_is_fresh = cache_path.exists() and time.time() - cache_path.stat().st_mtime <= FX_CACHE_TTL_SECONDS
+    try:
+        cache_is_fresh = time.time() - cache_path.stat().st_mtime <= FX_CACHE_TTL_SECONDS
+    except OSError:
+        cache_is_fresh = False
     if cache_covers_request and cache_is_fresh:
         return cached
 

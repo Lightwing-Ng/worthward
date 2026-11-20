@@ -1,6 +1,6 @@
 """Tests for browser-based Longbridge OAuth initiation.
 
-Code version: v1.4.0
+Code version: v1.4.1
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from app import create_app
 from app.core.preferences import broker as broker_settings, store as settings_store
-from app.core.preferences.broker import BrokerSettings, load_broker_settings
+from app.core.preferences.broker import BrokerSettings, load_broker_settings, save_broker_settings
 from app.infrastructure import longbridge_cli
 
 
@@ -76,6 +76,10 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                 patch("app.web.runtime.check_longbridge_cli_connection", return_value=NOT_AUTHORIZED_CHECK),
                 patch("app.web.runtime.start_longbridge_cli_browser_oauth", return_value=(True, "Browser opened.")) as authorize,
             ):
+                save_broker_settings(BrokerSettings(
+                    selected_broker="ibkr",
+                    ibkr_account_id="existing-import-account",
+                ))
                 client = create_app().test_client()
                 with client.session_transaction() as session:
                     session["_investment_csrf_token"] = "t" * 43
@@ -83,7 +87,8 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
                     "/settings/broker-access/action",
                     headers={"Origin": "http://localhost", "X-CSRF-Token": "t" * 43},
                     data={
-                        "selected_broker": "longbridge",
+                        "selected_broker": "ibkr",
+                        "ibkr_account_id": "must-not-replace-account",
                         "action": "authorize",
                         "longbridge_access_token": "must-not-be-saved",
                     },
@@ -94,31 +99,36 @@ class LongbridgeBrowserOAuthTests(unittest.TestCase):
             authorize.assert_called_once()
             self.assertEqual(persisted.selected_broker, "longbridge")
             self.assertEqual(persisted.longbridge_auth_mode, "cli_oauth")
+            self.assertEqual(persisted.ibkr_account_id, "existing-import-account")
             self.assertFalse(persisted.longbridge_access_token)
             payload = json.loads(settings_path.read_text(encoding="utf-8"))
             self.assertNotIn("must-not-be-saved", json.dumps(payload))
 
-    def test_broker_access_renders_browser_oauth_without_credential_inputs(self) -> None:
+    def test_broker_access_shows_longbridge_for_a_legacy_ibkr_preference(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            settings_path = root / "settings.json"
             with (
                 patch.object(settings_store, "SETTINGS_STORE_DIR", root),
-                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.json"),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", settings_path),
                 patch.dict(settings_store.LEGACY_SECTION_PATHS, {"brokers": root / "brokers.json"}),
                 patch.object(broker_settings, "SETTINGS_STORE_DIR", root),
                 patch.object(broker_settings, "BROKER_SETTINGS_PATH", root / "brokers.json"),
             ):
+                save_broker_settings(BrokerSettings(selected_broker="ibkr"))
+                saved_settings = settings_path.read_bytes()
                 response = create_app().test_client().get("/settings/broker-access")
+                self.assertEqual(settings_path.read_bytes(), saved_settings)
 
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('value="ibkr"', html)
-        self.assertIn('value="longbridge"', html)
-        self.assertIn("Authorize in browser", html)
-        self.assertIn("Broker connection test", html)
-        oauth_start = html.index('data-broker-fields="longbridge"')
-        oauth_end = html.index('data-broker-fields="ibkr"')
+        oauth_start = html.index('action="/settings/broker-access/action"')
+        oauth_end = html.index("</form>", oauth_start)
         oauth_markup = html[oauth_start:oauth_end]
+        self.assertNotIn("IBKR", oauth_markup)
+        self.assertNotIn("<select", oauth_markup)
+        self.assertIn("Authorize in browser", oauth_markup)
+        self.assertIn("Broker connection test", oauth_markup)
         self.assertIn("settings-action-package settings-callout-card-primary", oauth_markup)
         self.assertIn("settings-action-package-icon-shell", oauth_markup)
         self.assertIn("settings-action-package-copy settings-callout-text", oauth_markup)

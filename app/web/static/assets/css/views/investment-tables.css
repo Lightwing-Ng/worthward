@@ -1,4 +1,4 @@
-/* Code version: v1.6.3 */
+/* Code version: v1.8.4 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -301,8 +301,9 @@
     border-right: 0;
 }
 
-.scrollable-data-table tbody tr:nth-child(even) td,
-.investment-holdings-table tbody tr:nth-child(even) td {
+.scrollable-data-table:not(.investment-holdings-table) tbody tr:nth-child(even) td,
+.investment-holdings-table tbody tr:nth-child(even of [data-investment-holdings-ticker], [data-investment-broker-rewards-row]) > td,
+.investment-holdings-table tbody tr:nth-child(even of [data-investment-holdings-ticker]) + tr[data-investment-holding-detail] > td {
     background: var(--investment-holdings-row-background-alt);
     background-clip: padding-box;
 }
@@ -598,34 +599,6 @@
     -webkit-mask: url("/static/images/gift.fill.svg") center / contain no-repeat;
 }
 
-.investment-holdings-broker-rewards-identity {
-    cursor: default;
-}
-
-.settings-table.investment-holdings-table .investment-holdings-broker-rewards-row > td {
-    padding-block: 2px;
-}
-
-.investment-holdings-broker-rewards-identity {
-    padding-block: 0;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-copy {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-symbol {
-    flex: 0 0 auto;
-}
-
-.investment-holdings-broker-rewards-identity .ticker-identity-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin-top: 0;
-}
-
 .investment-holdings-table {
     --investment-holdings-col-no-width: 8%;
     --investment-holdings-col-ticker-width: 32%;
@@ -823,7 +796,7 @@
     line-height: 1.3;
 }
 
-#investment_holdings_panel [data-table-header] .investment-holdings-summary-instruments {
+.investment-holdings-summary-row button.investment-holdings-overview-toggle {
     font-family: inherit;
     font-size: var(--font-table-body);
     font-weight: var(--font-weight-medium);
@@ -838,40 +811,57 @@
 }
 
 .investment-holdings-summary-metrics {
+    --investment-holdings-summary-metric-gap: 6px;
+    container: investment-holdings-summary / inline-size;
     display: grid;
-    grid-template-columns: 105px minmax(0, 1fr) var(--investment-holdings-allocation-badge-inline-size);
-    align-items: baseline;
-    column-gap: 6px;
-    row-gap: 2px;
-    flex: 0 0 auto;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 2px var(--investment-holdings-summary-metric-gap);
     inline-size: 100%;
-    max-inline-size: 100%;
 }
 
 .investment-holdings-summary-metric-row {
-    display: contents;
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: end;
+    row-gap: 2px;
+}
+
+.investment-holdings-summary-metric-values {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--investment-holdings-summary-metric-gap);
+    min-inline-size: 0;
 }
 
 .investment-holdings-summary-row .investment-holdings-summary-metric-label {
     color: var(--text);
     opacity: 1;
     text-align: left;
-    white-space: nowrap;
-}
-
-.investment-holdings-summary-metric-row .investment-live-value {
-    /* Expose the numeric text baseline to the summary layout. */
-    contain: style;
-}
-
-.investment-holdings-summary-metric-row > [data-investment-live-field] {
-    box-sizing: border-box;
-    justify-self: end;
-    justify-content: flex-end;
-    inline-size: 100%;
     max-inline-size: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.investment-holdings-summary-metric-values > [data-investment-live-field] {
+    /* Expose the split amount's text baseline to the wrapping flex row. */
+    contain: style;
     min-inline-size: 0 !important;
-    text-align: right;
+    justify-content: flex-end;
+    margin-inline-start: auto;
+    text-align: end;
+}
+
+.investment-holdings-summary-allocation-slot {
+    justify-self: end;
+}
+
+/* Matches the investment-summary-stack-max breakpoint registry entry. */
+@container investment-holdings-summary (max-width: 128px) {
+    .investment-holdings-summary-metric-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 #investment_holdings_panel .investment-holdings-summary-row [data-investment-live-field$="_pnl"]:not([data-investment-live-number]),
@@ -883,37 +873,6 @@
     overflow-wrap: anywhere;
     word-break: normal;
     line-height: 1.3;
-}
-
-#investment_holdings_panel .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"]:not([data-investment-live-number]) {
-    grid-column: 2 / -1;
-}
-
-#investment_holdings_panel .investment-holdings-summary-ticker-body {
-    container: investment-holdings-summary / inline-size;
-}
-
-/* Matches the investment-summary-compact-max breakpoint registry entry. */
-@container investment-holdings-summary (max-width: 260px) {
-    .investment-holdings-summary-metrics {
-        grid-template-columns: minmax(0, 1fr) var(--investment-holdings-allocation-badge-inline-size);
-    }
-
-    .investment-holdings-summary-metrics .investment-holdings-summary-metric-label {
-        grid-column: 1 / -1;
-        white-space: normal;
-    }
-
-    #investment_holdings_panel .investment-holdings-summary-row .investment-holdings-summary-metrics > .investment-holdings-summary-metric-row > [data-investment-live-field="summary_cumulative_pnl"]:not([data-investment-live-number]) {
-        grid-column: 1 / -1;
-    }
-}
-
-/* Matches the investment-summary-stack-max breakpoint registry entry. */
-@container investment-holdings-summary (max-width: 128px) {
-    .investment-holdings-summary-metrics {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }
 
 .investment-holdings-allocation-badge {
@@ -934,15 +893,12 @@
     white-space: nowrap;
 }
 
-.investment-holdings-allocation-badge.investment-holdings-allocation-badge-negative {
-    background: var(--investment-holdings-allocation-badge-background-negative);
+.investment-holdings-summary-allocation-slot > .investment-holdings-allocation-badge {
+    min-inline-size: 0;
 }
 
-.investment-holdings-allocation-track {
-    display: block;
-    inline-size: max(var(--investment-holdings-allocation-badge-inline-size), 4em);
-    min-inline-size: 0;
-    background: transparent;
+.investment-holdings-allocation-badge.investment-holdings-allocation-badge-negative {
+    background: var(--investment-holdings-allocation-badge-background-negative);
 }
 
 #investment_holdings_panel .investment-holdings-allocation-badge-value.trade-metric-value,
@@ -959,6 +915,11 @@
 
 #investment_holdings_panel .investment-community-share-table-shell .investment-holdings-table .investment-holdings-allocation-badge-value.trade-metric-value {
     display: grid !important;
+}
+
+#investment_holdings_panel .investment-holdings-summary-allocation-slot .investment-holdings-allocation-badge-value.trade-metric-value {
+    grid-template-columns: repeat(3, auto);
+    inline-size: max-content;
 }
 
 .investment-holdings-allocation-badge-value > .workspace-metric-value-major,
@@ -1480,10 +1441,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     padding-left: 0;
 }
 
-.investment-import-process-list .investment-import-date-row {
-    grid-template-columns: minmax(0, 1fr);
-}
-
 .investment-import-process-list .investment-import-paste-row {
     grid-template-columns: minmax(0, 1fr) var(--circular-icon-button-size);
 }
@@ -1513,6 +1470,31 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.hsbc-credit-card-progress > .suggestion-loading-spinner {
+    display: none;
+}
+
+.hsbc-credit-card-progress[data-previewing="true"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 64px;
+    box-sizing: border-box;
+    padding: 12px;
+    background: var(--frosted-glass-notice-background);
+    border: var(--frosted-glass-notice-border);
+    border-radius: var(--workspace-modal-radius);
+    box-shadow: var(--frosted-glass-notice-shadow);
+    backdrop-filter: var(--frosted-glass-notice-blur);
+    -webkit-backdrop-filter: var(--frosted-glass-notice-blur);
+}
+
+.hsbc-credit-card-progress[data-previewing="true"] > .suggestion-loading-spinner {
+    --loading-spinner-size: var(--workspace-modal-icon-size);
+    display: inline-block;
 }
 
 .hsbc-credit-card-table-wrap {
@@ -1561,13 +1543,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 }
 
 .investment-import-mode-field,
-#investment_import_ibkr_fields > [data-ibkr-import-mode-panel],
 #investment_import_hsbc_fields > [data-hsbc-import-mode-panel] {
     width: 100%;
     max-width: 100%;
 }
 
-#investment_import_ibkr_fields > [data-ibkr-import-mode-panel],
 #investment_import_hsbc_fields > [data-hsbc-import-mode-panel] {
     grid-column: 1 / -1;
     display: grid;
@@ -1575,7 +1555,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     min-width: 0;
 }
 
-#investment_import_ibkr_fields > [data-ibkr-import-mode-panel][hidden],
 #investment_import_hsbc_fields > [data-hsbc-import-mode-panel][hidden] {
     display: none;
 }
@@ -1594,31 +1573,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     opacity: 1;
 }
 
-.investment-import-date-row {
-    display: grid;
-    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr);
-    column-gap: var(--investment-import-step-gap);
-    align-items: start;
-    width: 100%;
-    min-width: 0;
-}
-
-.investment-import-date-row > .investment-import-date-control-row {
-    padding-left: 0;
-}
-
-.investment-import-date-control-row .date-picker-trigger {
-    height: var(--sidebar-form-control-min-height);
-    min-height: var(--sidebar-form-control-min-height);
-    padding-block: 0;
-}
-
-#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value {
-    height: var(--sidebar-form-control-min-height);
-    min-height: var(--sidebar-form-control-min-height);
-}
-
-#investment_import_ibkr_fields > .investment-import-mode-field,
 #investment_import_hsbc_fields > .investment-import-mode-field {
     position: sticky;
     top: 0;
@@ -1629,15 +1583,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 	white-space: nowrap;
 }
 
-[data-ibkr-import-mode-panel="csv"] {
-    grid-column: 1 / -1;
-    display: grid;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-}
-
-#investment_import_ibkr_fields,
 #investment_import_longbridge_fields {
     grid-column: 1 / -1;
 }
@@ -1683,10 +1628,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     max-width: none;
 }
 
-.investment-import-plain-field .investment-import-label-trigger {
-    grid-template-columns: var(--investment-import-step-track-width) minmax(0, 1fr) var(--circular-icon-button-size);
-}
-
 .investment-import-process-list .investment-import-plain-field .investment-import-label-trigger {
     grid-template-columns: minmax(0, 1fr) var(--circular-icon-button-size);
 }
@@ -1698,6 +1639,10 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     padding-left: calc(var(--investment-import-step-track-width) + var(--investment-import-step-gap));
     padding-right: calc(var(--circular-icon-button-size) + var(--investment-import-step-gap));
     margin-top: 0;
+}
+
+[data-hsbc-import-mode-panel="statement_pdf"] .investment-import-plain-control-row {
+    padding-inline: 0;
 }
 
 .investment-import-template-download-row {

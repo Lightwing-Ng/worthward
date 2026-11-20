@@ -1,0 +1,97 @@
+/* Code version: v1.0.0 */
+
+/* Allocate page content on twelve shared tracks without moving scroll or
+   overlay ownership from the existing workspace surfaces. */
+[data-layout-role="content-grid"] {
+    display: grid;
+    grid-template-columns: repeat(var(--layout-grid-columns), minmax(0, 1fr));
+    column-gap: var(--layout-grid-gutter);
+    row-gap: var(--layout-grid-row-gap);
+    min-width: 0;
+}
+
+[data-layout-role="content-grid"] > * {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.workspace-mode-main[data-layout-role="content-grid"] {
+    grid-template-rows: minmax(0, 1fr);
+}
+
+.workspace-mode-main[data-layout-role="content-grid"] > .workspace-mode-results-stack {
+    min-height: 0;
+    height: 100%;
+}
+
+.investment-workspace-header[data-layout-role="content-grid"] {
+    column-gap: var(--layout-grid-gutter);
+}
+
+.settings-content-grid[data-layout-role="content-grid"],
+.beta-content-grid[data-layout-role="content-grid"] {
+    align-content: start;
+    grid-auto-rows: max-content;
+    width: 100%;
+}
+
+.settings-content-grid[data-layout-role="content-grid"] {
+    flex: 0 0 auto;
+}
+
+.style-token-list[data-layout-role="content-grid"] {
+    align-content: start;
+}
+
+.beta-content:has(> .beta-content-grid) {
+    width: 100%;
+    max-width: none;
+    container-type: inline-size;
+}
+
+.beta-content-grid > .beta-intro,
+.beta-content-grid > .beta-panel {
+    justify-self: start;
+}
+
+@container (min-width: 864px) {
+    .beta-content-grid > .beta-intro:has(+ .beta-guide) {
+        grid-column: span 4;
+        width: 100%;
+    }
+
+    .beta-content-grid > .beta-intro + .beta-guide {
+        grid-column: span 8;
+        width: min(100%, var(--layout-content-width));
+    }
+}
+
+/* Metric cards have a 180px minimum reading width. The container thresholds
+   follow the twelve-track width equation instead of viewport breakpoints. */
+.trade-metrics-grid:not(.navigation-skeleton-metrics-grid) {
+    grid-template-columns: repeat(var(--layout-grid-columns), minmax(0, 1fr));
+    column-gap: var(--layout-grid-gutter);
+    container-type: inline-size;
+}
+
+.trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+    grid-column: span 12;
+}
+
+@container (min-width: 372px) {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+        grid-column: span 6;
+    }
+}
+
+@container (min-width: 564px) {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+        grid-column: span 4;
+    }
+}
+
+@container (min-width: 756px) {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+        grid-column: span 3;
+    }
+}

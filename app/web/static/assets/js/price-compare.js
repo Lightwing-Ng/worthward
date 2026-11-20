@@ -1,4 +1,4 @@
-/* Code version: v0.28.0 */
+/* Code version: v0.29.1 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -81,6 +81,7 @@
 
 	const priceCompareRuntime = window.WORTHWARD_PRICE_COMPARE_RUNTIME;
 	if (!priceCompareRuntime) return;
+	const {animatePriceSubplotOrder, createPriceSubplotHandleJelly} = priceCompareRuntime;
 	const {
 		applySessionDividerStroke,
 		buildIntradayDayGroups,
@@ -1164,33 +1165,7 @@
 		});
 	};
 
-	const animatePriceSubplotOrder = (sections, previousTopBySection) => {
-		sections.forEach((section) => {
-			const previousTop = previousTopBySection.get(section);
-			const nextTop = section.getBoundingClientRect().top;
-			const deltaY = Number(previousTop) - nextTop;
-			if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
-			window.WorthwardMotion?.animate?.(
-				section,
-				[
-					{
-						transform: `translate3d(0, ${deltaY}px, 0) scale(0.985)`,
-						filter: "drop-shadow(0 18px 30px rgba(15, 23, 42, 0.14))",
-					},
-					{
-						transform: "translate3d(0, 0, 0) scale(1)",
-						filter: "drop-shadow(0 0 0 rgba(15, 23, 42, 0))",
-					},
-				],
-				{
-					duration: window.WorthwardMotion?.durations?.emphasized ?? 420,
-					easing: window.WorthwardMotion?.easingTokens?.emphasized,
-				},
-			);
-		});
-	};
-
-	const commitPriceSubplotOrder = (sourceSection, destinationIndex, {focusHandle = false} = {}) => {
+	const commitPriceSubplotOrder = (sourceSection, destinationIndex, {focusHandle = false, releaseVelocity = 0} = {}) => {
 		const grid = document.getElementById("price_subplot_region");
 		const sections = getPriceSubplotSections();
 		const sourceIndex = sections.indexOf(sourceSection);
@@ -1210,7 +1185,7 @@
 		liveRequestController = null;
 		hideSharedHover();
 		syncPriceSubplotOrderMetadata();
-		animatePriceSubplotOrder(reorderedSections, previousTopBySection);
+		animatePriceSubplotOrder(reorderedSections, previousTopBySection, sourceSection, releaseVelocity);
 		const status = document.querySelector("[data-price-subplot-order-status]");
 		if (status instanceof HTMLElement) {
 			status.textContent = `${sourceSection.dataset.ticker || "Ticker"} moved to position ${boundedDestination + 1}.`;
@@ -1224,9 +1199,11 @@
 	const initializePriceSubplotOrdering = () => {
 		const sections = getPriceSubplotSections();
 		if (!isPriceComparison() || sections.length < 2) return () => {};
+		const motion = window.WorthwardMotion;
 		let activeDrag = null;
 		let insertionSection = null;
 		const disposers = [];
+		const {pauseHandleJelly, clearHandleJelly, settleHandleJelly} = createPriceSubplotHandleJelly(motion);
 
 		const clearInsertionMarker = () => {
 			insertionSection?.classList.remove("is-order-insert-before", "is-order-insert-after");
@@ -1258,10 +1235,11 @@
 			if (!activeDrag || event.pointerId !== activeDrag.pointerId) return;
 			const {sourceSection, startY, sourceHeight} = activeDrag;
 			const rawDelta = event.clientY - startY;
-			const progress = Math.min(Math.abs(rawDelta) / Math.max(sourceHeight, 1), 2);
-			const acceleratedY = Math.sign(rawDelta) * Math.abs(rawDelta) * (1 + (0.14 * progress * progress));
-			const depthScale = 1 + (0.018 * (1 - Math.exp(-2.8 * progress)));
-			sourceSection.style.setProperty("--price-subplot-order-y", `${acceleratedY.toFixed(2)}px`);
+			const progress = Math.min(Math.abs(rawDelta) / Math.max(sourceHeight, 1), 1);
+			const depthScale = 1 + 0.018 * progress;
+			activeDrag.lastRawDelta = rawDelta;
+			activeDrag.velocityTracker?.sample(event.clientY, event.timeStamp);
+			sourceSection.style.setProperty("--price-subplot-order-y", `${rawDelta.toFixed(2)}px`);
 			sourceSection.style.setProperty("--price-subplot-order-z", depthScale.toFixed(4));
 			activeDrag.destinationIndex = destinationIndexForY(sourceSection, event.clientY);
 			markInsertion(sourceSection, activeDrag.destinationIndex);
@@ -1271,9 +1249,19 @@
 			if (!activeDrag || (event?.pointerId !== undefined && event.pointerId !== activeDrag.pointerId)) return;
 			const drag = activeDrag;
 			activeDrag = null;
+			if (!cancelled && event?.type === 'pointerup') drag.velocityTracker?.sample(event.clientY, event.timeStamp);
+			const releaseVelocity = cancelled ? 0 : (drag.velocityTracker?.velocity(event?.timeStamp) || 0);
+			const direction = Math.sign(releaseVelocity || drag.lastRawDelta || 0);
+			const atBoundary = !cancelled && (
+				(drag.destinationIndex === 0 && direction < 0)
+				|| (drag.destinationIndex === sections.length - 1 && direction > 0)
+			);
 			window.removeEventListener("pointermove", updateDrag);
 			window.removeEventListener("pointerup", finishDrag);
 			window.removeEventListener("pointercancel", cancelDrag);
+			window.removeEventListener('blur', cancelDrag);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			drag.handle.removeEventListener('lostpointercapture', onLostPointerCapture);
 			drag.sourceSection.classList.remove("is-order-dragging");
 			drag.sourceSection.style.removeProperty("--price-subplot-order-y");
 			drag.sourceSection.style.removeProperty("--price-subplot-order-z");
@@ -1287,11 +1275,21 @@
 				} catch (_error) {
 				}
 			}
-			if (!cancelled) commitPriceSubplotOrder(drag.sourceSection, drag.destinationIndex);
+			if (cancelled) clearHandleJelly(drag.handle);
+			else {
+				commitPriceSubplotOrder(drag.sourceSection, drag.destinationIndex, {releaseVelocity});
+				settleHandleJelly(drag.handle, releaseVelocity, atBoundary, direction || 1);
+			}
 		};
 
 		function cancelDrag(event) {
 			finishDrag(event, {cancelled: true});
+		}
+		function onVisibilityChange() {
+			if (document.visibilityState === 'hidden') cancelDrag();
+		}
+		function onLostPointerCapture(event) {
+			cancelDrag(event);
 		}
 
 		sections.forEach((section) => {
@@ -1310,11 +1308,14 @@
 				}
 			};
 			const onPointerDown = (event) => {
-				if (event.pointerType === "mouse" && event.button !== 0) return;
+				if (activeDrag || (event.pointerType === "mouse" && event.button !== 0)) return;
 				event.preventDefault();
 				event.stopPropagation();
 				const sourceIndex = getPriceSubplotSections().indexOf(section);
 				if (sourceIndex < 0) return;
+				pauseHandleJelly(handle);
+				const velocityTracker = motion?.createVelocityTracker?.();
+				velocityTracker?.sample(event.clientY, event.timeStamp);
 				activeDrag = {
 					sourceSection: section,
 					handle,
@@ -1322,6 +1323,8 @@
 					startY: event.clientY,
 					sourceHeight: section.getBoundingClientRect().height,
 					destinationIndex: sourceIndex,
+					velocityTracker,
+					lastRawDelta: 0,
 				};
 				handle.classList.add("is-resizing");
 				handle.setAttribute("aria-grabbed", "true");
@@ -1337,6 +1340,9 @@
 				window.addEventListener("pointermove", updateDrag);
 				window.addEventListener("pointerup", finishDrag);
 				window.addEventListener("pointercancel", cancelDrag);
+				window.addEventListener('blur', cancelDrag);
+				document.addEventListener('visibilitychange', onVisibilityChange);
+				handle.addEventListener('lostpointercapture', onLostPointerCapture);
 			};
 			const onKeyDown = (event) => {
 				const currentSections = getPriceSubplotSections();
@@ -1366,6 +1372,7 @@
 		return () => {
 			if (activeDrag) cancelDrag({pointerId: activeDrag.pointerId});
 			disposers.forEach((dispose) => dispose());
+			for (const handle of handleJelly.keys()) clearHandleJelly(handle);
 			clearInsertionMarker();
 		};
 	};

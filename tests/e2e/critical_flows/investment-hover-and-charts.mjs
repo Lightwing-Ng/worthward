@@ -43,7 +43,7 @@ test('syncs the overview donut to the hovered 1W and 1M valuation point', async 
         },
     });
     await page.setViewportSize({width: 919, height: 1_090});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     const moveToChartPoint = async (index) => {
         const point = await page.evaluate((pointIndex) => {
@@ -221,7 +221,7 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
             QQQ: [{date: '2026-06-01', close: 100}],
         },
     });
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     const readPoint = () => page.evaluate(() => {
         const canvas = document.querySelector('#investmentEquityChart');
         const chart = window.Chart?.getChart(canvas);

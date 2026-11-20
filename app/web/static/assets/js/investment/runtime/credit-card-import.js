@@ -1,14 +1,15 @@
 /**
  * HSBC credit-card automatic preview, isolated import, and ledger readback.
- * Code version: v1.5.0
+ * Code version: v1.6.0
  * - Changed: Preview shows transaction changes and entries requiring review.
+ * - Added: A frosted progress notice while parsing the pasted card page.
  * - Fixed: Card progress, duplicate counts, and saved feedback remain visible before view refresh.
  * - Changed: Successful imports refresh Holdings, Metrics, and chart reward P&L.
  * - Added: Successful card imports refresh the Metrics rewards disclosure.
  * - Changed: Complete account-page pastes preview automatically before explicit import.
  */
 
-const KIND_LABELS = Object.freeze({purchase: 'Purchase', repayment: 'Repayment', rewardcash: 'RewardCash'});
+const KIND_LABELS = Object.freeze({purchase: 'Purchase', repayment: 'Repayment', rewardcash: 'RewardCash', rebate: 'Rebate'});
 
 export function classifyHsbcCreditCardPaste(rawText) {
     const text = String(rawText || '').replace(/\r\n?/g, '\n').trim();
@@ -53,6 +54,7 @@ export function formatCreditCardAmount(value, currency = '') {
 export function createHsbcCreditCardImportRuntime(runtime) {
     const input = runtime.hsbcCashAccountTextInput;
     const panel = document.getElementById('hsbc_credit_card_panel');
+    const progress = document.getElementById('hsbc_credit_card_progress');
     const status = document.getElementById('hsbc_credit_card_status');
     const results = document.getElementById('hsbc_credit_card_results');
     const rows = document.getElementById('hsbc_credit_card_rows');
@@ -67,6 +69,7 @@ export function createHsbcCreditCardImportRuntime(runtime) {
     const setStatus = (message, phase = state.phase) => {
         state.phase = phase;
         state.message = message;
+        if (progress) progress.dataset.previewing = String(phase === 'previewing');
         if (status) status.textContent = message;
         runtime.syncInvestmentImportContainerHeight?.();
     };
@@ -197,9 +200,11 @@ export function createHsbcCreditCardImportRuntime(runtime) {
         const epoch = state.epoch;
         const text = currentText();
         state.busy = true;
-        setStatus('Previewing credit-card activity…', 'previewing');
+        setStatus('Parsing credit-card activity…', 'previewing');
         syncControls();
         try {
+            await runtime.waitForInvestmentLoadingPaint?.();
+            if (!current(epoch, text)) return;
             const result = await request('/api/credit-cards/hsbc/preview', {text});
             if (!current(epoch, text)) return;
             state.text = text;

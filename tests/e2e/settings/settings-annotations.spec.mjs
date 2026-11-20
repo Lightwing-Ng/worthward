@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.4.0 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -245,7 +245,7 @@ test('Settings sidebar effects escape the centered page at ultrawide width', asy
 test('Network uses the standard action assembly and expandable readable transport details', async ({page}) => {
     await page.route('**/api/settings/network-status*', route => route.fulfill({json: {rows: [], transport_note: 'Verified TLS; no account credentials sent.'}}));
     await page.goto('/settings/network');
-    const action = page.locator('.settings-shell-network > .settings-content-scrollport > .settings-action-package');
+    const action = page.locator('.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package');
     await expect(action.locator('.settings-service-note')).toHaveCount(1);
     await expect(action.locator('[data-network-refresh-button]')).toBeVisible();
     await expect(page.locator('[data-network-transport]')).toBeHidden();

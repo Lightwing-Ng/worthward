@@ -1,6 +1,6 @@
 """Shared fixtures for split investment-import regression suites.
 
-Code version: v0.2.3
+Code version: v0.2.4
 - Added: HSBC authoritative-settlement helpers for evidence-boundary tests.
 """
 
@@ -393,6 +393,7 @@ Fees: 0.12
                 "15 Jul 2026",
                 "REF S900001001 SEC",
                 "60.99",
+                "0.00",
                 "60.99",
                 "Download",
             ]

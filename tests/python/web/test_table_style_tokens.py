@@ -1,4 +1,4 @@
-"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.3."""
+"""Tests for standard table and shared-filter presentation contracts. Code version: v1.22.4."""
 
 from __future__ import annotations
 
@@ -1033,10 +1033,6 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert 'data-card-shadow="false"' in html
     assert 'class="investment-import-stack" data-layout-role="content-scrollport"' in html
     assert 'id="investment_import_close_button"' in html
-    assert 'data-ibkr-calibration-table' not in html
-    assert 'id="ibkr_trade_notifications_cash"' not in html
-    assert 'id="investment_import_calibration_table_body"' not in html
-    assert 'class="investment-import-date-row"' in html
     assert 'aria-hidden="true">➋</span>' in html
     assert 'aria-hidden="true">➌</span>' in html
     assert 'class="settings-action-package settings-callout-card-primary investment-import-action-package"' in html
@@ -1057,11 +1053,8 @@ def test_investment_import_modal_uses_page_blur_and_standard_action_package() ->
     assert "inset: 0;" in investment_css
     assert "backdrop-filter: saturate(84%) blur(18px);" in investment_css
     assert "body.is-investment-import-modal-open" in investment_css
-    assert 'id="ibkr_holdings_paste_button"' in html
-    assert 'id="ibkr_holdings_text"' in html
     assert ".investment-import-calibration-table" not in investment_css
     assert "width: min(780px, calc(100vw - (var(--page-edge-pad) * 2)));" in investment_css
-    assert ".investment-import-date-row" in investment_css
     assert ".investment-import-method-segmented[data-segmented-pill=\"measured\"]::before" in investment_css
 
 

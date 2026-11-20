@@ -1,6 +1,6 @@
 """Protect ledger reads, migrations, and derived-cache boundaries.
 
-Code version: v1.1.1
+Code version: v1.1.2
 """
 
 from __future__ import annotations
@@ -18,10 +18,20 @@ from flask import Flask
 from app.infrastructure import storage
 from app.services.investment_import import build_investment_payload_from_schwab_csv
 from app.web import runtime
+from app.web.runtime_domains import foundation
 from tests.python.services.test_schwab_provisional_reconciliation import buy_csv_payload
 from tests.python.web import test_investment_commit_concurrency as commit_support
 
 commit_runtime = commit_support.commit_runtime
+
+
+@pytest.fixture(autouse=True)
+def isolate_fx_history_cache(monkeypatch):
+    monkeypatch.setattr(
+        foundation,
+        "load_fx_history",
+        lambda _currency: pd.DataFrame(columns=["Date", "UsdPerUnit"]),
+    )
 
 
 def _get_context(context):
@@ -142,6 +152,53 @@ def test_investment_fx_payload_uses_supported_currencies_and_canonical_rmb_alias
     assert histories["CNH"] == histories["CNY"]
     assert "USD" not in histories
     assert "ZZZ" not in histories
+
+
+@pytest.mark.parametrize(
+    "first_close,last_close,expected_fetch,expected_coverage",
+    [
+        ("2026-11-06", "2026-11-12", False, True),
+        ("2026-11-06", "2026-11-11", True, True),
+        ("2026-11-09", "2026-11-11", True, False),
+        ("2026-11-06", "2026-11-09", True, False),
+    ],
+    ids=["complete-cache", "provider-outage", "missing-opening-close", "stale-cache"],
+)
+def test_investment_fx_uses_dated_cache_only_with_verified_boundaries(
+    commit_runtime, monkeypatch, first_close, last_close, expected_fetch, expected_coverage
+):
+    context, _ledger, _cache = commit_runtime
+    completed_day = pd.Timestamp("2026-11-12" if last_close != "2026-11-09" else "2026-11-18")
+    context["latest_completed_nyse_trading_day"] = lambda: completed_day
+    fetched = []
+
+    def offline_fx(currency, start, end):
+        fetched.append((currency, start, end))
+        raise ValueError("Temporary FX outage")
+
+    context["fetch_usd_exchange_rate_history"] = offline_fx
+    monkeypatch.setattr(
+        foundation, "load_fx_history",
+        lambda _currency: pd.DataFrame({
+            "Date": pd.to_datetime([first_close, last_close, "2026-11-20"]),
+            "UsdPerUnit": [0.125, 0.13, 0.14],
+        }),
+    )
+    _get_context(context)
+    histories = context["build_investment_fx_rate_history_payload"]([
+        {"type": "rewardcash", "date": "2026-11-07", "currency": "HKD"},
+        {"type": "rewardcash", "date": "2026-11-13", "currency": "HKD"},
+    ])
+
+    assert fetched == (
+        [("HKD", pd.Timestamp("2026-11-07"), completed_day)] if expected_fetch else []
+    )
+    assert histories == (
+        {"HKD": {
+            "dates": [first_close, last_close],
+            "values": {first_close: pytest.approx(8), last_close: pytest.approx(1 / 0.13)},
+        }} if expected_coverage else {}
+    )
 
 
 @pytest.mark.parametrize("cached_history", ["missing", "empty", "malformed"])

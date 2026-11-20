@@ -1,7 +1,7 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.4.0
+ * Code version: v1.5.1
  * - Added: Holdings P&L uses interruptible, formatter-preserving spring digits.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Unknown live values remove numeric metadata without becoming zero.
@@ -20,9 +20,9 @@
 
 import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.2';
 import {getNumericDisplayParts, parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
-import {createAnimatedNumber} from '../animated-number.js?v=animated-number-v1.0.0';
+import {createAnimatedNumber} from '../animated-number.js?v=animated-number-v1.1.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.4.0';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.5.1';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,
@@ -207,7 +207,7 @@ export function createInvestmentLiveValueAnimator({
     epsilon = 1e-9,
     neutralEpsilon = epsilon,
     animationMs = 520,
-    easeOutCubic,
+    springProgress,
     renderWorkspaceMetricValueContent,
     windowRef = globalThis.window,
     documentRef = globalThis.document,
@@ -330,7 +330,7 @@ export function createInvestmentLiveValueAnimator({
             return scheduler.animate({
                 key: animationKey,
                 duration: animationMs,
-                ease: (progress) => easeOutCubic(progress),
+                ease: (progress) => springProgress(progress),
                 update: (eased) => render(eased),
                 complete: onComplete,
             });
@@ -340,7 +340,7 @@ export function createInvestmentLiveValueAnimator({
         let frameId = 0;
         const step = (now) => {
             const progress = Math.min(1, (now - startTime) / animationMs);
-            render(easeOutCubic(progress));
+            render(springProgress(progress));
             if (progress < 1) {
                 frameId = windowRef.requestAnimationFrame(step);
                 return;

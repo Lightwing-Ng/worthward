@@ -1,4 +1,4 @@
-/* Code version: v1.3.2 */
+/* Code version: v1.3.3 */
 import {
     expect,
     test,
@@ -100,7 +100,7 @@ test('keeps cross-date bound transfers out of the accounting reorder', async ({p
             [secondSourceKey]: secondTargetKey,
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -145,7 +145,7 @@ test('keeps the transfer principal bridge zero after a later posting and preserv
         ],
         manualInternalTransferBindings: {[sourceKey]: targetKey},
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
 
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
@@ -189,7 +189,7 @@ test('stored transfer bindings override stale ignore markers before equity repla
         manualInternalTransferBindings: {[sourceKey]: targetKey},
         manualInternalTransferIgnoredSourceKeys: [sourceKey],
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
 
     const sourceRow = page.locator('#investment_history tr').filter({hasText: 'Stored binding source'}).first();
     const bindingSelect = sourceRow.locator('select[data-investment-transfer-source-key]');
@@ -688,7 +688,7 @@ test('scopes an unbound Schwab receipt without blanking unaffected All brokers s
             },
         ],
     });
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     // An unrelated IBKR buy is not transfer evidence; no source is offered
     // until the matching source transfer-out is imported.
@@ -1286,7 +1286,7 @@ test('keeps HSBC cash chronology and foreign cash across a bound transfer', asyn
             },
         },
     });
-    await page.goto('/trade/investment?view=holdings&range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
 
     const rows = page.locator('#investment_history tr[data-investment-history-row]');
     await expect(rows).toHaveCount(8);
