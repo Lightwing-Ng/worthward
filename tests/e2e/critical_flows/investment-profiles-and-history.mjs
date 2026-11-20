@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -130,7 +130,6 @@ test('resizes the investment overview and history responsively in portrait layou
     await handle.hover();
     await expect.poll(() => handle.evaluate((element) => getComputedStyle(element, '::after').opacity)).toBe('1');
 
-    const beforeHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
     const defaultAllocation = await page.evaluate(() => {
         const workspace = document.querySelector('.investment-workspace-header');
         const overviewSurface = document.querySelector('.investment-report-card');
@@ -144,13 +143,21 @@ test('resizes the investment overview and history responsively in portrait layou
     });
     expect(defaultAllocation.defaultOverviewShare).toBe('0.5');
     expect(defaultAllocation.overviewShare).toBeGreaterThanOrEqual(0.45);
+    // The expanded summary can make the default split its minimum. Start with room to drag upward.
+    await handle.focus();
+    await handle.press('End');
+    await expect.poll(() => handle.evaluate((element) => (
+        Number(element.getAttribute('aria-valuemax')) - Number(element.getAttribute('aria-valuenow'))
+    ))).toBe(0);
+    const beforeHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
     const handleBox = await handle.boundingBox();
     await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2));
     await page.mouse.down();
     await page.mouse.move(handleBox.x + (handleBox.width / 2), handleBox.y + (handleBox.height / 2) - 40);
     await page.mouse.up();
+    await expect.poll(() => overview.evaluate((element) => element.getBoundingClientRect().height))
+        .toBeLessThan(beforeHeight);
     const draggedHeight = await overview.evaluate((element) => element.getBoundingClientRect().height);
-    expect(draggedHeight).toBeLessThan(beforeHeight);
 
     await handle.focus();
     await handle.press('ArrowDown');
@@ -252,6 +259,10 @@ test('resizes the investment overview and history responsively in portrait layou
     await expect(stockHistory).toBeHidden();
     await expect(page.locator('#history_table_wrap')).toBeVisible();
     await expect(page.locator('#investment_holdings_panel')).toBeVisible();
+    const summaryToggle = page.locator('[data-investment-holdings-overview-toggle]');
+    await expect(summaryToggle).toHaveAttribute('aria-expanded', 'true');
+    await summaryToggle.click();
+    await expect(summaryToggle).toHaveAttribute('aria-expanded', 'false');
     await handle.focus();
     await handle.press('Home');
     await expect.poll(() => page.evaluate(() => {

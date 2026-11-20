@@ -1,4 +1,4 @@
-/* Code version: v1.8.4 */
+/* Code version: v1.8.5 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -851,6 +851,11 @@
     justify-content: flex-end;
     margin-inline-start: auto;
     text-align: end;
+}
+
+.investment-holdings-summary-metric-values > [data-investment-live-field="summary_cumulative_pnl"][data-investment-live-number] {
+    /* Fill the remainder of the chosen line so new quote digits do not resize the field. */
+    flex-grow: 1;
 }
 
 .investment-holdings-summary-allocation-slot {
