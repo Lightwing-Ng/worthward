@@ -1,6 +1,6 @@
 # Shared UI workflow
 
-Documentation version: `v1.4.0`
+Documentation version: `v1.4.1`
 
 This is the public entrypoint for shared visual and interaction work. A private
 sibling synchronization ledger may exist in a maintainer checkout, but it is not
@@ -136,7 +136,7 @@ distance amplification. Its release velocity initializes sampled spring frames
 for the moved panel. At the first or last slot, only the handle's decorative
 pseudo-element stretches; cancellation leaves the order unchanged and clears
 the transient. The focused browser check lives in
-`tests/e2e/critical_flows/comparison-and-portfolio.mjs`.
+[the Price subplot motion spec](../tests/e2e/workspaces/price-subplot-motion.spec.mjs).
 
 ## Verification evidence
 
