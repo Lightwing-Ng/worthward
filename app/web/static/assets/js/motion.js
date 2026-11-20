@@ -1,13 +1,17 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.4.0 */
 (() => {
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const clamp = (value, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
     const durations = Object.freeze({instant: 100, fast: 160, standard: 240, emphasized: 420, spatial: 560});
     const springCurve = "linear(0, .02939, .10213, .19948, .30771, .41717, .52142, .61651, .70032, .77209, .83197, .88071, .91942, .94939, .97195, .98837, .99984, 1.00742, 1.01201, 1.01438, 1.01515, 1.01483, 1.01380, 1.01236, 1.01074, 1.00907, 1.00748, 1.00601, 1.00471, 1.00360, 1.00267, 1.00190, 1)";
+    const boundedSpringSamples = springCurve.slice("linear(".length, -1)
+        .split(",")
+        .map((sample) => clamp(Number(sample)));
     const easingTokens = Object.freeze({
         standard: springCurve,
         emphasized: springCurve,
         spring: springCurve,
+        boundedSpring: `linear(${boundedSpringSamples.join(", ")})`,
     });
     const springPreset = (duration) => {
         const mass = 1;

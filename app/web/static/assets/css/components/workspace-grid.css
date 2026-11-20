@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 
 /* Allocate page content on twelve shared tracks without moving scroll or
    overlay ownership from the existing workspace surfaces. */
@@ -66,32 +66,33 @@
     }
 }
 
-/* Metric cards have a 180px minimum reading width. The container thresholds
-   follow the twelve-track width equation instead of viewport breakpoints. */
-.trade-metrics-grid:not(.navigation-skeleton-metrics-grid) {
+/* Live metric cards have a 180px minimum reading width. Detached captures
+   retain their own grid. Container thresholds follow the twelve-track width
+   equation instead of viewport breakpoints. */
+.trade-metrics-grid:not(.navigation-skeleton-metrics-grid, .workspace-share-metrics-card) {
     grid-template-columns: repeat(var(--layout-grid-columns), minmax(0, 1fr));
     column-gap: var(--layout-grid-gutter);
     container-type: inline-size;
 }
 
-.trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+.trade-metrics-grid:not(.navigation-skeleton-metrics-grid, .workspace-share-metrics-card) > .trade-metric-card {
     grid-column: span 12;
 }
 
 @container (min-width: 372px) {
-    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid, .workspace-share-metrics-card) > .trade-metric-card {
         grid-column: span 6;
     }
 }
 
 @container (min-width: 564px) {
-    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid, .workspace-share-metrics-card) > .trade-metric-card {
         grid-column: span 4;
     }
 }
 
 @container (min-width: 756px) {
-    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid) > .trade-metric-card {
+    .trade-metrics-grid:not(.navigation-skeleton-metrics-grid, .workspace-share-metrics-card) > .trade-metric-card {
         grid-column: span 3;
     }
 }

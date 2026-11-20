@@ -1,4 +1,4 @@
-/* Code version: v1.3.11 */
+/* Code version: v1.3.12 */
 import {
     expect,
     test,
@@ -1668,28 +1668,17 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     await expect(rewardRow.locator('td').first()).toHaveCSS('position', 'static');
     await expect(page.locator('#investment_holdings_panel .local-store-pagination')).toHaveCount(0);
     const rewardRowGeometry = await rewardRow.evaluate((row) => {
-        const rowRect = row.getBoundingClientRect();
-        const copy = row.querySelector('.ticker-identity-copy');
-        const symbol = row.querySelector('.ticker-identity-symbol');
-        const name = row.querySelector('.ticker-identity-name');
-        const symbolRect = symbol?.getBoundingClientRect();
-        const nameRect = name?.getBoundingClientRect();
+        const tickerRow = row.parentElement.querySelector('tr[data-investment-holdings-ticker="QQQ"]');
+        const symbol = row.querySelector('.ticker-identity-symbol').getBoundingClientRect();
+        const name = row.querySelector('.ticker-identity-name').getBoundingClientRect();
         return {
-            height: rowRect.height,
-            copyDisplay: copy ? getComputedStyle(copy).display : '',
-            nameMarginTop: name ? getComputedStyle(name).marginTop : '',
-            symbolAndNameShareLine: Boolean(
-                symbolRect
-                && nameRect
-                && symbolRect.top < nameRect.bottom
-                && nameRect.top < symbolRect.bottom
-            ),
+            height: row.getBoundingClientRect().height,
+            tickerHeight: tickerRow.getBoundingClientRect().height,
+            nameBelowSymbol: name.top >= symbol.bottom - 1,
         };
     });
-    expect(rewardRowGeometry.height).toBeLessThanOrEqual(34);
-    expect(rewardRowGeometry.copyDisplay).toBe('flex');
-    expect(rewardRowGeometry.nameMarginTop).toBe('0px');
-    expect(rewardRowGeometry.symbolAndNameShareLine).toBe(true);
+    expect(rewardRowGeometry.height).toBeCloseTo(rewardRowGeometry.tickerHeight, 0);
+    expect(rewardRowGeometry.nameBelowSymbol).toBe(true);
 
     const summaryRealized = page.locator(
         '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-row td',

@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -14,6 +14,35 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
+
+async function startChipRevealAndCapturePeak(chipsInput) {
+    return chipsInput.evaluate(async (input) => {
+        const getCanvases = () => [...document.querySelectorAll('[data-price-subplot-canvas]')];
+        const before = getCanvases().map((canvas) => (
+            window.Chart.getChart(canvas)?.$closingLogoPosition || null
+        ));
+        input.click();
+        const canvases = getCanvases();
+        const readFrame = (canvas) => ({
+            state: canvas.dataset.chipRevealState,
+            motion: canvas.dataset.chipRevealMotion,
+            logoMotion: canvas.dataset.chipLogoMotion,
+            profileProgress: Number(canvas.dataset.chipRevealProgress),
+            logoProgress: Number(canvas.dataset.chipLogoProgress),
+            logo: structuredClone(window.Chart.getChart(canvas)?.$chipRevealMotion || null),
+        });
+        const after = canvases.map(readFrame);
+        let peak = after[0];
+        const deadline = performance.now() + 2_000;
+        while (canvases[0]?.dataset.chipRevealState === 'running' && performance.now() < deadline) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            const frame = readFrame(canvases[0]);
+            if (frame.profileProgress > peak.profileProgress) peak = frame;
+        }
+        return {before, after, peak};
+    });
+}
+
 test('keeps ticker identity visible and range pills interactive on price performance', async ({page}) => {
     await page.goto('/workspaces/prices?ticker=DRAM&ticker=MU&ticker=STX&period=1y');
 
@@ -253,27 +282,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
     await expect(page.locator('[data-price-chart-region]')).toBeVisible();
     await expect(page.locator('[data-chips-chart-region]')).toHaveAttribute('hidden');
 
-    const revealStart = await chipsInput.evaluate((input) => {
-        const readLogoPositions = () => [...document.querySelectorAll('[data-price-subplot-canvas]')]
-            .map((canvas) => window.Chart.getChart(canvas)?.$closingLogoPosition || null);
-        const before = readLogoPositions();
-        input.click();
-        const canvases = [...document.querySelectorAll('[data-price-subplot-canvas]')];
-        return {
-            before,
-            after: canvases.map((canvas) => {
-                const chart = window.Chart.getChart(canvas);
-                return {
-                    state: canvas.dataset.chipRevealState,
-                    motion: canvas.dataset.chipRevealMotion,
-                    logoMotion: canvas.dataset.chipLogoMotion,
-                    profileProgress: Number(canvas.dataset.chipRevealProgress),
-                    logoProgress: Number(canvas.dataset.chipLogoProgress),
-                    logo: chart?.$chipRevealMotion || null,
-                };
-            }),
-        };
-    });
+    const revealStart = await startChipRevealAndCapturePeak(chipsInput);
     expect(revealStart.before).toHaveLength(4);
     expect(revealStart.before.every(Boolean)).toBe(true);
     expect(revealStart.after).toHaveLength(4);
@@ -289,18 +298,7 @@ test('renders a cached OHLCV cost distribution on the price scale without catego
         expect(item.logo.from.y).toBeCloseTo(revealStart.before[index].y, 4);
         expect(item.logo.to.y).toBeLessThan(item.logo.from.y);
     });
-    await expect.poll(async () => Number(
-        await page.locator('[data-price-subplot-canvas]').first().getAttribute('data-chip-reveal-progress'),
-    )).toBeGreaterThan(1);
-    const jellyFrame = await page.locator('[data-price-subplot-canvas]').first().evaluate((canvas) => {
-        const motion = window.Chart.getChart(canvas)?.$chipRevealMotion;
-        return {
-            state: canvas.dataset.chipRevealState,
-            profileProgress: Number(canvas.dataset.chipRevealProgress),
-            logoProgress: Number(canvas.dataset.chipLogoProgress),
-            logo: motion,
-        };
-    });
+    const jellyFrame = revealStart.peak;
     expect(jellyFrame.state).toBe('running');
     expect(jellyFrame.profileProgress).toBeGreaterThan(1);
     expect(jellyFrame.logoProgress).toBeLessThanOrEqual(1);
@@ -626,23 +624,7 @@ test('animates the five-ticker chip profile and logos with the shared jelly moti
         && Math.abs(item.delta) <= 0.1
     ))).toBe(true);
 
-    const motionStart = await page.locator('#show_chips').evaluate((input) => {
-        const before = [...document.querySelectorAll('[data-price-subplot-canvas]')]
-            .map((canvas) => window.Chart.getChart(canvas).$closingLogoPosition);
-        input.click();
-        return {
-            before,
-            after: [...document.querySelectorAll('[data-price-subplot-canvas]')].map((canvas) => {
-                const chart = window.Chart.getChart(canvas);
-                return {
-                    state: canvas.dataset.chipRevealState,
-                    profileProgress: Number(canvas.dataset.chipRevealProgress),
-                    logoProgress: Number(canvas.dataset.chipLogoProgress),
-                    motion: chart.$chipRevealMotion,
-                };
-            }),
-        };
-    });
+    const motionStart = await startChipRevealAndCapturePeak(page.locator('#show_chips'));
     expect(motionStart.before).toHaveLength(5);
     expect(motionStart.after).toHaveLength(5);
     expect(motionStart.after.every((item) => (
@@ -651,16 +633,14 @@ test('animates the five-ticker chip profile and logos with the shared jelly moti
         && item.logoProgress === 0
     ))).toBe(true);
     motionStart.after.forEach((item, index) => {
-        expect(item.motion.from.x).toBeCloseTo(motionStart.before[index].x, 4);
-        expect(item.motion.from.y).toBeCloseTo(motionStart.before[index].y, 4);
-        expect(item.motion.current.x).toBeCloseTo(item.motion.from.x, 4);
-        expect(item.motion.current.y).toBeCloseTo(item.motion.from.y, 4);
-        expect(item.motion.to.x).toBeCloseTo(item.motion.from.x, 4);
+        expect(item.logo.from.x).toBeCloseTo(motionStart.before[index].x, 4);
+        expect(item.logo.from.y).toBeCloseTo(motionStart.before[index].y, 4);
+        expect(item.logo.current.x).toBeCloseTo(item.logo.from.x, 4);
+        expect(item.logo.current.y).toBeCloseTo(item.logo.from.y, 4);
+        expect(item.logo.to.x).toBeCloseTo(item.logo.from.x, 4);
     });
 
-    await expect.poll(async () => Number(
-        await canvases.first().getAttribute('data-chip-reveal-progress'),
-    )).toBeGreaterThan(1);
+    expect(motionStart.peak.profileProgress).toBeGreaterThan(1);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-reveal-state="settled"]')).toHaveCount(5);
     await expect(page.locator('[data-price-subplot-canvas][data-chip-bin-count="100"]')).toHaveCount(5);
     const finalLogos = await canvases.evaluateAll((items) => items.map((canvas) => {

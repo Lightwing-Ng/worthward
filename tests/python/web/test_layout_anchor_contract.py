@@ -1,6 +1,6 @@
 """Static contract tests for the shared spatial layout system.
 
-Code version: v0.26.1
+Code version: v0.26.2
 """
 
 from pathlib import Path
@@ -1475,7 +1475,8 @@ def test_settings_layout_dimensions_are_canonical_and_color_groups_follow_the_in
 
 def test_workspace_routes_publish_the_twelve_track_content_owner() -> None:
     tokens = _read(ASSET_ROOT / "css/foundation/tokens.css")
-    grid_css = _read(ASSET_ROOT / "css/components/workspace-grid.css")
+    grid_path = ASSET_ROOT / "css/components/workspace-grid.css"
+    grid_css = _read(grid_path)
     manifest = _read(ASSET_ROOT / "css/app.css")
 
     for fragment in (
@@ -1486,7 +1487,8 @@ def test_workspace_routes_publish_the_twelve_track_content_owner() -> None:
         assert fragment in tokens
     assert 'repeat(var(--layout-grid-columns), minmax(0, 1fr))' in grid_css
     assert 'grid-column: 1 / -1;' in grid_css
-    assert 'components/workspace-grid.css?v=1.0.0' in manifest
+    grid_version = _css_code_version(grid_path).removeprefix("v")
+    assert f"components/workspace-grid.css?v={grid_version}" in manifest
 
     for template in (
         "price_compare.html",

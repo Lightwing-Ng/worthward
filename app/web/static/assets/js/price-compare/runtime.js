@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 ((globalScope) => {
 	const createSessionAxis = ({bootstrap, state, chartAxis, yAxisMinWidth}) => {
 		const Y_AXIS_MIN_WIDTH = yAxisMinWidth;
@@ -463,7 +463,7 @@
 				ease: (progress) => motion.easing.spring(progress, springPreset),
 				update(easedProgress, rawProgress) {
 					if (generation !== chipRevealMotion.generation) return;
-					chipRevealMotion.profileProgress = Math.max(0, Math.min(1, Number(easedProgress) || 0));
+					chipRevealMotion.profileProgress = Math.max(0, Number(easedProgress) || 0);
 					chipRevealMotion.logoProgress = constrainJellyTravel(easedProgress);
 					chipRevealMotion.rawProgress = Math.max(0, Math.min(1, Number(rawProgress) || 0));
 					redrawPriceCharts();
@@ -610,7 +610,7 @@
 	};
 
 	globalScope.WORTHWARD_PRICE_COMPARE_RUNTIME = Object.freeze({
-		VERSION: "v1.3.0",
+		VERSION: "v1.3.1",
 		animatePriceSubplotOrder,
 		createPriceSubplotHandleJelly,
 		createChipRevealController,

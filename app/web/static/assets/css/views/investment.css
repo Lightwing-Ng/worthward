@@ -1,4 +1,4 @@
-/* Code version: v1.89.0 */
+/* Code version: v1.89.1 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -3190,6 +3190,12 @@ button.investment-holdings-rewards-toggle:focus-visible {
 #investment_holdings_panel .investment-holdings-table-scroll {
     container-type: size;
     scroll-padding-block-start: 0;
+}
+
+/* The reduced-motion transition must not delay chart sizing relative to the grid tracks. */
+.investment-workspace-header.is-surface-resizing,
+.investment-workspace-header.is-surface-resizing .investment-holding-detail-content :is(.investment-stock-details-overview, .investment-chart-stack) {
+    transition-property: none;
 }
 
 .investment-workspace-header.is-surface-resizing .investment-holdings-table-scroll {

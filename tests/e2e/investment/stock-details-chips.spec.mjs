@@ -1,4 +1,4 @@
-/* Personal Stock-details cost lots share the price-chart scale. Code version: v1.6.0 */
+/* Personal Stock-details cost lots share the price-chart scale. Code version: v1.6.1 */
 
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis, setSidebarExpanded} from '../critical_flows/support.mjs';
@@ -863,7 +863,7 @@ test('expands a Holdings row, scopes history and export, and restores the portfo
     const share = page.getByRole('button', {name: 'Export Transactions', exact: true});
     const stockHistory = page.locator('#investment_stock_details');
     await expect(dram).toBeVisible();
-    await expect(page.locator('#investment_view_segmented label')).toHaveCount(3);
+    await expect(page.locator('#investment_view_segmented label')).toHaveText(['Holdings', 'Metrics']);
     await expect(page.locator('#investment_history tr[data-investment-history-row="4"]')).toBeVisible();
     await dram.locator('td').first().click();
     await expect(expanded.locator(priceCanvasSelector)).toBeVisible();

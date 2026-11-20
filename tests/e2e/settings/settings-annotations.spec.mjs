@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.4.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -61,8 +61,12 @@ for (const width of [1138, 800, 390]) {
             const motion = await toggle.evaluate(e => {
                 const slider = e.parentElement.querySelector('.ios-switch-slider');
                 const c = getComputedStyle(slider, '::after');
-                const root = getComputedStyle(document.documentElement);
-                return {duration: c.transitionDuration, easing: c.transitionTimingFunction, shared: root.getPropertyValue('--motion-bouncy').trim()};
+                const probe = document.createElement('span');
+                probe.style.transitionTimingFunction = 'var(--motion-bouncy)';
+                slider.append(probe);
+                const shared = getComputedStyle(probe).transitionTimingFunction;
+                probe.remove();
+                return {duration: c.transitionDuration, easing: c.transitionTimingFunction, shared};
             });
             expect(motion.duration).toContain('0.56s');
             expect(motion.easing).toContain(motion.shared);

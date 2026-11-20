@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {
     expect,
     test,
@@ -222,21 +222,26 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
         },
     });
     await page.goto('/trade/investment?view=holdings&summary=expanded');
-    const readPoint = () => page.evaluate(() => {
-        const canvas = document.querySelector('#investmentEquityChart');
-        const chart = window.Chart?.getChart(canvas);
-        const element = chart?.getDatasetMeta(0)?.data?.[0];
-        if (!canvas || !element) return null;
-        const center = element.getCenterPoint();
-        const rect = canvas.getBoundingClientRect();
-        return {x: rect.left + center.x, y: rect.top + center.y};
-    });
-    await expect.poll(readPoint).not.toBeNull();
-    const point = await readPoint();
-
-    await page.mouse.move(point.x, point.y);
+    const canvas = page.locator('#investmentEquityChart');
     const tooltip = page.locator('[data-investment-chart-tooltip="1"]');
-    await expect(tooltip).toHaveClass(/is-visible/);
+    await canvas.scrollIntoViewIfNeeded();
+    await page.evaluate(() => document.fonts.ready);
+    const readPoint = () => canvas.evaluate((node) => {
+        const element = window.Chart?.getChart(node)?.getDatasetMeta(0)?.data?.[0];
+        if (!element) return null;
+        const center = element.getCenterPoint();
+        const rect = node.getBoundingClientRect();
+        const x = rect.left + center.x;
+        const y = rect.top + center.y;
+        return document.elementFromPoint(x, y) === node ? {x, y} : null;
+    });
+    let point = null;
+    await expect.poll(async () => {
+        point = await readPoint();
+        if (!point) return false;
+        await page.mouse.move(point.x, point.y);
+        return (await tooltip.count()) > 0 && (await tooltip.getAttribute('class'))?.includes('is-visible');
+    }).toBe(true);
     const hoverLine = page.locator('#investment_equity_chart [data-investment-equity-hover-line]');
     const hoverDateLabel = page.locator('#investment_equity_chart [data-investment-equity-hover-date-label]');
     await expect(hoverLine).toHaveClass(/is-visible/);
@@ -276,6 +281,10 @@ test('reuses Frosted Glass Overview Tooltip DOM on one valuation point', async (
         minWidth: '42px',
         textAlign: 'center',
     });
+
+    // The first hover resolves its P&L asynchronously and schedules one positioning draw.
+    await expect(tooltip).toHaveAttribute('data-investment-pnl-state', 'ready');
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     await page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));

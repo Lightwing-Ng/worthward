@@ -1,4 +1,4 @@
-/* Code version: v0.74.18 */
+/* Code version: v0.74.19 */
 (async () => {
     const state = window.WORTHWARD_APP;
     if (!state) return;
@@ -447,9 +447,11 @@
             return;
         }
         sidebarFlipCancel?.();
+        // Slide the title through the shared spring while retaining clearance
+        // from the sidebar button at the collapsed endpoint.
         sidebarFlipCancel = motion.flip(targets, commitSidebarState, {
             duration: motion.durations.spatial,
-            easing: motion.easingTokens?.emphasized,
+            easing: motion.easingTokens?.boundedSpring,
         });
     };
 

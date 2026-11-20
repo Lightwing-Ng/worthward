@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 import {
     expect,
     test,
@@ -204,33 +204,22 @@ test('keeps the settings action package aligned and demonstrates maintenance act
     await segmented.getByText('Metrics', {exact: true}).click();
     await expect(segmented.locator('input[value="metrics"]')).toBeChecked();
     await expect.poll(() => segmented.evaluate((shell) => {
-        const selected = shell.querySelector('input:checked + span');
         const probe = document.createElement('span');
-        probe.style.color = 'var(--mode-switch-label-color-active)';
         shell.append(probe);
-        const matchesActiveToken = getComputedStyle(selected).color === getComputedStyle(probe).color;
-        probe.remove();
-        return matchesActiveToken;
-    })).toBe(true);
-    const segmentedColors = await segmented.evaluate((shell) => {
         const resolveColor = (value) => {
-            const probe = document.createElement('span');
             probe.style.color = value;
-            shell.append(probe);
-            const color = getComputedStyle(probe).color;
-            probe.remove();
-            return color;
+            return getComputedStyle(probe).color;
         };
-        return {
-            active: getComputedStyle(shell.querySelector('input:checked + span')).color,
-            activeToken: resolveColor('var(--mode-switch-label-color-active)'),
-            inactive: getComputedStyle(shell.querySelector('input:not(:checked) + span')).color,
-            inactiveToken: resolveColor('var(--mode-switch-label-color)'),
+        const active = getComputedStyle(shell.querySelector('input:checked + span')).color;
+        const inactive = getComputedStyle(shell.querySelector('input:not(:checked) + span')).color;
+        const matches = {
+            active: active === resolveColor('var(--mode-switch-label-color-active)'),
+            inactive: inactive === resolveColor('var(--mode-switch-label-color)'),
+            distinct: active !== inactive,
         };
-    });
-    expect(segmentedColors.active).toBe(segmentedColors.activeToken);
-    expect(segmentedColors.inactive).toBe(segmentedColors.inactiveToken);
-    expect(segmentedColors.active).not.toBe(segmentedColors.inactive);
+        probe.remove();
+        return matches;
+    })).toEqual({active: true, inactive: true, distinct: true});
 
     const actionPackage = page.locator('[data-style-token-action-package]');
     const marker = actionPackage.locator('[data-action-package-live-marker]');
