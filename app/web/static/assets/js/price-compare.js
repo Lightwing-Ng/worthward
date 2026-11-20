@@ -1,4 +1,4 @@
-/* Code version: v0.29.1 */
+/* Code version: v0.29.2 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -1203,7 +1203,8 @@
 		let activeDrag = null;
 		let insertionSection = null;
 		const disposers = [];
-		const {pauseHandleJelly, clearHandleJelly, settleHandleJelly} = createPriceSubplotHandleJelly(motion);
+		const {pauseHandleJelly, clearHandleJelly, clearAllHandleJelly, settleHandleJelly} =
+			createPriceSubplotHandleJelly(motion);
 
 		const clearInsertionMarker = () => {
 			insertionSection?.classList.remove("is-order-insert-before", "is-order-insert-after");
@@ -1372,7 +1373,7 @@
 		return () => {
 			if (activeDrag) cancelDrag({pointerId: activeDrag.pointerId});
 			disposers.forEach((dispose) => dispose());
-			for (const handle of handleJelly.keys()) clearHandleJelly(handle);
+			clearAllHandleJelly();
 			clearInsertionMarker();
 		};
 	};

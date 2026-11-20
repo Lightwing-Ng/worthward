@@ -1,4 +1,4 @@
-/* Code version: v1.2.0 */
+/* Code version: v1.3.0 */
 ((globalScope) => {
 	const createSessionAxis = ({bootstrap, state, chartAxis, yAxisMinWidth}) => {
 		const Y_AXIS_MIN_WIDTH = yAxisMinWidth;
@@ -562,6 +562,9 @@
 			handle.style.removeProperty('--price-subplot-order-jelly-axis-scale');
 			handle.style.removeProperty('--price-subplot-order-jelly-cross-scale');
 		};
+		const clearAllHandleJelly = () => {
+			for (const handle of handleJelly.keys()) clearHandleJelly(handle);
+		};
 		const settleHandleJelly = (handle, releaseVelocity, atBoundary, direction) => {
 			pauseHandleJelly(handle);
 			if (!motion?.springState || !motion?.scheduler?.frame || motion.isReducedMotion()) {
@@ -603,11 +606,11 @@
 			});
 		};
 
-		return {pauseHandleJelly, clearHandleJelly, settleHandleJelly};
+		return {pauseHandleJelly, clearHandleJelly, clearAllHandleJelly, settleHandleJelly};
 	};
 
 	globalScope.WORTHWARD_PRICE_COMPARE_RUNTIME = Object.freeze({
-		VERSION: "v1.2.0",
+		VERSION: "v1.3.0",
 		animatePriceSubplotOrder,
 		createPriceSubplotHandleJelly,
 		createChipRevealController,
