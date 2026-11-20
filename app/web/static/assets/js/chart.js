@@ -1,4 +1,4 @@
-/* Code version: v0.14.0 */
+/* Code version: v0.14.1 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const chartThemeState = bootstrap.chartThemeState = bootstrap.chartThemeState || {};
@@ -1054,7 +1054,6 @@
 
 		const baseDatasetStyle = {
 			borderWidth: referenceLineWidth,
-			pointRadius: 0,
 			pointHoverRadius: chartConfig.point_hover_radius,
 			pointHitRadius: chartConfig.point_hit_radius,
 			pointHoverBorderWidth: 0,
@@ -1152,6 +1151,8 @@
 				datasets: series.map((item, index) => {
 					const strokeColor = item.color || resolvedTheme.accentPrimary || theme.accent_primary;
 					const targetValues = targetSeriesByIndex[index] || [];
+					const showSingleDailyPoint = state.currentView === "tickers" && !hasIntradayLabels
+						&& targetValues.filter(isFiniteChartValue).length === 1;
 					const alignedValues = refreshTransition
 						? buildAlignedSeries(
 							previousSeriesMap.get(item.ticker)?.dates || refreshTransition.labels,
@@ -1167,6 +1168,8 @@
 							? normalizeMarketCapChartValues(alignedValues)
 							: alignedValues,
 						borderColor: strokeColor,
+						pointRadius: showSingleDailyPoint ? 3 : 0,
+						pointBackgroundColor: strokeColor,
 						pointHoverBackgroundColor: strokeColor,
 						shadowColor: hexToRgba(strokeColor, 0.4),
 						glow: item.glow !== false,

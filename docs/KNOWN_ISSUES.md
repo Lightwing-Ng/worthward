@@ -1015,6 +1015,17 @@ hypothetical duplicate response empty so the cold-cache race stays reproducible.
 The user-owned 8688 process remains on its currently served asset graph until
 the owner performs the normal manual restart.
 
+New US listings in Return comparison, 20 Nov 2026: exact ticker search uses
+configured Longbridge security metadata when Yahoo lacks the exact code or the
+local profile contains only the code. The fallback verifies the US symbol and
+USD currency and retains the verified company name. A delayed Recent response
+cannot replace the active query, and a leading exact match keeps its position
+when suggestions are grouped by source. An instrument with one
+closing price in the displayed range has a single chart marker at its starting
+value. The return summary remains unavailable until a second close is present.
+Earlier dates stay blank for that instrument, and the established curves keep
+their selected range.
+
 Return-comparison ticker memory, 20 Sep 2026: a successfully rendered ticker
 set is now retained in browser-local storage. Returning through an unparameterized
 `/workspaces/compare` entry restores that set, including across browser sessions;
@@ -1376,7 +1387,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.288.0`
+Documentation version: `v1.288.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

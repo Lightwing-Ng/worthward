@@ -1,7 +1,7 @@
 """
 Logo and quote profile services.
 
-Code version: v0.10.4
+Code version: v0.11.0
 """
 
 from __future__ import annotations
@@ -22,7 +22,21 @@ import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 from flask import url_for
 
-from app.infrastructure.connectivity import has_remote_logo_access, has_remote_market_access
+from app.core.preferences.broker import (
+    has_longbridge_market_data_source,
+    load_broker_settings,
+    uses_longbridge_cli_oauth,
+)
+from app.infrastructure.broker_market_data import (
+    get_longbridge_quote_context,
+    normalize_longbridge_symbol,
+)
+from app.infrastructure.connectivity import (
+    has_remote_logo_access,
+    has_remote_market_access,
+    is_remote_market_access_disabled,
+)
+from app.infrastructure.longbridge_cli import run_longbridge_cli_json
 from app.infrastructure.runtime_network import (
     add_yahoo_tls_configuration_hint,
     get_yfinance_session,
@@ -798,6 +812,44 @@ def combine_unique_search_items(
     return combined
 
 
+def _lookup_exact_us_suggestion(query: str) -> dict[str, str] | None:
+    if not re.fullmatch(r"[A-Z]{1,5}(?:-[ABC])?", query) or is_remote_market_access_disabled():
+        return None
+    symbol = normalize_longbridge_symbol(query)
+    try:
+        settings = load_broker_settings()
+        if not has_longbridge_market_data_source(settings):
+            return None
+        if uses_longbridge_cli_oauth(settings):
+            payload = run_longbridge_cli_json(
+                settings, ["static", symbol, "--lang", "en", "--format", "json"], timeout_seconds=5,
+            )
+            rows = payload if isinstance(payload, list) else []
+        else:
+            rows = [
+                {"symbol": row.symbol, "name": row.name_en, "currency": row.currency}
+                for row in get_longbridge_quote_context(settings).static_info([symbol])
+            ]
+    except Exception as exc:
+        LOGGER.debug("Longbridge symbol lookup unavailable for %s: %s", symbol, type(exc).__name__)
+        return None
+
+    for row in rows:
+        if not isinstance(row, dict) or row.get("symbol") != symbol or row.get("currency") != "USD":
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or is_ticker_fallback_company_name(name, query):
+            continue
+        profile = upsert_profile_record(query, name.strip(), None, scope=PROFILE_SCOPE_SEARCH)
+        return {
+            "symbol": query,
+            "name": str(profile["company_name"]),
+            "logo_url": resolve_stored_logo_url(query),
+            "source": "remote",
+        }
+    return None
+
+
 def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     ensure_market_store_dir()
     normalized_query = normalize_ticker_input(query)
@@ -812,11 +864,16 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
     if len(normalized_query) == 1 and (alias_items or local_items):
         return combine_unique_search_items(alias_items, recent_items, local_items, limit=limit)
 
-    if any(
-            normalize_ticker_input(str(item.get("symbol") or "")) == normalize_ticker_input(alias)
-            for item in alias_items + local_items
-            for alias in ticker_search_aliases(normalized_query)
-    ):
+    normalized_aliases = {normalize_ticker_input(alias) for alias in ticker_search_aliases(normalized_query)}
+    exact_local_items = [
+        item for item in alias_items + local_items
+        if normalize_ticker_input(item["symbol"]) in normalized_aliases
+    ]
+    if exact_local_items:
+        if all(is_ticker_fallback_company_name(item["name"], item["symbol"]) for item in exact_local_items):
+            exact_item = _lookup_exact_us_suggestion(normalized_query)
+            if exact_item is not None:
+                return combine_unique_search_items([exact_item], alias_items, recent_items, local_items, limit=limit)
         prioritized_local_items = sorted(
             alias_items + local_items,
             key=lambda local_item: search_result_sort_key(local_item, normalized_query),
@@ -874,7 +931,10 @@ def search_tickers(query: str, limit: int = 5) -> list[dict[str, str]]:
         if should_cache_search_results(normalized_query, remote_items):
             store_search_cache_items(normalized_query, remote_items)
 
-    if not remote_items and not has_remote_market_access():
-        remote_items = []
+    exact_items = []
+    if not any(item["symbol"] == normalized_query for item in remote_items):
+        exact_item = _lookup_exact_us_suggestion(normalized_query)
+        if exact_item is not None:
+            exact_items.append(exact_item)
 
-    return combine_unique_search_items(alias_items, recent_items, local_items, remote_items, limit=limit)
+    return combine_unique_search_items(exact_items, alias_items, recent_items, local_items, remote_items, limit=limit)

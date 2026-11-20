@@ -1,4 +1,4 @@
-/* Return comparison regressions. Code version: v1.2.4 */
+/* Return comparison regressions. Code version: v1.2.5 */
 import {expect, test} from '@playwright/test';
 
 
@@ -263,6 +263,51 @@ for (const {name, status, items} of [
         expect(lookupCount).toBe(1);
     });
 }
+
+
+test('keeps the exact new ticker ahead of prefix matches and a delayed Recent response', async ({page}) => {
+    let releaseRecent;
+    let recentRequested = false;
+    const recentGate = new Promise((resolve) => {
+        releaseRecent = resolve;
+    });
+    await page.route('**/api/symbol-search?**', async (route) => {
+        const query = new URL(route.request().url()).searchParams.get('q');
+        if (query === null) {
+            recentRequested = true;
+            await recentGate;
+            await route.fulfill({json: [{symbol: 'JEPQ', name: 'Recent ticker', source: 'recent'}]});
+            return;
+        }
+        const items = query === 'ANT' ? [
+            {symbol: 'ANT', name: 'Anthropic', source: 'remote'},
+            {symbol: 'ANTX', name: 'Prefix match', source: 'local'},
+        ] : [];
+        await route.fulfill({json: items});
+    });
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=1y');
+    await page.getByRole('button', {name: 'Add a ticker', exact: true}).click();
+    await expect.poll(() => recentRequested).toBe(true);
+
+    const input = page.locator('#ticker_3');
+    const suggestions = page.locator('#ticker_3_suggestions .suggestion-item');
+    await input.fill('ANT');
+    await expect(suggestions).toHaveCount(2);
+    await expect(suggestions.first()).toHaveAttribute('data-symbol', 'ANT');
+    await input.press('ArrowDown');
+    await expect(suggestions.first()).toHaveClass(/is-active/);
+
+    const recentResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/symbol-search' && !url.searchParams.has('q');
+    });
+    releaseRecent();
+    await (await recentResponse).finished();
+    await page.evaluate(() => new Promise((resolve) => window.requestAnimationFrame(resolve)));
+    await expect(suggestions).toHaveCount(2);
+    await expect(suggestions.first()).toHaveAttribute('data-symbol', 'ANT');
+    await expect(suggestions.first()).toHaveClass(/is-active/);
+});
 
 
 test('loads a canonical ticker alias from one coalesced pending lookup', async ({page}) => {
@@ -660,6 +705,45 @@ test('uses date-only, collision-aware labels on a one-year Return comparison axi
     expect(axis.ticks[0].align).toBe('left');
     expect(axis.ticks.at(-1).align).toBe('right');
     expect(axis.ticks.slice(1, -1).every((tick) => tick.align === 'center')).toBe(true);
+});
+
+
+test('draws one daily Return comparison point without joining the prelisting gap', async ({page}) => {
+    await page.goto('/workspaces/compare?ticker=QQQ&ticker=JEPQ&period=1y');
+
+    const markers = await page.evaluate(() => {
+        const host = document.createElement('div');
+        host.className = 'chart-wrap';
+        host.style.width = '760px';
+        host.style.height = '320px';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'singleDailyReturnPoint';
+        host.appendChild(canvas);
+        document.body.appendChild(host);
+
+        const rawDates = ['2025-11-19 00:00', '2026-11-18 00:00', '2026-11-19 00:00'];
+        const series = [
+            {ticker: 'QQQ', normalized_returns: [0, -5, -10], color: '#0055cc'},
+            {ticker: 'ANT', normalized_returns: [null, null, 0], color: '#ff2f92'},
+        ].map((item) => ({...item, dates: rawDates, raw_dates: rawDates}));
+        const chart = window.WORTHWARD_BOOTSTRAP.renderReturnsChart({canvas}, {
+            state: {
+                currentView: 'tickers',
+                chart: {series, profiles: []},
+                theme: {muted: '#aaa', accent_primary: '#0055cc'},
+                chartConfig: {},
+            },
+        });
+        return [0, 1].map((index) => chart.getDatasetMeta(index).data.map((point) => ({
+            skipped: point.skip,
+            radius: point.options.radius,
+            fill: point.options.backgroundColor,
+        })));
+    });
+
+    expect(markers[0].map(({radius}) => radius)).toEqual([0, 0, 0]);
+    expect(markers[1].map(({skipped}) => skipped)).toEqual([true, true, false]);
+    expect(markers[1].at(-1)).toEqual({skipped: false, radius: 3, fill: '#ff2f92'});
 });
 
 

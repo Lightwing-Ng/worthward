@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.16.2
+Code version: v0.16.3
 """
 
 from __future__ import annotations
@@ -22,7 +22,12 @@ from app.core.preferences.date_display import DateDisplaySettings
 from app.core.preferences.broker import BrokerSettings
 from app.core.preferences.language import LanguageSettings
 from app.models.schemas import SeriesPayload
-from tests.factories.market import close_frame_for_ticker, ohlc_frame_for_dates, quote_profile_stub
+from tests.factories.market import (
+    close_frame_for_dates,
+    close_frame_for_ticker,
+    ohlc_frame_for_dates,
+    quote_profile_stub,
+)
 
 
 def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfile.TemporaryDirectory[str]:
@@ -1072,6 +1077,50 @@ class ComparePageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("10 Jan 2026 - 10 Jul 2026", html)
         self.assertIn('value="6mo" selected', html)
+
+    def test_first_daily_close_draws_a_baseline_without_a_performance_result(self) -> None:
+        dates = ["2025-11-19", "2026-11-18", "2026-11-19"]
+        frames = {
+            "QQQ": close_frame_for_dates(dates, [100.0, 95.0, 90.0]),
+            "JEPQ": close_frame_for_dates(dates, [100.0, 90.0, 80.0]),
+            "ANT": ohlc_frame_for_dates("ANT", dates[-1:]),
+        }
+        with (
+            patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+            patch(
+                "app.web.runtime.fetch_history",
+                side_effect=lambda ticker, *args, **kwargs: frames[ticker],
+            ),
+            patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+            patch("app.web.runtime.record_ticker_usage"),
+        ):
+            response = create_app().test_client().get(
+                "/workspaces/compare?ticker=QQQ&ticker=JEPQ&ticker=ANT&period=1y"
+            )
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("19 Nov 2025 - 19 Nov 2026", html)
+        state_match = re.search(
+            r'<script id="worthward_state" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(state_match)
+        state = json.loads(unescape(state_match.group(1)))
+        qqq, jepq, ant = state["chart"]["series"]
+        self.assertEqual([item["ticker"] for item in (qqq, jepq, ant)], ["QQQ", "JEPQ", "ANT"])
+        self.assertEqual(qqq["normalized_returns"], [0.0, -5.0, -10.0])
+        self.assertEqual(ant["normalized_returns"], [None, None, 0.0])
+        self.assertEqual(ant["raw_dates"][-1], "2026-11-19 00:00")
+        ant_card = re.search(
+            r'<section class="performance-item" data-ticker="ANT">(.*?)</section>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(ant_card)
+        self.assertIn('data-workspace-mask="compare-return">—</span>', ant_card.group(1))
+        self.assertNotIn("winner-badge-total-return", ant_card.group(1))
 
     def test_compare_page_renders_logo_markup_for_selected_tickers(self) -> None:
         with (
