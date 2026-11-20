@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.9.3
+Code version: v0.9.4
 """
 
 from __future__ import annotations
@@ -15,11 +15,13 @@ import pandas as pd
 
 from app import create_app
 from app.infrastructure.storage import (
+    PROFILE_SCOPE_LOCAL,
     clear_non_historical_market_cache,
     history_store_path_for,
     intraday_history_store_path_for,
     logo_store_path_for,
     resolve_logo_store_path,
+    upsert_profile_record,
     write_market_frame_atomic,
 )
 from app.services.market.logos import (
@@ -123,6 +125,56 @@ class LogoServiceTests(unittest.TestCase):
             session=shared_session,
             timeout=6,
         )
+
+    def test_exact_us_symbol_survives_a_foreign_yahoo_match(self) -> None:
+        with (
+            create_app().test_request_context(),
+            patch("app.services.market.logos.has_remote_market_access", return_value=True),
+            patch("app.services.market.logos.is_remote_market_access_disabled", return_value=False),
+            patch("app.services.market.logos._search_yfinance_quotes", return_value=[{
+                "symbol": "ANT.CN", "longname": "Anteros Metals", "quoteType": "EQUITY",
+            }]),
+            patch("app.services.market.logos.fetch_and_store_logo", return_value="/logo.svg"),
+            patch("app.services.market.logos.run_longbridge_cli_json", return_value=[
+                {"symbol": "ANT.CN", "name": "Anteros Metals", "currency": "CAD"},
+                {"symbol": "ANT.US", "name": "Anthropic", "currency": "USD"},
+            ]) as static_lookup,
+        ):
+            results = search_tickers("ANT", limit=1)
+            profile = fetch_quote_profile("ANT")
+
+        self.assertEqual([(item["symbol"], item["name"]) for item in results], [("ANT", "Anthropic")])
+        self.assertEqual(profile.company_name, "Anthropic")
+        static_lookup.assert_called_once()
+        self.assertEqual(static_lookup.call_args.args[1][:2], ["static", "ANT.US"])
+
+    def test_exact_us_symbol_repairs_symbol_only_profile_when_yahoo_is_unavailable(self) -> None:
+        upsert_profile_record("ANT", "ANT.US", None, scope=PROFILE_SCOPE_LOCAL)
+        with (
+            create_app().test_request_context(),
+            patch("app.services.market.logos.has_remote_market_access", return_value=False),
+            patch("app.services.market.logos.is_remote_market_access_disabled", return_value=False),
+            patch("app.services.market.logos.run_longbridge_cli_json", return_value=[
+                {"symbol": "ANT.US", "name": "Anthropic", "currency": "USD"},
+            ]) as static_lookup,
+        ):
+            self.assertEqual(search_tickers("ANT.US")[0]["name"], "Anthropic")
+            self.assertEqual(search_tickers("ANT")[0]["name"], "Anthropic")
+            self.assertEqual(fetch_quote_profile("ANT").company_name, "Anthropic")
+
+        static_lookup.assert_called_once()
+
+    def test_nonmatching_longbridge_symbol_does_not_resolve_us_ticker(self) -> None:
+        with (
+            create_app().test_request_context(),
+            patch("app.services.market.logos.has_remote_market_access", return_value=False),
+            patch("app.services.market.logos.is_remote_market_access_disabled", return_value=False),
+            patch("app.services.market.logos.run_longbridge_cli_json", return_value=[
+                {"symbol": "ANT.CN", "name": "Anteros Metals", "currency": "CAD"},
+                {"symbol": "ANT.US", "name": "ANT", "currency": "USD"},
+            ]),
+        ):
+            self.assertEqual(search_tickers("ANT"), [])
 
     def test_known_smh_is_selectable_without_remote_symbol_search(self) -> None:
         with (

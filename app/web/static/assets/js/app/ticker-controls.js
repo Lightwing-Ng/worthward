@@ -1,4 +1,4 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.2.2 */
 (() => {
     const create = (context) => {
         const {
@@ -1084,6 +1084,12 @@
 
             const getPanel = () => document.getElementById(`${input.id}_suggestions`);
             const getButtons = () => Array.from(getPanel()?.querySelectorAll(".suggestion-item") || []);
+            const isCurrentSuggestionRequest = (requestId, query) => (
+                requestId === autocompleteRequestSequence
+                && document.activeElement === input
+                && input.dataset.composing !== "1"
+                && sanitizeTicker(input.value.trim()) === query
+            );
             const showLoadingPanel = (ticker) => {
                 const panel = getPanel();
                 const symbol = sanitizeTicker(ticker || "");
@@ -1113,11 +1119,7 @@
                 showLoadingPanel(queryValue);
                 try {
                     const {payload} = await fetchTickerSearchResults(queryValue, {limit});
-                    if (
-                        requestId !== autocompleteRequestSequence
-                        || input.dataset.composing === "1"
-                        || sanitizeTicker(input.value.trim()) !== queryValue
-                    ) return;
+                    if (!isCurrentSuggestionRequest(requestId, queryValue)) return;
                     if (!Array.isArray(payload) || !payload.length) {
                         closePanel();
                         return;
@@ -1125,9 +1127,9 @@
                     if (!preserveUnknown) {
                         applyExactTickerMatch(input, payload, queryValue);
                     }
-                    renderItems(payload);
+                    renderItems(payload, queryValue);
                 } catch (_error) {
-                    closePanel();
+                    if (isCurrentSuggestionRequest(requestId, queryValue)) closePanel();
                 }
             };
             const clearUnknown = () => {
@@ -1164,14 +1166,14 @@
                 scheduleAutoSubmit(delay);
             };
             const showRecentItems = async () => {
+                const requestId = ++autocompleteRequestSequence;
                 try {
                     const response = await fetch(`${endpoints.symbolSearch}?limit=5`);
-                    if (!response.ok) return closePanel();
-                    const payload = await response.json();
-                    if (!payload.length) return closePanel();
+                    const payload = response.ok ? await response.json() : [];
+                    if (!isCurrentSuggestionRequest(requestId, "")) return;
                     renderItems(payload);
                 } catch (_error) {
-                    closePanel();
+                    if (isCurrentSuggestionRequest(requestId, "")) closePanel();
                 }
             };
             const applySuggestion = (item, {autoLoad = false} = {}) => {
@@ -1191,7 +1193,7 @@
                 syncCommittedTickerSelection("ticker-change");
             };
 
-            const renderItems = (items) => {
+            const renderItems = (items, query = "") => {
                 const panel = getPanel();
                 if (!panel) return;
                 if (!items.length) {
@@ -1204,6 +1206,10 @@
                     {key: "local", title: "Local"},
                     {key: "remote", title: "Matches"},
                 ].filter((group) => items.some((item) => item.source === group.key));
+                if (query && tickersExplicitlyEquivalent(items[0].symbol, query)) {
+                    const groupIndex = groups.findIndex((group) => group.key === items[0].source);
+                    if (groupIndex > 0) groups.unshift(groups.splice(groupIndex, 1)[0]);
+                }
                 panel.innerHTML = groups.map((group) => {
                     const entries = items.filter((item) => item.source === group.key).map((item) => ({
                         symbol: escapeSuggestionText(item.symbol),
@@ -1293,14 +1299,14 @@
                             status,
                             requestId,
                         });
-                        if (requestId !== autocompleteRequestSequence || sanitizeTicker(input.value.trim()) !== query) return;
+                        if (!isCurrentSuggestionRequest(requestId, query)) return;
                         if (!payload.length) {
                             closePanel();
                             return;
                         }
                         // Suggestions can be incomplete; only an exact match confirms a ticker.
                         applyExactTickerMatch(input, payload, query);
-                        renderItems(payload);
+                        renderItems(payload, query);
                     } catch (error) {
                         reportFetchAbortDebug("A", "app.js:setupAutocomplete", "symbol search request failed", {
                             rawQuery,
@@ -1310,7 +1316,7 @@
                             errorName: error?.name || "",
                             errorMessage: error?.message || "",
                         });
-                        if (requestId === autocompleteRequestSequence) closePanel();
+                        if (isCurrentSuggestionRequest(requestId, query)) closePanel();
                     }
                 }, 50);
             };

@@ -1,6 +1,6 @@
 """Build the workspace web-runtime context.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -1756,24 +1756,6 @@ def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
                                     )
                                 ]
 
-                        def last_valid_return(item: c.SeriesPayload) -> float | None:
-                            valid_returns = [
-                                value
-                                for value in item.normalized_returns
-                                if value is not None
-                            ]
-                            return valid_returns[-1] if valid_returns else None
-
-                        valid_performance_returns = [
-                            value
-                            for value in (last_valid_return(item) for item in series)
-                            if value is not None
-                        ]
-                        best_return = (
-                            max(valid_performance_returns)
-                            if valid_performance_returns
-                            else None
-                        )
                         common_start = aligned_datasets[0]["Date"].min()
                         common_end = aligned_datasets[0]["Date"].max()
                         if (
@@ -1798,6 +1780,24 @@ def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
                         else:
                             display_range = f"{c.format_display_date(common_start)} - {c.format_display_date(common_end)}"
                         if current_view == "tickers":
+                            ending_returns: list[float | None] = []
+                            for item in series:
+                                observed_returns = [
+                                    value
+                                    for value in item.normalized_returns
+                                    if value is not None
+                                ]
+                                # A single daily close is only the chart baseline.
+                                # Intraday OHLC can measure a return from the first open.
+                                minimum_observations = (
+                                    1 if item.candlestick_returns is not None else 2
+                                )
+                                ending_returns.append(
+                                    observed_returns[-1]
+                                    if len(observed_returns) >= minimum_observations
+                                    else None
+                                )
+                            best_return = c.best_numeric_metric(ending_returns)
                             dividend_yield_map = c.build_ttm_dividend_yield_map(
                                 validated_tickers, common_end
                             )
@@ -1812,7 +1812,7 @@ def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
                                     "ticker": item.ticker,
                                     "company_name": profile.company_name,
                                     "logo_url": profile.logo_url,
-                                    "ending_return": last_valid_return(item),
+                                    "ending_return": ending_return,
                                     "ttm_dividend_yield": dividend_yield_map.get(
                                         item.ticker
                                     ),
@@ -1821,14 +1821,16 @@ def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
                                         item.color or c.theme["accent_primary"], 0.22
                                     ),
                                     "is_winner": best_return is not None
-                                    and last_valid_return(item) == best_return,
+                                    and ending_return == best_return,
                                     "is_dividend_yield_winner": (
                                         best_dividend_yield is not None
                                         and dividend_yield_map.get(item.ticker)
                                         == best_dividend_yield
                                     ),
                                 }
-                                for item, profile in zip(series, profiles)
+                                for item, profile, ending_return in zip(
+                                    series, profiles, ending_returns
+                                )
                             ]
                         ticker_slots = (control_tickers or validated_tickers).copy()
                         c.record_ticker_usage(validated_tickers)

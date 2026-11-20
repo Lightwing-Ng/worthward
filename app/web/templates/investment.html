@@ -1,4 +1,4 @@
-{# Code version: v1.84.0
+{# Code version: v1.84.1
    Added: Shows pending changes in HSBC clipboard previews.
    Fixed: Synchronizes Investment module cache versions after boundary extraction.
    Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
@@ -986,6 +986,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.0') }}"></script>
+    <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.1') }}"></script>
     <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.170.0') }}"></script>
 {% endblock %}

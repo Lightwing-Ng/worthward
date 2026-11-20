@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.21.0
+Code version: v0.21.1
 - Added: SQLite frame and structured-document persistence for local runtime data.
 - Added: Lossless SQLite investment snapshots with explicit verified Parquet migration.
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
@@ -1431,8 +1431,8 @@ def _merge_profile_rows(current: dict[str, str], incoming: dict[str, str]) -> di
     current_company = str(current.get("company_name") or "").strip()
     incoming_company = str(incoming.get("company_name") or "").strip()
     company_name = current_company
-    current_is_ticker_fallback = bool(current_company) and current_company.upper() == ticker
-    incoming_is_better_name = bool(incoming_company) and incoming_company.upper() != ticker
+    current_is_ticker_fallback = is_ticker_fallback_company_name(current_company, ticker)
+    incoming_is_better_name = not is_ticker_fallback_company_name(incoming_company, ticker)
     if incoming_scope == PROFILE_SCOPE_LOCAL and incoming_company:
         company_name = incoming_company
     elif current_is_ticker_fallback and incoming_is_better_name:
