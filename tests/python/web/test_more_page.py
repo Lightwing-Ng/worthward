@@ -1,7 +1,8 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.6
+Code version: v0.27.9
+- Added: HSBC cash paste prevalidation shows only new financial rows and balances.
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
 - Added: The IBKR Web-paste route accepts and persists a paired Your Holdings
@@ -16,7 +17,6 @@ import io
 import json
 from datetime import datetime
 from decimal import Decimal
-from html.parser import HTMLParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -59,84 +59,7 @@ from tests.factories.market import (
     fetch_history_stub,
     quote_profile_stub,
 )
-
-
-class _LocalStorePaginationStructureParser(HTMLParser):
-    _VOID_ELEMENTS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"})
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._stack: list[tuple[str, dict[str, str | None]]] = []
-        self._active_pagination_index: int | None = None
-        self._active_control: tuple[str, int, int] | None = None
-        self.pagination_parent_ids: list[str | None] = []
-        self.pagination_parent_classes: list[str] = []
-        self.pagination_classes: list[str] = []
-        self.pagination_attributes: list[dict[str, str | None]] = []
-        self.pagination_controls: list[list[dict[str, str | None]]] = []
-        self.pagination_ranges: list[list[dict[str, str | None]]] = []
-        self.pagination_ellipsis_positions: list[list[str | None]] = []
-        self.pagination_indicator_counts: list[int] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
-        if tag == "nav" and "data-local-store-pagination" in attributes:
-            parent_attributes = self._stack[-1][1] if self._stack else {}
-            self.pagination_parent_ids.append(parent_attributes.get("id"))
-            self.pagination_parent_classes.append(parent_attributes.get("class") or "")
-            self.pagination_classes.append(attributes.get("class") or "")
-            self.pagination_attributes.append(attributes)
-            self.pagination_controls.append([])
-            self.pagination_ranges.append([])
-            self.pagination_ellipsis_positions.append([])
-            self.pagination_indicator_counts.append(0)
-            self._active_pagination_index = len(self.pagination_attributes) - 1
-        elif self._active_pagination_index is not None:
-            class_names = set((attributes.get("class") or "").split())
-            if tag == "a" and "local-store-pagination-range-option" in class_names:
-                self.pagination_ranges[self._active_pagination_index].append(attributes)
-            if tag in {"a", "button"} and "local-store-page-button" in class_names:
-                controls = self.pagination_controls[self._active_pagination_index]
-                controls.append({
-                    "tag": tag,
-                    "class": attributes.get("class"),
-                    "href": attributes.get("href"),
-                    "target": attributes.get("data-pagination-target"),
-                    "current": attributes.get("data-pagination-current"),
-                    "aria_label": attributes.get("aria-label"),
-                    "aria_current": attributes.get("aria-current"),
-                    "text": "",
-                })
-                self._active_control = (
-                    tag,
-                    self._active_pagination_index,
-                    len(controls) - 1,
-                )
-            if "local-store-pagination-indicator" in class_names:
-                self.pagination_indicator_counts[self._active_pagination_index] += 1
-            if "data-pagination-ellipsis" in attributes:
-                self.pagination_ellipsis_positions[self._active_pagination_index].append(
-                    attributes.get("data-pagination-ellipsis")
-                )
-        if tag not in self._VOID_ELEMENTS:
-            self._stack.append((tag, attributes))
-
-    def handle_data(self, data: str) -> None:
-        if self._active_control is None:
-            return
-        _, pagination_index, control_index = self._active_control
-        control = self.pagination_controls[pagination_index][control_index]
-        control["text"] = f"{control['text'] or ''}{data}".strip()
-
-    def handle_endtag(self, tag: str) -> None:
-        if self._active_control is not None and self._active_control[0] == tag:
-            self._active_control = None
-        if tag == "nav" and self._active_pagination_index is not None:
-            self._active_pagination_index = None
-        for index in range(len(self._stack) - 1, -1, -1):
-            if self._stack[index][0] == tag:
-                del self._stack[index:]
-                break
+from tests.support.local_store_pagination_parser import LocalStorePaginationStructureParser
 
 
 class MorePageTests(unittest.TestCase):
@@ -309,6 +232,7 @@ Fees: 0.12
             "15 Jul 2026",
             "LONGBRIDGE KOL REWARD",
             "1,000.00",
+            "0.00",
             "1,000.00",
             "Download",
             "CNY Savings",
@@ -506,17 +430,18 @@ Fees: 0.12
         self.assertEqual(hsbc_verifications["EUV"]["buy_count"], 2)
         self.assertEqual(hsbc_verifications["EUV"]["sell_count"], 1)
 
-    def test_more_investment_page_exposes_dual_csv_import_form(self) -> None:
+    def test_more_investment_page_exposes_supported_import_forms_without_ibkr(self) -> None:
         client = create_app().test_client()
 
         response = client.get("/trade/investment")
         body = response.get_data(as_text=True)
 
-        self.assertIn('id="transactions_csv"', body)
-        self.assertIn('id="positions_csv"', body)
-        self.assertIn('value="web_paste"', body)
-        self.assertIn('id="ibkr_trade_notifications_text"', body)
-        self.assertIn('id="ibkr_trade_notifications_paste_button"', body)
+        broker_options = body.split('id="investment_import_broker"', 1)[1].split("</select>", 1)[0]
+        self.assertNotIn('value="ibkr"', broker_options)
+        self.assertNotIn('id="investment_import_ibkr_fields"', body)
+        self.assertNotIn('name="ibkr_import_mode"', body)
+        self.assertIn('id="schwab_transactions_csv"', body)
+        self.assertIn('id="schwab_positions_csv"', body)
         self.assertIn('id="futuhk_statement_pdfs"', body)
         self.assertIn('id="hsbc_statement_pdfs"', body)
         self.assertIn('id="hsbc_statement_pdfs_status"', body)
@@ -1135,8 +1060,25 @@ Fees: 0.12
             "portfolio": False,
             "order_status": False,
         })
+        self.assertEqual(
+            {row["description"] for row in validation["preview"]["transactions"]},
+            {"KOL Rewards · LONGBRIDGE", "CNY INTEREST"},
+        )
+        self.assertEqual(
+            {item["change"] for item in validation["preview"]["transactions"]},
+            {"added"},
+        )
+        self.assertEqual(
+            {
+                (item["currency"], item["account_type"], item["amount"])
+                for item in validation["preview"]["balances"]
+            },
+            {("HKD", "CURRENT", "1000.00"), ("CNH", "SAVINGS", "12.00")},
+        )
+        self.assertFalse(validation["preview"]["positions"])
         self.assertFalse(self.investment_store_path.exists())
         self.assertFalse(self.investment_cache_path.exists())
+        self.assertFalse(investment_evidence_dir_for(self.investment_store_path).exists())
 
     def test_hsbc_paste_prevalidation_accepts_usd_settlement_refresh(self) -> None:
         client = create_app().test_client()
@@ -1210,6 +1152,46 @@ Fees: 0.12
             {"HKD": "1000.00", "CNH": "12.00"},
         )
         self.assertEqual(persisted["summary"]["hsbc_paste_import_scope"], "cash_only_non_usd")
+        saved_bytes = self.investment_store_path.read_bytes()
+
+        new_savings_capture = "\n".join([
+            "HKD Savings",
+            "Account number:",
+            "000-999999-999",
+            "Ledger balance:",
+            "16.00 HKD",
+            "Available balance:",
+            "16.00 HKD",
+            "Post date Description Amount in Amount out Balance Additional options",
+            "16 Jul 2026",
+            "CREDIT INTEREST",
+            "16.00",
+            "16.00",
+            "Download",
+        ])
+        for capture, expected_descriptions in (
+            (self._build_hsbc_non_usd_cash_paste(), []),
+            (
+                self._build_hsbc_non_usd_cash_paste() + "\n" + new_savings_capture,
+                ["CREDIT INTEREST"],
+            ),
+        ):
+            response = self._post_investment_import(
+                client,
+                "/api/investment/imports/hsbc-paste/validate",
+                json={"cash_account_text": capture},
+            )
+            self.assertEqual(response.status_code, 200)
+            preview = response.get_json()["preview"]
+            self.assertEqual(
+                [row["description"] for row in preview["transactions"]],
+                expected_descriptions,
+            )
+            self.assertEqual(
+                [(item["currency"], item["account_type"]) for item in preview["balances"]],
+                [("HKD", "SAVINGS")] if expected_descriptions else [],
+            )
+            self.assertEqual(self.investment_store_path.read_bytes(), saved_bytes)
 
     def test_hsbc_readback_accepts_authoritative_statement_dividend_upgrade(self) -> None:
         existing_payload = {
@@ -1447,7 +1429,7 @@ Fees: 0.12
                 response = client.get("/settings/local-market-store")
 
         self.assertEqual(response.status_code, 200)
-        parser = _LocalStorePaginationStructureParser()
+        parser = LocalStorePaginationStructureParser()
         parser.feed(response.get_data(as_text=True))
         self.assertEqual(parser.pagination_parent_ids, ["local_store_region"])
         self.assertEqual(
@@ -1495,12 +1477,12 @@ Fees: 0.12
 
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(middle_response.status_code, 200)
-        first_parser = _LocalStorePaginationStructureParser()
+        first_parser = LocalStorePaginationStructureParser()
         first_parser.feed(first_response.get_data(as_text=True))
-        middle_parser = _LocalStorePaginationStructureParser()
+        middle_parser = LocalStorePaginationStructureParser()
         middle_parser.feed(middle_response.get_data(as_text=True))
 
-        def summarize_controls(parser: _LocalStorePaginationStructureParser) -> list[tuple[str | None, ...]]:
+        def summarize_controls(parser: LocalStorePaginationStructureParser) -> list[tuple[str | None, ...]]:
             return [
                 (
                     control["aria_label"],

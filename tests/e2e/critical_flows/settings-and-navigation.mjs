@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.4.2 */
 import {
     expect,
     test,
@@ -20,48 +20,15 @@ function settingsFeedbackCookieValue(payload) {
     return JSON.stringify(JSON.stringify(payload));
 }
 
-test('switches Broker access between IBKR and Longbridge OAuth without credential fields', async ({page}) => {
+test('shows only Longbridge OAuth and connection testing in Broker access', async ({page}) => {
     await page.goto('/settings/broker-access');
 
-    const brokerSelect = page.locator('#selected_broker');
-    await expect(brokerSelect.locator('option[value="ibkr"]')).toHaveCount(1);
-    await expect(brokerSelect.locator('option[value="longbridge"]')).toHaveCount(1);
-
-    await brokerSelect.evaluate((select) => {
-        select.value = 'longbridge';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    const longbridgeFields = page.locator('[data-broker-fields="longbridge"]');
-    await expect(longbridgeFields).toHaveCount(2);
-    await expect(longbridgeFields.first()).toBeVisible();
-    await expect(longbridgeFields.nth(1)).toBeVisible();
-    await expect(page.locator('[data-broker-fields="ibkr"]')).toBeHidden();
-    await expect(page.getByRole('button', {name: 'Authorize in browser'})).toBeVisible();
-    await expect(page.locator('input[name="longbridge_access_token"]')).toHaveCount(0);
-
-    await brokerSelect.evaluate((select) => {
-        select.value = 'ibkr';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    await expect(page.locator('[data-broker-fields="ibkr"]')).toBeVisible();
-    await expect(longbridgeFields.first()).toBeHidden();
-    await expect(longbridgeFields.nth(1)).toBeHidden();
-    await expect(page.getByText('Direct IBKR connectivity is not configured.')).toBeVisible();
-    await expect(page.locator('[data-broker-fields="ibkr"] input')).toHaveCount(0);
-    await expect(page.locator('[data-broker-fields="ibkr"] button')).toHaveCount(0);
-});
-
-test('keeps Broker access dropdown options as name-only rows', async ({page}) => {
-    await page.goto('/settings/broker-access');
-
-    const trigger = page.locator('[data-shared-select-kind="settings-broker"] [data-shared-select-trigger]');
-    await trigger.click();
-
-    const dropdown = page.locator('#selected_broker_dropdown');
-    await expect(dropdown).toBeVisible();
-    await expect(dropdown.locator('[role="option"]')).toHaveText(['IBKR', 'Longbridge']);
-    await expect(dropdown.locator('.trade-strategy-dropdown-desc')).toHaveCount(0);
-    await expect(dropdown.locator('.trade-strategy-dropdown-copy')).toHaveCount(0);
+    const form = page.locator('.settings-shell-broker-access form.settings-form-shell');
+    await expect(form.getByText('Longbridge OAuth', {exact: true})).toBeVisible();
+    await expect(form.getByRole('button', {name: 'Authorize in browser'})).toBeVisible();
+    await expect(form.getByRole('button', {name: 'Test connection'})).toBeVisible();
+    await expect(form).not.toContainText('IBKR');
+    await expect(form.locator('select, [role="listbox"], input[name="longbridge_access_token"]')).toHaveCount(0);
 });
 
 test('stacks Email SMTP action packages like the Broker access form', async ({page}) => {
@@ -237,33 +204,22 @@ test('keeps the settings action package aligned and demonstrates maintenance act
     await segmented.getByText('Metrics', {exact: true}).click();
     await expect(segmented.locator('input[value="metrics"]')).toBeChecked();
     await expect.poll(() => segmented.evaluate((shell) => {
-        const selected = shell.querySelector('input:checked + span');
         const probe = document.createElement('span');
-        probe.style.color = 'var(--mode-switch-label-color-active)';
         shell.append(probe);
-        const matchesActiveToken = getComputedStyle(selected).color === getComputedStyle(probe).color;
-        probe.remove();
-        return matchesActiveToken;
-    })).toBe(true);
-    const segmentedColors = await segmented.evaluate((shell) => {
         const resolveColor = (value) => {
-            const probe = document.createElement('span');
             probe.style.color = value;
-            shell.append(probe);
-            const color = getComputedStyle(probe).color;
-            probe.remove();
-            return color;
+            return getComputedStyle(probe).color;
         };
-        return {
-            active: getComputedStyle(shell.querySelector('input:checked + span')).color,
-            activeToken: resolveColor('var(--mode-switch-label-color-active)'),
-            inactive: getComputedStyle(shell.querySelector('input:not(:checked) + span')).color,
-            inactiveToken: resolveColor('var(--mode-switch-label-color)'),
+        const active = getComputedStyle(shell.querySelector('input:checked + span')).color;
+        const inactive = getComputedStyle(shell.querySelector('input:not(:checked) + span')).color;
+        const matches = {
+            active: active === resolveColor('var(--mode-switch-label-color-active)'),
+            inactive: inactive === resolveColor('var(--mode-switch-label-color)'),
+            distinct: active !== inactive,
         };
-    });
-    expect(segmentedColors.active).toBe(segmentedColors.activeToken);
-    expect(segmentedColors.inactive).toBe(segmentedColors.inactiveToken);
-    expect(segmentedColors.active).not.toBe(segmentedColors.inactive);
+        probe.remove();
+        return matches;
+    })).toEqual({active: true, inactive: true, distinct: true});
 
     const actionPackage = page.locator('[data-style-token-action-package]');
     const marker = actionPackage.locator('[data-action-package-live-marker]');
@@ -512,21 +468,21 @@ test('keeps Settings surfaces on the shared 640px content and 384px control toke
 
     const widthCases = [
         ['/settings/about', '.about-section'],
-        ['/settings/backtest', '.settings-shell-backtest > .settings-content-scrollport > .settings-general-panel'],
+        ['/settings/backtest', '.settings-shell-backtest > .settings-content-scrollport > .settings-content-grid > .settings-general-panel'],
         ['/settings/broker-access', '.settings-shell-broker-access .settings-action-package'],
         ['/settings/cash-equivalents', '.cash-equivalents-card'],
         ['/settings/clear-caches', '.settings-shell-clear-caches .settings-action-package'],
         ['/settings/email-smtp', '.settings-shell-email-smtp .settings-action-package'],
         ['/settings/font-tokens', '#primitive-scale'],
-        ['/settings/general', '.settings-general-shell > .settings-content-scrollport > .settings-general-panel'],
-        ['/settings/investment', '.settings-shell-investment > .settings-content-scrollport > .settings-general-panel'],
-        ['/settings/local-market-store', '.settings-shell-local-market-store > .settings-content-scrollport > .local-store-maintain-card'],
-        ['/settings/local-market-store', '.settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell'],
+        ['/settings/general', '.settings-general-shell > .settings-content-scrollport > .settings-content-grid > .settings-general-panel'],
+        ['/settings/investment', '.settings-shell-investment > .settings-content-scrollport > .settings-content-grid > .settings-general-panel'],
+        ['/settings/local-market-store', '.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .local-store-maintain-card'],
+        ['/settings/local-market-store', '.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .local-store-table-shell'],
         ['/settings/material-tokens', '.settings-shell-material-tokens > .settings-summary-card'],
-        ['/settings/network', '.settings-shell-network > .settings-content-scrollport > .settings-action-package'],
-        ['/settings/network', '.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network'],
+        ['/settings/network', '.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package'],
+        ['/settings/network', '.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-general-panel-network'],
         ['/settings/strategies', '.settings-shell-strategies > .settings-summary-card'],
-        ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport > .settings-summary'],
+        ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport > .settings-content-grid > .settings-summary'],
         ['/settings/strategies', '.settings-shell-strategies > .settings-content-scrollport .settings-strategy-card'],
     ];
 
@@ -561,9 +517,9 @@ test('keeps Settings surfaces on the shared 640px content and 384px control toke
 
     await page.goto('/settings/local-market-store');
     const localStoreWidths = await page.evaluate(() => ({
-        summary: document.querySelector('.settings-shell-local-market-store > .settings-content-scrollport > .settings-summary')
+        summary: document.querySelector('.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .settings-summary')
             ?.getBoundingClientRect().width ?? 0,
-        tableShell: document.querySelector('.settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell')
+        tableShell: document.querySelector('.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .local-store-table-shell')
             ?.getBoundingClientRect().width ?? 0,
         tableWrap: document.querySelector('#local_store_table_scroll')?.getBoundingClientRect().width ?? 0,
     }));
@@ -643,7 +599,7 @@ test('keeps Settings scrollports and local effects inside their owning surfaces'
 
     await page.goto('/settings/material-tokens');
     const materialOverflow = await page.evaluate(() => ({
-        shell: getComputedStyle(document.querySelector('.settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell')).overflow,
+        shell: getComputedStyle(document.querySelector('.settings-shell-material-tokens > .settings-content-scrollport > .settings-content-grid > .style-token-shell')).overflow,
         card: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-card')).overflow,
         demo: getComputedStyle(document.querySelector('.settings-shell-material-tokens .style-token-demo')).overflow,
     }));
@@ -653,15 +609,15 @@ test('keeps Settings scrollports and local effects inside their owning surfaces'
     const networkOverflow = await page.evaluate(() => ({
         shell: getComputedStyle(document.querySelector('.settings-shell-network')).overflow,
         scrollport: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport')).overflow,
-        inset: document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-action-package').getBoundingClientRect().left
+        inset: document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package').getBoundingClientRect().left
             - document.querySelector('.settings-shell-network > .settings-content-scrollport').getBoundingClientRect().left,
         scrollportInsideShell: (() => {
             const shell = document.querySelector('.settings-shell-network').getBoundingClientRect();
             const scrollport = document.querySelector('.settings-shell-network > .settings-content-scrollport').getBoundingClientRect();
             return scrollport.left >= shell.left - 1 && scrollport.right <= shell.right + 1;
         })(),
-        action: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-action-package')).overflow,
-        panel: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network')).overflow,
+        action: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package')).overflow,
+        panel: getComputedStyle(document.querySelector('.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-general-panel-network')).overflow,
         row: getComputedStyle(document.querySelector('.settings-shell-network .settings-service-row')).overflow,
     }));
     expect(networkOverflow).toEqual({
@@ -799,7 +755,7 @@ test('hydrates the network self-check and uses the standard Settings action pack
     await page.goto('/settings/network');
 
     const actionPackage = page.locator(
-        '.settings-shell-network > .settings-content-scrollport > .settings-action-package',
+        '.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package',
     ).filter({has: page.locator('[data-network-refresh-button]')});
     await expect(actionPackage).toHaveCount(1);
     await expect(actionPackage.locator('.settings-service-name')).toHaveText('Network self-check');

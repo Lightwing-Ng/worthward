@@ -1,8 +1,10 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.3.0
+ * Code version: v1.4.0
+ * - Changed: HSBC paste sync requires a returned preview and explains missing input.
  * - Added: Read-only previews of HSBC cash and securities changes.
+ * - Fixed: Focuses the HSBC paste field when clipboard reads are unavailable.
  * - Fixed: Current unrealized uncertainty does not erase verified realized detail rows.
  * - Fixed: Native paste and clipboard buttons share HSBC capture validation.
  * - Changed: HSBC account-page paste detects cash and credit cards in one field.
@@ -598,35 +600,10 @@ function getSelectedInvestmentImportBroker() {
         return runtime.normalizeInvestmentBroker(runtime.investmentImportBrokerSelect?.value || 'hsbc');
     }
 
-function getSelectedIbkrImportMode() {
-        const checkedMode = document.querySelector('input[name="ibkr_import_mode"]:checked');
-        const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'csv';
-        if (value === 'gainskeeper') return 'gainskeeper';
-        if (value === 'web_paste') return 'web_paste';
-        return 'csv';
-    }
-
 function getSelectedHsbcImportMode() {
         const checkedMode = document.querySelector('input[name="hsbc_import_mode"]:checked');
         const value = checkedMode instanceof HTMLInputElement ? checkedMode.value : 'paste';
         return value === 'statement_pdf' ? 'statement_pdf' : 'paste';
-    }
-
-function syncIbkrImportModePanels() {
-        const selectedMode = getSelectedIbkrImportMode();
-        if (runtime.investmentImportIbkrMode instanceof HTMLElement) {
-            runtime.investmentImportIbkrMode.dataset.active = selectedMode;
-            runtime.investmentImportIbkrMode.style.setProperty('--segmented-option-count', '3');
-            const activeIndex = selectedMode === 'gainskeeper'
-                ? '1'
-                : (selectedMode === 'web_paste' ? '2' : '0');
-            runtime.investmentImportIbkrMode.style.setProperty('--segmented-active-index', activeIndex);
-            runtime.scheduleIbkrImportSegmentedPillUpdate();
-        }
-        document.querySelectorAll('[data-ibkr-import-mode-panel]').forEach((panel) => {
-            if (!(panel instanceof HTMLElement)) return;
-            panel.hidden = panel.dataset.ibkrImportModePanel !== selectedMode;
-        });
     }
 
 function syncHsbcImportModePanels() {
@@ -660,188 +637,6 @@ function normalizeClipboardText(rawText) {
 function countClipboardLines(text) {
         const normalized = normalizeClipboardText(text);
         return normalized ? normalized.split('\n').length : 0;
-    }
-
-function hasIbkrCompactOrderCapture(text) {
-        return /^(?:Buy|Sold)\s+[\d,]+(?:\.\d+)?\s+[A-Z0-9][A-Z0-9.-]*\s+Limit\s+[\d,]+(?:\.\d+)?\s*,\s*[A-Z0-9._-]+$/im.test(text);
-    }
-
-function getIbkrTradeNotificationsReadiness(rawText) {
-        const text = normalizeClipboardText(rawText);
-        if (!text) {
-            return {ready: false, reason: 'empty'};
-        }
-        const hasCompactOrder = hasIbkrCompactOrderCapture(text);
-        const hasDisplayedDate = /\d{1,2}\/\d{1,2}\/20\d{2},\s+\d{1,2}:\d{2}\s+[AP]M/i.test(text);
-        const hasPageDate = Boolean(String(runtime.ibkrTradeNotificationsDateInput?.value || '').trim());
-        const hasTimeOnlyFill = text.split('\n').some((line) => (
-            /^\d{1,2}:\d{2}\s+[AP]M$/i.test(line.trim())
-        ));
-        const hasTradeShape = Boolean(
-            /Orders\s*&\s*Trades/i.test(text)
-            && /Trade Notifications/i.test(text)
-            && /\bU\d{6,12}\b/i.test(text)
-            && (/(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/i.test(text) || hasCompactOrder)
-            && /\bFilled\b/i.test(text)
-            && (/Fees:\s*[\d,]+(?:\.\d+)?/i.test(text) || hasCompactOrder)
-        );
-        if (!hasTradeShape || (!hasDisplayedDate && !hasPageDate)) {
-            return {ready: false, reason: 'invalid_format'};
-        }
-        if (hasTimeOnlyFill && !hasPageDate) {
-            return {ready: false, reason: 'missing_page_date'};
-        }
-        return {ready: true, reason: 'ready'};
-    }
-
-function isLikelyIbkrTradeNotificationsText(rawText) {
-        return getIbkrTradeNotificationsReadiness(rawText).ready;
-    }
-
-function getIbkrHoldingsReadiness(rawText) {
-        const text = normalizeClipboardText(rawText);
-        if (!text) return {ready: false, reason: 'empty', positionCount: 0};
-        const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
-        const holdingsIndex = lines.findIndex((line) => /^Your Holdings$/i.test(line));
-        const cashIndex = lines.findIndex((line, index) => (
-            index > holdingsIndex && /^Cash Holdings$/i.test(line)
-        ));
-        const accountCount = new Set(
-            Array.from(text.matchAll(/\bU\d{6,12}\b/gi), (match) => match[0].toUpperCase()),
-        ).size;
-        let positionCount = 0;
-        if (holdingsIndex >= 0 && cashIndex > holdingsIndex) {
-            for (let index = holdingsIndex + 1; index + 2 < cashIndex; index += 1) {
-                if (
-                    /^[A-Z][A-Z0-9.-]{0,14}$/.test(lines[index])
-                    && /[A-Z]/i.test(lines[index + 1])
-                    && /^[+]?[\d,]+(?:\.\d+)?\s+[-+]?\d/.test(lines[index + 2])
-                ) {
-                    positionCount += 1;
-                }
-            }
-        }
-        const hasNativeCash = /(?:^|\n)\s*[A-Z]{3,6}\s+\(base currency\)\s+[+-]?[\d,]+(?:\.\d+)?(?:\s|$)/i.test(text);
-        const ready = accountCount === 1
-            && holdingsIndex >= 0
-            && cashIndex > holdingsIndex
-            && positionCount > 0
-            && hasNativeCash;
-        return {ready, reason: ready ? 'ready' : 'invalid_format', positionCount};
-    }
-
-function syncIbkrTradeNotificationsDisplay() {
-        if (!(runtime.ibkrTradeNotificationsDisplay instanceof HTMLInputElement)) {
-            return;
-        }
-        const text = normalizeClipboardText(runtime.ibkrTradeNotificationsTextInput?.value || '');
-        if (runtime.ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
-            const isPasted = Boolean(text);
-            runtime.ibkrTradeNotificationsPasteButton.classList.toggle('is-pasted', isPasted);
-            runtime.ibkrTradeNotificationsPasteButton.setAttribute(
-                'aria-label',
-                isPasted
-                    ? 'IBKR Trade Notifications page text pasted'
-                    : 'Paste IBKR Trade Notifications page text from clipboard',
-            );
-            runtime.ibkrTradeNotificationsPasteButton.setAttribute(
-                'title',
-                isPasted ? 'IBKR Trade Notifications text pasted' : 'Paste from clipboard',
-            );
-        }
-        if (!text) {
-            runtime.ibkrTradeNotificationsDisplay.value = '';
-            runtime.ibkrTradeNotificationsDisplay.title = '';
-            return;
-        }
-        const tradeCount = Array.from(
-            text.matchAll(/(?:Bot|Bought|Sold)\s+[\d,]+(?:\.\d+)?\s+@\s+[\d,]+(?:\.\d+)?\s+on\s+[A-Z0-9._-]+/gi)
-        ).length;
-        const tradeLabel = tradeCount === 1 ? '1 filled trade' : `${tradeCount.toLocaleString('en-US')} filled trades`;
-        const lineCount = countClipboardLines(text).toLocaleString('en-US');
-        const charCount = text.length.toLocaleString('en-US');
-        const validation = getIbkrTradeNotificationsReadiness(text);
-        const readiness = validation.reason === 'missing_page_date'
-            ? 'Page date required'
-            : (validation.ready ? 'Ready' : 'Check format');
-        runtime.ibkrTradeNotificationsDisplay.value = `IBKR Trade Notifications · ${tradeLabel} · ${lineCount} lines · ${charCount} chars · ${readiness}`;
-        runtime.ibkrTradeNotificationsDisplay.title = text;
-    }
-
-function syncIbkrHoldingsDisplay() {
-        if (!(runtime.ibkrHoldingsDisplay instanceof HTMLInputElement)) return;
-        const text = normalizeClipboardText(runtime.ibkrHoldingsTextInput?.value || '');
-        if (runtime.ibkrHoldingsPasteButton instanceof HTMLButtonElement) {
-            const isPasted = Boolean(text);
-            runtime.ibkrHoldingsPasteButton.classList.toggle('is-pasted', isPasted);
-            runtime.ibkrHoldingsPasteButton.setAttribute(
-                'aria-label',
-                isPasted
-                    ? 'IBKR Your Holdings page text pasted'
-                    : 'Paste IBKR Your Holdings page text from clipboard',
-            );
-            runtime.ibkrHoldingsPasteButton.setAttribute(
-                'title',
-                isPasted ? 'IBKR Your Holdings text pasted' : 'Paste from clipboard',
-            );
-        }
-        if (!text) {
-            runtime.ibkrHoldingsDisplay.value = '';
-            runtime.ibkrHoldingsDisplay.title = '';
-            return;
-        }
-        const validation = getIbkrHoldingsReadiness(text);
-        const positionLabel = validation.positionCount === 1
-            ? '1 position'
-            : `${validation.positionCount.toLocaleString('en-US')} positions`;
-        const lineCount = countClipboardLines(text).toLocaleString('en-US');
-        const charCount = text.length.toLocaleString('en-US');
-        runtime.ibkrHoldingsDisplay.value = `IBKR Your Holdings · ${positionLabel} · ${lineCount} lines · ${charCount} chars · ${validation.ready ? 'Ready' : 'Check format'}`;
-        runtime.ibkrHoldingsDisplay.title = text;
-    }
-
-async function pasteIbkrTradeNotificationsFromClipboard() {
-        if (!navigator.clipboard?.readText) {
-            runtime.setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
-            return;
-        }
-        try {
-            const text = normalizeClipboardText(await navigator.clipboard.readText());
-            if (!text) {
-                runtime.setImportFeedback('Clipboard is empty.', 'error');
-                return;
-            }
-            if (!(runtime.ibkrTradeNotificationsTextInput instanceof HTMLTextAreaElement)) {
-                return;
-            }
-            runtime.ibkrTradeNotificationsTextInput.value = text;
-            syncIbkrTradeNotificationsDisplay();
-            runtime.syncImportValidationState();
-            runtime.clearImportFeedback();
-        } catch (_error) {
-            runtime.setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
-        }
-    }
-
-async function pasteIbkrHoldingsFromClipboard() {
-        if (!navigator.clipboard?.readText) {
-            runtime.setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
-            return;
-        }
-        try {
-            const text = normalizeClipboardText(await navigator.clipboard.readText());
-            if (!text) {
-                runtime.setImportFeedback('Clipboard is empty.', 'error');
-                return;
-            }
-            if (!(runtime.ibkrHoldingsTextInput instanceof HTMLTextAreaElement)) return;
-            runtime.ibkrHoldingsTextInput.value = text;
-            syncIbkrHoldingsDisplay();
-            runtime.syncImportValidationState();
-            runtime.clearImportFeedback();
-        } catch (_error) {
-            runtime.setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
-        }
     }
 
 function splitHsbcPastedTextChunks(rawText) {
@@ -1032,17 +827,17 @@ function renderHsbcPastePreviewTable(id, entries, formatRow) {
 function syncHsbcPastePreview() {
         const panel = document.getElementById('hsbc_paste_preview');
         if (!panel) return;
-        const {state, preview} = runtime.state.hsbcPasteValidation;
+        const {state, preview, notice} = runtime.state.hsbcPasteValidation;
         const formatDate = (date) => date
             ? runtime.formatInvestmentFullDateParts(runtime.parseInvestmentDateParts(date))
             : '—';
         const pending = state === 'pending';
-        panel.hidden = !pending && !preview;
+        panel.hidden = !pending && !preview && !notice;
         const hasChanges = preview?.transactions?.length || preview?.balances?.length || preview?.positions?.length;
         panel.querySelector('#hsbc_paste_preview_status').textContent = pending
             ? 'Checking HSBC activity…'
-            : hasChanges ? 'Review the changes, then select Sync now.'
-                : 'No changes to transactions, cash balances, or holdings. Select Sync now to save the capture.';
+            : notice || (hasChanges ? 'Review the changes, then select Sync now.'
+                : 'No changes to transactions, cash balances, or holdings. Select Sync now to save the capture.');
         renderHsbcPastePreviewTable('hsbc_paste_preview_transactions', preview?.transactions, (row) => {
             const type = String(row.type || '').replaceAll('_', ' ');
             const trade = [type && type[0].toUpperCase() + type.slice(1), row.ticker,
@@ -1200,10 +995,31 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                 const fieldStatus = result.field_status && typeof result.field_status === 'object'
                     ? result.field_status
                     : {};
+                const receivedPreview = result.preview;
+                const preview = result.ready === true && receivedPreview
+                    && ['transactions', 'balances', 'positions'].every(
+                        (field) => Array.isArray(receivedPreview[field])
+                            && receivedPreview[field].every((row) => row && typeof row === 'object' && !Array.isArray(row)),
+                    )
+                    && Array.isArray(receivedPreview.warnings)
+                    && receivedPreview.warnings.every((warning) => typeof warning === 'string')
+                    ? receivedPreview : null;
+                const requiredFields = Array.isArray(result.required_fields) ? result.required_fields : [];
+                const missingPages = Object.entries({
+                    cash: 'HSBC account-page text',
+                    portfolio: 'Portfolio',
+                    order_status: 'Order Status',
+                }).filter(([field]) => requiredFields.includes(field)).map(([, label]) => label);
+                let notice = '';
+                if (result.ready === true && !preview) {
+                    notice = 'The HSBC sync preview is unavailable. Paste one of the pages again to retry.';
+                } else if (!preview && missingPages.length) {
+                    notice = `Paste ${missingPages.join(' and ')} to preview this HSBC sync.`;
+                }
                 runtime.state.hsbcPasteValidation = {
                     signature,
                     state: 'valid',
-                    ready: Boolean(result.ready),
+                    ready: Boolean(preview),
                     mode: String(result.mode || ''),
                     fieldStatus: {
                         cash: fieldStatus.cash === true,
@@ -1213,8 +1029,8 @@ function requestHsbcPasteValidation({ debounce = true } = {}) {
                     cashCurrencies: Array.isArray(result.cash_currencies)
                         ? result.cash_currencies.map((currency) => String(currency || '').trim()).filter(Boolean)
                         : [],
-                    preview: result.ready && result.preview && typeof result.preview === 'object'
-                        ? result.preview : null,
+                    preview,
+                    notice,
                 };
                 runtime.clearImportFeedback();
             } catch (error) {
@@ -1355,15 +1171,22 @@ function ingestHsbcPasteText(kind, rawText) {
     }
 
 async function pasteHsbcClipboardIntoField(kind) {
-        if (!navigator.clipboard?.readText) {
-            runtime.setImportFeedback('Clipboard paste is unavailable in this browser context.', 'error');
+        let text;
+        if (navigator.clipboard?.readText) {
+            try {
+                text = await navigator.clipboard.readText();
+            } catch {
+                // Native paste is available even when the browser denies a clipboard read.
+            }
+        }
+        if (typeof text === 'string') {
+            ingestHsbcPasteText(kind, text);
             return;
         }
-        try {
-            ingestHsbcPasteText(kind, await navigator.clipboard.readText());
-        } catch (_error) {
-            runtime.setImportFeedback('Clipboard access was blocked. Allow clipboard permissions, then try again.', 'error');
-        }
+        const displayInput = getHsbcPasteDisplayInput(kind);
+        if (runtime.state.investmentImportInFlight || !displayInput?.getClientRects().length) return;
+        displayInput.focus();
+        runtime.setImportFeedback('Press ⌘V on Mac or Ctrl+V on Windows and Linux to paste into the selected field.', 'warning');
     }
 
 function seedLongbridgeImportDateRange() {
@@ -1393,11 +1216,7 @@ function seedLongbridgeImportDateRange() {
 function syncInvestmentImportMode() {
         runtime.syncHsbcCreditCardInput?.();
         const selectedBroker = getSelectedInvestmentImportBroker();
-        const isIbkr = selectedBroker === 'ibkr';
-        const ibkrImportMode = getSelectedIbkrImportMode();
         const hsbcImportMode = getSelectedHsbcImportMode();
-        const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
-        const isIbkrWebPaste = isIbkr && ibkrImportMode === 'web_paste';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -1412,13 +1231,8 @@ function syncInvestmentImportMode() {
         const isStandardXlsx = selectedBroker === 'standard_xlsx';
         const usesStandardXlsxImport = runtime.GENERIC_XLSX_INVESTMENT_BROKERS.has(selectedBroker);
         const usesSyncAction = isLongbridgeHk
-            || isIbkrWebPaste
             || isHsbcPaste;
 
-        if (runtime.investmentImportIbkrFields instanceof HTMLElement) {
-            runtime.investmentImportIbkrFields.hidden = !isIbkr;
-            syncIbkrImportModePanels();
-        }
         if (runtime.investmentImportLongbridgeHkFields instanceof HTMLElement) {
             runtime.investmentImportLongbridgeHkFields.hidden = !isLongbridgeHk;
         }
@@ -1446,15 +1260,6 @@ function syncInvestmentImportMode() {
         }
         if (runtime.investmentImportZirconHkFields instanceof HTMLElement) {
             runtime.investmentImportZirconHkFields.hidden = !usesStandardXlsxImport;
-        }
-        if (runtime.transactionsCsvInput instanceof HTMLInputElement) {
-            runtime.transactionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
-        }
-        if (runtime.positionsCsvInput instanceof HTMLInputElement) {
-            runtime.positionsCsvInput.required = isIbkr && ibkrImportMode === 'csv';
-        }
-        if (runtime.gainskeeperFilesInput instanceof HTMLInputElement) {
-            runtime.gainskeeperFilesInput.required = isIbkrGainskeeper;
         }
         if (runtime.longbridgeSgFundDetailsInput instanceof HTMLInputElement) {
             runtime.longbridgeSgFundDetailsInput.required = isLongbridgeSg;
@@ -1497,7 +1302,7 @@ function syncInvestmentImportMode() {
                 ? 'Preview the full credit-card page, then import into the separate credit-card ledger. Pending activity stays separate from posted purchases. Repeated captures are deduplicated.'
                 : isHsbc
                 ? (hsbcImportMode === 'statement_pdf'
-                    ? 'Choose one or more full HSBC monthly statement PDFs. Matching composite/investment statement pairs remain supported.'
+                    ? 'Choose one or more HSBC cash-account statement PDFs, or matching composite and investment statement pairs. For credit-card activity, paste the account page in Copy/paste.'
                     : 'Paste HSBC cash-account or credit-card pages in the first field to preview changes. Add Portfolio and Order Status to refresh holdings.')
                 : (isLongbridgeHk
                     ? 'Imports Longbridge (HK) Fund Details + History Orders files (supports coupons/rewards) into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
@@ -1507,10 +1312,6 @@ function syncInvestmentImportMode() {
                         ? 'Imports Futu (HK) monthly statement PDFs into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                         : (isBocHk
                         ? 'Imports one or more BOCHK Consolidated Statement PDFs, preserving HKD Savings, HKD Current, CNH (printed CNY/RMB), and USD subaccounts in the local ledger without clearing existing records.'
-                        : (isIbkrWebPaste
-                            ? 'Paste the IBKR Trade Notifications page for an immediate provisional sync. Optionally paste the full Your Holdings page to capture validated cash and positions without manual entry. Matching CSV or GainsKeeper files imported later replace rounded trade values.'
-                        : (isIbkrGainskeeper
-                            ? 'Upload as many IBKR GainsKeeper OFX/GKX files as available. Overlapping files are allowed and matching CSV rows are upgraded.'
                             : (isTigertrade
                                 ? 'Imports Tiger Trade activity statement PDFs into <code>settings_store/investment.sqlite3</code> without clearing existing records.'
                                 : (isUsmartHk
@@ -1521,9 +1322,7 @@ function syncInvestmentImportMode() {
                                             : 'Download the typed standard workbook, enter only real broker activity, then upload it for server validation before importing.')
                                     : (isSchwab
                                 ? 'Upload the Charles Schwab Transactions and Positions CSV exports together. Exact same-day ticker and quantity matches are linked as in-kind transfers; ambiguous matches require manual binding.'
-                                : (isIbkr
-                                    ? 'Upload the IBKR Transaction History CSV and Realized Summary CSV for the same account and period.'
-                                    : 'Imports into <code>settings_store/investment.sqlite3</code> without clearing existing records.')))))))))));
+                                : 'Imports into <code>settings_store/investment.sqlite3</code> without clearing existing records.'))))))));
         }
         if (runtime.importSubmitButton instanceof HTMLButtonElement) {
             runtime.importSubmitButton.dataset.defaultLabel = usesSyncAction ? 'Sync now' : 'Import now';
@@ -1593,21 +1392,11 @@ function isUnsettledHsbcBuyTransaction(txn) {
         renderInvestmentStockDetailsPageRows,
         refreshInvestmentStockDetailsTableRows,
         getSelectedInvestmentImportBroker,
-        getSelectedIbkrImportMode,
         getSelectedHsbcImportMode,
-        syncIbkrImportModePanels,
         syncHsbcImportModePanels,
         toDateInputValue,
         normalizeClipboardText,
         countClipboardLines,
-        hasIbkrCompactOrderCapture,
-        getIbkrTradeNotificationsReadiness,
-        isLikelyIbkrTradeNotificationsText,
-        getIbkrHoldingsReadiness,
-        syncIbkrTradeNotificationsDisplay,
-        syncIbkrHoldingsDisplay,
-        pasteIbkrTradeNotificationsFromClipboard,
-        pasteIbkrHoldingsFromClipboard,
         splitHsbcPastedTextChunks,
         mergeHsbcPastedText,
         summarizeHsbcPastedText,

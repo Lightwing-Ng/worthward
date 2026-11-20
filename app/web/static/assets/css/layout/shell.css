@@ -1,4 +1,4 @@
-/* Code version: v3.33.3 */
+/* Code version: v3.35.0 */
 .app-shell {
 	--sidebar-layout-transition-duration: var(--motion-duration-spatial);
 	--sidebar-layout-transition-easing: var(--motion-emphasized);
@@ -87,7 +87,7 @@
 	transform: translate3d(var(--global-quick-action-step), 0, 0) scale(0.72);
 	transform-origin: center;
 	transition:
-		opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+		opacity 220ms var(--motion-spring-080),
 		transform var(--motion-duration-spatial) var(--motion-emphasized),
 		background 160ms var(--motion-standard),
 		box-shadow 160ms var(--motion-standard),
@@ -101,7 +101,7 @@
 	transform: translate3d(0, 0, 0) scale(1);
 }
 .global-quick-actions:not(:hover):not(:focus-within) > .global-language-toggle {
-	transition-timing-function: cubic-bezier(0.55, 0.08, 0.68, 0.53), cubic-bezier(0.55, 0.08, 0.68, 0.53), var(--motion-standard), var(--motion-standard), var(--motion-standard);
+	transition-timing-function: var(--motion-spring-080), var(--motion-spring-080), var(--motion-standard), var(--motion-standard), var(--motion-standard);
 }
 .global-quick-actions > .global-language-toggle:focus-visible {
 	opacity: 1;
@@ -144,7 +144,7 @@ body.is-page-navigating .sidebar {
 	transition-duration: 360ms;
 }
 body.is-page-navigating .sidebar-dock {
-	animation: dock-navigation-settle var(--motion-duration-spatial) var(--motion-inertial) both;
+	animation: dock-navigation-settle var(--motion-duration-spatial) linear both;
 }
 body.is-page-navigating .sidebar-dock::before {
 	background: color-mix(in srgb, var(--accent-fill) 18%, var(--accent-surface-muted));

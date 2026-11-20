@@ -1,7 +1,7 @@
 """
 Self-checks for the unified workspace entry and migrated page layouts.
 
-Code version: v1.11.1
+Code version: v1.11.2
 """
 
 from __future__ import annotations
@@ -472,7 +472,7 @@ class WorkspaceMigrationTests(unittest.TestCase):
         self.assertIn("translateY(0)", open_motion)
         self.assertIn("transition-delay: 140ms", open_motion)
 
-    def test_sidebar_gel_motion_reuses_best_shared_physics_without_layout_geometry(
+    def test_sidebar_gel_motion_interpolates_authored_rebound_without_layout_geometry(
         self,
     ) -> None:
         app_source = read_app_bundle()
@@ -491,11 +491,20 @@ class WorkspaceMigrationTests(unittest.TestCase):
         ):
             self.assertIn(token, app_source)
 
+        selector = ".app-shell.is-sidebar-animating [data-sidebar-gel-content] {"
+        self.assertIn(selector, motion_source)
+        gel_rule = motion_source.split(selector, 1)[1].split("}", 1)[0]
+        self.assertEqual(
+            [
+                line.strip()
+                for line in gel_rule.splitlines()
+                if line.lstrip().startswith("animation-timing-function:")
+            ],
+            ["animation-timing-function: linear;"],
+        )
+        self.assertIn("transform-origin: left top;", gel_rule)
+
         for token in (
-            ".app-shell.is-sidebar-animating",
-            "[data-sidebar-gel-content]",
-            "animation-timing-function: var(--motion-bouncy);",
-            "transform-origin: left top;",
             "@keyframes workspace-sidebar-gel-open",
             "@keyframes workspace-sidebar-gel-close",
             "translate3d(12px, 0, 0) scale3d(0.984, 1.024, 1)",

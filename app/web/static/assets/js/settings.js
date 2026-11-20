@@ -1,4 +1,4 @@
-/* Code version: v0.28.5 */
+/* Code version: v0.28.6 */
 
 import {
     buildSettingsUrl,
@@ -176,21 +176,6 @@ import {
         };
 
         return legacyCopyViaEvent() || legacyCopyViaExecCommand();
-    };
-
-    const attachBrokerSettingsHandlers = () => {
-        const brokerSelect = document.getElementById("selected_broker");
-        if (!(brokerSelect instanceof HTMLSelectElement) || brokerSelect.dataset.bound === "1") return;
-        brokerSelect.dataset.bound = "1";
-        const syncBrokerFields = () => {
-            const selectedBroker = brokerSelect.value.trim().toLowerCase();
-            document.querySelectorAll("[data-broker-fields]").forEach((fieldGroup) => {
-                if (!(fieldGroup instanceof HTMLElement)) return;
-                fieldGroup.hidden = fieldGroup.dataset.brokerFields !== selectedBroker;
-            });
-        };
-        brokerSelect.addEventListener("change", syncBrokerFields);
-        syncBrokerFields();
     };
 
     const attachLongbridgeOauthMonitor = () => {
@@ -1275,7 +1260,6 @@ import {
         refreshStyleTokenPortfolioDonutDemo();
         seedExportImageTokenDefaults();
         renderStyleTokenInvestmentSharePreview();
-        attachBrokerSettingsHandlers();
         attachLongbridgeOauthMonitor();
         attachNetworkRefreshButton();
         attachSettingsSummaryMorph();

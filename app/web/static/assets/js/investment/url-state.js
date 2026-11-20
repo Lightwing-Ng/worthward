@@ -1,16 +1,16 @@
 /**
  * Investment URL state parsing and serialization.
  *
- * Code version: v1.3.0
- * - Changed: Overview and Stock-details ranges stay scoped to their own tabs.
+ * Code version: v1.4.0
+ * - Changed: The Holdings summary and ticker disclosures keep independent URL ranges.
  * - Changed: Metrics uses one shared single-broker-or-All scope for its
  *   summary and Transaction history controls.
  */
 
-export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.3.0';
+export const INVESTMENT_URL_STATE_MODULE_VERSION = 'v1.4.0';
 
 const INVESTMENT_URL_VIEW_SLUGS = Object.freeze({
-    chart: 'overview',
+    chart: 'holdings',
     holdings: 'holdings',
     stock_details: 'holdings',
     metrics: 'metrics',
@@ -39,6 +39,8 @@ const INVESTMENT_URL_PARAMETER_NAMES = Object.freeze([
     'view',
     'ticker',
     'range',
+    'summary',
+    'summary-range',
     'metrics-broker',
     'broker',
     'type',
@@ -56,7 +58,7 @@ function resolveUrl(input) {
     return new URL(String(input || ''), 'http://localhost');
 }
 
-function normalizeView(value, fallback = 'chart') {
+function normalizeView(value, fallback = 'holdings') {
     const normalized = String(value || '').trim().toLowerCase();
     return INVESTMENT_URL_VIEW_ALIASES[normalized] || fallback;
 }
@@ -117,12 +119,18 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
         '#stock_panel',
         '#investment_stock_details_panel',
     ].includes(url.hash);
-    const requestedView = normalizeView(
-        params.get('view') || (legacyStockDetailsHash ? 'stock-details' : 'overview'),
-    );
     const ticker = tickerNormalizer(params.get('ticker') || '');
-    const view = requestedView === 'holdings' && ticker ? 'stock_details' : requestedView;
+    const defaultView = legacyStockDetailsHash
+        ? 'stock-details'
+        : (params.has('range') && !ticker ? 'overview' : 'holdings');
+    const requestedView = normalizeView(params.get('view') || defaultView);
+    const legacyOverview = requestedView === 'chart';
+    const view = legacyOverview ? 'holdings' : (requestedView === 'holdings' && ticker ? 'stock_details' : requestedView);
+    const overviewExpanded = view !== 'metrics' && (legacyOverview || params.get('summary') === 'expanded');
     const range = normalizeRange(params.get('range'));
+    const overviewRange = overviewExpanded
+        ? normalizeRange(params.get('summary-range') || (legacyOverview ? range : 'max'))
+        : null;
     const requestedMetricsBroker = String(params.get('metrics-broker') || 'all').trim().toLowerCase() || 'all';
     const brokerSelection = parseBrokerSelection(params);
     const metricsBroker = view === 'metrics'
@@ -149,6 +157,8 @@ export function parseInvestmentUrlState(input, {tickerNormalizer = normalizeTick
         viewSlug: INVESTMENT_URL_VIEW_SLUGS[view],
         ticker,
         range,
+        overviewExpanded,
+        overviewRange,
         metricsBroker,
         brokerSelection: effectiveBrokerSelection,
         typeFilter: parseTypeSelection(params),
@@ -195,11 +205,13 @@ export function buildInvestmentUrl(input, state = {}) {
             normalizeRange(state.stockDetailsRange ?? state.range),
             'max',
         );
-    } else if (view === 'chart') {
+    }
+    if (view !== 'metrics' && (state.overviewExpanded || view === 'chart')) {
+        params.set('summary', 'expanded');
         setIfNonDefault(
             params,
-            'range',
-            normalizeRange(state.overviewRange ?? state.range),
+            'summary-range',
+            normalizeRange(state.overviewRange ?? (view === 'chart' ? state.range : undefined)),
             'max',
         );
     }
@@ -249,7 +261,7 @@ export function buildInvestmentUrl(input, state = {}) {
 }
 
 export function getInvestmentUrlViewSlug(view) {
-    return INVESTMENT_URL_VIEW_SLUGS[normalizeView(view)] || INVESTMENT_URL_VIEW_SLUGS.chart;
+    return INVESTMENT_URL_VIEW_SLUGS[normalizeView(view)] || INVESTMENT_URL_VIEW_SLUGS.holdings;
 }
 
 export function getInvestmentUrlParameterNames() {

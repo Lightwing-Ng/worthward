@@ -1,4 +1,4 @@
-/* Motion Core scheduler contract tests. Code version: v1.0.2 */
+/* Motion Core scheduler contract tests. Code version: v1.1.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../../../app/web/static/assets/js/motion.js', import.meta.url), 'utf8');
+const tokenSource = fs.readFileSync(new URL('../../../app/web/static/assets/css/foundation/tokens.css', import.meta.url), 'utf8');
 
 function createMotionHarness({reduced = false} = {}) {
     const pendingFrames = new Map();
@@ -100,6 +101,12 @@ test('Motion Core exposes shared spring parameters with stable endpoints', () =>
     assert.equal(spring(1), 1);
     assert.deepEqual(Object.keys(harness.motion.springPresets).sort(), ['bouncy', 'emphasized', 'standard']);
     assert.ok(Number.isFinite(spring(0.5)));
+    const cssCurve = tokenSource.match(/--motion-spring-080:\s*(linear\([^;]+\));/)?.[1];
+    assert.equal(harness.motion.easingTokens.spring, cssCurve);
+    for (const preset of Object.values(harness.motion.springPresets)) {
+        const ratio = preset.damping / (2 * Math.sqrt(preset.stiffness * preset.mass));
+        assert.ok(Math.abs(ratio - 0.8) < 1e-12);
+    }
 });
 
 test('underdamped springs honor the declared initial velocity for every preset', () => {
@@ -116,33 +123,54 @@ test('underdamped springs honor the declared initial velocity for every preset',
     }
 });
 
-test('zero-velocity bouncy and emphasized springs have their physical peak overshoot', () => {
+test('all presets use the same 0.80 damping shape and physical peak overshoot', () => {
     const {motion} = createMotionHarness();
-    for (const [name, expectedPeak] of [
-        ['bouncy', 1.0583277405097767],
-        ['emphasized', 1.0038548206555529],
-    ]) {
-        const preset = motion.springPresets[name];
+    const expectedPeak = 1 + Math.exp(-0.8 * Math.PI / Math.sqrt(1 - 0.8 * 0.8));
+    for (const preset of Object.values(motion.springPresets)) {
         const decay = preset.damping / (2 * preset.mass);
         const oscillation = Math.sqrt(preset.stiffness / preset.mass - decay * decay);
         const peakProgress = (Math.PI / oscillation) / (preset.duration / 1000);
         assert.ok(peakProgress < 1);
         const actualPeak = motion.easing.spring(peakProgress, preset);
         assert.ok(Math.abs(actualPeak - expectedPeak) < 1e-9,
-            `${name} peak was ${actualPeak}`);
+            `Spring peak was ${actualPeak}`);
         assert.ok(motion.easing.spring(peakProgress - 0.001, preset) < actualPeak);
         assert.ok(motion.easing.spring(peakProgress + 0.001, preset) < actualPeak);
     }
 });
 
-test('the nearly critically damped standard spring approaches its endpoint without early overshoot', () => {
+test('standard spring overshoots once, then settles at the exact endpoint', () => {
     const {motion} = createMotionHarness();
     const preset = motion.springPresets.standard;
-    let previous = 0;
-    for (let index = 1; index < 100; index += 1) {
-        const current = motion.easing.spring(index / 100, preset);
-        assert.ok(current > previous && current < 1);
-        previous = current;
-    }
+    const samples = Array.from({length: 101}, (_, index) => motion.easing.spring(index / 100, preset));
+    assert.ok(samples.slice(1, 50).every((value, index) => value > samples[index]));
+    assert.ok(Math.max(...samples) > 1.01 && Math.max(...samples) < 1.02);
+    assert.ok(samples[99] > 1 && samples[99] < 1.005);
     assert.equal(motion.easing.spring(1, preset), 1);
+});
+
+test('spring state carries signed release velocity while a bounded visual settles', () => {
+    const {motion} = createMotionHarness();
+    const preset = motion.springPresets.bouncy;
+    const parameters = {...preset, from: 0, to: 0, velocity: -320};
+    assert.equal(motion.springState(0, parameters).position, 0);
+    assert.equal(motion.springState(0, parameters).velocity, -320);
+    assert.ok(motion.springState(0.05, parameters).position < 0);
+    assert.ok(Math.abs(motion.springState(0.62, parameters).position) < 1);
+    assert.ok(motion.springState(0.05, {...parameters, velocity: 320}).position > 0);
+});
+
+test('velocity tracker rejects stale samples and caps extreme pointer speed', () => {
+    const {motion} = createMotionHarness();
+    const tracker = motion.createVelocityTracker();
+    tracker.sample(0, 100);
+    tracker.sample(12, 120);
+    assert.equal(tracker.velocity(120), 600);
+    assert.equal(tracker.velocity(220), 0);
+    tracker.sample(80, 140);
+    assert.equal(tracker.velocity(140), 2000);
+    tracker.sample(180, 150);
+    assert.equal(tracker.velocity(150), 2400);
+    tracker.reset();
+    assert.equal(tracker.velocity(150), 0);
 });

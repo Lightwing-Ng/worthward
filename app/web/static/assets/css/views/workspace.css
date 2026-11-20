@@ -1,4 +1,4 @@
-/* Code version: v1.30.6 */
+/* Code version: v1.32.0 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -1965,14 +1965,6 @@
         transform: translate3d(-50%, -28px, 0) scale(0.96);
         filter: saturate(0.92) blur(5px);
     }
-    38% {
-        opacity: 1;
-        transform: translate3d(-50%, 8px, 0) scale(1.01);
-        filter: saturate(1) blur(0);
-    }
-    62% {
-        transform: translate3d(-50%, -3px, 0) scale(0.998);
-    }
     100% {
         opacity: 1;
         transform: translate3d(-50%, 0, 0) scale(1);
@@ -2252,7 +2244,7 @@ footer {
         var(--settings-active-index, 0)
         * (var(--settings-nav-item-block-size) + var(--settings-nav-item-gap))
     )) scale(1.01);
-    transition: transform var(--motion-duration-spatial) var(--motion-bouncy);
+    transition: transform var(--motion-duration-spatial) var(--motion-overshoot);
     pointer-events: none;
     z-index: var(--layer-decorative-backdrop);
 }
@@ -2722,6 +2714,9 @@ footer {
 }
 
 .price-subplot-order-handle {
+    --price-subplot-order-jelly-y: 0px;
+    --price-subplot-order-jelly-axis-scale: 1;
+    --price-subplot-order-jelly-cross-scale: 1;
     --surface-resizer-handle-position: 50%;
     position: absolute;
     inset-block: 0;
@@ -2736,12 +2731,18 @@ footer {
 .price-subplot-order-handle::after {
     width: 12px;
     height: 48px;
+    transform: translate(-50%, calc(-50% + var(--price-subplot-order-jelly-y)))
+        scale(var(--price-subplot-order-jelly-cross-scale), var(--price-subplot-order-jelly-axis-scale));
     transition:
         opacity 160ms var(--motion-standard),
         transform 220ms var(--motion-emphasized),
         background 160ms var(--motion-standard),
         border-color 160ms var(--motion-standard),
         box-shadow 220ms var(--motion-standard);
+}
+
+.price-subplot-order-handle.is-order-jelly-active::after {
+    transition-property: opacity, background, border-color, box-shadow;
 }
 
 .price-subplot.is-order-handle-visible .price-subplot-order-handle::after,
@@ -2751,7 +2752,11 @@ footer {
     background: var(--frosted-glass-background-hover);
     border-color: var(--accent-border-medium);
     box-shadow: var(--frosted-glass-shadow-hover);
-    transform: translate(-50%, -50%) translateY(-1px) scale(1.04);
+    transform: translate(-50%, calc(-50% - 1px + var(--price-subplot-order-jelly-y)))
+        scale(
+            calc(1.04 * var(--price-subplot-order-jelly-cross-scale)),
+            calc(1.04 * var(--price-subplot-order-jelly-axis-scale))
+        );
 }
 
 .price-subplot-order-handle:active,

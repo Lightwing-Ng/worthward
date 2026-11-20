@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -637,7 +637,7 @@ test('renders the 1M investment equity curve from the requested high-precision c
         };
     });
     await page.setViewportSize({width: 919, height: 1_090});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await expect.poll(() => page.evaluate(() => Boolean(window.Chart?.getChart?.(document.querySelector('#investmentEquityChart'))))).toBe(true);
 
     await page.evaluate(() => {
@@ -733,7 +733,7 @@ test('carries each ticker intraday close forward across interleaved missing bars
             });
         },
     });
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await page.locator('label[for="investment_equity_range_1w"]').click();
     await expect.poll(() => page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
@@ -825,7 +825,7 @@ test('replays trusted intraday fills by minute and carries date-only trades into
             });
         },
     });
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await page.locator('label[for="investment_equity_range_1w"]').click();
     await expect.poll(() => page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
@@ -993,7 +993,7 @@ test('does not pre-fund an earlier booking date with future sale proceeds', asyn
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);

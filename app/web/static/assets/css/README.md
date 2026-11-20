@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.6.5`
+Documentation version: `v1.7.0`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -25,6 +25,8 @@ cascade contract and must match the source exactly.
 16. `views/investment-tables.css`
 17. `utilities/responsive.css`
 18. `foundation/motion.css`
+19. `components/continuous-corners.css`
+20. `components/workspace-grid.css`
 
 ## Cache versions
 
@@ -118,6 +120,13 @@ reimplementing its trigger geometry.
 Keep selector order stable unless the change intentionally modifies cascade
 behavior. Run the static cache-version contract and browser checks after a
 manifest or load-order change.
+
+The continuous-corners module assigns `corner-shape` only to rounded
+rectangles and their actual clipping layers. Its single value comes from
+`--corner-shape-continuous` in `foundation/tokens.css`. The existing radius still
+sets each corner's size and remains the fallback in browsers without
+`corner-shape`. Circular actions, markers, dots, and pill controls retain round
+geometry; do not add them to the continuous-corner selector registry.
 
 Allocation range thumbs use the shared resizer's Frosted Glass background, border,
 shadow, and backdrop blur in both browser pseudo-elements. Hover, keyboard focus,

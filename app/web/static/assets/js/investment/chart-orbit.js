@@ -1,14 +1,14 @@
 /**
  * Investment chart and donut orbit helpers.
  *
- * Code version: v1.39.0
+ * Code version: v1.40.0
  * - Added: Donut orbit logos can render token-backed identities with theme-controlled mask colors.
  * - Changed: Orbit geometry now follows the rendered donut diameter so responsive CSS sizes keep satellites on the real track.
  * - Changed: Orbit writes use compositor-friendly transform variables and the shared Motion Core scheduler.
  * - Added: Exported module version metadata so the investment entry module can expose loaded helper versions for cache diagnostics.
  */
 
-export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.39.0';
+export const INVESTMENT_CHART_ORBIT_MODULE_VERSION = 'v1.40.0';
 
 const investmentDonutOrbitLayerState = new WeakMap();
 
@@ -36,15 +36,11 @@ function getShortestOrbitAngleDelta(fromAngle, toAngle) {
     return delta;
 }
 
-function easeInOutCubic(progress) {
+function springProgress(progress) {
     if (window.WorthwardMotion?.easing?.inOut) {
         return window.WorthwardMotion.easing.inOut(progress);
     }
-    if (progress <= 0) return 0;
-    if (progress >= 1) return 1;
-    return progress < 0.5
-        ? 4 * progress * progress * progress
-        : 1 - (Math.pow(-2 * progress + 2, 3) / 2);
+    return Math.min(1, Math.max(0, progress));
 }
 
 export function getPortfolioDonutOrbitMetrics(orbitElement) {
@@ -173,7 +169,7 @@ function scheduleInvestmentDonutOrbitLayerAnimation(logoLayer) {
             const progress = reduced || window.WorthwardMotion?.isReducedMotion?.()
                 ? 1
                 : Math.max(0, Math.min(1, (now - animationStartTime) / duration));
-            const easedProgress = easeInOutCubic(progress);
+            const easedProgress = springProgress(progress);
             const currentAngle = entry.startAngle + (entry.deltaAngle * easedProgress);
             const currentRadiusScale = entry.startRadiusScale + ((entry.targetRadiusScale - entry.startRadiusScale) * easedProgress);
             const currentOpacity = entry.startOpacity + ((entry.targetOpacity - entry.startOpacity) * easedProgress);

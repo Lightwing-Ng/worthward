@@ -1,9 +1,10 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.170.0
- * - Added: HSBC paste previews show changes before explicit import.
+ * Code version: v2.176.1
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
+ * - Changed: Loads the HSBC paste preview requirement for Sync now.
+ * - Fixed: Loads the HSBC clipboard fallback for local HTTP pages.
  * - Fixed: Synchronizes Investment module cache keys with extracted boundary helpers.
  * - Fixed: Loads historical position evidence for omitted-ticker P&L boundaries.
  * - Fixed: Loads reward details at the headline column boundaries.
@@ -93,27 +94,27 @@ import {
     adaptInvestmentImportProcessLists,
     rememberInvestmentImportBroker,
     restoreInvestmentImportBroker,
-} from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.0';
-import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.0';
-import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.1';
-import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.3.2';
+} from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.1';
+import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.1';
+import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.2';
+import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.5.0';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
-import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.8.0';
-import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.5.1';
-import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.5.0';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.3.0';
+import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.9.0';
+import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.8.1';
+import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.6.0';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.4.0';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
-} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.3';
-import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.2';
-import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.3.0';
-import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.1.0';
+} from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.4';
+import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.3';
+import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.4.0';
+import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.2.0';
 import {
     createInvestmentStockHistoryFilterRuntime,
     INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
-} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.4.2';
+} from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.6.1';
 import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.0';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.3';
 
@@ -124,7 +125,7 @@ import {
     registerInvestmentChartHelpers,
     renderInvestmentDonutOrbitLogoPosition,
     syncInvestmentDonutOrbitLogos,
-} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.39.0';
+} from './investment/chart-orbit.js?v=investment-chart-orbit-v1.40.0';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
     getInvestmentAggregatePnlCoverage,
@@ -142,7 +143,6 @@ import {
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
-    buildIbkrImportFeedbackMessage,
     buildSchwabImportFeedbackMessage,
     countNewInvestmentPendingTransferRows,
     getInvestmentPendingTransferSourceKeys,
@@ -174,7 +174,7 @@ import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.4.0';
+} from './investment/realtime.js?v=investment-realtime-v1.5.1';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -193,7 +193,7 @@ import {
 import {
     INVESTMENT_LAYOUT_MODULE_VERSION,
     bindInvestmentSectionResizer,
-} from './investment/layout.js?v=investment-layout-v1.5.4';
+} from './investment/layout.js?v=investment-layout-v1.7.1';
 import {
     INVESTMENT_TRANSACTION_TABLE_MODULE_VERSION,
     INVESTMENT_HISTORY_PAGE_SIZE,
@@ -207,7 +207,7 @@ import {
     INVESTMENT_URL_STATE_MODULE_VERSION,
     buildInvestmentUrl,
     parseInvestmentUrlState,
-} from './investment/url-state.js?v=investment-url-state-v1.3.0';
+} from './investment/url-state.js?v=investment-url-state-v1.4.0';
 import {
     NUMERIC_DISPLAY_MODULE_VERSION,
     getNumericDisplayParts,
@@ -218,7 +218,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.170.0',
+    entry: 'v2.176.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -275,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resolveRealtimeQuoteSource,
         INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
         buildHsbcImportFeedbackMessage,
-        buildIbkrImportFeedbackMessage,
         buildSchwabImportFeedbackMessage,
         countNewInvestmentPendingTransferRows,
         getInvestmentPendingTransferSourceKeys,
@@ -396,27 +395,10 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.workspaceModalOverlayCopy = runtime.workspaceModalOverlay?.querySelector('.workspace-modal-copy');
     runtime.workspaceModalOverlayIcon = document.getElementById('workspace_modal_overlay_icon');
     runtime.workspaceModalOverlayClose = document.getElementById('workspace_modal_overlay_close');
-    runtime.transactionsCsvInput = document.getElementById('transactions_csv');
-    runtime.positionsCsvInput = document.getElementById('positions_csv');
-    runtime.gainskeeperFilesInput = document.getElementById('gainskeeper_files');
-    runtime.gainskeeperFilesStatus = document.getElementById('gainskeeper_files_status');
-    runtime.ibkrTradeNotificationsTextInput = document.getElementById('ibkr_trade_notifications_text');
-    runtime.ibkrTradeNotificationsDateInput = document.getElementById('ibkr_trade_notifications_date');
-    runtime.ibkrTradeNotificationsDisplay = document.getElementById('ibkr_trade_notifications_display');
-    runtime.ibkrTradeNotificationsPasteButton = document.getElementById('ibkr_trade_notifications_paste_button');
-    runtime.ibkrTradeNotificationsTextStatus = document.getElementById('ibkr_trade_notifications_text_status');
-    runtime.ibkrHoldingsTextInput = document.getElementById('ibkr_holdings_text');
-    runtime.ibkrHoldingsDisplay = document.getElementById('ibkr_holdings_display');
-    runtime.ibkrHoldingsPasteButton = document.getElementById('ibkr_holdings_paste_button');
-    runtime.ibkrHoldingsTextStatus = document.getElementById('ibkr_holdings_text_status');
     runtime.investmentImportBrokerSelect = document.getElementById('investment_import_broker');
     restoreInvestmentImportBroker(runtime.investmentImportBrokerSelect);
-    runtime.transactionsCsvStatus = document.getElementById('transactions_csv_status');
-    runtime.positionsCsvStatus = document.getElementById('positions_csv_status');
     runtime.importSubmitButton = document.getElementById('investment_import_submit_button');
     runtime.investmentImportNote = document.getElementById('investment_import_note');
-    runtime.investmentImportIbkrFields = document.getElementById('investment_import_ibkr_fields');
-    runtime.investmentImportIbkrMode = document.getElementById('investment_import_ibkr_mode');
     runtime.investmentImportLongbridgeHkFields = document.getElementById('investment_import_longbridge_hk_fields');
     runtime.investmentImportLongbridgeSgFields = document.getElementById('investment_import_longbridge_sg_fields');
     runtime.longbridgeSgFundDetailsInput = document.getElementById('longbridge_sg_fund_details_txt');
@@ -507,6 +489,8 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.segmentedControl = document.getElementById('investment_view_segmented');
     runtime.investmentViewSurface = document.getElementById('investment_view_surface');
     runtime.investmentViewSurfaceBody = document.getElementById('investment_view_surface_body');
+    runtime.investmentChartPanel = document.getElementById('investment_chart_panel');
+    runtime.state.investmentHoldingsOverviewExpanded = false;
     runtime.investmentBrokerSummarySelector = document.getElementById('investment_broker_summary_selector');
     runtime.investmentDummyChart = document.getElementById('investment_dummy_chart');
     runtime.investmentDummyLogoLayer = document.getElementById('investment_dummy_logo_layer');
@@ -528,8 +512,11 @@ document.addEventListener('DOMContentLoaded', () => {
             historySurface: runtime.investmentHistorySurface,
             sectionResizer: runtime.investmentSectionResizer,
             minVisibleRows: runtime.INVESTMENT_HISTORY_MIN_VISIBLE_ROWS,
-            getChartInstance: () => runtime.state.investmentEquityChartInstance,
             overviewMinimumChangeEvent: INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
+            getChartInstances: () => [
+                runtime.state.investmentHoldingsOverviewExpanded ? runtime.state.investmentEquityChartInstance : null,
+                runtime.state.activeInvestmentView === 'stock_details' ? runtime.state.investmentStockDetailsPriceChartInstance : null,
+            ],
         });
     };
         Object.assign(runtime, createInvestmentRuntimeConfig(runtime));
@@ -554,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runtime.investmentPanels = document.querySelectorAll('[data-investment-view-panel]');
 
 
-    runtime.state.activeInvestmentView = 'chart';
+    runtime.state.activeInvestmentView = 'holdings';
     runtime.state.investmentSurfaceCleanupTimer = null;
     runtime.state.investmentFormHideTimer = null;
     runtime.state.investmentImportInFlight = false;
@@ -581,7 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     runtime.state.investmentSegmentedMeasureRaf = 0;
     runtime.state.investmentSegmentedMeasureTimer = 0;
-    runtime.state.investmentIbkrModeMeasureRaf = 0;
     runtime.state.investmentHsbcModeMeasureRaf = 0;
     runtime.state.activeInvestmentHistoryRowIds = [];
     runtime.state.activeInvestmentStockDetailRowIds = [];
@@ -737,7 +723,7 @@ Object.assign(runtime, createInvestmentDataUtils({
     Object.assign(runtime, createInvestmentLiveValueAnimator({
         epsilon: runtime.INVESTMENT_LIVE_DIGIT_EPSILON,
         neutralEpsilon: runtime.INVESTMENT_DAILY_PNL_DISPLAY_EPSILON,
-        easeOutCubic: runtime.easeOutCubic,
+        springProgress: runtime.springProgress,
         renderWorkspaceMetricValueContent,
         scheduler: window.WorthwardMotion?.scheduler,
     }));
@@ -898,8 +884,6 @@ Object.assign(runtime, createInvestmentDataUtils({
     runtime.mountInvestmentDescriptionBindingFilterHeaders();
     runtime.bindInvestmentExportButton();
     runtime.syncInvestmentImportMode();
-    runtime.syncIbkrTradeNotificationsDisplay();
-    runtime.syncIbkrHoldingsDisplay();
     runtime.syncHsbcPasteDisplaySummaries();
     runtime.syncImportValidationState();
     // Re-force shared select refresh (the broker dropdown uses the backtest-shared-select machinery).
@@ -912,7 +896,7 @@ Object.assign(runtime, createInvestmentDataUtils({
         runtime.investmentImportBrokerSelect.dispatchEvent(new Event('change', {bubbles: true}));
     }
     let observedInvestmentImportBroker = runtime.getSelectedInvestmentImportBroker();
-    [runtime.transactionsCsvInput, runtime.positionsCsvInput, runtime.gainskeeperFilesInput, runtime.futuhkStatementPdfsInput, runtime.bocHkStatementPdfsInput, runtime.hsbcStatementPdfsInput, runtime.tigertradeStatementPdfsInput, runtime.usmartHkStatementPdfsInput, runtime.longbridgeSgFundDetailsInput, runtime.longbridgeSgHistoryOrdersInput, runtime.longbridgeHkFundDetailsInput, runtime.longbridgeHkHistoryOrdersInput, runtime.investmentImportBrokerSelect, runtime.schwabTransactionsCsvInput, runtime.schwabPositionsCsvInput].forEach((input) => {
+    [runtime.futuhkStatementPdfsInput, runtime.bocHkStatementPdfsInput, runtime.hsbcStatementPdfsInput, runtime.tigertradeStatementPdfsInput, runtime.usmartHkStatementPdfsInput, runtime.longbridgeSgFundDetailsInput, runtime.longbridgeSgHistoryOrdersInput, runtime.longbridgeHkFundDetailsInput, runtime.longbridgeHkHistoryOrdersInput, runtime.investmentImportBrokerSelect, runtime.schwabTransactionsCsvInput, runtime.schwabPositionsCsvInput].forEach((input) => {
         if (input) {
             input.addEventListener('change', () => {
                 runtime.clearImportFeedback();
@@ -937,15 +921,6 @@ Object.assign(runtime, createInvestmentDataUtils({
             runtime.validateZirconHkWorkbook();
         });
     }
-    document.querySelectorAll('input[name="ibkr_import_mode"]').forEach((input) => {
-        if (!(input instanceof HTMLInputElement)) return;
-        input.addEventListener('change', () => {
-            runtime.clearImportFeedback();
-            runtime.syncInvestmentImportMode();
-            runtime.syncImportValidationState();
-            runtime.syncInvestmentImportContainerHeight();
-        });
-    });
     document.querySelectorAll('input[name="hsbc_import_mode"]').forEach((input) => {
         if (!(input instanceof HTMLInputElement)) return;
         input.addEventListener('change', () => {
@@ -966,39 +941,6 @@ Object.assign(runtime, createInvestmentDataUtils({
             runtime.requestHsbcPasteValidation();
         });
     });
-    if (runtime.ibkrTradeNotificationsTextInput) {
-        runtime.ibkrTradeNotificationsTextInput.addEventListener('input', () => {
-            runtime.clearImportFeedback();
-            runtime.syncIbkrTradeNotificationsDisplay();
-            runtime.syncImportValidationState();
-        });
-    }
-    if (runtime.ibkrHoldingsTextInput) {
-        runtime.ibkrHoldingsTextInput.addEventListener('input', () => {
-            runtime.clearImportFeedback();
-            runtime.syncIbkrHoldingsDisplay();
-            runtime.syncImportValidationState();
-        });
-    }
-    if (runtime.ibkrTradeNotificationsDateInput) {
-        ['input', 'change'].forEach((eventType) => {
-            runtime.ibkrTradeNotificationsDateInput.addEventListener(eventType, () => {
-                runtime.clearImportFeedback();
-                runtime.syncIbkrTradeNotificationsDisplay();
-                runtime.syncImportValidationState();
-            });
-        });
-    }
-    if (runtime.ibkrTradeNotificationsPasteButton instanceof HTMLButtonElement) {
-        runtime.ibkrTradeNotificationsPasteButton.addEventListener('click', () => {
-            runtime.pasteIbkrTradeNotificationsFromClipboard();
-        });
-    }
-    if (runtime.ibkrHoldingsPasteButton instanceof HTMLButtonElement) {
-        runtime.ibkrHoldingsPasteButton.addEventListener('click', () => {
-            runtime.pasteIbkrHoldingsFromClipboard();
-        });
-    }
     [
         ['cash', runtime.hsbcCashAccountDisplay],
         ['portfolio', runtime.hsbcPortfolioTextDisplay],
@@ -1070,16 +1012,11 @@ Object.assign(runtime, createInvestmentDataUtils({
         runtime.investmentForm.addEventListener('submit', (e) => {
             e.preventDefault();
             runtime.clearImportFeedback();
-            const transactionsCsv = document.getElementById('transactions_csv');
-            const positionsCsv = document.getElementById('positions_csv');
             const selectedBroker = runtime.getSelectedInvestmentImportBroker();
             if (selectedBroker === 'hsbc' && runtime.isHsbcCreditCardInput()) {
                 runtime.importHsbcCreditCard();
                 return;
             }
-            const transactionsFile = transactionsCsv?.files?.[0];
-            const positionsFile = positionsCsv?.files?.[0];
-            const ibkrImportMode = runtime.getSelectedIbkrImportMode();
             const formData = new FormData();
             formData.append('broker', selectedBroker);
             if (!runtime.SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker)) {
@@ -1087,73 +1024,7 @@ Object.assign(runtime, createInvestmentDataUtils({
                 runtime.setImportFeedback(`${pendingBroker.label} investment import is not implemented yet.`, 'warning');
                 return;
             }
-            if (selectedBroker === 'ibkr') {
-                formData.append('ibkr_import_mode', ibkrImportMode);
-                if (ibkrImportMode === 'gainskeeper') {
-                    const gainskeeperFiles = runtime.gainskeeperFilesInput?.files ? Array.from(runtime.gainskeeperFilesInput.files) : [];
-                    if (!gainskeeperFiles.length) {
-                        runtime.setImportFeedback('Please choose at least one IBKR GainsKeeper .gkx file before importing.', 'error');
-                        return;
-                    }
-                    if (!gainskeeperFiles.every((file) => runtime.isLikelyGainskeeperFile(file))) {
-                        runtime.setImportFeedback('Please upload IBKR GainsKeeper files with .gkx or .ofx filenames.', 'error');
-                        return;
-                    }
-                    gainskeeperFiles.forEach((file) => {
-                        formData.append('gainskeeper_files', file);
-                    });
-                } else if (ibkrImportMode === 'web_paste') {
-                    const tradeNotificationsText = String(
-                        runtime.ibkrTradeNotificationsTextInput?.value || ''
-                    ).trim();
-                    if (!tradeNotificationsText) {
-                        runtime.setImportFeedback('Please paste the IBKR Trade Notifications page text before syncing.', 'error');
-                        return;
-                    }
-                    const tradeNotificationsReadiness = runtime.getIbkrTradeNotificationsReadiness(
-                        tradeNotificationsText,
-                    );
-                    if (tradeNotificationsReadiness.reason === 'missing_page_date') {
-                        runtime.setImportFeedback(
-                            'Please select the Hong Kong page date. Current-day IBKR fills show only a time and cannot be dated from the pasted text alone.',
-                            'error',
-                        );
-                        return;
-                    }
-                    if (!tradeNotificationsReadiness.ready) {
-                        runtime.setImportFeedback('The pasted text does not look like the IBKR Trade Notifications page.', 'error');
-                        return;
-                    }
-                    formData.append(
-                        'ibkr_trade_notifications_text',
-                        tradeNotificationsText,
-                    );
-                    formData.append(
-                        'ibkr_trade_notifications_date',
-                        String(runtime.ibkrTradeNotificationsDateInput?.value || '').trim(),
-                    );
-                    const holdingsText = String(runtime.ibkrHoldingsTextInput?.value || '').trim();
-                    if (holdingsText && !runtime.getIbkrHoldingsReadiness(holdingsText).ready) {
-                        runtime.setImportFeedback(
-                            'The pasted text does not look like the IBKR Your Holdings page.',
-                            'error',
-                        );
-                        return;
-                    }
-                    if (holdingsText) {
-                        formData.append('ibkr_holdings_text', holdingsText);
-                    }
-                } else if (!transactionsFile || !positionsFile) {
-                    runtime.setImportFeedback('Please choose both IBKR CSV files before importing.', 'error');
-                    return;
-                } else if (!runtime.isLikelyTransactionHistoryFile(transactionsFile) || !runtime.isLikelyPositionsFile(positionsFile)) {
-                    runtime.setImportFeedback('Please make sure the first file is your Transaction History CSV and the second file is your Realized Summary CSV.', 'error');
-                    return;
-                } else {
-                    formData.append('transactions_csv', transactionsFile);
-                    formData.append('positions_csv', positionsFile);
-                }
-            } else if (selectedBroker === 'longbridge_hk') {
+            if (selectedBroker === 'longbridge_hk') {
                 const hkFundFile = runtime.longbridgeHkFundDetailsInput?.files?.[0];
                 const hkOrdersFile = runtime.longbridgeHkHistoryOrdersInput?.files?.[0];
                 if (!hkFundFile || !hkOrdersFile) {
@@ -1244,8 +1115,8 @@ Object.assign(runtime, createInvestmentDataUtils({
                     formData.append('hsbc_cash_account_text', cashAccountText);
                 }
             } else if (selectedBroker === 'schwab') {
-                const schwabTransactionsFile = runtime.schwabTransactionsCsvInput?.files?.[0] || transactionsCsv?.files?.[0];
-                const schwabPositionsFile = runtime.schwabPositionsCsvInput?.files?.[0] || positionsCsv?.files?.[0];
+                const schwabTransactionsFile = runtime.schwabTransactionsCsvInput?.files?.[0];
+                const schwabPositionsFile = runtime.schwabPositionsCsvInput?.files?.[0];
                 if (!schwabTransactionsFile || !schwabPositionsFile) {
                     runtime.setImportFeedback('Please choose both the Schwab Transactions CSV and Positions CSV before importing.', 'error');
                     return;
@@ -1312,8 +1183,8 @@ Object.assign(runtime, createInvestmentDataUtils({
                 }
                 runtime.reportInvestmentFetchAbortDebug('D', 'investment.js:investmentFormSubmit', 'starting transactions import', {
                     broker: selectedBroker,
-                    hasTransactionsFile: Boolean(transactionsFile),
-                    hasPositionsFile: Boolean(positionsFile),
+                    hasTransactionsFile: formData.has('transactions_csv'),
+                    hasPositionsFile: formData.has('positions_csv'),
                 });
                 return fetch('/api/investment/transactions', runtime.buildInvestmentRequestOptions({
                     method: 'POST',
@@ -1364,17 +1235,6 @@ Object.assign(runtime, createInvestmentDataUtils({
                             runtime.setImportFeedback(
                                 `${result.message || 'Import complete.'} ${valuationNotice}`,
                                 'warning'
-                            );
-                        } else if (selectedBroker === 'ibkr') {
-                            runtime.setImportFeedback(
-                                buildIbkrImportFeedbackMessage({
-                                    importSummary: feedbackImportSummary,
-                                    refreshNotice,
-                                    valuationNotice: '',
-                                    pendingTransferCount,
-                                }, { escapeHtml: runtime.escapeHtml }),
-                                'success',
-                                { allowHtml: true }
                             );
                         } else if (selectedBroker === 'hsbc') {
                             runtime.setImportFeedback(
@@ -1460,10 +1320,7 @@ Object.assign(runtime, createInvestmentDataUtils({
 
     window.addEventListener('worthward:theme-mode-change', () => {
         window.requestAnimationFrame(() => {
-            if (
-                runtime.state.activeInvestmentView === 'chart'
-                && runtime.state.investmentEquityChartInstance?.canvas?.isConnected
-            ) {
+            if (runtime.state.investmentEquityChartInstance?.canvas?.isConnected) {
                 runtime.renderEquityChartWithEquity(runtime.state.investmentChartPointsCache);
             }
             if (runtime.state.activeInvestmentView === 'stock_details') {

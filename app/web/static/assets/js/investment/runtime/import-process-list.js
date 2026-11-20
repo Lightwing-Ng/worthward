@@ -1,6 +1,6 @@
 /**
  * Investment import adapters for the shared Process List and broker preference.
- * Code version: v1.0.0
+ * Code version: v1.0.1
  */
 
 const BROKER_STORAGE_KEY = 'worthward:investment-import-broker';
@@ -47,9 +47,6 @@ function adaptSteps(container, fields) {
         oldMarker?.remove();
         const heading = field.querySelector('.investment-import-label-trigger');
         heading?.classList.add('process-list-heading');
-        if (!heading) {
-            field.querySelector('.investment-import-date-row')?.classList.add('process-list-heading');
-        }
 
         const step = document.createElement('li');
         step.className = 'process-list-step';
@@ -71,7 +68,7 @@ function adaptSteps(container, fields) {
 export function adaptInvestmentImportProcessLists(form) {
     if (!(form instanceof HTMLFormElement)) return;
     const containers = form.querySelectorAll(
-        '.investment-import-field-group, [data-ibkr-import-mode-panel], [data-hsbc-import-mode-panel]',
+        '.investment-import-field-group, [data-hsbc-import-mode-panel]',
     );
     containers.forEach((container) => {
         let sequence = [];

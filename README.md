@@ -1,6 +1,6 @@
 # Worthward
 
-Documentation version: `v3.48.0`
+Documentation version: `v3.48.1`
 
 `Worthward` is a local-first Flask web app for comparing supported-market stock tickers and historical market caps, building weighted portfolios, simulating dollar-cost averaging, running single- and multi-ticker strategy backtests, and inspecting locally imported investment records from a server-rendered workspace backed by on-disk caches. Optional Longbridge connectivity powers protected live-trading workflows, while IBKR remains file-import-only.
 
@@ -744,6 +744,10 @@ and native rewards without inventing a converted total.
 - The browser UI exposes only the BOCHK Consolidated Statement PDF importer. For compatibility, the API still accepts `broker=boc_hk` with `zircon_hk_transactions_xlsx` through the tested legacy standard-workbook fallback; do not remove that backend path without an explicit migration.
 
 ## IBKR import convention (handover reference)
+
+The Investment import dialog omits IBKR. The offline parser and import API
+retain support for existing file-based workflows, and imported IBKR records
+remain visible in Holdings, transaction history, and exports.
 
 IBKR is separate from HSBC behavior. Under the current repository convention, entries are booked directly from IBKR transaction flow and no HSBC-style unsettled replay is applied. For handoff and sanity checks:
 

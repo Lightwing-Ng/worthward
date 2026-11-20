@@ -1,0 +1,174 @@
+/* Code version: v1.4.0 */
+
+/* Rounded rectangles share one continuous corner profile. Circular markers,
+   icon actions, and capsule controls retain their existing round geometry. */
+:where(
+    .sidebar,
+    .panel,
+    .report-card,
+    .workspace-header > .report-card:not(.settings-summary-card):not(.workspace-summary-card):not(.timing-report-card) > .report-heading-row,
+    .performance-item,
+    .chart-surface,
+    .chart-context-menu,
+    .chart-context-menu-item,
+    .settings-nav-icon-shell,
+    .settings-service-row,
+    .font-preview-card,
+    .trade-sidebar-card,
+    .trade-transactions-wrap,
+    .settings-table-wrap,
+    .settings-general-panel,
+    .price-subplot,
+    .chips-chart-status,
+    .price-compare-workspace .workspace-mobile-summary-shell > .workspace-summary-card,
+    .price-compare-workspace .workspace-mobile-summary-shell > .price-subplots-surface,
+    .workspace-modal-dialog,
+    .notice-floating-banner,
+    .navigation-skeleton-card,
+    .navigation-skeleton-icon,
+    .navigation-skeleton-metric,
+    .navigation-skeleton-line.navigation-skeleton-control,
+    .navigation-skeleton-segments .navigation-skeleton-line,
+    .beta-intro,
+    .suggestions,
+    .timing-error-state,
+    .beta-discovery a:focus-visible
+) {
+    corner-shape: var(--corner-shape-continuous);
+}
+
+:where(
+    .ui-collapse > summary:focus-visible,
+    .ticker-input-row,
+    .portfolio-weight-field.is-open .portfolio-weight-input,
+    .portfolio-weight-field:focus-within .portfolio-weight-input,
+    .portfolio-weight-input:hover,
+    .portfolio-weight-input:focus,
+    .portfolio-weight-slider-shell,
+    .ticker-controls .ticker-input-row,
+    .portfolio-controls .ticker-input-row,
+    .trade-strategy-dropdown,
+    .trade-strategy-dropdown-media-slot,
+    .trade-strategy-dropdown-media-placeholder,
+    .trade-strategy-dropdown-media,
+    .trade-strategy-params-popover,
+    .trade-strategy-stepper,
+    .chart-tooltip,
+    .field-tooltip,
+    .field-tooltip-validation,
+    .liquid-glass-surface,
+    .date-picker-popover,
+    [data-shared-select-variant="rounded"] .backtest-shared-select-trigger,
+    .scrollable-data-table-filter-trigger
+) {
+    corner-shape: var(--corner-shape-continuous);
+}
+
+/* The shell, frosted header, and data scrollport each clip their own surface. */
+:where(
+    .scrollable-data-table-shell,
+    .scrollable-data-table-frosted-underlay,
+    .scrollable-data-table-visual-overlay,
+    .scrollable-data-table-shell > .scrollable-data-table[data-table-header],
+    .investment-holdings-table-shell > .investment-holdings-table[data-table-header],
+    .scrollable-data-table-scroll,
+    .investment-holdings-table-scroll,
+    .investment-history-table-shell > .investment-history-table[data-table-header],
+    .investment-history-table-scroll,
+    .investment-history-table-shell > .investment-history-table-scroll,
+    .scrollable-data-table-shell.local-store-table-shell > .local-store-table-wrap.scrollable-data-table-scroll,
+    .investment-holdings-daily-pnl-badge,
+    .investment-holdings-allocation-badge
+) {
+    corner-shape: var(--corner-shape-continuous);
+}
+
+:where(
+    .investment-import-form,
+    .investment-import-field,
+    .investment-import-textarea,
+    .investment-transfer-link-shared-select-field,
+    .investment-transfer-link-shell.is-unresolved,
+    .investment-transfer-link-shell.is-ignored,
+    .investment-transfer-link-select.trade-strategy-select,
+    .investment-transfer-link-shell.is-unresolved .investment-transfer-link-select,
+    .investment-metric-tooltip-trigger:focus-visible,
+    .investment-metric-tooltip,
+    .investment-surface-stack > .chart-surface,
+    .live-trading-surface,
+    .live-trading-suggestions-panel,
+    .live-trading-balance-card,
+    .live-trading-panel-empty,
+    .live-trading-chart-shell,
+    .investment-description-binding-alert-tooltip,
+    .investment-currency-filter-trigger.form-select,
+    .investment-stock-details-time-filter-trigger,
+    .investment-stock-details-time-filter-panel,
+    .investment-community-share-card,
+    .investment-community-share-section,
+    #investment_holdings_panel,
+    .investment-stock-details-empty-shell,
+    .investment-stock-details-identity,
+    .investment-stock-details-metrics,
+    .investment-stock-details-price-chart-card,
+    .investment-stock-details-donut-card,
+    .lstm-training-history-entry,
+    .backtest-history-view-body > .backtest-probability-detail-panel,
+    #backtest_history_transactions_panel > .investment-stock-details-table-host.backtest-history-table-shell:not([hidden]),
+    .trade-metric-card,
+    .trade-chart-hover-date-label,
+    .trade-chart-panel,
+    .trade-chart-canvas-wrap
+) {
+    corner-shape: var(--corner-shape-continuous);
+}
+
+:where(
+    .settings-strategy-card,
+    .settings-language-table td input,
+    .settings-language-table input,
+    .local-store-pagination-range-menu,
+    .about-copy code,
+    .settings-shell-broker-access .settings-action-package-grid > .settings-action-package,
+    .settings-shell-email-smtp .settings-action-package-grid > .settings-action-package,
+    .settings-strategy-params-table tr,
+    .settings-callout-card,
+    .settings-general-option,
+    .settings-action-package,
+    .settings-action-package-icon-shell,
+    .style-token-demo-card,
+    .settings-color-token-sidebar,
+    .settings-color-token-intro,
+    .settings-color-token-group
+) {
+    corner-shape: var(--corner-shape-continuous);
+}
+
+.navigation-skeleton-card::after,
+    .navigation-skeleton-icon::after,
+    .is-pending-value[data-workspace-mask="compare-return"]::after,
+    .is-pending-value[data-workspace-mask="compare-ttm-dividend-yield"]::after,
+    .is-pending-value[data-workspace-mask="compare-summary"]::after,
+    .is-pending-value[data-workspace-mask="portfolio-total-return"]::after,
+    .is-pending-value[data-workspace-mask="trade-metric"]::after,
+    .is-pending-value[data-workspace-mask="trade-chart"]::after,
+    .is-pending-value[data-workspace-mask="trade-price-chart"]::after,
+    .is-pending-value[data-workspace-mask="trade-equity-chart"]::after,
+    .is-pending-value[data-workspace-mask="chart-area"]::after,
+    td.is-pending-value::after,
+    body.is-workspace-switching [data-workspace-mask="chart-area"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="price-subplots"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="trade-price-chart"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="trade-equity-chart"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="backtest-probability-detail-plot"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="compare-summary"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="page-heading"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="result-heading"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="result-date-range"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="local-store-date"].is-masked-during-switch::after,
+    body.is-workspace-switching [data-workspace-mask="settings-status-text"].is-masked-during-switch::after,
+    .investment-community-share-chart-shell.is-axis-masked::before,
+    .style-token-card::after,
+    .sidebar-dock-item::after {
+    corner-shape: var(--corner-shape-continuous);
+}

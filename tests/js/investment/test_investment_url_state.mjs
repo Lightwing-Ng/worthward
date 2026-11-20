@@ -1,4 +1,4 @@
-/* Tests for the canonical Investment URL state contract. Code version: v1.3.0 */
+/* Tests for the canonical Investment URL state contract. Code version: v1.4.0 */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +15,8 @@ test('exposes a semantic cache-busting version and the complete query contract',
         'view',
         'ticker',
         'range',
+        'summary',
+        'summary-range',
         'metrics-broker',
         'broker',
         'type',
@@ -115,7 +117,7 @@ test('opens an inline Holdings detail from the canonical URL or the legacy alias
     assert.equal(parseInvestmentUrlState('/trade/investment?view=holdings').view, 'holdings');
 });
 
-test('omits default values while retaining the explicit Overview view', () => {
+test('maps an explicit legacy Overview view to the Holdings summary', () => {
     assert.equal(
         buildInvestmentUrl('http://localhost:8688/trade/investment', {
             view: 'chart',
@@ -129,8 +131,33 @@ test('omits default values while retaining the explicit Overview view', () => {
             dateFilter: {mode: 'all', value: ''},
             page: 1,
         }),
-        '/trade/investment?view=overview',
+        '/trade/investment?view=holdings&summary=expanded',
     );
+});
+
+test('migrates legacy Overview range links to the expanded Holdings summary', () => {
+    const input = '/trade/investment?view=overview&range=3m&broker=hsbc&page=2';
+    const state = parseInvestmentUrlState(input);
+    assert.equal(state.view, 'holdings');
+    assert.equal(state.viewSlug, 'holdings');
+    assert.equal(state.overviewExpanded, true);
+    assert.equal(state.overviewRange, '3m');
+    assert.equal(
+        buildInvestmentUrl(input, state),
+        '/trade/investment?view=holdings&summary=expanded&summary-range=3m&broker=hsbc&page=2',
+    );
+    assert.equal(parseInvestmentUrlState('/trade/investment?view=holdings').overviewExpanded, false);
+});
+
+test('restores independent ranges for simultaneous summary and ticker disclosures', () => {
+    const input = '/trade/investment?view=holdings&ticker=EUV&range=ytd&summary=expanded&summary-range=1m';
+    const state = parseInvestmentUrlState(input);
+    assert.equal(state.view, 'stock_details');
+    assert.equal(state.ticker, 'EUV');
+    assert.equal(state.range, 'ytd');
+    assert.equal(state.overviewExpanded, true);
+    assert.equal(state.overviewRange, '1m');
+    assert.equal(buildInvestmentUrl(input, state), input);
 });
 
 test('keeps range and the shared Metrics broker scope scoped to the active view', () => {

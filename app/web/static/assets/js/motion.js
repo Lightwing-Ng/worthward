@@ -1,54 +1,126 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.4.0 */
 (() => {
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const clamp = (value, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
     const durations = Object.freeze({instant: 100, fast: 160, standard: 240, emphasized: 420, spatial: 560});
+    const springCurve = "linear(0, .02939, .10213, .19948, .30771, .41717, .52142, .61651, .70032, .77209, .83197, .88071, .91942, .94939, .97195, .98837, .99984, 1.00742, 1.01201, 1.01438, 1.01515, 1.01483, 1.01380, 1.01236, 1.01074, 1.00907, 1.00748, 1.00601, 1.00471, 1.00360, 1.00267, 1.00190, 1)";
+    const boundedSpringSamples = springCurve.slice("linear(".length, -1)
+        .split(",")
+        .map((sample) => clamp(Number(sample)));
     const easingTokens = Object.freeze({
-        standard: "cubic-bezier(0.2, 0, 0, 1)",
-        emphasized: "cubic-bezier(0.16, 1, 0.3, 1)",
+        standard: springCurve,
+        emphasized: springCurve,
+        spring: springCurve,
+        boundedSpring: `linear(${boundedSpringSamples.join(", ")})`,
     });
+    const springPreset = (duration) => {
+        const mass = 1;
+        const stiffness = 180 * Math.pow(620 / duration, 2);
+        return Object.freeze({
+            mass,
+            stiffness,
+            damping: 2 * 0.8 * Math.sqrt(stiffness * mass),
+            initialVelocity: 0,
+            duration,
+        });
+    };
     const springPresets = Object.freeze({
-        standard: Object.freeze({mass: 1, stiffness: 170, damping: 26, initialVelocity: 0, duration: 560}),
-        emphasized: Object.freeze({mass: 1, stiffness: 190, damping: 24, initialVelocity: 0, duration: 560}),
-        bouncy: Object.freeze({mass: 1, stiffness: 180, damping: 18, initialVelocity: 0, duration: 620}),
+        standard: springPreset(560),
+        emphasized: springPreset(560),
+        bouncy: springPreset(620),
     });
 
     const isReducedMotion = () => Boolean(reducedMotionQuery.matches);
 
+    const springState = (elapsedSeconds, parameters = {}) => {
+        const from = Number.isFinite(parameters.from) ? parameters.from : 0;
+        const to = Number.isFinite(parameters.to) ? parameters.to : 1;
+        const velocity = Number.isFinite(parameters.velocity) ? parameters.velocity : 0;
+        const mass = Math.max(0.001, Number(parameters.mass) || 1);
+        const stiffness = Math.max(0.001, Number(parameters.stiffness) || 180);
+        const damping = Number.isFinite(parameters.damping)
+            ? Math.max(0, parameters.damping)
+            : 2 * 0.8 * Math.sqrt(stiffness * mass);
+        const time = Math.max(0, Number(elapsedSeconds) || 0);
+        const frequency = Math.sqrt(stiffness / mass);
+        const ratio = damping / (2 * Math.sqrt(stiffness * mass));
+        const displacement = from - to;
+        if (ratio < 1) {
+            const decay = ratio * frequency;
+            const oscillation = frequency * Math.sqrt(1 - ratio * ratio);
+            const sineWeight = (velocity + decay * displacement) / oscillation;
+            const cosine = Math.cos(oscillation * time);
+            const sine = Math.sin(oscillation * time);
+            const envelope = Math.exp(-decay * time);
+            const shape = displacement * cosine + sineWeight * sine;
+            return {
+                position: to + envelope * shape,
+                velocity: envelope * (
+                    -decay * shape + oscillation * (-displacement * sine + sineWeight * cosine)
+                ),
+            };
+        }
+        if (Math.abs(ratio - 1) < 1e-6) {
+            const linearWeight = velocity + frequency * displacement;
+            const envelope = Math.exp(-frequency * time);
+            const shape = displacement + linearWeight * time;
+            return {
+                position: to + envelope * shape,
+                velocity: envelope * (linearWeight - frequency * shape),
+            };
+        }
+        const root = Math.sqrt(ratio * ratio - 1);
+        const firstRate = -frequency * (ratio - root);
+        const secondRate = -frequency * (ratio + root);
+        const firstWeight = (velocity - secondRate * displacement) / (firstRate - secondRate);
+        const secondWeight = displacement - firstWeight;
+        const first = firstWeight * Math.exp(firstRate * time);
+        const second = secondWeight * Math.exp(secondRate * time);
+        return {
+            position: to + first + second,
+            velocity: firstRate * first + secondRate * second,
+        };
+    };
+
+    const createVelocityTracker = ({windowMs = 80, maxVelocity = 2400} = {}) => {
+        const samples = [];
+        const sample = (position, timestamp) => {
+            if (!Number.isFinite(position) || !Number.isFinite(timestamp)) return;
+            if (samples.length && timestamp < samples[samples.length - 1].timestamp) samples.length = 0;
+            samples.push({position, timestamp});
+            while (samples.length > 2 && samples[1].timestamp < timestamp - windowMs) samples.shift();
+        };
+        const velocity = (timestamp = samples[samples.length - 1]?.timestamp) => {
+            const last = samples[samples.length - 1];
+            if (!last || !Number.isFinite(timestamp) || timestamp - last.timestamp > windowMs) return 0;
+            const first = samples.find((entry) => last.timestamp - entry.timestamp <= windowMs) || last;
+            const seconds = (last.timestamp - first.timestamp) / 1000;
+            if (seconds < 0.004) return 0;
+            return clamp((last.position - first.position) / seconds, -maxVelocity, maxVelocity);
+        };
+        return Object.freeze({sample, velocity, reset: () => { samples.length = 0; }});
+    };
+
+    const springEase = (progress, parameters = springPresets.standard) => {
+        const value = clamp(progress);
+        if (value === 0 || value === 1) return value;
+        const duration = Math.max(1, Number(parameters.duration) || springPresets.standard.duration);
+        return clamp(springState(value * duration / 1000, {
+            from: 0,
+            to: 1,
+            velocity: Number(parameters.initialVelocity) || 0,
+            mass: parameters.mass,
+            stiffness: parameters.stiffness,
+            damping: parameters.damping,
+        }).position, -0.25, 1.25);
+    };
+
     const easing = Object.freeze({
         linear: (progress) => clamp(progress),
-        standard: (progress) => 1 - Math.pow(1 - clamp(progress), 3),
-        emphasized: (progress) => 1 - Math.pow(1 - clamp(progress), 4),
-        inOut: (progress) => {
-            const value = clamp(progress);
-            return value < 0.5 ? 4 * value * value * value : 1 - Math.pow(-2 * value + 2, 3) / 2;
-        },
-        spring: (progress, parameters = springPresets.standard) => {
-            const value = clamp(progress);
-            if (value === 0 || value === 1) return value;
-            const mass = Math.max(0.001, Number(parameters.mass) || springPresets.standard.mass);
-            const stiffness = Math.max(0.001, Number(parameters.stiffness) || springPresets.standard.stiffness);
-            const damping = Math.max(0, Number(parameters.damping) || springPresets.standard.damping);
-            const initialVelocity = Number(parameters.initialVelocity) || 0;
-            const duration = Math.max(1, Number(parameters.duration) || springPresets.standard.duration);
-            const angularFrequency = Math.sqrt(stiffness / mass);
-            const dampingRatio = damping / (2 * Math.sqrt(stiffness * mass));
-            const time = value * (duration / 1000);
-
-            if (dampingRatio < 1) {
-                const dampedFrequency = angularFrequency * Math.sqrt(1 - (dampingRatio * dampingRatio));
-                const displacement = -1;
-                const velocity = (initialVelocity - (dampingRatio * angularFrequency)) / dampedFrequency;
-                const envelope = Math.exp(-dampingRatio * angularFrequency * time);
-                return clamp(1 + (envelope * (
-                    (displacement * Math.cos(dampedFrequency * time))
-                    + (velocity * Math.sin(dampedFrequency * time))
-                )), -0.25, 1.25);
-            }
-
-            const envelope = Math.exp(-angularFrequency * time);
-            return clamp(1 - envelope * (1 + ((angularFrequency - initialVelocity) * time)), -0.25, 1.25);
-        },
+        standard: (progress) => springEase(progress, springPresets.standard),
+        emphasized: (progress) => springEase(progress, springPresets.emphasized),
+        inOut: (progress) => springEase(progress, springPresets.standard),
+        spring: springEase,
     });
 
     function createScheduler() {
@@ -205,6 +277,7 @@
     window.WorthwardMotion = Object.freeze({
         animate,
         clamp,
+        createVelocityTracker,
         durations,
         easingTokens,
         easing,
@@ -212,6 +285,7 @@
         isReducedMotion,
         reducedMotionQuery,
         scheduler,
+        springState,
         springPresets,
         tween,
     });

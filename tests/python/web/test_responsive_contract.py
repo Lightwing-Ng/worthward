@@ -1,4 +1,4 @@
-"""Tests for the unified responsive breakpoint contract. Code version: v0.3.0."""
+"""Tests for the unified responsive breakpoint contract. Code version: v0.3.3."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 TOKENS_CSS = PROJECT_ROOT / "app/web/static/assets/css/foundation/tokens.css"
+WORKSPACE_GRID_CSS = PROJECT_ROOT / "app/web/static/assets/css/components/workspace-grid.css"
 RESPONSIVE_JS = PROJECT_ROOT / "app/web/static/assets/js/responsive.js"
 BASE_HTML = PROJECT_ROOT / "app/web/templates/base.html"
 UNLOCK_HTML = PROJECT_ROOT / "app/web/templates/live_trading_unlock.html"
@@ -24,7 +25,6 @@ EXPECTED_REGISTRY = {
     "pagination-compact-max": 320,
     "pagination-tiny-max": 280,
     "investment-date-grid-max": 560,
-    "investment-summary-compact-max": 260,
     "investment-summary-stack-max": 128,
     "portfolio-donut-max": 430,
     "sidebar-toggle-tight-max": 500,
@@ -61,16 +61,20 @@ def test_css_breakpoints_have_one_semantic_registry() -> None:
     settings_source = _read(PROJECT_ROOT / "app/web/static/assets/css/views/settings.css")
     assert f"@container (min-width: {content_width}px)" in settings_source
 
+    width_query = re.compile(r"\((?:min|max)-width\s*:\s*([0-9]+)px\)")
+    workspace_grid_source = _read(WORKSPACE_GRID_CSS)
+    grid_widths = re.findall(r"@container\s+" + width_query.pattern, workspace_grid_source)
+    assert {int(width) for width in grid_widths} == {372, 564, 756, 864}
+    assert grid_widths == width_query.findall(workspace_grid_source)
+
     responsive_sources = list(
         (PROJECT_ROOT / "app/web/static/assets/css").rglob("*.css")
     ) + [BASE_HTML, UNLOCK_HTML]
     media_values = {
         int(value)
         for path in responsive_sources
-        for value in re.findall(
-            r"\((?:min|max)-width\s*:\s*([0-9]+)px\)",
-            _read(path),
-        )
+        if path != WORKSPACE_GRID_CSS
+        for value in width_query.findall(_read(path))
     }
 
     assert media_values == EXPECTED_MEDIA_VALUES | {content_width}
