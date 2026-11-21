@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.5.4
+Code version: v0.5.5
 - Changed: CSV success fixtures explicitly configure their test account before import.
 - Changed: Official CSV settlement repair fixtures declare their immutable
   account identity explicitly.
@@ -734,6 +734,10 @@ class HsbcPasteImportTestsMixin:
         self.assertEqual(merged["ending_cash"], usd_payload["ending_cash"])
         self.assertEqual(merged["position_snapshot"], usd_payload["position_snapshot"])
         self.assertEqual(
+            merged["broker_summaries"]["hsbc"]["hsbc_snapshot"]["fingerprint"],
+            usd_payload["summary"]["hsbc_snapshot"]["fingerprint"],
+        )
+        self.assertEqual(
             merged["ending_cash_by_currency"],
             {"USD": "60.99", "HKD": "1046.10", "CNH": "12.00"},
         )
@@ -783,6 +787,7 @@ class HsbcPasteImportTestsMixin:
                 "hsbc_cash_component_post_dates": {"USD:SAVINGS": "2026-07-14"},
                 "position_snapshot_authoritative": True,
                 "position_snapshot_as_of": "2026-07-14",
+                "hsbc_snapshot": {"fingerprint": "f" * 64},
             },
             "ending_cash": "121.00",
             "ending_cash_by_currency": {"USD": "121.00"},
@@ -865,6 +870,10 @@ class HsbcPasteImportTestsMixin:
         hsbc_summary = merged["broker_summaries"]["hsbc"]
 
         self.assertEqual(merged["position_snapshot"]["DRAM"]["quantity"], "1")
+        self.assertEqual(
+            hsbc_summary["hsbc_snapshot"]["fingerprint"],
+            existing_payload["summary"]["hsbc_snapshot"]["fingerprint"],
+        )
         self.assertEqual(hsbc_summary["ending_cash"], "60.00")
         self.assertEqual(hsbc_summary["ending_cash_base_currency_as_of"], "2026-07-15")
         self.assertEqual(hsbc_summary["ending_cash_by_currency"], {"USD": "60.00"})

@@ -27,6 +27,14 @@ detail row. Bank-cash pastes preview cash activity and balance changes. A
 complete securities capture previews trade, settlement, balance, and position
 changes. The preview is read-only and saving requires the dialog's import action.
 
+HSBC same-day Portfolio selection, 21 Nov 2026. When authoritative,
+date-only Portfolio records for the same brokerage account otherwise tie,
+the active paste can resolve the tie if it uniquely matches the candidate's
+linked cash-account, Portfolio, and Order Status artifact bundle. The
+recorded snapshot date and evidence ranking still take precedence, and the
+realized P&L calculation still verifies positions against the scoped trade
+history.
+
 Reward summary availability, 9 Nov 2026: investment FX payloads and cache
 completeness checks include supported SGD activity so dated Singapore-dollar
 rewards can reach the USD aggregate. The card-ledger reader also retains
@@ -1387,7 +1395,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.288.1`
+Documentation version: `v1.288.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
