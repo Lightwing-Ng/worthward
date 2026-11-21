@@ -1,4 +1,4 @@
-/* Code version: v1.4.1 */
+/* Code version: v1.4.2 */
 import {
     expect,
     test,
@@ -46,6 +46,7 @@ test('keeps the inline price chart and allocation aligned without collisions', a
         const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
         return source.match(/Code version: (v[0-9.]+)/)[1];
     };
+    const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
     const currentLayoutVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/layout.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
@@ -79,11 +80,11 @@ test('keeps the inline price chart and allocation aligned without collisions', a
         return url.pathname.endsWith('/assets/js/investment/import-feedback.js')
             && url.searchParams.get('v') === 'investment-import-feedback-v1.10.0';
     }))).toBe(true);
-    await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((entry) => {
+    await expect.poll(() => page.evaluate((version) => performance.getEntriesByType('resource').some((entry) => {
         const url = new URL(entry.name);
         return url.pathname.endsWith('/assets/js/chart.js')
-            && url.searchParams.get('v')?.endsWith('-chart-v0.14.0');
-    }))).toBe(true);
+            && url.searchParams.get('v')?.endsWith(`-chart-${version}`);
+    }), currentChartVersion)).toBe(true);
     await page.locator('#sidebar_toggle').click();
     await expect(page.locator('#sidebar_toggle')).toHaveAttribute('aria-expanded', 'false');
     const priceChartCanvas = page.locator('#stock_panel .investment-stock-details-price-chart-canvas');
