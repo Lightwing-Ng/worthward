@@ -8,7 +8,7 @@ longbridge==5.4.0
 openpyxl==3.1.5
 curl_cffi~=0.17.0
 certifi>=2026.10.23
-numpy~=2.5.4
+numpy~=2.5.5
 
 # Security-reviewed transitive pins. Keep these explicit so setup upgrades an
 # already-populated host interpreter instead of retaining vulnerable versions.
