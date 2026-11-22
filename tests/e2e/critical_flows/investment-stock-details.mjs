@@ -46,6 +46,7 @@ test('keeps the inline price chart and allocation aligned without collisions', a
         const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
         return source.match(/Code version: (v[0-9.]+)/)[1];
     };
+    const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
     const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentChartOrbitVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/chart-orbit.js');

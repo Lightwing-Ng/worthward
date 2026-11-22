@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.148.0`
+Documentation version: `v1.149.0`
 
 ## Canonical SQLite persistence
 
@@ -178,6 +178,14 @@ with a warning while its dated ending balance remains evidence. Later history
 can establish its direction. Reparsing persisted captures requires their exact
 saved source bytes; missing evidence does not authorize guessed restoration.
 Cash components retain their own dates and authoritative zero balances.
+
+HSBC NET bank postings establish a currency conversion when two uniquely
+matched, evidenced rows share the complete reference, HSBC account, and posted
+date, and show opposite signs in different native currencies. The merge
+keeps each signed amount and running balance in its own cash ledger and treats
+the pair as a conversion for funding attribution. A lone or ambiguous row
+keeps its ordinary cash classification. Confirmed manual transfer bindings
+retain priority.
 
 Transfer bindings preserve historical source identities through evidenced
 one-to-one reexports. Unresolved historical choices remain reviewable and cannot
@@ -2018,7 +2026,7 @@ sets of values.
   external-flow attribution layer only; they must not subtract from the cash or
   equity balance displayed by Holdings.
 - HSBC copy/paste and full monthly PDF imports preserve separate USD, HKD, and CNH cash ledgers. Each evidenced cash balance remains scoped by HSBC broker, account, account type, and currency until aggregation, so an RMB Savings zero cannot overwrite or offset USD Savings. A new balance boundary also removes same-currency replay deltas without verified subaccount scope, preventing stale trade cash from being double counted beside a later statement balance. An offshore-RMB statement label such as `CNY` is raw provenance only; the canonical HSBC currency is `CNH`.
-- HSBC copy/paste first uses a read-only preflight. USD Savings remains a three-page composite, while a valid HKD/CNH cash-only page can commit without a Portfolio or Order Status page. Cash-only payloads have no position snapshot and merge per-account-kind cash components, so HKD Current and Savings can aggregate without replacing the current USD snapshot.
+- HSBC copy/paste first uses a read-only preflight. USD, HKD, and CNH cash pages can sync with Portfolio and Order Status both empty. A USD securities refresh requires both securities pages. Cash-only sync preserves the existing Portfolio snapshot and merges balances per account kind and currency. When a USD cash-only sync advances the posted date, it carries the page's Ledger and Available balances together when both are supplied. Existing securities orders remain subject to the same posting-based settlement checks.
 - HSBC cash-only USD corporate-event attribution belongs to the atomic ledger
   merge, not the standalone paste parser. The merge inspects only a new,
   unlabelled USD dividend row. Candidate ticker names may come only from exact
