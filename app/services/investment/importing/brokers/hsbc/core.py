@@ -1,6 +1,8 @@
 """Investment import domain: hsbc core.
 
-Code version: v0.6.1
+Code version: v0.6.3
+- Fixed: Equal running balances cannot establish a collapsed cash amount's direction.
+- Fixed: Sale references alone do not establish a collapsed cash amount's direction.
 - Fixed: Page-level market-index timestamps do not date Portfolio holdings.
 - Added: Verified bank cashback and reversals remain distinct from interest.
 - Changed: Credit-card pages fail before investment cash parsing and direct
@@ -1563,7 +1565,8 @@ def _infer_hsbc_cash_account_direction_from_description(description: str) -> int
     if settlement_reference.startswith("P-"):
         return -1
     if settlement_reference.startswith("S-"):
-        return 1
+        # The same reference labels both sale proceeds and the associated debit.
+        return 0
     reward_direction = hsbc_cash_reward_direction(normalized_description)
     if reward_direction:
         return reward_direction
@@ -1946,19 +1949,26 @@ def _build_hsbc_pasted_cash_account_section(
             amount_in = abs(_parse_hsbc_pasted_money_cell(amount_cells[-3]) or ZERO)
             amount_out = abs(_parse_hsbc_pasted_money_cell(amount_cells[-2]) or ZERO)
         elif len(amount_cells) == 2:
-            transaction_amount = abs(
-                _parse_hsbc_pasted_money_cell(amount_cells[0]) or ZERO
-            )
+            displayed_amount = _parse_hsbc_pasted_money_cell(amount_cells[0]) or ZERO
+            transaction_amount = abs(displayed_amount)
             previous_balance = None
             if row_index > 0:
                 previous_balance = _parse_hsbc_pasted_money_cell(
                     ordered_rows[row_index - 1]["amount_cells"][-1]
                 )
-            if previous_balance is not None:
+            if displayed_amount < ZERO:
+                amount_out = transaction_amount
+            elif previous_balance is not None:
                 balance_delta = balance_after - previous_balance
-                if abs(balance_delta - transaction_amount) <= Decimal("0.01"):
+                if (
+                    balance_delta > ZERO
+                    and abs(balance_delta - transaction_amount) <= Decimal("0.01")
+                ):
                     amount_in = transaction_amount
-                elif abs(balance_delta + transaction_amount) <= Decimal("0.01"):
+                elif (
+                    balance_delta < ZERO
+                    and abs(balance_delta + transaction_amount) <= Decimal("0.01")
+                ):
                     amount_out = transaction_amount
             direction_hint = _infer_hsbc_cash_account_direction_from_description(
                 row["description"]

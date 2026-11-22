@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.4.0 */
 
 .settings-shell-strategies,
 .settings-strategy-list {
@@ -434,7 +434,7 @@
     flex: 0 0 auto;
     pointer-events: auto;
     transition:
-        opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 220ms var(--motion-spring-080),
         transform var(--motion-duration-spatial) var(--motion-emphasized),
         background 160ms var(--motion-standard),
         box-shadow 160ms var(--motion-standard),
@@ -460,7 +460,7 @@
     pointer-events: auto;
     transform: translate3d(calc(-1 * (var(--circular-icon-button-size) + 8px)), 0, 0) scale(1);
     transition-timing-function:
-        cubic-bezier(0.22, 1, 0.36, 1),
+        var(--motion-spring-080),
         var(--motion-emphasized),
         var(--motion-standard),
         var(--motion-standard),
@@ -1275,12 +1275,6 @@
         filter: saturate(82%);
     }
 
-    68% {
-        opacity: 1;
-        transform: translate3d(calc(-50% + var(--pagination-range-menu-shift-x)), -1px, 0) scale(1.012);
-        filter: saturate(108%);
-    }
-
     100% {
         opacity: 1;
         transform: translate3d(calc(-50% + var(--pagination-range-menu-shift-x)), 0, 0) scale(1);
@@ -1293,12 +1287,6 @@
         opacity: 0;
         transform: translate3d(calc(-50% + var(--pagination-range-menu-shift-x)), -9px, 0) scale(0.955);
         filter: saturate(82%);
-    }
-
-    68% {
-        opacity: 1;
-        transform: translate3d(calc(-50% + var(--pagination-range-menu-shift-x)), 1px, 0) scale(1.012);
-        filter: saturate(108%);
     }
 
     100% {
@@ -1355,7 +1343,7 @@
     padding-inline-start: 0;
 }
 
-.settings-about-shell > .settings-content-scrollport > .about-section {
+.settings-about-shell > .settings-content-scrollport > .settings-content-grid > .about-section {
     margin-bottom: 0;
 }
 
@@ -1475,7 +1463,7 @@
     white-space: nowrap;
 }
 
-.settings-about-shell > .settings-content-scrollport > .about-disclaimer {
+.settings-about-shell > .settings-content-scrollport > .settings-content-grid > .about-disclaimer {
     margin-top: 0;
 }
 
@@ -1577,17 +1565,17 @@
         min-height: 0;
     }
 
-    .settings-workspace-header > .settings-content-scrollport > .settings-surface > .settings-body {
+    .settings-workspace-header > .settings-content-scrollport > .settings-content-grid > .settings-surface > .settings-body {
         padding-top: 0;
     }
 }
 
-.settings-workspace-header > .settings-content-scrollport > .settings-surface {
+.settings-workspace-header > .settings-content-scrollport > .settings-content-grid > .settings-surface {
     padding-top: 0;
 }
 
 @media (max-width: 767px) {
-    .settings-workspace-header > .settings-content-scrollport > .settings-surface {
+    .settings-workspace-header > .settings-content-scrollport > .settings-content-grid > .settings-surface {
         flex: 1 1 auto;
         min-height: 0;
     }
@@ -1683,11 +1671,6 @@
     min-width: min(100%, var(--settings-form-control-min-width));
 }
 
-.live-trading-broker-strip.settings-broker-row {
-    width: min(100%, var(--settings-form-control-max-width));
-    min-width: min(100%, var(--settings-form-control-min-width));
-}
-
 .settings-form-row.settings-broker-auth-row {
     width: min(100%, var(--settings-form-control-max-width));
     min-width: min(100%, var(--settings-form-control-min-width));
@@ -1720,10 +1703,6 @@
     color: var(--settings-text-input-color);
     font-size: var(--settings-text-input-font-size);
     box-shadow: none;
-}
-
-.settings-broker-row .settings-form-control {
-    max-width: none;
 }
 
 .settings-form-control:focus,

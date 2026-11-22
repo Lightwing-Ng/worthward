@@ -1,6 +1,7 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.5.5
+Code version: v0.5.6
+- Added: Verify cash-only refreshes retain the active HSBC Portfolio capture.
 - Changed: CSV success fixtures explicitly configure their test account before import.
 - Changed: Official CSV settlement repair fixtures declare their immutable
   account identity explicitly.
@@ -1298,8 +1299,8 @@ class HsbcPasteImportTestsMixin:
             .replace("S-1", "P-900009")
         )
         cash_account_text = cash_account_text.replace(
-            "15 Jul 2026\nREF S900001001 SEC\n60.99\n60.99",
-            "23 Jul 2026\nREF P900009001 SEC\n318.91\n60.99",
+            "15 Jul 2026\nREF S900001001 SEC\n60.99\n0.00\n60.99",
+            "23 Jul 2026\nREF P900009001 SEC\n0.00\n318.91\n60.99",
         )
 
         payload = build_investment_payload_from_hsbc_pasted_text(

@@ -1,31 +1,51 @@
 # Known issues and operating constraints
 
+Holdings starts with a collapsible portfolio summary. Its expanded equity chart
+and allocation donut align with the two chart columns in ticker details. The
+summary stays open independently of the single expanded ticker. Legacy Overview
+URLs open the summary and preserve its range.
+The Holdings summary count button uses the table body size and medium weight
+across viewport widths.
 Holdings ticker rows open an inline price chart and cost-lot distribution.
 While a ticker is expanded, Transaction history and Markdown export use its
 existing ticker-scoped ledger rows and original ledger numbers. The share drawer
 moves into the expanded row and aligns with the theme button as far as the
 visible table edge permits. Ticker metrics remain included in share exports.
 Closing the row restores portfolio-wide history and the top-level share drawer.
-The Holdings summary count uses the table body size and medium weight across
-viewport widths.
 The Holdings chart offers a 1M daily line range using the Overview month boundary.
-The expanded charts fit within the Holdings table’s existing scroll viewport.
+The Holdings chart grid grows from 220px to 440px as the divider moves.
+The splitter accounts for controls and row context at its minimum. The
+Holdings viewport scrolls during the drag to keep the complete disclosure
+visible, and added height above the chart maximum exposes preceding rows.
 In Dark mode, the chart hover tooltip uses a translucent tint and backdrop blur.
-Clicking a ticker animates its inline row without resizing the Investment
-surface. Reduced-motion preferences reveal the row immediately. The divider
-between the selected row and its expanded details is hidden.
-Old Stock details links open the matching Holdings row.
+Opening and closing a ticker animates the inline row height without resizing
+the Investment surface. Reduced-motion preferences update the row immediately.
+The divider between the selected row and its expanded details is hidden.
+Old Stock details links open the matching Holdings row. The Rewards row uses
+the same disclosure motion and two-line identity layout as Holdings tickers.
 
 The Investment drawer privacy toggle hides Stock details cost-lot quantity
 labels while preserving the distribution bars and price reference line.
+Inline labels and animated amounts in the Holdings summary share a text
+baseline. Each metric continues to wrap according to its available width.
 
-Inline labels and split amounts in the Holdings summary share a text baseline.
+HSBC Copy/paste previews, 16 Nov 2026: the card preview lists additions,
+updated transactions, and entries requiring review. An unchanged transaction
+is summarized without a detail row. Bank-cash pastes preview cash activity
+and balance changes. A complete securities capture previews trade,
+settlement, balance, and position changes. For a collapsed cash amount with
+a sale reference, an explicit direction or a matching older running balance
+is needed to distinguish proceeds from a debit. An ambiguous row is omitted
+and flagged in the preview. The previews are read-only. Saving the capture
+still requires the dialog's import action.
 
-The HSBC Copy/paste card preview lists additions, updated transactions, and
-entries requiring review. An unchanged transaction is summarized without a
-detail row. Bank-cash pastes preview cash activity and balance changes. A
-complete securities capture previews trade, settlement, balance, and position
-changes. The preview is read-only and saving requires the dialog's import action.
+HSBC named travel rebate compatibility, 9 Nov 2026: the clipboard parser
+recognizes the exact Mastercard travel campaign descriptor with its explicit
+bank rebate label, alongside the existing double-label rebate grammar. This
+named exception does not admit arbitrary single-label returns. Rebates still
+require posted HKD activity with a consistent amount direction, retain the
+original source and identity, and use the independent card ledger's existing
+deduplication rules.
 
 HSBC same-day Portfolio selection, 21 Nov 2026. When authoritative,
 date-only Portfolio records for the same brokerage account otherwise tie,
@@ -42,6 +62,13 @@ explicitly source-labeled, posted HKD rebates as rebates when reparsing
 their immutable statement evidence. These compatibility reads preserve
 transaction identity and card balances; unknown descriptions, missing FX,
 and corrupt card evidence still withhold incomplete reward and P&L totals.
+
+Investment FX availability, 13 Nov 2026: Investment uses local dated FX that
+covers the range through the latest completed NYSE trading day before trying
+the provider. If a refresh fails, it retains actual cached closes when the
+starting and ending observations are within seven calendar days of their
+respective boundaries. A preceding close keeps its original date. Missing or
+stale fallback evidence still leaves the affected totals unavailable.
 
 Historical position boundaries, 9 Nov 2026: a newer IBKR position snapshot
 can omit a closed ticker while retaining older authoritative account evidence.
@@ -114,9 +141,14 @@ identity or prove a foreign authorization matches a later HKD posting.
 
 All three HSBC Copy/paste summary fields accept native keyboard and context-menu
 paste through the same merging, classification, and duplicate checks as their
-clipboard buttons. Preview and import show progress beside the field and in the
+clipboard buttons. When a local HTTP page lacks the Clipboard API or the browser
+denies a clipboard read, the button focuses its field and prompts for the
+system paste shortcut. Preview and import show progress beside the field and in the
 persistent action note. Ready previews disclose captured and duplicate counts
-and explain Import now. Confirmed saves retain Imported and saved counts before
+and explain Import now. While card text is being parsed, a frosted notice with
+the shared spinner replaces the inline status styling. It clears on success,
+failure, or when the source changes. Recognized cash rebates display as Rebate.
+Confirmed saves retain Imported and saved counts before
 derived reward views refresh; rendering failures cannot turn a saved result into
 a retryable import error. Reopening the same broker dialog preserves that result;
 editing the source or changing broker or mode still invalidates it. Imports
@@ -223,8 +255,10 @@ purchase linkage is inferred from a rebate description alone.
 HSBC Red statement reconciliation and rewards, 21 Oct 2026: the local
 `scripts/reconcile_hsbc_credit_card.py` maintenance entrypoint previews PDF/CSV
 bundles and saves only through the separate card-ledger service after an
-explicit `--commit` and backup. The browser clipboard input still accepts
-account-page text only. File evidence retains raw bytes and explicit account
+explicit `--commit` and backup. The browser's HSBC Statements mode accepts
+cash-account PDFs or matching composite and investment statements. For credit
+cards, the browser accepts account-page text in Copy/paste. File evidence
+retains raw bytes and explicit account
 scope, statement balance and RewardCash continuity, separate posting dates,
 and cross-source aliases. Dated statement credit balances must not be
 interpreted as unsigned liabilities or replace a selected webpage snapshot.
@@ -263,11 +297,16 @@ strict retained-evidence amount-conflict guard is unchanged. Settled orders
 leave the pending-cash projection, and principal and fee postings retain
 their separate immutable evidence.
 
-Holdings summary amount alignment, 19 Oct 2026: numeric Cumulative P&L
-uses the same amount column as Cash, Cash equivalents, and Total equity at
-every summary width. Only unavailable status text spans the compact summary
-row, preserving readable wrapping without moving numeric values into the
-allocation-badge column.
+Holdings summary layout, 12 Nov 2026: all amounts share one right edge. Each
+label wraps independently when it cannot fit alongside its amount. Allocation
+badges keep their intrinsic widths and occupy a shared trailing column. When
+the summary is 128 px wide or narrower, badges move below the amounts so the
+amounts can use the full width.
+
+Broker access, 11 Nov 2026: Settings presents the Longbridge connection
+controls directly. Trade → Investment omits IBKR from its import dialog.
+Existing IBKR records remain available to Holdings, history, broker filters,
+and exports. The offline import API retains its existing compatibility.
 
 Elastic Investment identity columns, 19 Oct 2026: the main Holdings Ticker
 and Transaction history Description columns absorb the space left by a shared
@@ -276,13 +315,9 @@ trio, and history money quartet keep their respective equal widths; the shared
 leading and trailing grid anchors remain aligned. Identity columns have no
 fixed percentage. The two tables fit an 869px viewport in either sidebar state;
 viewports narrower than the 656px table floor retain horizontal scrolling.
-The two summary container thresholds are registered as
-`investment-summary-compact-max` (260px) and `investment-summary-stack-max`
-(128px) in the shared responsive registry. Narrow Holdings summaries place
-labels above values and allocation badges so
-the summary remains readable when the identity column contracts. The standard
-fixed-header controller measures untransformed layout height, preventing the
-sidebar scale animation from leaving a stale header offset after resizing.
+The standard fixed-header controller measures untransformed layout height,
+preventing the sidebar scale animation from leaving a stale header offset
+after resizing.
 
 Stock details ticker selector, 19 Oct 2026: the identity block uses the
 existing Shared select control to switch between all current and historical
@@ -329,7 +364,7 @@ separately.
 Holdings summary text containment, 19 Oct 2026: unavailable P&L totals now
 wrap inside their summary cells instead of inheriting the non-wrapping numeric
 layout and covering adjacent Market value amounts. An unavailable cumulative
-total spans the summary grid's value and allocation slots. Numeric formatting,
+total can use the full metric row width. Numeric formatting,
 coverage status, and ledger calculations retain their existing contracts. The
 Holdings and transaction-history tables share a readable minimum width and
 bounded horizontal scrolling, preserving aligned header and body columns.
@@ -1395,7 +1430,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.288.2`
+Documentation version: `v1.290.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

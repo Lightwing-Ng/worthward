@@ -1,19 +1,21 @@
-/* Code version: v0.105.4 */
+/* Code version: v0.117.7 */
 @import url("./foundation/fonts.css?v=1.1.0");
-@import url("./foundation/tokens.css?v=0.51.0");
-@import url("./layout/shell.css?v=3.33.3");
-@import url("./components/forms.css?v=0.27.0");
-@import url("./components/live-marker.css?v=1.0.0");
+@import url("./foundation/tokens.css?v=0.54.0");
+@import url("./layout/shell.css?v=3.35.0");
+@import url("./components/forms.css?v=0.28.0");
+@import url("./components/live-marker.css?v=1.1.0");
 @import url("./components/collapse.css?v=1.2.2");
 @import url("./components/process-list.css?v=1.1.0");
-@import url("./components/resizer.css?v=1.2.1");
+@import url("./components/resizer.css?v=1.3.0");
 @import url("./components/tables.css?v=0.1.1");
 @import url("./components/animated-number.css?v=1.0.0");
-@import url("./views/workspace.css?v=1.30.6");
-@import url("./views/settings.css?v=0.38.1");
-@import url("./views/settings-sections.css?v=1.1.1");
-@import url("./views/trade.css?v=3.79.8");
-@import url("./views/investment.css?v=1.85.3");
-@import url("./views/investment-tables.css?v=1.6.3");
-@import url("./utilities/responsive.css?v=3.37.8");
-@import url("./foundation/motion.css?v=1.4.0");
+@import url("./views/workspace.css?v=1.32.0");
+@import url("./views/settings.css?v=0.40.0");
+@import url("./views/settings-sections.css?v=1.4.0");
+@import url("./views/trade.css?v=3.80.0");
+@import url("./views/investment.css?v=1.89.1");
+@import url("./views/investment-tables.css?v=1.8.5");
+@import url("./utilities/responsive.css?v=3.37.12");
+@import url("./foundation/motion.css?v=1.5.0");
+@import url("./components/continuous-corners.css?v=1.4.0");
+@import url("./components/workspace-grid.css?v=1.0.1");

@@ -1,4 +1,4 @@
-/* Code version: v0.38.1 */
+/* Code version: v0.40.0 */
 
 .style-token-allocation-demo {
     display: grid;
@@ -278,9 +278,9 @@
     --settings-shell-gap: 10px;
 }
 
-.settings-shell-network > .settings-content-scrollport > .settings-action-package,
-.settings-shell-network > .settings-content-scrollport > .settings-general-panel-network,
-.settings-shell-material-tokens > .settings-content-scrollport > .style-token-shell,
+.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package,
+.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-general-panel-network,
+.settings-shell-material-tokens > .settings-content-scrollport > .settings-content-grid > .style-token-shell,
 .settings-shell-material-tokens .style-token-card {
     overflow: visible;
 }
@@ -353,30 +353,30 @@
     }
 }
 
-.settings-general-shell > .settings-content-scrollport > .settings-general-panel,
-.settings-shell-backtest > .settings-content-scrollport > .settings-general-panel,
-.settings-shell-investment > .settings-content-scrollport > .settings-general-panel {
+.settings-general-shell > .settings-content-scrollport > .settings-content-grid > .settings-general-panel,
+.settings-shell-backtest > .settings-content-scrollport > .settings-content-grid > .settings-general-panel,
+.settings-shell-investment > .settings-content-scrollport > .settings-content-grid > .settings-general-panel {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-strategies > .settings-content-scrollport > .settings-summary {
+.settings-shell-strategies > .settings-content-scrollport > .settings-content-grid > .settings-summary {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-strategies > .settings-content-scrollport > .settings-strategy-category-index,
-.settings-shell-strategies > .settings-content-scrollport > .settings-strategy-category {
+.settings-shell-strategies > .settings-content-scrollport > .settings-content-grid > .settings-strategy-category-index,
+.settings-shell-strategies > .settings-content-scrollport > .settings-content-grid > .settings-strategy-category {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-local-market-store > .settings-content-scrollport > .settings-summary {
+.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .settings-summary {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
 }
 
-.settings-shell-local-market-store > .settings-content-scrollport > .local-store-table-shell {
+.settings-shell-local-market-store > .settings-content-scrollport > .settings-content-grid > .local-store-table-shell {
     width: min(100%, var(--settings-shell-content-max-width));
     max-width: 100%;
     align-self: flex-start;
@@ -714,7 +714,7 @@
 }
 
 .style-token-card.is-linked-highlight::after {
-    animation: style-token-linked-pulse var(--motion-duration-spatial) var(--motion-overshoot) 1;
+    animation: style-token-linked-pulse var(--motion-duration-spatial) linear 1;
 }
 
 .style-token-card:target::after {

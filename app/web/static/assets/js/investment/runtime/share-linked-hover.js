@@ -1,7 +1,8 @@
 /**
  * Share-card capture and linked-hover interactions.
  *
- * Code version: v1.1.0
+ * Code version: v1.2.0
+ * - Changed: Share the portfolio chart from the expanded Holdings summary.
  * - Added: Extracted from the Investment workspace composition root.
  */
 
@@ -364,6 +365,13 @@ function buildInvestmentHoldingsShareTable({ maskSensitive = false } = {}) {
         };
         const adaptShareHoldingsSummaryRow = (tableRow) => {
             if (!(tableRow instanceof HTMLTableRowElement)) return;
+            const toggle = tableRow.querySelector('[data-investment-holdings-overview-toggle]');
+            if (toggle) {
+                const summary = document.createElement('span');
+                summary.className = 'investment-holdings-summary-instruments';
+                summary.textContent = toggle.textContent.trim();
+                toggle.replaceWith(summary);
+            }
             const summaryCopyCell = tableRow.cells.item(1);
             const summaryLeadCell = tableRow.cells.item(0);
             if (summaryLeadCell instanceof HTMLTableCellElement && summaryCopyCell instanceof HTMLTableCellElement) {
@@ -439,7 +447,7 @@ function buildInvestmentHoldingsShareTable({ maskSensitive = false } = {}) {
         const headerRow = headerTable.querySelector('thead tr:first-child');
         const summaryRow = headerTable.querySelector('.investment-holdings-summary-row');
         const allDataRows = Array.from(bodyTable.querySelectorAll('tbody tr'))
-            .filter((row) => !row.matches('[data-investment-rewards-breakdown-row], [data-investment-holding-detail]'));
+            .filter((row) => !row.matches('[data-investment-holdings-overview-row], [data-investment-rewards-breakdown-row], [data-investment-holding-detail]'));
         const brokerRewardsRow = allDataRows.find((row) => row.matches('[data-investment-broker-rewards-row]'));
         const dataRows = allDataRows
             .filter((row) => row !== brokerRewardsRow)
@@ -516,8 +524,13 @@ function buildInvestmentMetricsShareBody(body) {
         return true;
     }
 
-async function buildInvestmentCommunityShareCard() {
-        const normalizedView = runtime.normalizeInvestmentView(runtime.state.activeInvestmentView);
+function getInvestmentShareCaptureView() {
+        const view = runtime.normalizeInvestmentView(runtime.state.activeInvestmentView);
+        return view === 'holdings' && runtime.state.investmentHoldingsOverviewExpanded ? 'chart' : view;
+    }
+
+async function buildInvestmentCommunityShareCard(view = getInvestmentShareCaptureView()) {
+        const normalizedView = runtime.normalizeInvestmentView(view);
         const { host, card, body } = createInvestmentShareTemplateFrame(normalizedView);
         if (normalizedView === 'stock_details' && runtime.state.investmentShareMaskEnabled) {
             card.classList.add('is-share-sensitive-masked');
@@ -539,11 +552,11 @@ async function buildInvestmentCommunityShareCard() {
         return host;
     }
 
-function buildInvestmentScreenshotFilename() {
+function buildInvestmentScreenshotFilename(view = getInvestmentShareCaptureView()) {
         const timestamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\.\d{3}Z$/, 'Z');
-        const suffix = runtime.state.activeInvestmentView === 'stock_details'
+        const suffix = view === 'stock_details'
             ? (runtime.ensureSelectedInvestmentStockTicker() || 'stock-details').toLowerCase()
-            : getInvestmentShareViewLabel(runtime.state.activeInvestmentView).toLowerCase().replace(/\s+/g, '-');
+            : getInvestmentShareViewLabel(view).toLowerCase().replace(/\s+/g, '-');
         return `investment-${suffix}-${timestamp}.png`;
     }
 
@@ -615,6 +628,8 @@ function withInvestmentShareTimeout(promise, timeoutMs, timeoutMessage) {
     }
 
 async function saveCurrentInvestmentPanelScreenshot() {
+        const captureView = getInvestmentShareCaptureView();
+        const filename = buildInvestmentScreenshotFilename(captureView);
         runtime.showInvestmentWorkspaceModal({
             title: runtime.INVESTMENT_SHARE_RENDER_MODAL_TITLE,
             copy: runtime.INVESTMENT_SHARE_RENDER_MODAL_COPY,
@@ -625,7 +640,7 @@ async function saveCurrentInvestmentPanelScreenshot() {
             const captureStartedAt = performance.now();
             await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
             debugInvestmentShareCaptureTiming('after initial frames', captureStartedAt);
-            const captureTarget = await buildInvestmentCommunityShareCard();
+            const captureTarget = await buildInvestmentCommunityShareCard(captureView);
             debugInvestmentShareCaptureTiming('after card build', captureStartedAt);
             if (!(captureTarget instanceof HTMLElement)) return;
             const domtoimage = await ensureInvestmentScreenshotLibrary();
@@ -653,7 +668,7 @@ async function saveCurrentInvestmentPanelScreenshot() {
                     throw new Error('Failed to encode screenshot.');
                 }
                 debugInvestmentShareCaptureTiming('after blob encode', captureStartedAt);
-                runtime.downloadBlobFile(buildInvestmentScreenshotFilename(), blob);
+                runtime.downloadBlobFile(filename, blob);
             } finally {
                 captureTarget.remove();
             }

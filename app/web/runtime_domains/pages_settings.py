@@ -1,14 +1,14 @@
 """Build the pages settings web-runtime context.
 
-Code version: v0.3.2
+Code version: v0.4.0
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 
 def build_pages_settings_context(context: dict[str, object]) -> dict[str, object]:
-    BrokerSettings = context["BrokerSettings"]
-
     BytesIO = context["BytesIO"]
 
     CODE_VERSION = context["CODE_VERSION"]
@@ -1228,39 +1228,22 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
 
     def broker_access_action():
         current_settings = load_broker_settings()
-        selected_broker = (
-            str(request.form.get("selected_broker", current_settings.selected_broker))
-            .strip()
-            .lower()
-            or "longbridge"
-        )
-        longbridge_auth_mode = current_settings.longbridge_auth_mode
         action = request.form.get("action", "save")
-        if action == "authorize" and selected_broker == "longbridge":
-            longbridge_auth_mode = "cli_oauth"
 
-        updated_settings = BrokerSettings(
-            selected_broker=selected_broker,
-            longbridge_auth_mode=longbridge_auth_mode,
+        # Preserve saved credentials and import metadata when updating Longbridge access.
+        updated_settings = replace(
+            current_settings,
+            selected_broker="longbridge",
+            longbridge_auth_mode=(
+                "cli_oauth" if action == "authorize" else current_settings.longbridge_auth_mode
+            ),
             longbridge_cli_path=str(request.form.get("longbridge_cli_path", "")).strip()
             or current_settings.longbridge_cli_path,
             longbridge_cli_home=str(request.form.get("longbridge_cli_home", "")).strip()
             or current_settings.longbridge_cli_home,
-            # Legacy Longbridge API credentials remain read-only for backward compatibility.
-            # This endpoint intentionally never accepts or stores new Longbridge secrets.
-            longbridge_app_key=current_settings.longbridge_app_key,
-            longbridge_app_secret=current_settings.longbridge_app_secret,
-            longbridge_access_token=current_settings.longbridge_access_token,
-            ibkr_account_id=str(request.form.get("ibkr_account_id", "")).strip()
-            or current_settings.ibkr_account_id,
         )
         save_broker_settings(updated_settings)
         if action == "authorize":
-            if selected_broker != "longbridge":
-                return _redirect_with_settings_feedback(
-                    "broker-access",
-                    error="Select Longbridge before starting browser authorization.",
-                )
             # A valid session needs no browser round trip: the CLI would finish
             # silently, and an unreachable service is not fixed by authorizing again.
             existing_connection = check_longbridge_cli_connection(updated_settings)
@@ -1311,7 +1294,7 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
             response = jsonify(
                 {
                     "status": "error",
-                    "message": "Select Longbridge before checking browser authorization.",
+                    "message": "Start Longbridge browser authorization before checking its status.",
                 }
             )
             response.status_code = 400

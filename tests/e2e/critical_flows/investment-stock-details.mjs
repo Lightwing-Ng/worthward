@@ -1,4 +1,4 @@
-/* Code version: v1.4.2 */
+/* Code version: v1.4.3 */
 import {
     expect,
     test,
@@ -48,6 +48,7 @@ test('keeps the inline price chart and allocation aligned without collisions', a
     };
     const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
+    const currentChartOrbitVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/chart-orbit.js');
     const currentLayoutVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/layout.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
     const currentPaginationVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/pagination.js');
@@ -58,7 +59,7 @@ test('keeps the inline price chart and allocation aligned without collisions', a
     const currentTransactionTableVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/transaction-table.js');
     await expect.poll(() => page.evaluate(() => window.WORTHWARD_INVESTMENT_MODULE_VERSIONS)).toEqual({
         entry: currentEntryVersion,
-        chartOrbit: 'v1.39.0',
+        chartOrbit: currentChartOrbitVersion,
         dataUtils: currentDataUtilsVersion,
         importFeedback: 'v1.10.0',
         layout: currentLayoutVersion,
@@ -842,7 +843,7 @@ test('redraws the Overview live endpoint and breathing marker when the first reg
     });
     await page.emulateMedia({reducedMotion: 'no-preference'});
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await expect.poll(() => page.evaluate(() => (
         typeof window.__testTriggerInvestmentOverviewRealtimePoll
     ))).toBe('function');
@@ -1052,7 +1053,7 @@ test('keeps the realtime equity endpoint aligned with cash-equivalent Holdings',
             session_date: '2026-07-28',
         },
     });
-    await page.goto('/trade/investment');
+    await page.goto('/trade/investment?view=holdings&summary=expanded');
     await page.locator('label[for="investment_view_holdings"]').click();
     const holdingRow = page.locator(
         '#investment_holdings_panel [data-table-scroll] tr[data-investment-holdings-ticker="SGOV"]',
@@ -1296,7 +1297,7 @@ test('keeps same-day HSBC USD settlement proceeds after earlier buys', async ({p
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -1376,7 +1377,7 @@ test('recovers same-day HSBC settlement order from authoritative balance continu
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -1465,7 +1466,7 @@ test('replays future HSBC settlement cash on the settlement date without a deriv
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);
@@ -1584,7 +1585,7 @@ test('keeps overlapping HSBC trade-date payables continuous across 22–24 Jun 2
             ],
         },
     });
-    await page.goto('/trade/investment?range=max');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=max');
     await expect.poll(() => page.evaluate(() => (
         window.Chart?.getChart(document.querySelector('#investmentEquityChart'))?.data?.rawLabels?.length || 0
     ))).toBeGreaterThan(0);

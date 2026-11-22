@@ -1,7 +1,7 @@
 /**
  * Metrics rendering and import request lifecycle.
  *
- * Code version: v1.7.3
+ * Code version: v1.7.4
  * - Fixed: Realized and unrealized cards use their own availability and coverage.
  * - Fixed: Unavailable current broker equity cannot become a numeric zero.
  * - Fixed: Card progress and saved feedback synchronize the action note and field icon.
@@ -547,14 +547,7 @@ function resetInvestmentDashboard() {
     }
 
 function syncImportValidationState() {
-        const transactionFile = runtime.transactionsCsvInput?.files?.[0];
-        const positionsFile = runtime.positionsCsvInput?.files?.[0];
         const selectedBroker = runtime.getSelectedInvestmentImportBroker();
-        const isIbkr = selectedBroker === 'ibkr';
-        const ibkrImportMode = runtime.getSelectedIbkrImportMode();
-        const isIbkrCsv = isIbkr && ibkrImportMode === 'csv';
-        const isIbkrGainskeeper = isIbkr && ibkrImportMode === 'gainskeeper';
-        const isIbkrWebPaste = isIbkr && ibkrImportMode === 'web_paste';
         const isLongbridgeHk = selectedBroker === 'longbridge_hk';
         const isLongbridgeSg = selectedBroker === 'longbridge_sg';
         const isFutuhk = selectedBroker === 'futuhk';
@@ -575,20 +568,6 @@ function syncImportValidationState() {
         const usmartHkStatementFiles = runtime.getSelectedStatementPdfFiles(runtime.usmartHkStatementPdfsInput);
         const longbridgeSgFundDetailsFile = runtime.longbridgeSgFundDetailsInput?.files?.[0];
         const longbridgeSgHistoryOrdersFile = runtime.longbridgeSgHistoryOrdersInput?.files?.[0];
-        const transactionReady = isIbkrCsv ? runtime.isLikelyTransactionHistoryFile(transactionFile) : false;
-        const positionsReady = isIbkrCsv ? runtime.isLikelyPositionsFile(positionsFile) : false;
-        const gainskeeperFiles = runtime.gainskeeperFilesInput?.files ? Array.from(runtime.gainskeeperFilesInput.files) : [];
-        const gainskeeperReady = isIbkrGainskeeper
-            && gainskeeperFiles.length > 0
-            && gainskeeperFiles.every((file) => runtime.isLikelyGainskeeperFile(file));
-        const ibkrTradeNotificationsText = String(
-            runtime.ibkrTradeNotificationsTextInput?.value || ''
-        ).trim();
-        const ibkrTradeNotificationsReady = isIbkrWebPaste
-            && runtime.isLikelyIbkrTradeNotificationsText(ibkrTradeNotificationsText);
-        const ibkrHoldingsText = String(runtime.ibkrHoldingsTextInput?.value || '').trim();
-        const ibkrHoldingsReady = !ibkrHoldingsText
-            || runtime.getIbkrHoldingsReadiness(ibkrHoldingsText).ready;
         const hsbcPortfolioText = String(runtime.hsbcPortfolioTextInput?.value || '').trim();
         const hsbcOrderStatusText = String(runtime.hsbcOrderStatusTextInput?.value || '').trim();
         const hsbcCashAccountText = String(runtime.hsbcCashAccountTextInput?.value || '').trim();
@@ -644,10 +623,7 @@ function syncImportValidationState() {
             && runtime.state.zirconHkWorkbookValidation.signature === runtime.getImportFileSignature(zirconHkWorkbookFile);
         const brokerReady = runtime.SUPPORTED_INVESTMENT_IMPORT_BROKERS.has(selectedBroker);
         const importReady = brokerReady && isInvestmentImportSessionReady() && (
-            (isIbkrCsv && transactionReady && positionsReady)
-            || gainskeeperReady
-            || (ibkrTradeNotificationsReady && ibkrHoldingsReady)
-            || (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
+            (isLongbridgeHk && Boolean(longbridgeHkFilesReady))
             || (isLongbridgeSg && Boolean(longbridgeSgFundDetailsReady) && Boolean(longbridgeSgHistoryOrdersReady))
             || (isFutuhk && Boolean(futuhkStatementsReady))
             || (isBocHk && Boolean(bocHkStatementsReady))
@@ -658,18 +634,6 @@ function syncImportValidationState() {
             || (isTigertrade && Boolean(tigertradeStatementsReady))
             || (isUsmartHk && Boolean(usmartHkStatementsReady))
             || Boolean(zirconHkWorkbookReady)
-        );
-
-        runtime.setImportStatusIcon(runtime.transactionsCsvStatus, transactionReady);
-        runtime.setImportStatusIcon(runtime.positionsCsvStatus, positionsReady);
-        runtime.setImportStatusIcon(runtime.gainskeeperFilesStatus, gainskeeperReady);
-        runtime.setImportStatusIcon(
-            runtime.ibkrTradeNotificationsTextStatus,
-            Boolean(ibkrTradeNotificationsReady),
-        );
-        runtime.setImportStatusIcon(
-            runtime.ibkrHoldingsTextStatus,
-            Boolean(ibkrHoldingsText && ibkrHoldingsReady),
         );
 
         runtime.setImportStatusIcon(runtime.longbridgeSgFundDetailsStatus, Boolean(longbridgeSgFundDetailsReady));

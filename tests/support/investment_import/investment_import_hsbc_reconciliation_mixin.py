@@ -1,6 +1,6 @@
 """Domain-focused investment-import regression mixin.
 
-Code version: v0.4.2
+Code version: v0.4.3
 - Fixed: Settled limit-price sells retain unconfirmed price evidence without an inferred residual.
 - Changed: Principal-only sells settle without attaching fees from another cash scope.
 - Changed: A sell cash match commits only with its complete same-scope fee row.
@@ -700,6 +700,7 @@ class HsbcReconciliationImportTestsMixin:
                 "02 Jul 2026",
                 "REF S900001001 SEC (01JUL26)",
                 "775.48",
+                "0.00",
                 "18,124.44",
                 "Download",
             ]
@@ -1009,6 +1010,7 @@ class HsbcReconciliationImportTestsMixin:
                 "18 Jun 2026",
                 "REF S900005001 SEC",
                 "117.02",
+                "0.00",
                 "100.00",
                 "17 Jun 2026",
                 "REF P900010001 SEC",

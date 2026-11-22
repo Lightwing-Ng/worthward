@@ -1,4 +1,4 @@
-{# Code version: v0.3.1 #}
+{# Code version: v0.4.0 #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_report_info, render_chart_surface, render_investment_share_actions with context %}
 {% set sidebar_title = "Workspaces" %}
@@ -18,7 +18,7 @@
         <article class="chart-surface workspace-mode-controls-surface">
             {% include "_compare_portfolio_sidebar.html" %}
         </article>
-        <article class="workspace-mode-main">
+        <article class="workspace-mode-main" data-layout-role="content-grid">
             <article class="workspace-header workspace-mobile-summary-shell workspace-mode-results-stack" data-mobile-summary-fixed>
                 <article class="report-card workspace-article-card workspace-summary-card" data-layout-role="result-title-rail">
                     <div class="report-heading-row workspace-result-heading-stack" data-layout-role="result-heading">

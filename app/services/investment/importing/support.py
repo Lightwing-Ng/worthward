@@ -1,6 +1,7 @@
 """Shared constants and dependency bindings for investment import domains.
 
-Code version: v0.3.0
+Code version: v0.4.0
+- Added: Exact HSBC NET cash references shared by merge and FX reconciliation.
 """
 
 from __future__ import annotations
@@ -267,6 +268,18 @@ HSBC_FOREX_REFERENCE_PATTERN = re.compile(
     r"\b(?P<reference>(?:[A-Z]{1,4}\d{6,}|(?:FX|FOREX)[A-Z0-9-]{4,}))\b",
     re.IGNORECASE,
 )
+
+
+def _hsbc_net_cash_reference(record: dict[str, Any]) -> str:
+    """Return the complete reference of an HSBC NET cash-account posting."""
+    if _normalize_text(record.get("type")).lower() not in {
+        "deposit", "withdrawal", "forex_trade_component",
+    }:
+        return ""
+    description = _normalize_whitespace(record.get("description")).upper()
+    match = re.fullmatch(r"NET- (NB[0-9]{10})", description)
+    return match.group(1) if match else ""
+
 
 HSBC_PORTFOLIO_UPDATED_PATTERN = re.compile(
     r"^Updated\s+(?P<time>\d{1,2}:\d{2}:\d{2})\s+on\s+"
