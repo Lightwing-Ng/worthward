@@ -1,6 +1,7 @@
 """Investment import domain: artifacts.
 
-Code version: v0.3.3
+Code version: v0.3.4
+- Fixed: A tied HSBC position capture follows the active capture's verified source bundle.
 - Fixed: A market-data timestamp from an earlier U.S. market day no longer
   outranks a same-day position snapshot captured without a timestamp.
 - Fixed: Re-importing identical HSBC cash-page evidence may expand legacy
@@ -1598,6 +1599,43 @@ def _build_broker_realized_pnl_reconciliation(
     return reconciliations
 
 
+def _match_active_hsbc_position_capture(
+    candidates: list[dict[str, Any]],
+    source_artifacts: list[dict[str, Any]],
+    fingerprint: str,
+) -> dict[str, Any] | None:
+    """Match the active capture to its three retained source artifacts."""
+    roles = {"cash_account", "portfolio", "order_status"}
+    by_digest = {artifact["sha256"]: artifact for artifact in source_artifacts}
+    matches = []
+    for candidate in candidates:
+        if (
+            candidate["position_snapshot_source"] != "hsbc_portfolio_text"
+            or not candidate["position_snapshot_authoritative"]
+            or candidate.get("snapshot_updated_at")
+        ):
+            continue
+        artifacts = [
+            by_digest[digest] for digest in candidate["source_artifact_sha256"]
+            if digest in by_digest
+        ]
+        by_role = {artifact.get("bundle_role"): artifact for artifact in artifacts}
+        if (
+            len(artifacts) != len(roles)
+            or by_role.keys() != roles
+            or any(
+                artifact.get("source_kind") != f"hsbc_{role}_pasted_text"
+                or artifact.get("broker") != "hsbc"
+                or artifact.get("account") != candidate["account"]
+                or fingerprint not in artifact.get("bundle_ids", [])
+                for role, artifact in by_role.items()
+            )
+        ):
+            continue
+        matches.append(candidate)
+    return matches[0] if len(matches) == 1 else None
+
+
 def _build_broker_snapshot_entry(
     broker: str,
     account: str,
@@ -1605,6 +1643,7 @@ def _build_broker_snapshot_entry(
     *,
     transactions: list[dict[str, Any]],
     source_artifacts: list[dict[str, Any]],
+    active_hsbc_fingerprint: str = "",
 ) -> dict[str, Any]:
     evidence_by_id = {
         evidence["evidence_id"]: evidence
@@ -1629,6 +1668,24 @@ def _build_broker_snapshot_entry(
                 item, snapshot_kind="position"
             ),
         )
+        if active_hsbc_fingerprint:
+            selected_rank = _broker_snapshot_evidence_sort_key(
+                selected, snapshot_kind="position",
+            )[:-1]
+            tied_candidates = [
+                candidate for candidate in position_candidates
+                if _broker_snapshot_evidence_sort_key(candidate, snapshot_kind="position")[:-1]
+                == selected_rank
+            ]
+            rank_day, _, _, _, observed_at, *_ = selected_rank
+            if (
+                len(tied_candidates) > 1
+                and observed_at == rank_day
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", rank_day)
+            ):
+                selected = _match_active_hsbc_position_capture(
+                    tied_candidates, source_artifacts, active_hsbc_fingerprint,
+                ) or selected
         selected_position_snapshot = selected["position_snapshot"]
         if (
             _normalize_text(selected.get("position_snapshot_source"))
@@ -1758,15 +1815,28 @@ def _normalize_broker_snapshots(payload: dict[str, Any]) -> dict[str, dict[str, 
             identity = (direct_evidence["broker"], direct_evidence["account"])
             evidence_by_identity.setdefault(identity, []).append(direct_evidence)
 
+    raw_summaries = payload.get("broker_summaries")
+    hsbc_summary = raw_summaries.get("hsbc") if isinstance(raw_summaries, dict) else None
+    active_capture = hsbc_summary.get("hsbc_snapshot") if isinstance(hsbc_summary, dict) else None
     snapshots: dict[str, dict[str, Any]] = {}
     for (broker, account), evidence in sorted(evidence_by_identity.items()):
         account_token = account or "unknown"
+        active_fingerprint = ""
+        if (
+            broker == "hsbc" and account and isinstance(active_capture, dict)
+            and hsbc_summary.get("account") == account
+            and active_capture.get("account_number") == account
+        ):
+            fingerprint = _normalize_text(active_capture.get("fingerprint"))
+            if re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+                active_fingerprint = fingerprint
         snapshots[f"{broker}:{account_token}"] = _build_broker_snapshot_entry(
             broker,
             account,
             evidence,
             transactions=transactions,
             source_artifacts=source_artifacts,
+            active_hsbc_fingerprint=active_fingerprint,
         )
     return snapshots
 

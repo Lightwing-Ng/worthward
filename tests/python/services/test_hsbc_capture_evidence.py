@@ -1,6 +1,6 @@
 """HSBC capture direction, freshness, immutable identity, and native balances.
 
-Code version: v0.2.3
+Code version: v0.2.4
 """
 
 import hashlib
@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.services.investment.importing import artifacts, bindings
 from app.services.investment.importing.brokers.hsbc import (
     core,
     reconciliation,
@@ -95,6 +96,80 @@ def _order(status, quantity):
             "P-5",
         ]
     )
+
+
+@pytest.mark.parametrize(
+    "proof", ["complete", "missing_artifact", "other_account", "earlier_rank", "precise_rank"]
+)
+def test_active_hsbc_bundle_resolves_only_tied_same_account_positions(proof):
+    captures = {}
+    for quantity in ("1", "2"):
+        texts = {
+            "cash_account_text": _cash([]),
+            "portfolio_text": _portfolio("", ["DRAM"]).replace("0.00%1USD", f"0.00%{quantity}USD"),
+            "order_status_text": _order("Fully Executed", int(quantity)),
+        }
+        fingerprint = core._build_hsbc_pasted_snapshot_fingerprint(**texts)
+        source_artifacts = core._build_hsbc_pasted_text_source_artifacts(
+            **texts, account=TEST_ACCOUNT, snapshot_report={"fingerprint": fingerprint},
+        )
+        captures[quantity] = (
+            fingerprint, source_artifacts,
+            {
+                "broker": "hsbc",
+                "account": TEST_ACCOUNT,
+                "position_snapshot": {"DRAM": {"currency": "USD", "quantity": quantity}},
+                "position_snapshot_authoritative": True,
+                "position_snapshot_source": "hsbc_portfolio_text",
+                "position_snapshot_as_of": "2026-07-15",
+                "source_artifact_sha256": [a["sha256"] for a in source_artifacts],
+            },
+        )
+    if proof == "precise_rank":
+        for _, _, candidate in captures.values():
+            candidate["position_snapshot"]["DRAM"]["as_of"] = "2026-07-15 13:00:00"
+    scope = f"hsbc:{TEST_ACCOUNT}"
+    payload = {
+        "transactions": [],
+        "source_artifacts": artifacts._normalize_source_artifacts(
+            [artifact for _, sources, _ in captures.values() for artifact in sources]
+        ),
+        "broker_snapshots": {
+            scope: {"evidence": [candidate for _, _, candidate in captures.values()]},
+        },
+    }
+    default = artifacts._normalize_broker_snapshots(payload)[scope]["position_snapshot"]
+    default_quantity = default["DRAM"]["quantity"]
+    active_quantity = "2" if default_quantity == "1" else "1"
+    fingerprint, active_sources, active_candidate = captures[active_quantity]
+    payload["broker_summaries"] = {
+        "hsbc": {
+            "broker": "hsbc",
+            "account": TEST_ACCOUNT,
+            "hsbc_snapshot": {"account_number": TEST_ACCOUNT, "fingerprint": fingerprint},
+        },
+    }
+    active_order_sha = next(
+        item["sha256"] for item in active_sources if item["bundle_role"] == "order_status"
+    )
+    if proof == "missing_artifact":
+        payload["source_artifacts"] = [
+            item for item in payload["source_artifacts"] if item["sha256"] != active_order_sha
+        ]
+    elif proof == "other_account":
+        next(
+            item for item in payload["source_artifacts"] if item["sha256"] == active_order_sha
+        )["account"] = "000-999999-998"
+    elif proof == "earlier_rank":
+        active_candidate["position_snapshot_as_of"] = "2026-07-14"
+
+    normalized = bindings.normalize_investment_payload_tickers(payload)
+    snapshot = normalized["broker_snapshots"][scope]["position_snapshot"]
+    assert snapshot["DRAM"]["quantity"] == (
+        active_quantity if proof == "complete" else default_quantity
+    )
+    assert normalized["broker_summaries"]["hsbc"]["position_snapshot"] == snapshot
+
 
 
 @pytest.mark.parametrize(

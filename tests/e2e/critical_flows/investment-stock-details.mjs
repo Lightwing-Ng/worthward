@@ -1,4 +1,4 @@
-/* Code version: v1.4.2 */
+/* Code version: v1.4.3 */
 import {
     expect,
     test,
@@ -48,7 +48,6 @@ test('keeps the inline price chart and allocation aligned without collisions', a
     };
     const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentEntryVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment.js');
-    const currentChartVersion = await currentModuleVersion('../../../app/web/static/assets/js/chart.js');
     const currentChartOrbitVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/chart-orbit.js');
     const currentLayoutVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/layout.js');
     const currentDataUtilsVersion = await currentModuleVersion('../../../app/web/static/assets/js/investment/data-utils.js');
