@@ -1,6 +1,6 @@
 """Regression coverage for HSBC USD cash-only refreshes.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 from copy import deepcopy
@@ -18,6 +18,45 @@ from tests.support.investment_import.investment_import_test_support import (
 
 
 class HSBCUSDCashRefreshTests(InvestmentImportFixtureMixin, unittest.TestCase):
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.core.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
+    @patch(
+        "app.services.investment.importing.brokers.hsbc.reconciliation.HSBC_EXPECTED_ACCOUNT_NUMBER",
+        "000-999999-999",
+    )
+    def test_hsbc_usd_cash_only_retains_posting_lag_while_post_date_is_behind(self) -> None:
+        portfolio, orders, cash = self._synthetic_hsbc_paste_snapshot()
+        orders = orders.replace("Sell", "Buy").replace("S-1", "P-900001")
+        cash = cash.replace("15 Jul 2026", "12 Jul 2026").replace(
+            "REF S900001001 SEC", "DEPOSIT"
+        )
+        existing = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text=portfolio, order_status_text=orders, cash_account_text=cash,
+        )
+        self.assertEqual(
+            existing["summary"]["hsbc_snapshot"]["cash_posting_status"],
+            "awaiting_settlement",
+        )
+        refresh = build_investment_payload_from_hsbc_pasted_text(
+            portfolio_text="",
+            order_status_text="",
+            cash_account_text=cash.replace("12 Jul 2026", "13 Jul 2026"),
+        )
+        merged = merge_investment_payloads(existing, refresh)
+        for summary in (merged["summary"], merged["broker_summaries"]["hsbc"]):
+            snapshot = summary["hsbc_snapshot"]
+            self.assertEqual(snapshot["cash_latest_post_date"], "2026-07-13")
+            self.assertEqual(snapshot["latest_fully_executed_order_date"], "2026-07-14")
+            self.assertEqual(snapshot["cash_posting_status"], "awaiting_settlement")
+            self.assertEqual(snapshot["cash_posting_lag"]["status"], "awaiting_settlement")
+            self.assertEqual(snapshot["cash_posting_lag"]["latest_cash_post_date"], "2026-07-13")
+            self.assertTrue(snapshot["checks"]["cash_postings_may_lag_fully_executed_orders"])
+        self.assertEqual(
+            merged["broker_summaries"]["hsbc"]["hsbc_pending_settlement_order_count"], 1
+        )
+
     @patch(
         "app.services.investment.importing.brokers.hsbc.core.HSBC_EXPECTED_ACCOUNT_NUMBER",
         "000-999999-999",
@@ -109,6 +148,8 @@ class HSBCUSDCashRefreshTests(InvestmentImportFixtureMixin, unittest.TestCase):
                 {"USD": "1136.00", "HKD": "20.00"},
             )
             self.assertEqual(summary["hsbc_pending_settlement_order_count"], 1)
+            self.assertEqual(summary["hsbc_snapshot"]["cash_posting_status"], "current")
+            self.assertEqual(summary["hsbc_snapshot"]["cash_posting_lag"]["status"], "none")
             self.assertEqual(
                 Decimal(summary["hsbc_pending_settlement_cash"]), Decimal("-61.00")
             )

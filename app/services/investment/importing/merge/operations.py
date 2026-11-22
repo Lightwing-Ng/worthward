@@ -1,6 +1,7 @@
 """Investment import domain: merge.
 
-Code version: v0.6.0
+Code version: v0.6.1
+- Fixed: A new USD cash posting date retains date-based settlement lag when needed.
 - Fixed: Preserve current HSBC USD Available balance evidence through a cash-only refresh.
 - Added: Reconcile HSBC NET cash entries as FX only when the paired postings are evidenced.
 - Changed: Validate reconciled Schwab holdings against authoritative native evidence.
@@ -54,6 +55,28 @@ import app.services.investment.importing.payload_summaries as _ii_payload_summar
 import app.services.investment.importing.records as _ii_records
 
 import app.services.investment.importing.brokers.schwab as _ii_schwab
+
+
+def _refresh_hsbc_cash_posting_snapshot(summary: dict[str, Any], post_date: str) -> None:
+    raw_snapshot = summary.get("hsbc_snapshot")
+    snapshot = deepcopy(raw_snapshot) if isinstance(raw_snapshot, dict) else {}
+    latest_order_date = _normalize_text(snapshot.get("latest_fully_executed_order_date"))
+    posting_lags = bool(latest_order_date and post_date < latest_order_date)
+    snapshot["cash_latest_post_date"] = post_date
+    snapshot["cash_posting_status"] = "awaiting_settlement" if posting_lags else "current"
+    snapshot["cash_posting_lag"] = {
+        "status": "awaiting_settlement" if posting_lags else "none",
+        "latest_cash_post_date": post_date,
+        "latest_fully_executed_order_date": latest_order_date,
+        "explanation": (
+            "USD Savings postings are behind the latest fully executed order."
+            if posting_lags
+            else "The standalone USD Savings capture is the latest posted cash boundary."
+        ),
+    }
+    if isinstance(snapshot.get("checks"), dict):
+        snapshot["checks"]["cash_postings_may_lag_fully_executed_orders"] = posting_lags
+    summary["hsbc_snapshot"] = snapshot
 
 
 def merge_investment_payloads(
@@ -1163,21 +1186,7 @@ def merge_investment_payloads(
                     "ending_cash_base_currency_status": "authoritative_current_cash_boundary",
                 }
             )
-            snapshot = summary.get("hsbc_snapshot")
-            snapshot = deepcopy(snapshot) if isinstance(snapshot, dict) else {}
-            snapshot["cash_latest_post_date"] = incoming_hsbc_usd_cash_post_date
-            snapshot["cash_posting_status"] = "current"
-            snapshot["cash_posting_lag"] = {
-                "status": "none",
-                "latest_cash_post_date": incoming_hsbc_usd_cash_post_date,
-                "latest_fully_executed_order_date": _normalize_text(
-                    snapshot.get("latest_fully_executed_order_date")
-                ),
-                "explanation": (
-                    "The standalone USD Savings capture is the latest posted cash boundary."
-                ),
-            }
-            summary["hsbc_snapshot"] = snapshot
+            _refresh_hsbc_cash_posting_snapshot(summary, incoming_hsbc_usd_cash_post_date)
     if "position_snapshot_authoritative" in latest_summary:
         payload["summary"]["position_snapshot_authoritative"] = bool(
             latest_summary.get("position_snapshot_authoritative")
@@ -1484,11 +1493,9 @@ def merge_investment_payloads(
                 hsbc_broker_summary["ending_cash_base_currency_as_of"] = (
                     incoming_hsbc_usd_cash_post_date
                 )
-                snapshot = hsbc_broker_summary.get("hsbc_snapshot")
-                snapshot = deepcopy(snapshot) if isinstance(snapshot, dict) else {}
-                snapshot["cash_latest_post_date"] = incoming_hsbc_usd_cash_post_date
-                snapshot["cash_posting_status"] = "current"
-                hsbc_broker_summary["hsbc_snapshot"] = snapshot
+                _refresh_hsbc_cash_posting_snapshot(
+                    hsbc_broker_summary, incoming_hsbc_usd_cash_post_date
+                )
     if (
         existing_broker == incoming_broker
         and latest_payload is normalized_existing
