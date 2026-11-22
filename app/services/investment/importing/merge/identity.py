@@ -1,6 +1,7 @@
 """Investment import domain: merge identity.
 
-Code version: v0.5.2
+Code version: v0.6.0
+- Added: Preserve the HSBC NET cash-leg identity when both currencies verify an FX conversion.
 - Fixed: Same-order HSBC cash imports with an unconfirmed execution price retain
   an existing final cash-derived price without replacing new cash evidence.
 - Fixed: Schwab source aliases start with the merged canonical identity so
@@ -28,6 +29,7 @@ from app.services.investment.importing.support import (
     HSBC_CORPORATE_EVENT_PAYMENT_PREFIX,
     InvalidOperation,
     ZERO,
+    _hsbc_net_cash_reference,
     _normalize_text,
     _normalize_whitespace,
     date,
@@ -386,11 +388,14 @@ def _hsbc_cash_account_identity_key(
         ).lower()
         cash_scope = f"__UNSCOPED__:{source_file_kind}:{source_sha256}"
     cash_scope_token = (cash_scope,) if cash_scope else ()
+    net_reference = _hsbc_net_cash_reference(record)
     identity_type = (
         "hsbc_corporate_event_payment"
         if upper_description.startswith(HSBC_CORPORATE_EVENT_PAYMENT_PREFIX)
         else normalized_type
     )
+    if net_reference:
+        identity_type = "hsbc_net_cash"
     is_cash_reward = is_hsbc_cash_reward_record(record)
     if is_cash_reward:
         identity_type = "cash_reward"
@@ -421,6 +426,7 @@ def _hsbc_cash_account_identity_key(
             *cash_scope_token,
             amount_token,
             balance_after,
+            *((net_reference,) if net_reference else ()),
         )
     return (
         "hsbc",
@@ -445,6 +451,8 @@ def _hsbc_cash_cross_source_identity_key(record: dict[str, Any]) -> tuple[str, .
     )
     date_token = _normalize_text(record.get("date"))
     normalized_type = _normalize_text(record.get("type")).lower()
+    if _hsbc_net_cash_reference(record):
+        normalized_type = "hsbc_net_cash"
     is_cash_reward = is_hsbc_cash_reward_record(record)
     if is_cash_reward:
         normalized_type = "cash_reward"

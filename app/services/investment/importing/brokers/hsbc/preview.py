@@ -1,6 +1,7 @@
 """Read-only change projection for HSBC paste imports.
 
-Code version: v1.0.0
+Code version: v1.1.0
+- Added: Show both cash legs updated by a verified HSBC currency conversion.
 """
 
 from collections import Counter, defaultdict
@@ -12,6 +13,7 @@ from app.services.investment.importing.brokers.hsbc.cash import (
     _hsbc_cash_record_identity_key,
     _parse_hsbc_money_or_none as _money,
 )
+from app.services.investment.importing.brokers.hsbc.forex import hsbc_net_cash_group_key
 from app.services.investment.importing.merge.identity import (
     _transaction_identity_key,
 )
@@ -120,10 +122,13 @@ def _transaction_changes(before: dict, after: dict, incoming: dict, account: str
         _order_reference(row) or _transaction_identity_key(row)
         for row in incoming_rows
     } | order_refs
+    affected_net_groups = {
+        key for row in incoming_rows if (key := hsbc_net_cash_group_key(row))
+    }
     previous_by_identity = defaultdict(list)
     for row in _scoped_transactions(before, account):
         identity = _order_reference(row) or _transaction_identity_key(row)
-        if identity in affected_keys:
+        if identity in affected_keys or hsbc_net_cash_group_key(row) in affected_net_groups:
             previous_by_identity[identity].append(_economics(row))
 
     changes = []
@@ -134,7 +139,7 @@ def _transaction_changes(before: dict, after: dict, incoming: dict, account: str
         if order_ref in order_refs:
             linked_postings.update(_postings(row))
         identity = order_ref or _transaction_identity_key(row)
-        if identity not in affected_keys:
+        if identity not in affected_keys and hsbc_net_cash_group_key(row) not in affected_net_groups:
             continue
         previous_economics = previous_by_identity[identity]
         economics = _economics(row)
