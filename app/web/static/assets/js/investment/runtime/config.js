@@ -1,7 +1,7 @@
 /**
  * Investment workspace immutable configuration.
  *
- * Code version: v1.4.0
+ * Code version: v1.4.1
  * - Changed: RewardCash tooltips describe its shared realized-reward scope.
  * - Added: Cash-only debit-card rewards retain signed income without commissions.
  * - Added: Rewards disclosure includes card RewardCash separately from KOL income.
@@ -377,7 +377,6 @@ export function createInvestmentRuntimeConfig(runtime) {
         },
     };
     config.SUPPORTED_INVESTMENT_IMPORT_BROKERS = new Set([
-        'ibkr',
         'longbridge_hk',
         'longbridge_sg',
         'hsbc',

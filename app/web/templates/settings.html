@@ -1,7 +1,7 @@
-{# Code version: v0.19.13 #}
+{# Code version: v0.20.1 #}
 {% from "_collapse.html" import render_collapse %}
 {% extends "base.html" %}
-{% from "_macros.html" import render_broker_select_options, render_notice_banner, render_switch with context %}
+{% from "_macros.html" import render_notice_banner, render_switch with context %}
 
 {% block sidebar_content %}
 {% set nav_sections = [
@@ -97,7 +97,7 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.28.5') }}"></script>
+<script type="module" src="{{ url_for('static', filename='assets/js/settings.js', v=version ~ '-settings-js-v0.28.6') }}"></script>
 {% endblock %}
 
 {% block workspace_content %}
@@ -110,6 +110,7 @@
 
     {% if settings_section != "style-tokens" %}
     <div class="settings-content-scrollport" data-layout-role="content-scrollport" data-settings-content-scrollport>
+        <div class="settings-content-grid" data-layout-role="content-grid">
     {% endif %}
 
     {% if settings_section == "about" %}
@@ -146,6 +147,7 @@
     {% include "settings/_export_image.html" %}
     {% endif %}
     {% if settings_section != "style-tokens" %}
+        </div>
     </div>
     {% endif %}
 </section>

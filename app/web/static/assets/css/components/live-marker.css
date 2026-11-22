@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.1.0 */
 
 .live-marker {
 	display: inline-block;
@@ -26,7 +26,7 @@
 	opacity: var(--live-marker-start-opacity);
 	pointer-events: none;
 	transform: translate(-50%, -50%) scale(var(--live-marker-start-scale));
-	animation: live-marker-breath var(--live-marker-duration) var(--motion-emphasized) infinite;
+	animation: live-marker-breath var(--live-marker-duration) linear infinite;
 }
 
 .live-marker::before {

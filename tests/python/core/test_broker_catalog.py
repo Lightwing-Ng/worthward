@@ -4,7 +4,6 @@ from app.core.broker_catalog import (
     INVESTMENT_IMPORT_BROKER_CODES,
     BROKER_CATALOG,
     LIVE_TRADING_BROKER_CODES,
-    SETTINGS_BROKER_CODES,
     broker_sort_key,
     sort_broker_codes,
     sorted_broker_entries,
@@ -38,7 +37,8 @@ def test_sorted_broker_entries_preserves_catalog_labels():
     codes = [entry.code for entry in entries]
     assert "schwab" in codes and "cmbwl" in codes
     assert codes.index("schwab") < codes.index("cmbwl")
-    assert codes.index("futuhk") < codes.index("hsbc") < codes.index("ibkr")
+    assert codes.index("futuhk") < codes.index("hsbc")
+    assert BROKER_CATALOG["ibkr"].label == "IBKR"
 
 
 def test_investment_institution_options_are_alphabetically_ordered():
@@ -52,7 +52,6 @@ def test_investment_institution_options_are_alphabetically_ordered():
         "cmbwl",
         "futuhk",
         "hsbc",
-        "ibkr",
         "icbc_cn",
         "icbc_hk",
         "longbridge_hk",
@@ -109,8 +108,7 @@ def test_hk_bank_display_catalog_covers_restored_bank_records_and_logos():
             assert (logo_dir / icon_filename).is_file()
 
 
-def test_settings_and_live_trading_broker_lists_use_ibkr_before_longbridge():
-    assert sort_broker_codes(SETTINGS_BROKER_CODES) == ["ibkr", "longbridge"]
+def test_live_trading_broker_list_uses_ibkr_before_longbridge():
     assert sort_broker_codes(LIVE_TRADING_BROKER_CODES) == ["ibkr", "longbridge"]
 
 

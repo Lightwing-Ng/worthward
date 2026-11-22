@@ -1,6 +1,6 @@
 """Repository documentation, cache-version, and isolation contracts.
 
-Code version: v1.9.0
+Code version: v1.9.2
 """
 
 from __future__ import annotations
@@ -36,10 +36,14 @@ SHARED_STATIC_HOUSEKEEPING_CONTRACT = (
 SHARED_UI_TYPOGRAPHY_CONTRACT = (
     PROJECT_ROOT.parent / "shared_docs" / "SHARED_UI_TYPOGRAPHY_CONTRACT.md"
 ).resolve()
+SHARED_UI_MOTION_CONTRACT = (
+    PROJECT_ROOT.parent / "shared_docs" / "SHARED_UI_MOTION_CONTRACT.md"
+).resolve()
 EXTERNAL_DOCUMENTATION_CONTRACTS = frozenset(
     {
         SHARED_STATIC_HOUSEKEEPING_CONTRACT,
         SHARED_UI_TYPOGRAPHY_CONTRACT,
+        SHARED_UI_MOTION_CONTRACT,
     }
 )
 
@@ -62,6 +66,8 @@ APP_CSS_IMPORT_ORDER = (
     "views/investment-tables.css",
     "utilities/responsive.css",
     "foundation/motion.css",
+    "components/continuous-corners.css",
+    "components/workspace-grid.css",
 )
 
 APP_SCRIPT_LOAD_ORDER = (

@@ -1,8 +1,9 @@
 /**
  * Stock-details state and transaction-history filters.
  *
- * Code version: v1.4.2
+ * Code version: v1.6.1
  * - Fixed: Refresh splitter constraints after releasing the temporary view height.
+ * - Changed: The portfolio summary opens independently within Holdings.
  * - Changed: Stock details renders reconciled total-equity allocation percentages.
  * - Fixed: Price-hover exit restores the latest allocation snapshot.
  * - Fixed: Leaving Stock details dismisses its portaled ticker selector.
@@ -132,7 +133,7 @@ function getInvestmentLocationTicker() {
         return normalizeInvestmentTicker(search.get('ticker') || '');
     }
 
-function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestmentView || 'chart', ticker = runtime.state.selectedInvestmentStockTicker} = {}) {
+function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestmentView || 'holdings', ticker = runtime.state.selectedInvestmentStockTicker} = {}) {
         const normalizedView = runtime.normalizeInvestmentView(view);
         const availableBrokerCodes = runtime.getAvailableInvestmentBrokerCodes();
         const selectedBrokerCodes = runtime.getInvestmentBrokerFilterSelectedCodes({view: normalizedView});
@@ -140,6 +141,7 @@ function getInvestmentUrlStateForCurrentView({view = runtime.state.activeInvestm
         return {
             view: normalizedView,
             ticker: normalizeInvestmentTicker(ticker || ''),
+            overviewExpanded: runtime.state.investmentHoldingsOverviewExpanded === true,
             overviewRange: runtime.normalizeInvestmentEquityRange(runtime.state.selectedInvestmentEquityRange),
             stockDetailsRange: runtime.normalizeInvestmentStockDetailsRange(runtime.state.selectedInvestmentStockDetailsRange),
             metricsBroker: runtime.getInvestmentBrokerSummarySelectedCode(),
@@ -321,7 +323,7 @@ function waitForInvestmentStableElementBox(element, {
 function syncInvestmentViewPill(normalizedNextView) {
         if (!runtime.segmentedControl) return;
         const visibleView = normalizedNextView === 'stock_details' ? 'holdings' : normalizedNextView;
-        const visibleViews = runtime.INVESTMENT_VIEW_ORDER.filter((view) => view !== 'stock_details');
+        const visibleViews = runtime.INVESTMENT_VIEW_ORDER.filter((view) => view === 'holdings' || view === 'metrics');
         const activeIndex = Math.max(visibleViews.indexOf(visibleView), 0);
         const nextRadio = runtime.segmentedControl.querySelector(`input[type="radio"][value="${CSS.escape(visibleView)}"]`);
         if (nextRadio instanceof HTMLInputElement && !nextRadio.checked) {
@@ -349,7 +351,9 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
             return;
         }
 
-        const normalizedNextView = runtime.normalizeInvestmentView(nextView);
+        const requestedView = runtime.normalizeInvestmentView(nextView);
+        const normalizedNextView = requestedView === 'chart' ? 'holdings' : requestedView;
+        if (requestedView === 'chart') runtime.setInvestmentHoldingsOverviewExpanded(true);
         // A direct call supersedes a selection that is still waiting for its first frame.
         const supersededPendingSelection = runtime.cancelInvestmentPillFrameWork('view');
 
@@ -436,6 +440,9 @@ function setInvestmentView(nextView, { syncHash = true } = {}) {
         }
         runtime.rememberInvestmentPageState({ view: normalizedNextView });
         if (!isHoldingsDisclosure) animateInvestmentSurfaceHeight();
+        if (visibleView === 'holdings' && runtime.state.investmentHoldingsOverviewExpanded) {
+            window.requestAnimationFrame(runtime.syncInvestmentHoldingsOverviewLayout);
+        }
         if (normalizedNextView === 'stock_details') {
             scheduleInvestmentStockDetailsVisibleLayoutSync();
         }
@@ -464,27 +471,24 @@ function initInvestmentViewTabs() {
             runtime.applyInvestmentUrlStateFromLocation({render: false});
         } else {
             runtime.syncInvestmentViewFromLocationHash(
-                restoredLocationFromMemory ? 'stock_details' : (rememberedView || checkedRadio?.value || 'chart'),
+                restoredLocationFromMemory ? 'stock_details' : (rememberedView || checkedRadio?.value || 'holdings'),
             );
         }
         if (!initialUrlState.hasExplicitState) {
             syncInvestmentUrl({historyMode: 'replace'});
         }
-        runtime.rememberInvestmentPageState({ view: runtime.state.activeInvestmentView || rememberedView || checkedRadio?.value || 'chart' });
+        runtime.rememberInvestmentPageState({ view: runtime.state.activeInvestmentView || rememberedView || checkedRadio?.value || 'holdings' });
         runtime.scheduleInvestmentSegmentedPillUpdate();
-        runtime.scheduleIbkrImportSegmentedPillUpdate();
         cleanupInvestmentSurfaceHeight();
 
         if (document.fonts?.ready && typeof document.fonts.ready.then === 'function') {
             document.fonts.ready.then(() => {
                 runtime.scheduleInvestmentSegmentedPillUpdate();
-                runtime.scheduleIbkrImportSegmentedPillUpdate();
             }).catch(() => {});
         }
 
         window.addEventListener('resize', () => {
             runtime.scheduleInvestmentSegmentedPillUpdate();
-            runtime.scheduleIbkrImportSegmentedPillUpdate();
         });
 
         if (window.ResizeObserver) {
@@ -500,26 +504,12 @@ function initInvestmentViewTabs() {
             });
         }
 
-        if (window.ResizeObserver && runtime.investmentImportIbkrMode instanceof HTMLElement) {
-            const ibkrResizeObserver = new ResizeObserver(() => {
-                runtime.scheduleIbkrImportSegmentedPillUpdate();
-            });
-            ibkrResizeObserver.observe(runtime.investmentImportIbkrMode);
-            const ibkrRadios = runtime.investmentImportIbkrMode.querySelectorAll('input[type="radio"]');
-            ibkrRadios.forEach((radio) => {
-                const optionLabel = radio.nextElementSibling;
-                if (optionLabel instanceof HTMLElement) {
-                    ibkrResizeObserver.observe(optionLabel);
-                }
-            });
-        }
-
         window.addEventListener('hashchange', () => {
             if (runtime.state.investmentUrlStateReady) {
                 runtime.applyInvestmentUrlStateFromLocation({render: true});
                 return;
             }
-            runtime.syncInvestmentViewFromLocationHash(runtime.state.activeInvestmentView || 'chart');
+            runtime.syncInvestmentViewFromLocationHash(runtime.state.activeInvestmentView || 'holdings');
         });
         window.addEventListener('popstate', () => {
             runtime.applyInvestmentUrlStateFromLocation({render: runtime.state.investmentUrlStateReady});
@@ -1110,7 +1100,7 @@ function animateStockDetailsDonutTo(nextState) {
             runtime.state.stockDetailsDonutAnimationCancel = window.WorthwardMotion.scheduler.animate({
                 key: 'investment-stock-details-donut',
                 duration,
-                ease: runtime.easeOutCubic,
+                ease: runtime.springProgress,
                 update,
                 complete: finish,
             });
@@ -1120,7 +1110,7 @@ function animateStockDetailsDonutTo(nextState) {
         let frameId = 0;
         const step = (now) => {
             const progress = Math.min(1, (now - startedAt) / duration);
-            update(runtime.easeOutCubic(progress));
+            update(runtime.springProgress(progress));
             if (progress < 1) {
                 frameId = window.requestAnimationFrame(step);
                 return;
@@ -1424,24 +1414,6 @@ function isLikelyCsvFile(file) {
         return Boolean(file && /\.csv$/i.test(file.name || ''));
     }
 
-function isLikelyTransactionHistoryFile(file) {
-        if (!isLikelyCsvFile(file)) return false;
-        const upperName = String(file.name || '').toUpperCase();
-        return upperName.includes('TRANSACTIONS');
-    }
-
-function isLikelyPositionsFile(file) {
-        if (!isLikelyCsvFile(file)) return false;
-        const upperName = String(file.name || '').toUpperCase();
-        return !upperName.includes('TRANSACTIONS');
-    }
-
-function isLikelyGainskeeperFile(file) {
-        if (!(file instanceof File)) return false;
-        const lowerName = String(file.name || '').trim().toLowerCase();
-        return lowerName.endsWith('.gkx') || lowerName.endsWith('.ofx');
-    }
-
 function isLikelyPdfFile(file) {
         if (!(file instanceof File)) return false;
         const lowerName = String(file.name || '').trim().toLowerCase();
@@ -1709,9 +1681,6 @@ function isMoneyMarketFundTicker(ticker) {
         showInvestmentTransferBindingModal,
         hideInvestmentLoadingModal,
         isLikelyCsvFile,
-        isLikelyTransactionHistoryFile,
-        isLikelyPositionsFile,
-        isLikelyGainskeeperFile,
         isLikelyPdfFile,
         isLikelyBocHkStatementPdf,
         isLikelyFutuStatementPdf,

@@ -1,4 +1,4 @@
-/* Code version: v1.0.3 */
+/* Code version: v1.2.0 */
 import {expect, test} from '@playwright/test';
 
 const widthTolerance = 1;
@@ -283,4 +283,166 @@ test('lets the specimens shrink with a narrow single-column container', async ({
     expect(geometry.filter.demoWidth).toBeLessThan(384);
     await expectTier(page, geometry.filter.demoWidth, geometry.filter.demoWidth);
     await expectPeriodMenuWithinSharedCap(page, geometry.filter.demoWidth);
+});
+
+test('resizer keeps bounded values while faster edge releases produce stronger visual jelly', async ({page}) => {
+    await page.setViewportSize({width: 1_760, height: 900});
+    await page.goto('/settings/style-tokens');
+    const handle = page.locator('[data-style-token-resizer]');
+    await expect(handle).toHaveAttribute('data-bound', '1');
+    const springSupport = await handle.evaluate((element) => {
+        const token = getComputedStyle(document.documentElement).getPropertyValue('--motion-spring-080').trim();
+        return {
+            token,
+            supported: CSS.supports('transition-timing-function', token),
+            computed: getComputedStyle(element, '::after').transitionTimingFunction,
+        };
+    });
+    expect(springSupport.token).toMatch(/^linear\(0,/);
+    expect(springSupport.supported).toBe(true);
+    expect(springSupport.computed).toContain('linear(');
+
+    const exerciseEdge = async (edge, fast) => {
+        await handle.press(edge === 'minimum' ? 'Home' : 'End');
+        await waitForStableGeometry(page);
+        const before = await handle.evaluate((element, targetEdge) => ({
+            rect: element.getBoundingClientRect().toJSON(),
+            value: element.getAttribute('aria-valuenow'),
+            bound: element.getAttribute(targetEdge === 'minimum' ? 'aria-valuemin' : 'aria-valuemax'),
+        }), edge);
+        expect(before.value).toBe(before.bound);
+        await handle.evaluate((element) => {
+            window.__resizerJellyPeak = 0;
+            window.__resizerJellyObserver?.disconnect();
+            window.__resizerJellyObserver = new MutationObserver(() => {
+                const offset = Number.parseFloat(element.style.getPropertyValue('--surface-resizer-jelly-offset')) || 0;
+                window.__resizerJellyPeak = Math.max(window.__resizerJellyPeak, Math.abs(offset));
+            });
+            window.__resizerJellyObserver.observe(element, {attributes: true, attributeFilter: ['style']});
+        });
+        await handle.evaluate((element, {targetEdge, isFast}) => {
+            const rect = element.getBoundingClientRect();
+            const startX = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const direction = targetEdge === 'minimum' ? -1 : 1;
+            const step = isFast ? 20 : 8;
+            const interval = isFast ? 10 : 40;
+            const dispatch = (target, type, x, time) => {
+                const event = new PointerEvent(type, {
+                    bubbles: true, button: 0, pointerId: 91, clientX: x, clientY: y,
+                });
+                Object.defineProperty(event, 'timeStamp', {value: time});
+                target.dispatchEvent(event);
+            };
+            dispatch(element, 'pointerdown', startX, 1_000);
+            for (let index = 1; index <= 4; index += 1) {
+                dispatch(window, 'pointermove', startX + direction * step * index, 1_000 + interval * index);
+            }
+            dispatch(window, 'pointerup', startX + direction * step * 4, 1_001 + interval * 4);
+        }, {targetEdge: edge, isFast: fast});
+        await expect.poll(() => page.evaluate(() => window.__resizerJellyPeak)).toBeGreaterThan(0.1);
+        await expect.poll(() => handle.evaluate((element) => (
+            element.style.getPropertyValue('--surface-resizer-jelly-offset')
+        ))).toBe('');
+        const after = await handle.evaluate((element) => ({
+            rect: element.getBoundingClientRect().toJSON(),
+            value: element.getAttribute('aria-valuenow'),
+            peak: window.__resizerJellyPeak,
+            pseudoTransform: getComputedStyle(element, '::after').transform,
+        }));
+        expect(after.value).toBe(before.bound);
+        expect(after.rect.x).toBeCloseTo(before.rect.x, 1);
+        expect(after.rect.width).toBeCloseTo(before.rect.width, 1);
+        expect(after.peak).toBeLessThanOrEqual(8);
+        expect(after.pseudoTransform).toContain('matrix');
+        return after.peak;
+    };
+
+    for (const edge of ['minimum', 'maximum']) {
+        const slowPeak = await exerciseEdge(edge, false);
+        const fastPeak = await exerciseEdge(edge, true);
+        expect(slowPeak).toBeGreaterThan(0.5);
+        expect(fastPeak).toBeGreaterThan(slowPeak + 0.5);
+    }
+
+    await handle.press('Home');
+    const cancelled = await handle.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const event = (type, clientX, timestamp) => {
+            const pointerEvent = new PointerEvent(type, {
+                bubbles: true, button: 0, pointerId: 92, clientX, clientY: y,
+            });
+            Object.defineProperty(pointerEvent, 'timeStamp', {value: timestamp});
+            return pointerEvent;
+        };
+        const start = element.getAttribute('aria-valuenow');
+        element.dispatchEvent(event('pointerdown', x, 2_000));
+        window.dispatchEvent(event('pointermove', x + 64, 2_040));
+        const moved = element.getAttribute('aria-valuenow');
+        window.dispatchEvent(event('pointercancel', x + 64, 2_050));
+        return {
+            start, moved,
+            final: element.getAttribute('aria-valuenow'),
+            jelly: element.style.getPropertyValue('--surface-resizer-jelly-offset'),
+        };
+    });
+    expect(Number(cancelled.moved)).toBeGreaterThan(Number(cancelled.start));
+    expect(cancelled.final).toBe(cancelled.start);
+    expect(cancelled.jelly).toBe('');
+
+    await handle.press('End');
+    await handle.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const event = (type, clientX, timestamp) => {
+            const pointerEvent = new PointerEvent(type, {
+                bubbles: true, button: 0, pointerId: 93, clientX, clientY: y,
+            });
+            Object.defineProperty(pointerEvent, 'timeStamp', {value: timestamp});
+            return pointerEvent;
+        };
+        element.dispatchEvent(event('pointerdown', x, 3_000));
+        window.dispatchEvent(event('pointermove', x + 60, 3_030));
+        window.dispatchEvent(event('pointerup', x + 60, 3_031));
+    });
+    await expect.poll(() => handle.evaluate((element) => (
+        element.style.getPropertyValue('--surface-resizer-jelly-offset')
+    ))).not.toBe('');
+    const reversal = await handle.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const before = element.style.getPropertyValue('--surface-resizer-jelly-offset');
+        const event = (type, clientX, timestamp) => {
+            const pointerEvent = new PointerEvent(type, {
+                bubbles: true, button: 0, pointerId: 94, clientX, clientY: y,
+            });
+            Object.defineProperty(pointerEvent, 'timeStamp', {value: timestamp});
+            return pointerEvent;
+        };
+        element.dispatchEvent(event('pointerdown', x, 4_000));
+        const after = element.style.getPropertyValue('--surface-resizer-jelly-offset');
+        window.dispatchEvent(event('pointermove', x - 40, 4_030));
+        window.dispatchEvent(event('pointerup', x - 40, 4_031));
+        return {before, after};
+    });
+    expect(reversal.before).not.toBe('');
+    expect(reversal.after).toBe(reversal.before);
+    await expect.poll(() => handle.evaluate((element) => (
+        element.style.getPropertyValue('--surface-resizer-jelly-offset')
+    ))).toBe('');
+
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await handle.press('Home');
+    const box = await handle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 40, box.y + box.height / 2);
+    await page.mouse.up();
+    expect(await handle.evaluate((element) => (
+        element.style.getPropertyValue('--surface-resizer-jelly-offset')
+    ))).toBe('');
 });

@@ -1,4 +1,4 @@
-/* Code version: v1.3.0 */
+/* Code version: v1.3.1 */
 (() => {
     const create = (context) => {
         const {
@@ -607,9 +607,7 @@
         const isBrokerSharedSelectKind = (field) => {
             if (!(field instanceof HTMLElement)) return false;
             const kind = String(field.dataset.sharedSelectKind || "").trim().toLowerCase();
-            return kind === "settings-broker"
-                || kind === "live-trading-broker"
-                || kind === "investment-import-broker";
+            return kind === "live-trading-broker" || kind === "investment-import-broker";
         };
 
         const getBrokerOptionSortKey = (option) => {

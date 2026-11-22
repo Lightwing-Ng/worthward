@@ -1,4 +1,4 @@
-/* Code version: v1.3.8 */
+/* Code version: v1.3.12 */
 import {
     expect,
     test,
@@ -14,6 +14,24 @@ import {
     mockInvestmentReadApis,
     assertCompleteStandardInvestmentExportPayload,
 } from './support.mjs';
+
+async function selectSchwabImport(page) {
+    await page.locator('#investment_import_broker').selectOption('schwab', {force: true});
+}
+
+async function fillSchwabImportFiles(page) {
+    await selectSchwabImport(page);
+    await page.locator('#schwab_transactions_csv').setInputFiles({
+        name: 'transactions.csv',
+        mimeType: 'text/csv',
+        buffer: Buffer.from('Date,Action,Symbol,Quantity,Price,Amount\n08/20/2026,Buy,ALFA,1,10.00,-10.00\n'),
+    });
+    await page.locator('#schwab_positions_csv').setInputFiles({
+        name: 'positions.csv',
+        mimeType: 'text/csv',
+        buffer: Buffer.from('Symbol,Quantity,Price\nALFA,1,10.00\n'),
+    });
+}
 
 test('keeps Investment import physical effects inside the shared scrollport clearance', async ({page}) => {
     const pageErrors = [];
@@ -36,11 +54,8 @@ test('keeps Investment import physical effects inside the shared scrollport clea
         await page.setViewportSize(viewport);
         await page.goto('/trade/investment?view=holdings');
         await page.locator('#toggle_form_button').click();
-        await page.locator('#investment_import_broker').evaluate((select) => {
-            select.value = 'ibkr';
-            select.dispatchEvent(new Event('change', {bubbles: true}));
-        });
-        await expect(page.locator('#investment_import_ibkr_fields')).toBeVisible();
+        await selectSchwabImport(page);
+        await expect(page.locator('#investment_import_schwab_fields')).toBeVisible();
 
         const trigger = page.locator(
           '[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]',
@@ -51,9 +66,9 @@ test('keeps Investment import physical effects inside the shared scrollport clea
             const stack = form.querySelector('.investment-import-stack');
             const broker = form.querySelector('[data-shared-select-kind="investment-import-broker"]');
             const brokerTrigger = broker?.querySelector('[data-shared-select-trigger]');
-            const fieldGroup = form.querySelector('#investment_import_ibkr_fields');
+            const fieldGroup = form.querySelector('#investment_import_schwab_fields');
             const cards = [...form.querySelectorAll(
-              '#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"] .investment-import-bridge-field',
+              '#investment_import_schwab_fields .investment-import-bridge-field',
             )];
             if (!(stack instanceof HTMLElement)
                 || !(broker instanceof HTMLElement)
@@ -126,10 +141,21 @@ test('uses Process List across brokers and remembers the Investment import choic
     await mockInvestmentReadApis(page, {transactions: [], brokerSummaries: {}});
     await page.setViewportSize({width: 830, height: 1291});
     await page.goto('/trade/investment');
-    await page.evaluate(() => localStorage.removeItem('worthward:investment-import-broker'));
+    await page.evaluate(() => localStorage.setItem('worthward:investment-import-broker', 'ibkr'));
     await page.reload();
     await page.locator('#toggle_form_button').click();
     await expect(page.locator('#investment_import_broker')).toHaveValue('hsbc');
+    await expect(page.locator('#investment_import_broker option[value="ibkr"]')).toHaveCount(0);
+    await expect(page.locator('#investment_form').locator(
+        '#investment_import_ibkr_fields, input[name="ibkr_import_mode"], #gainskeeper_files, #ibkr_trade_notifications_text',
+    )).toHaveCount(0);
+    const brokerTrigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
+    const brokerDropdown = page.locator('#investment_import_broker_dropdown');
+    await brokerTrigger.click();
+    await expect(brokerDropdown).toBeVisible();
+    await expect(brokerDropdown.locator('[role="option"][data-value="ibkr"]')).toHaveCount(0);
+    await brokerDropdown.locator('[role="option"][data-value="hsbc"]').click();
+    await expect(brokerDropdown).toBeHidden();
 
     const hsbcSteps = page.locator(
         '#investment_import_hsbc_fields [data-hsbc-import-mode-panel="paste"] > ol.process-list > li.process-list-step',
@@ -152,9 +178,6 @@ test('uses Process List across brokers and remembers the Investment import choic
     await expect(page.locator('#investment_import_hsbc_fields [data-hsbc-import-mode-panel="paste"] > ol')).toHaveAttribute('role', 'list');
     await expect(page.locator('#investment_import_hsbc_fields .investment-import-paste-button')).toHaveCount(3);
     for (const [selector, count] of [
-        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="csv"]', 2],
-        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="gainskeeper"]', 1],
-        ['#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"]', 3],
         ['#investment_import_longbridge_hk_fields', 2],
         ['#investment_import_longbridge_sg_fields', 2],
         ['#investment_import_futuhk_fields', 1],
@@ -188,10 +211,7 @@ test('uses Process List across brokers and remembers the Investment import choic
     expect(modalGeometry.buttonSize).toBe(24);
     expect(modalGeometry.noBrokerOverlap).toBe(true);
 
-    await page.locator('#investment_import_broker').evaluate((select) => {
-        select.value = 'schwab';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
+    await selectSchwabImport(page);
     await expect(page.locator('#investment_import_schwab_fields > ol.process-list > li')).toHaveCount(2);
     expect(await page.evaluate(() => localStorage.getItem('worthward:investment-import-broker'))).toBe('schwab');
     await page.locator('#investment_import_close_button').click({force: true});
@@ -303,72 +323,27 @@ test('validates the investment import flow without mutating the local store', as
     }));
     expect(sectionResizerState.disabled).toBe(true);
     expect(sectionResizerState.pointerEvents).toBe('none');
-    await page.locator('#investment_import_broker').evaluate((select) => {
-        select.value = 'ibkr';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    const readIbkrImportLayout = () => page.evaluate(() => {
-        const container = document.querySelector('#transaction_form_container');
-        const csvPanel = document.querySelector(
-          '#investment_import_ibkr_fields > [data-ibkr-import-mode-panel="csv"]',
-        );
-        const actionPackage = document.querySelector('#investment_form > section');
-        const scrollStack = document.querySelector('.investment-import-stack');
-        if (!container || !csvPanel || !actionPackage || !scrollStack) return null;
-        const csvPanelRect = csvPanel.getBoundingClientRect();
-        const actionPackageRect = actionPackage.getBoundingClientRect();
-        return {
-            containerHeight: container.offsetHeight,
-            csvGapToAction: actionPackageRect.top - csvPanelRect.bottom,
-            scrollTop: scrollStack.scrollTop,
-            scrollHeight: scrollStack.scrollHeight,
-            clientHeight: scrollStack.clientHeight,
-        };
-    });
-    const csvLayout = await readIbkrImportLayout();
-    expect(csvLayout).not.toBeNull();
+    const container = page.locator('#transaction_form_container');
+    const pasteHeight = await container.evaluate((element) => element.offsetHeight);
+    await page.locator('label[for="hsbc_import_mode_statement_pdf"]').click();
+    await expect(page.locator('#hsbc_statement_pdfs')).toBeVisible();
+    const statementHeight = await container.evaluate((element) => element.offsetHeight);
+    expect(Math.abs(statementHeight - pasteHeight)).toBeLessThanOrEqual(1);
+    await page.locator('label[for="hsbc_import_mode_paste"]').click();
+    await expect(page.locator('#hsbc_cash_account_display')).toBeVisible();
+    await expect(page.locator('#investment_import_hsbc_fields > .investment-import-mode-field')).toHaveCSS('position', 'sticky');
 
-    await page.locator('#ibkr_import_mode_gainskeeper').evaluate((input) => {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    const gainskeeperModeLayout = await readIbkrImportLayout();
-    expect(Math.abs(gainskeeperModeLayout.containerHeight - csvLayout.containerHeight)).toBeLessThanOrEqual(1);
-
-    await page.locator('#ibkr_import_mode_web_paste').evaluate((input) => {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    const webPasteModeLayout = await readIbkrImportLayout();
-    expect(Math.abs(webPasteModeLayout.containerHeight - csvLayout.containerHeight)).toBeLessThanOrEqual(1);
-
-    await page.locator('#ibkr_import_mode_csv').evaluate((input) => {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    await page.locator('.investment-import-stack').evaluate((stack) => {
-        stack.scrollTop = stack.scrollHeight;
-    });
-    const scrolledCsvLayout = await readIbkrImportLayout();
-    if (scrolledCsvLayout.scrollHeight > scrolledCsvLayout.clientHeight + 1) {
-        expect(Math.abs(scrolledCsvLayout.csvGapToAction)).toBeLessThanOrEqual(1);
-    } else {
-        expect(scrolledCsvLayout.csvGapToAction).toBeGreaterThanOrEqual(-1);
-        expect(scrolledCsvLayout.scrollTop).toBe(0);
-    }
-
-    await page.setInputFiles('#transactions_csv', fixturePath('ibkr-transactions.csv'));
-    await page.setInputFiles('#positions_csv', fixturePath('ibkr-positions.csv'));
+    await fillSchwabImportFiles(page);
     await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
-    await expect(page.locator('#transactions_csv_status')).toBeVisible();
-    await expect(page.locator('#positions_csv_status')).toBeVisible();
+    await expect(page.locator('#schwab_transactions_csv_status')).toBeVisible();
+    await expect(page.locator('#schwab_positions_csv_status')).toBeVisible();
 
     const transactionHistoryHelpTrigger = page.locator(
-      '#investment_import_ibkr_fields [data-import-field="transactions"] .investment-import-label-trigger',
+      '#investment_import_schwab_fields [data-import-field="transactions"] .investment-import-label-trigger',
     );
     await transactionHistoryHelpTrigger.hover();
     const transactionHistoryHelp = page.locator(
-      '#investment_import_ibkr_fields [data-import-field="transactions"] .investment-import-help',
+      '#investment_import_schwab_fields [data-import-field="transactions"] .investment-import-help',
     );
     await expect(transactionHistoryHelp).toBeVisible();
     const transactionHistoryHelpMaterial = await transactionHistoryHelp.evaluate((tooltip) => {
@@ -509,99 +484,6 @@ test('validates the investment import flow without mutating the local store', as
     expect(importScrollGeometry.pageScrollLocked).toBe(true);
     expect(Math.abs(importScrollGeometry.closeTop - importScrollGeometry.modalTop - 12)).toBeLessThanOrEqual(2);
     expect(Math.abs(importScrollGeometry.modalTop - importScrollGeometry.expectedModalTop)).toBeLessThanOrEqual(2);
-
-    await page.locator('#ibkr_import_mode_gainskeeper').evaluate((input) => {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    const gainskeeperLayout = await page.locator('#investment_form').evaluate((form) => {
-        const mode = form.querySelector('.investment-import-mode-field');
-        const stack = form.querySelector('.investment-import-stack');
-        const action = form.querySelector('.investment-import-action-package');
-        const stackRect = stack.getBoundingClientRect();
-        const actionRect = action.getBoundingClientRect();
-        return {
-            modeHeight: mode.getBoundingClientRect().height,
-            stackActionGap: Math.abs(actionRect.top - stackRect.bottom),
-        };
-    });
-    expect(gainskeeperLayout.modeHeight).toBeLessThan(120);
-    expect(gainskeeperLayout.stackActionGap).toBeLessThanOrEqual(1);
-
-    await expect(page.locator('input[name="ibkr_import_mode"]')).toHaveCount(3);
-    await page.locator('#ibkr_import_mode_web_paste').evaluate((input) => {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"]')).toBeVisible();
-    await expect(page.locator('#ibkr_trade_notifications_text')).toBeEditable();
-    await expect(page.locator('#ibkr_holdings_text')).toBeEditable();
-    await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
-    await expect(page.locator('#ibkr_trade_notifications_date')).toHaveAttribute('type', 'hidden');
-    await expect(page.getByRole('textbox', {name: 'Type page date'})).toBeVisible();
-    await expect(page.locator('[data-ibkr-import-mode-panel="web_paste"] .process-list-marker')).toHaveText(['1', '2', '3']);
-    await expect(page.locator('[data-ibkr-calibration-table], [data-ibkr-calibration-row], [data-ibkr-calibration-cash], [data-ibkr-calibration-quantity]')).toHaveCount(0);
-    const stickyImportMode = await page.locator('#investment_import_ibkr_mode').evaluate((mode) => {
-        const stack = mode.closest('.investment-import-stack');
-        if (!(stack instanceof HTMLElement)) return null;
-        const readTop = () => mode.getBoundingClientRect().top;
-        stack.scrollTop = 0;
-        const initialTop = readTop();
-        stack.scrollTop = 180;
-        const pinnedTop = readTop();
-        stack.scrollTop = 260;
-        const pinnedFurtherTop = readTop();
-        return {
-            position: getComputedStyle(mode).position,
-            initialTop,
-            pinnedTop,
-            pinnedFurtherTop,
-            pinnedDelta: Math.abs(pinnedFurtherTop - pinnedTop),
-        };
-    });
-    expect(stickyImportMode).not.toBeNull();
-    expect(stickyImportMode.position).toBe('sticky');
-    expect(stickyImportMode.pinnedDelta).toBeLessThanOrEqual(1);
-    await page.locator('#ibkr_trade_notifications_date').evaluate(() => {
-        Object.defineProperty(navigator, 'clipboard', {
-            configurable: true,
-            value: {
-                readText: async () => `Orders & Trades\nTrade Notifications\nTrades Account Action Quantity Status Price Amount\nDEMO\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n5:00 PM\n10.00\n10\nFees: 0.10\nDEMO\nBot 1 @ 9.50 on ARCA\nU00000001 Bought 1\nFilled\n8/14/2026, 8:00 PM\n9.50\n9.50\nFees: 0.10`,
-            },
-        });
-    });
-    await page.locator('#ibkr_trade_notifications_paste_button').click();
-    await expect(page.locator('#ibkr_trade_notifications_display')).toHaveValue(/Page date required/);
-    await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
-    await page.getByRole('textbox', {name: 'Type page date'}).click();
-    const ibkrDatePicker = page.locator('.date-picker-popover:not([hidden])');
-    await expect(ibkrDatePicker).toBeVisible();
-    await ibkrDatePicker.locator('.date-picker-day[data-selectable="true"]').first().click();
-    await expect(page.locator('#ibkr_trade_notifications_date')).toHaveValue(/\d{4}-\d{2}-\d{2}/);
-    await page.locator('#ibkr_trade_notifications_date').evaluate(() => {
-        Object.defineProperty(navigator, 'clipboard', {
-            configurable: true,
-            value: {
-                readText: async () => `Orders & Trades\nTrade Notifications\nTrades Account Action Quantity Status Price Amount\nDEMO\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n1/2/2025, 8:00 PM\n10.00\n10\nFees: 0.10`,
-            },
-        });
-    });
-    await page.locator('#ibkr_trade_notifications_paste_button').click();
-    await expect(page.locator('#ibkr_trade_notifications_paste_button')).toHaveClass(/is-pasted/);
-    await expect(page.locator('#investment_import_feedback')).toBeHidden();
-    await page.locator('#ibkr_holdings_text').evaluate(() => {
-        Object.defineProperty(navigator, 'clipboard', {
-            configurable: true,
-            value: {
-                readText: async () => `Search\nAccount\nU00000001\nUSD\n1,234.56\nSettled Cash\n456.78\nYour Holdings\nInstrument Position Last Change %\nALFA\nALFA EXAMPLE FUND\n27 15.00 +0.10%\nBETA\nBETA EXAMPLE COMPANY\n3.9179 96.55 0.00%\nCash Holdings\nUSD (base currency) 456.78\nTotal Cash (in USD) 456.78\nData powered by`,
-            },
-        });
-    });
-    await page.locator('#ibkr_holdings_paste_button').click();
-    await expect(page.locator('#ibkr_holdings_paste_button')).toHaveClass(/is-pasted/);
-    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/IBKR Your Holdings · 2 positions .* Ready/);
-    await expect(page.locator('#ibkr_holdings_text_status')).toHaveClass(/is-visible/);
-    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
 
     await page.route('**/api/investment/imports/zircon-hk/validate', async (route) => {
         await route.fulfill({
@@ -764,68 +646,7 @@ test('keeps the Investment import broker dropdown stable while scrolling to HSBC
     await expect(page.locator('#hsbc_statement_pdfs')).toHaveCSS('height', '30px');
 });
 
-test('keeps the IBKR file inputs compact', async ({page}) => {
-    await mockInvestmentReadApis(page, {
-        transactions: [],
-        brokerSummaries: {},
-    });
-    await page.setViewportSize({width: 825, height: 773});
-    await page.goto('/trade/investment');
-    await page.locator('#toggle_form_button').click();
-
-    const trigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
-    const dropdown = page.locator('#investment_import_broker_dropdown');
-    await trigger.click();
-    await dropdown.locator('[role="option"][data-value="ibkr"]').click();
-    await expect(page.locator('#investment_import_ibkr_fields')).toBeVisible();
-    await expect(page.locator('#transactions_csv')).toHaveCSS('height', '30px');
-    await expect(page.locator('#positions_csv')).toHaveCSS('height', '30px');
-    await page.locator('label[for="ibkr_import_mode_gainskeeper"]').click();
-    await expect(page.locator('#gainskeeper_files')).toBeVisible();
-    await expect(page.locator('#gainskeeper_files')).toHaveCSS('height', '30px');
-    await expect(page.locator('#gainskeeper_files')).toHaveCSS('line-height', '28px');
-});
-
-test('validates the optional IBKR Your Holdings paste without manual calibration fields', async ({page}) => {
-    await mockInvestmentReadApis(page);
-    await page.setViewportSize({width: 825, height: 773});
-    await page.goto('/trade/investment');
-    await page.locator('#toggle_form_button').click();
-
-    const brokerTrigger = page.locator('[data-shared-select-kind="investment-import-broker"] [data-shared-select-trigger]');
-    await brokerTrigger.click();
-    await page.locator('#investment_import_broker_dropdown [role="option"][data-value="ibkr"]').click();
-    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
-
-    await expect(page.locator('#ibkr_trade_notifications_display')).toHaveCSS('height', '30px');
-    await expect(page.locator('#ibkr_holdings_display')).toHaveCSS('height', '30px');
-    await expect(page.locator(
-        '#investment_import_ibkr_fields [data-ibkr-import-mode-panel="web_paste"] .investment-import-date-control-row .date-picker-trigger-value'
-    )).toHaveCSS('height', '30px');
-    await expect(page.locator('[data-ibkr-calibration-row], #ibkr_trade_notifications_cash, #ibkr_trade_notifications_positions')).toHaveCount(0);
-
-    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
-        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n1/2/2025, 8:00 PM\n10.00\n10\nFees: 0.10';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-    });
-    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
-
-    await page.locator('#ibkr_holdings_text').evaluate((input) => {
-        input.value = 'Portfolio\nCash 123.45';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-    });
-    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/Check format/);
-    await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
-
-    await page.locator('#ibkr_holdings_text').evaluate((input) => {
-        input.value = 'Account\nU00000001\nYour Holdings\nInstrument Position Last\nALFA\nALFA EXAMPLE FUND\n1 10.00 0.00%\nCash Holdings\nUSD (base currency) 123.45';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-    });
-    await expect(page.locator('#ibkr_holdings_display')).toHaveValue(/1 position .* Ready/);
-    await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
-});
-
-test('omits pre-existing Unbound rows from a later IBKR import banner', async ({page}) => {
+test('omits pre-existing Unbound rows from a later Schwab import banner', async ({page}) => {
     const transactions = [
         {
             ledger_no: 8_001,
@@ -861,7 +682,7 @@ test('omits pre-existing Unbound rows from a later IBKR import banner', async ({
             contentType: 'application/json',
             body: JSON.stringify({
                 success: true,
-                message: 'Imported 1 IBKR web transaction.',
+                message: 'Imported 1 Schwab transaction.',
                 freshness_refresh_failures: [],
                 summary: {
                     incremental_import: {
@@ -877,35 +698,15 @@ test('omits pre-existing Unbound rows from a later IBKR import banner', async ({
     await page.goto('/trade/investment');
     await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
     await page.locator('#toggle_form_button').click();
-    await page.locator('#investment_import_broker').evaluate((select) => {
-        select.value = 'ibkr';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
-    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
-        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n8/20/2026, 8:00 PM\n10.00\n10\nFees: 0.10';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-    });
+    await fillSchwabImportFiles(page);
     await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
     await page.locator('#investment_import_submit_button').click();
 
     await expect(page.locator('#investment_import_feedback')).toBeVisible();
-    await expect(page.locator('#investment_import_feedback_message')).toContainText('IBKR import complete');
+    await expect(page.locator('#investment_import_feedback_message')).toContainText('Charles Schwab import complete');
     await expect(page.locator('#investment_import_feedback_message')).not.toContainText('Transfer review');
     await expect(page.locator('[data-investment-description-binding-alert]')).toHaveCount(1);
 });
-
-const fillIbkrTradeNotificationPaste = async (page) => {
-    await page.locator('#investment_import_broker').evaluate((select) => {
-        select.value = 'ibkr';
-        select.dispatchEvent(new Event('change', {bubbles: true}));
-    });
-    await page.locator('label[for="ibkr_import_mode_web_paste"]').click();
-    await page.locator('#ibkr_trade_notifications_text').evaluate((input) => {
-        input.value = 'Orders & Trades\nTrade Notifications\nALFA\nBot 1 @ 10.00 on ARCA\nU00000001 Bought 1\nFilled\n8/20/2026, 8:00 PM\n10.00\n10\nFees: 0.10';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-    });
-};
 
 test('refreshes a session token rendered before a server restart before importing', async ({page}) => {
     await mockInvestmentReadApis(page);
@@ -920,7 +721,7 @@ test('refreshes a session token rendered before a server restart before importin
             contentType: 'application/json',
             body: JSON.stringify({
                 success: true,
-                message: 'Imported 1 IBKR web transaction.',
+                message: 'Imported 1 Schwab transaction.',
                 freshness_refresh_failures: [],
                 summary: {incremental_import: {imported_record_count: 1, added_record_count: 1}},
             }),
@@ -933,10 +734,10 @@ test('refreshes a session token rendered before a server restart before importin
         window.WORTHWARD_APP.security.investmentCsrfToken = token;
     }, staleToken);
     await page.locator('#toggle_form_button').click();
-    await fillIbkrTradeNotificationPaste(page);
+    await fillSchwabImportFiles(page);
     await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
     await page.locator('#investment_import_submit_button').click();
-    await expect(page.locator('#investment_import_feedback_message')).toContainText('IBKR import complete');
+    await expect(page.locator('#investment_import_feedback_message')).toContainText('Charles Schwab import complete');
 
     const sessionToken = await page.evaluate(async () => {
         const response = await fetch('/api/investment/session-token', {credentials: 'same-origin', cache: 'no-store'});
@@ -964,7 +765,7 @@ test('keeps Import disabled and explains when the dialog cannot confirm its sess
     const sessionStatus = page.locator('#investment_import_session_status');
     await expect(sessionStatus).toBeVisible();
     await expect(sessionStatus).toContainText('could not confirm this browser session');
-    await fillIbkrTradeNotificationPaste(page);
+    await fillSchwabImportFiles(page);
     await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
     const [noteBox, statusBox, submitBox] = await Promise.all([
         page.locator('#investment_import_note').boundingBox(),
@@ -1034,6 +835,7 @@ test('validates HSBC cash-only paste and keeps validation errors above the impor
                     mode: 'cash_only_non_usd',
                     field_status: {cash: true, portfolio: false, order_status: false},
                     cash_currencies: ['HKD'],
+                    preview: {transactions: [], balances: [], positions: [], warnings: []},
                 }),
             });
             return;
@@ -1047,6 +849,7 @@ test('validates HSBC cash-only paste and keeps validation errors above the impor
                     mode: 'cash_only_usd',
                     field_status: {cash: true, portfolio: false, order_status: false},
                     cash_currencies: ['USD'],
+                    preview: {transactions: [], balances: [], positions: [], warnings: []},
                 }),
             });
             return;
@@ -1174,6 +977,7 @@ test('shows HSBC import progress in the workspace modal and final outcome in the
                 mode: 'cash_only_non_usd',
                 field_status: {cash: true, portfolio: false, order_status: false},
                 cash_currencies: ['HKD'],
+                preview: {transactions: [], balances: [], positions: [], warnings: []},
             }),
         });
     });
@@ -1344,11 +1148,6 @@ test('shows canonical names and security logos for cash-equivalent ETFs', async 
         '#investment_holdings_panel:not([hidden]) .investment-holdings-allocation-badge [data-investment-live-field]',
     );
     await expect(allocationBadges).toHaveCount(2);
-    const totalEquityAllocationTrack = page.locator(
-        '#investment_holdings_panel:not([hidden]) .investment-holdings-allocation-track',
-    );
-    await expect(totalEquityAllocationTrack).toHaveCount(1);
-    await expect(totalEquityAllocationTrack).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(page.locator(
         '#investment_holdings_panel:not([hidden]) [data-investment-live-field="summary_cash_allocation"]',
     )).toHaveAttribute('data-investment-live-display', '94.36%');
@@ -1379,7 +1178,6 @@ test('shows canonical names and security logos for cash-equivalent ETFs', async 
             const style = getComputedStyle(badge);
             return {
                 right: badgeRect.right,
-                width: badgeRect.width,
                 overflows: badge.scrollWidth > badge.clientWidth,
                 decimalLeft: decimalRect?.left ?? null,
                 suffixRight: suffixRect?.right ?? null,
@@ -1396,8 +1194,6 @@ test('shows canonical names and security logos for cash-equivalent ETFs', async 
     expect(allocationBadgeGeometry).toHaveLength(2);
     expect(Math.max(...allocationBadgeGeometry.map((badge) => badge.right)) - Math.min(...allocationBadgeGeometry.map((badge) => badge.right))).toBeLessThanOrEqual(1);
     allocationBadgeGeometry.forEach((badge) => {
-        expect(badge.width).toBeGreaterThanOrEqual(52);
-        expect(badge.width).toBeLessThan(110);
         expect(badge.overflows).toBe(false);
     });
     expect(Math.max(...allocationBadgeGeometry.map((badge) => badge.decimalLeft)) - Math.min(...allocationBadgeGeometry.map((badge) => badge.decimalLeft))).toBeLessThanOrEqual(1);
@@ -1428,14 +1224,14 @@ test('shows canonical names and security logos for cash-equivalent ETFs', async 
     await expect(firstAllocationBadge).toHaveCSS('color', 'rgb(255, 255, 255)');
     await expect.poll(() => page.evaluate(() => {
         const values = Array.from(document.querySelectorAll(
-            '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-row > [data-investment-live-field]',
+            '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-values > [data-investment-live-field]',
         ));
         if (values.length !== 4) return null;
         const rightEdges = values.map((value) => value.getBoundingClientRect().right);
         return Math.max(...rightEdges) - Math.min(...rightEdges);
     })).toBeLessThanOrEqual(1);
     await page.locator(
-        '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-row > [data-investment-live-field]',
+        '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-values > [data-investment-live-field]',
     ).evaluateAll((values) => {
         values.forEach((value, index) => {
             value.style.minWidth = `${52 + (index * 13)}px`;
@@ -1443,7 +1239,7 @@ test('shows canonical names and security logos for cash-equivalent ETFs', async 
     });
     await expect.poll(() => page.evaluate(() => {
         const values = Array.from(document.querySelectorAll(
-            '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-row > [data-investment-live-field]',
+            '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-metric-values > [data-investment-live-field]',
         ));
         const rightEdges = values.map((value) => value.getBoundingClientRect().right);
         return Math.max(...rightEdges) - Math.min(...rightEdges);
@@ -1475,7 +1271,7 @@ test('renders every calendar day in the long-range Investment equity chart', asy
             ],
         },
     });
-    await page.goto('/trade/investment?range=3m');
+    await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=3m');
     await expect.poll(() => page.evaluate(() => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
         return chart?.data?.rawLabels || null;
@@ -1872,28 +1668,17 @@ test('keeps converted broker rewards as a compact final Holdings row and include
     await expect(rewardRow.locator('td').first()).toHaveCSS('position', 'static');
     await expect(page.locator('#investment_holdings_panel .local-store-pagination')).toHaveCount(0);
     const rewardRowGeometry = await rewardRow.evaluate((row) => {
-        const rowRect = row.getBoundingClientRect();
-        const copy = row.querySelector('.ticker-identity-copy');
-        const symbol = row.querySelector('.ticker-identity-symbol');
-        const name = row.querySelector('.ticker-identity-name');
-        const symbolRect = symbol?.getBoundingClientRect();
-        const nameRect = name?.getBoundingClientRect();
+        const tickerRow = row.parentElement.querySelector('tr[data-investment-holdings-ticker="QQQ"]');
+        const symbol = row.querySelector('.ticker-identity-symbol').getBoundingClientRect();
+        const name = row.querySelector('.ticker-identity-name').getBoundingClientRect();
         return {
-            height: rowRect.height,
-            copyDisplay: copy ? getComputedStyle(copy).display : '',
-            nameMarginTop: name ? getComputedStyle(name).marginTop : '',
-            symbolAndNameShareLine: Boolean(
-                symbolRect
-                && nameRect
-                && symbolRect.top < nameRect.bottom
-                && nameRect.top < symbolRect.bottom
-            ),
+            height: row.getBoundingClientRect().height,
+            tickerHeight: tickerRow.getBoundingClientRect().height,
+            nameBelowSymbol: name.top >= symbol.bottom - 1,
         };
     });
-    expect(rewardRowGeometry.height).toBeLessThanOrEqual(34);
-    expect(rewardRowGeometry.copyDisplay).toBe('flex');
-    expect(rewardRowGeometry.nameMarginTop).toBe('0px');
-    expect(rewardRowGeometry.symbolAndNameShareLine).toBe(true);
+    expect(rewardRowGeometry.height).toBeCloseTo(rewardRowGeometry.tickerHeight, 0);
+    expect(rewardRowGeometry.nameBelowSymbol).toBe(true);
 
     const summaryRealized = page.locator(
         '#investment_holdings_panel:not([hidden]) .investment-holdings-summary-row td',

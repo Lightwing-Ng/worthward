@@ -1,7 +1,7 @@
 /**
  * Holdings live values and Stock-details panel rendering.
  *
- * Code version: v1.8.0
+ * Code version: v1.9.0
  * - Added: Unrealized P&L and daily changes opt into shared spring digits.
  * - Added: Rewards category details refresh without closing their disclosure.
  * - Changed: Stock details shows compact total-equity allocation and personal chips.
@@ -1492,7 +1492,7 @@ function selectInvestmentStockTicker(ticker, { focusView = false } = {}) {
         if (normalizedTicker) {
             runtime.state.selectedInvestmentStockTicker = normalizedTicker;
         }
-        runtime.rememberInvestmentPageState({ ticker: runtime.state.selectedInvestmentStockTicker, view: focusView ? 'stock_details' : runtime.state.activeInvestmentView || 'chart' });
+        runtime.rememberInvestmentPageState({ ticker: runtime.state.selectedInvestmentStockTicker, view: focusView ? 'stock_details' : runtime.state.activeInvestmentView || 'holdings' });
         if (focusView) {
             runtime.setInvestmentView('stock_details', { syncHash: false });
         }
@@ -1506,7 +1506,7 @@ function selectInvestmentStockTicker(ticker, { focusView = false } = {}) {
         }
     }
 
-function syncInvestmentViewFromLocationHash(fallbackView = 'chart') {
+function syncInvestmentViewFromLocationHash(fallbackView = 'holdings') {
         const hash = String(window.location.hash || '').trim();
         if (hash === runtime.INVESTMENT_STOCK_DETAILS_HASH || hash === runtime.LEGACY_INVESTMENT_STOCK_DETAILS_HASH) {
             const locationTicker = runtime.getInvestmentLocationTicker();
@@ -1531,8 +1531,12 @@ function applyInvestmentUrlStateFromLocation({render = false} = {}) {
             }
             if (urlState.view === 'stock_details') {
                 runtime.state.selectedInvestmentStockDetailsRange = runtime.normalizeInvestmentStockDetailsRange(urlState.range);
-            } else if (urlState.view === 'chart') {
-                runtime.state.selectedInvestmentEquityRange = runtime.normalizeInvestmentEquityRange(urlState.range);
+            }
+            if (urlState.overviewRange) {
+                runtime.state.selectedInvestmentEquityRange = runtime.normalizeInvestmentEquityRange(urlState.overviewRange);
+            }
+            if (urlState.view !== 'metrics') {
+                runtime.setInvestmentHoldingsOverviewExpanded(urlState.overviewExpanded);
             }
 
             const availableBrokerCodes = runtime.getAvailableInvestmentBrokerCodes();

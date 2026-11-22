@@ -1,9 +1,9 @@
-/* Code version: v1.0.7 */
+/* Code version: v1.0.11 */
 import {expect, test} from '@playwright/test';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
 const loadHoldings = async (page, {
-    foreignCash = false, cashType = 'deposit', fx = {},
+    foreignCash = false, cashType = 'deposit', fx = {}, startingCash = 10_000,
     valuationTime = '2026-01-02T12:00:00Z',
 } = {}) => {
     // Keep the dated fixture independent of wall time while timers advance.
@@ -11,7 +11,7 @@ const loadHoldings = async (page, {
     await page.route('**/api/investment/transactions*', async (route) => {
         if (route.request().method() !== 'GET') return route.abort();
         await route.fulfill({json: {
-            success: true, starting_cash: 10000, base_currency: 'USD', brokers: ['ibkr'],
+            success: true, starting_cash: startingCash, base_currency: 'USD', brokers: ['ibkr'],
             transactions: foreignCash ? [
                 {broker: 'ibkr', account: 'TEST', date: '2026-01-01', type: 'buy', currency: 'USD', ticker: 'AAPL', quantity: 10, price: 100, amount: -1000},
                 {broker: 'ibkr', account: 'TEST', date: '2026-01-02', type: cashType, currency: 'HKD', amount: 1000},
@@ -97,6 +97,102 @@ test('available FX restores complete Holdings valuation', async ({page}) => {
     await expect(holdings).not.toContainText('Partial · total unavailable');
 });
 
+test('Holdings summary wraps only metrics that need more room', async ({page}) => {
+    await page.setViewportSize({width: 1440, height: 960});
+    await loadHoldings(page, {
+        startingCash: 1_120,
+        fx: {HKD: {dates: ['2026-01-02'], values: {'2026-01-02': 10}}},
+    });
+    const metrics = page.locator('#investment_holdings_panel .investment-holdings-summary-metrics');
+    await expect(metrics).toBeVisible();
+    await expect(metrics.locator('[data-investment-live-field="summary_cash_allocation"]')).toHaveText(/^\d\.\d{2}%$/);
+    await expect(metrics.locator('[data-investment-live-field="summary_cash_equivalents_allocation"]')).toHaveText(/^\d{2}\.\d{2}%$/);
+    await page.evaluate(() => document.fonts.ready);
+
+    const layout = await metrics.evaluate((node) => {
+        const badgeLane = Math.max(...Array.from(node.querySelectorAll('.investment-holdings-allocation-badge'), (badge) => (
+            badge.getBoundingClientRect().width
+        ))) + parseFloat(getComputedStyle(node).columnGap);
+        const measure = (field) => {
+            const amount = node.querySelector(`[data-investment-live-field="${field}"]`);
+            const row = amount.closest('.investment-holdings-summary-metric-row');
+            const label = row.querySelector('.investment-holdings-summary-metric-label').getBoundingClientRect();
+            const value = amount.getBoundingClientRect();
+            const layout = {
+                requiredWidth: label.width + value.width + parseFloat(getComputedStyle(amount.parentElement).columnGap),
+                labelAndValueShareLine: label.bottom > value.top && value.bottom > label.top,
+                valueBelowLabel: value.top >= label.bottom - 1,
+                amountRight: value.right,
+            };
+            const badgeNode = row.querySelector('.investment-holdings-allocation-badge');
+            if (!badgeNode) return layout;
+            const badge = badgeNode.getBoundingClientRect();
+            const style = getComputedStyle(badgeNode);
+            const glyphs = [...badgeNode.querySelectorAll('.investment-holdings-allocation-badge-glyph')]
+                .map((glyph) => glyph.getBoundingClientRect());
+            const contentWidth = Math.max(...glyphs.map((glyph) => glyph.right))
+                - Math.min(...glyphs.map((glyph) => glyph.left));
+            return {
+                ...layout,
+                requiredWidth: layout.requiredWidth + badgeLane,
+                valueAndBadgeShareLine: badge.bottom > value.top && value.bottom > badge.top,
+                badgeRight: badge.right,
+                badgeWidth: badge.width,
+                badgeExtraWidth: badge.width - contentWidth
+                    - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd),
+            };
+        };
+        const cash = 'summary_cash_balance';
+        const equivalents = 'summary_cash_equivalents';
+        const equity = 'summary_total_equity';
+        const wideCash = measure(cash);
+        const wideEquivalents = measure(equivalents);
+        const wideEquity = measure(equity);
+        node.style.inlineSize = `${wideEquivalents.requiredWidth + 1}px`;
+        const justFits = measure(equivalents);
+        node.style.inlineSize = `${wideEquivalents.requiredWidth - 1}px`;
+        const compactCash = measure(cash);
+        const compactEquivalents = measure(equivalents);
+        node.style.inlineSize = `${wideEquity.requiredWidth + 1}px`;
+        const justFitsWithoutBadge = measure(equity);
+        node.style.removeProperty('inline-size');
+        return {wideCash, wideEquivalents, justFits, compactCash, compactEquivalents, justFitsWithoutBadge};
+    });
+
+    expect(layout.wideCash.labelAndValueShareLine).toBe(true);
+    expect(layout.wideEquivalents.labelAndValueShareLine).toBe(true);
+    expect(Math.abs(layout.wideCash.amountRight - layout.wideEquivalents.amountRight)).toBeLessThanOrEqual(1);
+    expect(layout.justFits.labelAndValueShareLine).toBe(true);
+    expect(layout.justFits.valueAndBadgeShareLine).toBe(true);
+    expect(layout.compactCash.labelAndValueShareLine).toBe(true);
+    expect(layout.compactEquivalents.valueBelowLabel).toBe(true);
+    expect(layout.compactCash.valueAndBadgeShareLine).toBe(true);
+    expect(layout.compactEquivalents.valueAndBadgeShareLine).toBe(true);
+    for (const [cash, equivalents] of [
+        [layout.wideCash, layout.wideEquivalents],
+        [layout.compactCash, layout.compactEquivalents],
+    ]) {
+        expect(cash.badgeWidth).toBeLessThan(equivalents.badgeWidth);
+        expect(Math.abs(cash.badgeRight - equivalents.badgeRight)).toBeLessThanOrEqual(1);
+        expect(Math.abs(cash.badgeExtraWidth)).toBeLessThanOrEqual(1);
+        expect(Math.abs(equivalents.badgeExtraWidth)).toBeLessThanOrEqual(1);
+    }
+    expect(layout.justFitsWithoutBadge.labelAndValueShareLine).toBe(true);
+
+    for (const width of [390, 646, 869, 894, 1_024, 1_440]) {
+        await page.setViewportSize({width, height: 960});
+        const rightEdges = await metrics.locator('.investment-holdings-summary-metric-values > [data-investment-live-field]')
+            .evaluateAll((nodes) => nodes.map((node) => {
+                const value = document.createRange();
+                value.selectNodeContents(node);
+                return value.getBoundingClientRect().right;
+            }));
+        expect(rightEdges).toHaveLength(4);
+        expect(Math.max(...rightEdges) - Math.min(...rightEdges), `summary amount right edges at ${width}px`)
+            .toBeLessThanOrEqual(1);
+    }
+});
+
 test('Holdings summary shares text baselines for inline labels and split amounts', async ({page}) => {
     await page.setViewportSize({width: 1099, height: 1216});
     await page.emulateMedia({reducedMotion: 'reduce'});
@@ -104,7 +200,7 @@ test('Holdings summary shares text baselines for inline labels and split amounts
     const toggle = page.locator('#sidebar_toggle');
     if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const metrics = page.locator('#investment_holdings_panel .investment-holdings-summary-metric-row');
+    const metrics = page.locator('#investment_holdings_panel .investment-holdings-summary-metric-values');
     await expect(metrics).toHaveCount(4);
     await page.evaluate(() => document.fonts.ready);
 
@@ -139,6 +235,7 @@ test('Holdings summary shares text baselines for inline labels and split amounts
                 };
             });
         });
+        expect(rows.find(({label}) => label === 'Cash')?.inline).toBe(true);
         if (width === 1440) expect(rows.every(({inline}) => inline)).toBe(true);
         for (const {label, inline, labelOffset, decimalOffset} of rows) {
             if (inline) expect(labelOffset, `${label} label baseline at ${width}px`).toBeLessThanOrEqual(1);
@@ -203,15 +300,13 @@ for (const width of [894, 869, 390]) {
             const statuses = [...header.querySelectorAll(
                 '[data-investment-live-field$="_pnl"]:not([data-investment-live-number])',
             )].map((node) => {
-                const grid = node.closest('.investment-holdings-summary-metrics');
+                const metrics = node.closest('.investment-holdings-summary-metrics');
                 const label = node.closest('.investment-holdings-summary-metric-row')
                     ?.querySelector('.investment-holdings-summary-metric-label');
                 return {
                     field: node.dataset.investmentLiveField,
                     cell: bounds(node.closest('td')),
-                    grid: grid ? bounds(grid) : null,
-                    compact: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length < 3 : false,
-                    gridColumn: getComputedStyle(node).gridColumn,
+                    metrics: metrics ? bounds(metrics) : null,
                     label: label ? bounds(label) : null,
                     text: textBounds(node),
                 };
@@ -261,10 +356,7 @@ for (const width of [894, 869, 390]) {
             expect(layout.statuses.length).toBeGreaterThanOrEqual(2);
             layout.statuses.forEach((status) => {
                 assertContainedText(status.text, status.cell, status.field);
-                if (status.grid) assertContainedText(status.text, status.grid, `${status.field} grid`);
-                if (status.compact && status.field === 'summary_cumulative_pnl') {
-                    expect(status.gridColumn, 'compact Cumulative P&L spans the summary width').toBe('1 / -1');
-                }
+                if (status.metrics) assertContainedText(status.text, status.metrics, `${status.field} metrics`);
                 status.text.forEach((rect) => {
                     if (status.label) {
                         const overlapWidth = Math.min(rect.right, status.label.right) - Math.max(rect.left, status.label.left);

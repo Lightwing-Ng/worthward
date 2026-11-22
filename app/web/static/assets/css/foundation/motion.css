@@ -1,4 +1,4 @@
-/* Code version: v1.4.0 */
+/* Code version: v1.5.0 */
 
 /* Shared waiting indicator: a resolution-independent SVG arc with rounded caps. */
 .suggestion-loading-spinner {
@@ -50,7 +50,8 @@
 .app-shell.is-sidebar-animating [data-sidebar-gel-content] {
 	animation-duration: var(--sidebar-layout-transition-duration, var(--motion-duration-spatial));
 	animation-fill-mode: both;
-	animation-timing-function: var(--motion-bouncy);
+	/* The keyed impulse already contains its rebound; interpolate those samples linearly. */
+	animation-timing-function: linear;
 	backface-visibility: hidden;
 	transform-origin: left top;
 	will-change: transform;

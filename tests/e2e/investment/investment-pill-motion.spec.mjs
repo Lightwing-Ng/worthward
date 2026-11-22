@@ -1,9 +1,9 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
-const loadInvestmentPage = async (page) => {
+const loadInvestmentPage = async (page, query = 'view=holdings') => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
@@ -17,7 +17,7 @@ const loadInvestmentPage = async (page) => {
         },
     });
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment?ticker=QQQ');
+    await page.goto(`/trade/investment?${query}`);
     await expect(page.locator('#investment_view_segmented')).toHaveClass(/is-pill-ready/);
 };
 
@@ -43,7 +43,7 @@ test('does not rewrite the broker select while the Investment page is idle', asy
 });
 
 test('moves the view pill in the click task and renders the view after its first frame', async ({page}) => {
-    await loadInvestmentPage(page);
+    await loadInvestmentPage(page, 'view=metrics');
     const segmented = page.locator('#investment_view_segmented');
     const snapshot = await segmented.evaluate((control) => {
         const readPill = () => control.style.getPropertyValue('--segmented-pill-left');
@@ -58,7 +58,7 @@ test('moves the view pill in the click task and renders the view after its first
         };
     });
     expect(snapshot.after).not.toBe(snapshot.before);
-    expect(snapshot.activeIndex).toBe('1');
+    expect(snapshot.activeIndex).toBe('0');
     expect(snapshot.ready).toBe(true);
     // The view's own rendering has not started in the click's task, so it cannot delay the pill.
     expect(snapshot.holdingsHiddenAtOnce).toBe(true);
@@ -89,7 +89,8 @@ test('slides the view pill once per selection without hiding or restarting it', 
         }).observe(control, {attributes: true, attributeFilter: ['class']});
     });
 
-    for (const [index, view] of ['holdings', 'metrics', 'chart'].entries()) {
+    const views = ['metrics', 'holdings', 'metrics', 'holdings'];
+    for (const [index, view] of views.entries()) {
         await page.locator(`label[for="investment_view_${view}"]`).click();
         await expect(segmented).toHaveAttribute('data-active', view);
         await expect.poll(() => page.evaluate(() => window.__pillMotion.finished)).toBe(index + 1);
@@ -97,7 +98,7 @@ test('slides the view pill once per selection without hiding or restarting it', 
 
     // Each selection has one owner writing the pill, so no transition was cancelled midway
     // and the pill never faded out and back in while it was re-measured.
-    expect(await page.evaluate(() => window.__pillMotion)).toEqual({cancelled: 0, finished: 3, hidden: 0});
+    expect(await page.evaluate(() => window.__pillMotion)).toEqual({cancelled: 0, finished: views.length, hidden: 0});
 });
 
 test('leaves the Investment view pill geometry to its own adapter', async ({page}) => {
@@ -129,6 +130,7 @@ test('leaves the Investment view pill geometry to its own adapter', async ({page
 
 test('moves an overview range pill in the click task without hiding it', async ({page}) => {
     await loadInvestmentPage(page);
+    await page.locator('.investment-holdings-summary-row').click();
     const overviewRange = page.locator('#investment_equity_chart .investment-stock-details-range-segmented');
     await expect(overviewRange).toHaveClass(/is-pill-ready/);
     const snapshot = await overviewRange.evaluate((control) => {

@@ -1,7 +1,7 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.1.2
+ * Code version: v1.1.3
  * - Fixed: A pill selection moves the pill in the click's own task and no longer hides
  *   it while it is re-measured. Geometry is written once and only when a value changed,
  *   so a running pill transition is not restarted, and the view, table or chart work
@@ -459,37 +459,6 @@ function scheduleInvestmentSegmentedPillUpdate() {
                     runtime.state.investmentSegmentedMeasureTimer = 0;
                     updateInvestmentSegmentedPill();
                 }, 520);
-            });
-        });
-    }
-
-function updateIbkrImportSegmentedPill() {
-        if (!(runtime.investmentImportIbkrMode instanceof HTMLElement)) return;
-        const controlRect = runtime.investmentImportIbkrMode.getBoundingClientRect();
-        if (controlRect.width <= 0 || controlRect.height <= 0) return;
-        const activeLabel = runtime.investmentImportIbkrMode.querySelector('input[type="radio"]:checked + span');
-        if (!activeLabel) {
-            runtime.investmentImportIbkrMode.classList.remove('is-pill-ready');
-            return;
-        }
-        const pillGeometry = measureInvestmentSegmentedPillGeometry(runtime.investmentImportIbkrMode, activeLabel);
-        if (!pillGeometry) {
-            runtime.investmentImportIbkrMode.classList.remove('is-pill-ready');
-            return;
-        }
-        applySegmentedPillGeometry(runtime.investmentImportIbkrMode, pillGeometry);
-    }
-
-function scheduleIbkrImportSegmentedPillUpdate() {
-        if (!(runtime.investmentImportIbkrMode instanceof HTMLElement)) return;
-        if (runtime.state.investmentIbkrModeMeasureRaf) {
-            window.cancelAnimationFrame(runtime.state.investmentIbkrModeMeasureRaf);
-            runtime.state.investmentIbkrModeMeasureRaf = 0;
-        }
-        runtime.state.investmentIbkrModeMeasureRaf = window.requestAnimationFrame(() => {
-            runtime.state.investmentIbkrModeMeasureRaf = window.requestAnimationFrame(() => {
-                runtime.state.investmentIbkrModeMeasureRaf = 0;
-                updateIbkrImportSegmentedPill();
             });
         });
     }
@@ -1669,8 +1638,6 @@ function bindInvestmentStockDetailsRangeControls(ticker, detailRows = []) {
         scheduleInvestmentSegmentedPillUpdate,
         runAfterInvestmentPillFrame,
         cancelInvestmentPillFrameWork,
-        updateIbkrImportSegmentedPill,
-        scheduleIbkrImportSegmentedPillUpdate,
         updateHsbcImportSegmentedPill,
         scheduleHsbcImportSegmentedPillUpdate,
         getInvestmentStockDetailsRangeControl,

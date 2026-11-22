@@ -1,4 +1,4 @@
-{# Code version: v0.3.0 #}
+{# Code version: v0.4.0 #}
 {% extends "base.html" %}
 {% from "_collapse.html" import render_collapse %}
 
@@ -39,6 +39,7 @@
         </div>
     </article>
     <div class="settings-content-scrollport beta-content" data-layout-role="content-scrollport">
+        <div class="beta-content-grid" data-layout-role="content-grid">
         <article class="report-card workspace-content-card beta-intro">
             <div class="beta-heading-line"><span class="beta-eyebrow">Worthward / Beta</span><span class="beta-status-pill">{{ 'Local history' if beta_experiment.interactive else 'Research workspace' }}</span></div>
             <h3>{{ beta_experiment.question }}</h3>
@@ -130,6 +131,7 @@
             <p>{{ beta_experiment.limitation }}</p>
             {% endcall %}
         </article>
+        </div>
     </div>
 </section>
 {% endblock %}

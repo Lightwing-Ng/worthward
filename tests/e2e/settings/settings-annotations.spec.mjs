@@ -1,4 +1,4 @@
-/* Code version: v1.3.4 */
+/* Code version: v1.4.1 */
 import {expect, test} from '@playwright/test';
 
 for (const width of [1138, 800, 390]) {
@@ -61,8 +61,12 @@ for (const width of [1138, 800, 390]) {
             const motion = await toggle.evaluate(e => {
                 const slider = e.parentElement.querySelector('.ios-switch-slider');
                 const c = getComputedStyle(slider, '::after');
-                const root = getComputedStyle(document.documentElement);
-                return {duration: c.transitionDuration, easing: c.transitionTimingFunction, shared: root.getPropertyValue('--motion-bouncy').trim()};
+                const probe = document.createElement('span');
+                probe.style.transitionTimingFunction = 'var(--motion-bouncy)';
+                slider.append(probe);
+                const shared = getComputedStyle(probe).transitionTimingFunction;
+                probe.remove();
+                return {duration: c.transitionDuration, easing: c.transitionTimingFunction, shared};
             });
             expect(motion.duration).toContain('0.56s');
             expect(motion.easing).toContain(motion.shared);
@@ -245,7 +249,7 @@ test('Settings sidebar effects escape the centered page at ultrawide width', asy
 test('Network uses the standard action assembly and expandable readable transport details', async ({page}) => {
     await page.route('**/api/settings/network-status*', route => route.fulfill({json: {rows: [], transport_note: 'Verified TLS; no account credentials sent.'}}));
     await page.goto('/settings/network');
-    const action = page.locator('.settings-shell-network > .settings-content-scrollport > .settings-action-package');
+    const action = page.locator('.settings-shell-network > .settings-content-scrollport > .settings-content-grid > .settings-action-package');
     await expect(action.locator('.settings-service-note')).toHaveCount(1);
     await expect(action.locator('[data-network-refresh-button]')).toBeVisible();
     await expect(page.locator('[data-network-transport]')).toBeHidden();

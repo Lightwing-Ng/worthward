@@ -1,4 +1,4 @@
-/* Code version: v3.79.8 */
+/* Code version: v3.80.0 */
 
 .lstm-training-menu {
 	margin: 0;
@@ -305,7 +305,7 @@
 }
 .lstm-training-progress-track.is-indeterminate .lstm-training-progress-fill {
 	width: 40%;
-	animation: lstm-training-progress-pending 1.6s ease-in-out infinite alternate;
+	animation: lstm-training-progress-pending 1.6s linear infinite alternate;
 }
 .lstm-training-progress-track.is-unavailable .lstm-training-progress-fill {
 	width: 0;

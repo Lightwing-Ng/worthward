@@ -1,9 +1,12 @@
-/* Code version: v1.2.1 */
+/* Code version: v1.3.0 */
 
 .surface-resizer {
 	--surface-resizer-line-size: 2px;
 	--surface-resizer-handle-short: 12px;
 	--surface-resizer-handle-long: 48px;
+	--surface-resizer-jelly-offset: 0px;
+	--surface-resizer-jelly-axis-scale: 1;
+	--surface-resizer-jelly-cross-scale: 1;
 	position: relative;
 	box-sizing: border-box;
 	padding: 0;
@@ -62,7 +65,7 @@
 	left: 50%;
 	width: var(--surface-resizer-handle-short);
 	height: var(--surface-resizer-handle-long);
-	transform: translate(-50%, -50%);
+	transform: translate(calc(-50% + var(--surface-resizer-jelly-offset)), -50%) scale(var(--surface-resizer-jelly-axis-scale), var(--surface-resizer-jelly-cross-scale));
 }
 
 .surface-resizer--block {
@@ -82,7 +85,7 @@
 	left: 50%;
 	width: var(--surface-resizer-handle-long);
 	height: var(--surface-resizer-handle-short);
-	transform: translate(-50%, -50%);
+	transform: translate(-50%, calc(-50% + var(--surface-resizer-jelly-offset))) scale(var(--surface-resizer-jelly-cross-scale), var(--surface-resizer-jelly-axis-scale));
 }
 
 .surface-resizer:hover::after,

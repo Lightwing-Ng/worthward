@@ -1,7 +1,9 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.5.1
+ * Code version: v1.5.2
+ * - Fixed: The portfolio chart measures its viewport after the Holdings summary opens.
+ * - Fixed: Scrolling the Holdings viewport dismisses the chart's fixed hover tooltip.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Current and historical P&L preserve independent metric availability.
  * - Changed: Posted RewardCash joins current and dated historical realized P&L.
@@ -24,6 +26,8 @@ import {
     isInvestmentRealizedPnlUnavailable,
     isInvestmentUnrealizedPnlUnavailable,
 } from '../data-utils.js?v=investment-data-utils-v1.125.2';
+
+const EQUITY_CHART_Y_PADDING_PX = 5;
 
 export function createInvestmentEquityChartRuntime(runtime) {
 function updateDashboardWithEquity(
@@ -658,13 +662,12 @@ function syncInvestmentEquityChartRealtime(chartPoints = []) {
         const nextLabels = Array.isArray(nextChartState.labels) ? nextChartState.labels : [];
         const labelsStable = previousLabels.length === nextLabels.length
             && previousLabels.every((label, index) => label === nextLabels[index]);
-        const chartYPaddingPx = 5;
         const nextYScale = labelsStable && previousRuntimeState.frozenYScale
             ? previousRuntimeState.frozenYScale
             : buildPixelPaddedInvestmentEquityYScale(
                 canvas,
                 nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
-                chartYPaddingPx,
+                EQUITY_CHART_Y_PADDING_PX,
             );
         runtime.state.investmentEquityChartRuntimeState = {
             ...nextChartState,
@@ -713,11 +716,10 @@ function applyInvestmentEquityRangeChange(chartPoints = []) {
 
         const previousRuntimeState = runtime.state.investmentEquityChartRuntimeState || {};
         const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
-        const chartYPaddingPx = 5;
         const nextYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
             nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
-            chartYPaddingPx,
+            EQUITY_CHART_Y_PADDING_PX,
         );
         const realtimeMarkerElement = previousRuntimeState.realtimeMarkerElement
             || canvas.closest('.investment-equity-chart-stage')?.querySelector('[data-investment-equity-live-marker]');
@@ -771,11 +773,10 @@ function applyInvestmentOverviewIntradayLinePoints(chartPoints = [], overviewInt
         runtime.cacheInvestmentOverviewIntradayLinePoints(overviewIntradayLinePoints);
         const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, overviewIntradayLinePoints);
         if (!nextChartState.overviewIntradayLinePoints.length) return;
-        const chartYPaddingPx = 5;
         const nextYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
             nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
-            chartYPaddingPx,
+            EQUITY_CHART_Y_PADDING_PX,
         );
         runtime.state.investmentEquityChartRuntimeState = {
             ...nextChartState,
@@ -873,6 +874,26 @@ function buildPixelPaddedInvestmentEquityYScale(canvas, dataset = [], paddingPx 
             rawMin,
             rawMax,
         };
+    }
+
+function syncInvestmentEquityChartViewport() {
+        const chart = runtime.state.investmentEquityChartInstance;
+        const chartState = runtime.state.investmentEquityChartRuntimeState;
+        if (!chart?.canvas?.getClientRects().length) return;
+        chart.resize();
+        const frozenScale = chartState?.frozenYScale;
+        const scaleOptions = chart.options?.scales?.y;
+        if (!Number.isFinite(frozenScale?.rawMin) || !Number.isFinite(frozenScale?.rawMax) || !scaleOptions) return;
+        const paddedScale = buildPixelPaddedInvestmentEquityYScale(
+            chart.canvas,
+            [frozenScale.rawMin, frozenScale.rawMax],
+            EQUITY_CHART_Y_PADDING_PX,
+        );
+        if (paddedScale.min === frozenScale.min && paddedScale.max === frozenScale.max) return;
+        chartState.frozenYScale = paddedScale;
+        scaleOptions.min = paddedScale.min;
+        scaleOptions.max = paddedScale.max;
+        chart.update('none');
     }
 
 function renderEquityChartWithEquity(chartPoints) {
@@ -973,6 +994,7 @@ function renderEquityChartWithEquity(chartPoints) {
         // Read theme tokens
         const resolvedTheme = runtime.resolveInvestmentTheme();
         const equitySeriesColor = "#0055cc";
+        const holdingsPanel = document.getElementById('investment_holdings_panel');
 
         let activeChartHoverDate = "";
         let activeTooltipDataIndex = -1;
@@ -1025,6 +1047,9 @@ function renderEquityChartWithEquity(chartPoints) {
 
         const hoverGuidePlugin = {
             id: "investmentHoverGuidePlugin",
+            afterDestroy() {
+                holdingsPanel?.removeEventListener('scroll', clearInvestmentChartHoverOnScroll, true);
+            },
             afterDatasetsDraw(chartInstance) {
                 const {ctx, chartArea, scales, tooltip} = chartInstance;
                 if (!chartArea || !tooltip || tooltip.opacity === 0) {
@@ -1237,11 +1262,10 @@ function renderEquityChartWithEquity(chartPoints) {
             },
         };
 
-        const chartYPaddingPx = 5;
         const equityYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
             chartState.historicalEquity.length ? chartState.historicalEquity : chartState.equity,
-            chartYPaddingPx,
+            EQUITY_CHART_Y_PADDING_PX,
         );
         const getOrCreateTooltip = () => {
             if (tooltipElement instanceof HTMLElement && tooltipElement.isConnected) return tooltipElement;
@@ -1652,6 +1676,12 @@ function renderEquityChartWithEquity(chartPoints) {
             chart.draw?.();
         };
 
+        const clearInvestmentChartHoverOnScroll = (event) => {
+            if (activeInvestmentHoverIndex < 0 && investmentHoverFrameId === null) return;
+            if (event.target !== canvas.closest('.investment-holdings-table-scroll')) return;
+            clearInvestmentChartHover(runtime.state.investmentEquityChartInstance);
+        };
+
         const renderInvestmentHoverFrame = (chart, pointer) => {
             if (
                 !chart
@@ -1828,6 +1858,7 @@ function renderEquityChartWithEquity(chartPoints) {
         canvas.addEventListener('mouseleave', () => {
             clearInvestmentChartHover(runtime.state.investmentEquityChartInstance);
         });
+        holdingsPanel?.addEventListener('scroll', clearInvestmentChartHoverOnScroll, {capture: true, passive: true});
         scheduleInvestmentOverviewIntradayLinePoints(chartPoints);
         if (runtime.state.activeHoldingsHoverLedgerNo > 0) {
             runtime.state.investmentEquityChartInstance.update('none');
@@ -1886,6 +1917,7 @@ function formatEventType(type) {
         applyInvestmentOverviewIntradayLinePoints,
         scheduleInvestmentOverviewIntradayLinePoints,
         buildPixelPaddedInvestmentEquityYScale,
+        syncInvestmentEquityChartViewport,
         renderEquityChartWithEquity,
         formatEventType,
     };

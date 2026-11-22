@@ -1,4 +1,4 @@
-/* Code version: v1.0.0 */
+/* Code version: v1.0.1 */
 import {
     expect,
     test,
@@ -420,6 +420,7 @@ test('binds the July 2025 Longbridge HK USD deposit to the BOCHK withdrawal', as
     await expect(bindingSelect).toHaveCount(1);
     await expect(bindingSelect.locator('option').filter({hasText: 'Bank of China (Hong Kong)'})).toHaveCount(1);
     await expect(bindingSelect).toContainText('-4.94');
+    await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await bindingSelect.selectOption(bochkWithdrawalKey);
 
     await expect.poll(() => persistedBindingRequest).toEqual({
@@ -507,6 +508,7 @@ test('binds the March 2023 Longbridge HK USD deposit after a BOCHK transfer fee'
     await expect(bindingSelect).toHaveCount(1);
     await expect(bindingSelect.locator('option').filter({hasText: 'Bank of China (Hong Kong)'})).toHaveCount(1);
     await expect(bindingSelect.locator('option').filter({hasText: 'includes USD 1.30 transfer fee'})).toHaveCount(1);
+    await expect(page.locator('#workspace_modal_overlay')).toBeHidden();
     await bindingSelect.selectOption(bochkWithdrawalKey);
 
     await expect.poll(() => persistedBindingRequest).toEqual({

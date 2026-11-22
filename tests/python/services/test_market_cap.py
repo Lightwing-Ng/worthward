@@ -1,7 +1,7 @@
 """
 Tests for authoritative historical market-cap derivation.
 
-Code version: v0.11.3
+Code version: v0.11.4
 """
 
 from __future__ import annotations
@@ -51,6 +51,27 @@ class _TickerWithoutShares:
 
 
 class MarketCapTests(unittest.TestCase):
+    def test_unreadable_fx_cache_allows_provider_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            cache_path = Path(tempdir) / "HKD.sqlite3"
+            invalid_frame = b"invalid SQLite frame"
+            cache_path.write_bytes(invalid_frame)
+            with (
+                patch.object(market_cap, "fx_store_path_for", return_value=cache_path),
+                patch.object(
+                    market_cap,
+                    "download_yahoo_chart_daily_history",
+                    side_effect=OSError("temporarily offline"),
+                ) as download,
+            ):
+                self.assertTrue(market_cap.load_fx_history("HKD").empty)
+                with self.assertRaisesRegex(ValueError, "USD FX history is unavailable"):
+                    market_cap.fetch_usd_exchange_rate_history(
+                        "HKD", pd.Timestamp("2026-11-06"), pd.Timestamp("2026-11-12")
+                    )
+            download.assert_called_once()
+            self.assertEqual(cache_path.read_bytes(), invalid_frame)
+
     def test_reported_shares_uses_direct_yahoo_timeseries_when_yfinance_is_rate_limited(self) -> None:
         class _Response:
             def __enter__(self):

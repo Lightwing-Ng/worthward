@@ -1,4 +1,4 @@
-/* Code version: v0.27.0 */
+/* Code version: v0.28.0 */
 .trade-controls,
 .ticker-form-controls,
 .ticker-controls {
@@ -356,7 +356,7 @@ input[type="number"],
 	box-shadow: none;
 }
 .trade-strategy-select.is-switching {
-	animation: strategySelectSnap 340ms var(--motion-emphasized);
+	animation: strategySelectSnap 340ms linear;
 }
 .sidebar-form input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .sidebar-form select,
@@ -1210,7 +1210,6 @@ input[type="number"],
 }
 @keyframes strategyParamsAccelerate {
 	0% { opacity: 0.72; transform: translateY(8px) scale(0.985); filter: blur(6px); }
-	52% { opacity: 1; transform: translateY(-2px) scale(1.01); filter: blur(0); }
 	100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
 .trade-strategy-params-field .trade-strategy-param {
@@ -1479,7 +1478,6 @@ input[type="number"],
 }
 @keyframes workspace-popover-gel-in {
 	0% { opacity: 0; transform: translateY(-9px) scale(0.955); filter: saturate(82%); }
-	68% { opacity: 1; transform: translateY(1px) scale(1.012); filter: saturate(108%); }
 	100% { opacity: 1; transform: translateY(0) scale(1); filter: saturate(100%); }
 }
 .suggestions.is-open,
@@ -1491,7 +1489,6 @@ input[type="number"],
 }
 @keyframes strategy-params-flow-in {
 	0% { opacity: 0; transform: scaleY(0.96); filter: saturate(82%); }
-	68% { opacity: 1; transform: scaleY(1.005); filter: saturate(108%); }
 	100% { opacity: 1; transform: scaleY(1); filter: saturate(100%); }
 }
 .trade-strategy-params-popover:not([hidden]) {

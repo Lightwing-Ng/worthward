@@ -1,6 +1,6 @@
 # Shared UI Layout Contract
 
-Documentation version: `v1.24.4`
+Documentation version: `v1.24.6`
 
 This is the normative spatial contract for Worthward and its sibling projects,
 `agenticContext` and `neoMe`. The three implementations may have different product
@@ -22,6 +22,18 @@ must not be promoted into the interface stack. A future source change requires a
 explicit maintainer instruction and one synchronized three-project contract update.
 
 ## Canonical dimensions
+
+### Continuous rounded rectangles
+
+Rounded rectangular surfaces use `--corner-shape-continuous: squircle` with
+their existing nonzero `border-radius`. The shared rule is assigned on each
+rendered surface because `corner-shape` does not inherit. A table's outer shell,
+frosted header and data scrollport use the same shape so independent clipping
+does not expose mismatched corners. The radius continues to determine size and
+serves as the fallback when `corner-shape` is unsupported. True circles,
+Process List markers, circular icon actions, chart dots, and pill controls keep
+their round geometry. This changes curvature without changing dimensions,
+placement, breakpoints, hit targets, or material tokens.
 
 ### Component catalog ownership
 
