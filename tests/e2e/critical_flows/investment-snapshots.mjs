@@ -1,4 +1,4 @@
-/* Code version: v1.0.4 */
+/* Code version: v1.0.5 */
 import {
     expect,
     test,
@@ -1336,6 +1336,13 @@ test('anchors the Overview live marker to Hong Kong\'s current date after the US
         window.Date = FixedDate;
     });
     await mockInvestmentReadApis(page, {
+        startingCash: 0,
+        fxRateHistoryByCurrency: {
+            HKD: {
+                dates: ['2026-07-22', '2026-07-23'],
+                values: {'2026-07-22': 8, '2026-07-23': 8},
+            },
+        },
         transactions: [
             {ledger_no: 1, broker: 'longbridge_hk', date: '2026-07-22', type: 'buy', ticker: '700.HK', currency: 'HKD', quantity: 10, price: 400, amount: -4000},
         ],
@@ -1365,12 +1372,29 @@ test('anchors the Overview live marker to Hong Kong\'s current date after the US
     await page.goto('/trade/investment?view=holdings&summary=expanded');
 
     const marker = page.locator('[data-investment-equity-live-marker]');
-    await expect.poll(() => marker.evaluate((element) => !element.hidden)).toBe(true);
-    await expect.poll(() => page.evaluate(() => {
+    await expect.poll(() => marker.evaluate((element) => {
         const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
-        const labels = chart?.data?.labels || [];
-        return String(labels[labels.length - 1] || '');
-    })).toBe('2026-07-23');
+        const lastPoint = chart?.getDatasetMeta(0).data.at(-1);
+        const equity = chart?.data.datasets[0].data.at(-1);
+        const holdingsEquity = Number(
+            document.querySelector('[data-investment-live-field="summary_total_equity"]')
+                ?.dataset.investmentLiveNumber,
+        );
+        return {
+            date: chart?.data.rawLabels.at(-1),
+            equity,
+            holdingsEquity,
+            visible: !element.hidden,
+            aligned: Math.abs(Number.parseFloat(element.style.left) - lastPoint?.x) < 0.5
+                && Math.abs(Number.parseFloat(element.style.top) - lastPoint?.y) < 0.5,
+        };
+    })).toEqual({
+        date: '2026-07-23',
+        equity: 6.25,
+        holdingsEquity: 6.25,
+        visible: true,
+        aligned: true,
+    });
 });
 
 test('exports a semantically labeled Investment Markdown report with its active scope', async ({page}) => {

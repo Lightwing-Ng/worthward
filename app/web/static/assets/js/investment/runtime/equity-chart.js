@@ -1,7 +1,8 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.5.3
+ * Code version: v1.5.4
+ * - Fixed: Keeps finite live equity points within the daily value axis across markets.
  * - Fixed: Live equity markers share rendered point geometry and stay within the value axis.
  * - Fixed: The portfolio chart measures its viewport after the Holdings summary opens.
  * - Fixed: Scrolling the Holdings viewport dismisses the chart's fixed hover tooltip.
@@ -597,12 +598,7 @@ function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntrada
         const equity = useOverviewIntradayLine
             ? normalizedIntradayLinePoints.map((entry) => entry.equity)
             : visibleChartPoints.map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
-        const axisEquity = useOverviewIntradayLine
-            ? equity.filter(Number.isFinite)
-            : visibleChartPoints
-            .filter((point) => point?.is_realtime !== true || point?.is_extended_session_equity)
-            .map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity))
-            .filter((value) => Number.isFinite(value));
+        const axisEquity = equity.filter(Number.isFinite);
         const renderedVisibleChartPoints = useOverviewIntradayLine
             ? normalizedIntradayLinePoints.map((entry) => entry.point || {
                 date: entry.date,
@@ -678,10 +674,11 @@ function syncInvestmentEquityChartRealtime(chartPoints = []) {
         const labelsStable = previousLabels.length === nextLabels.length
             && previousLabels.every((label, index) => label === nextLabels[index]);
         const previousScale = previousRuntimeState.frozenYScale;
-        const lastPoint = nextChartState.visibleChartPoints.at(-1);
-        const lastValue = nextChartState.equity.at(-1);
-        const endpointOutsideScale = lastPoint?.is_extended_session_equity
-            && (lastValue <= previousScale?.min || lastValue >= previousScale?.max);
+        const liveIndex = runtime.resolveInvestmentEquityRealtimeMarkerTarget(nextChartState)?.index;
+        const liveValue = nextChartState.equity[liveIndex];
+        const endpointOutsideScale = Number.isFinite(liveValue)
+            && (!Number.isFinite(previousScale?.min) || !Number.isFinite(previousScale?.max)
+                || liveValue <= previousScale.min || liveValue >= previousScale.max);
         const nextYScale = labelsStable && previousScale && !endpointOutsideScale
             ? previousScale
             : buildPixelPaddedInvestmentEquityYScale(
