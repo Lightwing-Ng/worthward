@@ -1,5 +1,43 @@
-/* Code version: v1.3.1 */
+/* Code version: v1.4.0 */
 ((globalScope) => {
+	const createPriceMarketSession = ({getEndpoint, getMarkers}) => {
+		let session = "";
+		let requestPending = false;
+
+		const syncMarker = (marker) => {
+			marker.hidden = !session;
+			if (marker.hidden) return;
+			const label = session === "overnight"
+				? marker.dataset.overnightLabel
+				: marker.dataset.activeLabel;
+			marker.setAttribute("aria-label", label);
+			marker.title = label;
+		};
+
+		const refresh = async () => {
+			const endpoint = getEndpoint();
+			if (!endpoint || requestPending || !getMarkers().length) return;
+			requestPending = true;
+			try {
+				const response = await fetch(`${endpoint}?day_count=1`, {
+					headers: {Accept: "application/json"},
+					signal: AbortSignal.timeout(10000),
+				});
+				const payload = response.ok ? await response.json() : null;
+				session = payload?.success && payload.is_realtime_allowed === true
+					&& ["pre", "intraday", "post", "overnight"].includes(payload.session)
+					? payload.session : "";
+			} catch (_error) {
+				session = "";
+			} finally {
+				requestPending = false;
+				getMarkers().forEach(syncMarker);
+			}
+		};
+
+		return {refresh, syncMarker};
+	};
+
 	const createSessionAxis = ({bootstrap, state, chartAxis, yAxisMinWidth}) => {
 		const Y_AXIS_MIN_WIDTH = yAxisMinWidth;
 		const ONE_DAY_US_SESSION_DIVIDER_MINUTES = Object.freeze([
@@ -610,10 +648,11 @@
 	};
 
 	globalScope.WORTHWARD_PRICE_COMPARE_RUNTIME = Object.freeze({
-		VERSION: "v1.3.1",
+		VERSION: "v1.4.0",
 		animatePriceSubplotOrder,
 		createPriceSubplotHandleJelly,
 		createChipRevealController,
+		createPriceMarketSession,
 		createSessionAxis,
 	});
 })(typeof window === "undefined" ? globalThis : window);

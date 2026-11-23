@@ -1,5 +1,12 @@
 # Known issues and operating constraints
 
+Price comparison shows a market-session marker beside each US equity chart's
+ticker logo, including on the default 1Y view. The marker uses the US equity
+calendar for overnight, pre-market, regular, and post-market sessions and
+hides when the session closes or its status is unavailable. Its status
+describes the market session independently of the chart's interval or quote
+freshness.
+
 Holdings starts with a collapsible portfolio summary. Its expanded equity chart
 and allocation donut align with the two chart columns in ticker details. The
 summary stays open independently of the single expanded ticker. Legacy Overview
@@ -1430,7 +1437,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.290.1`
+Documentation version: `v1.290.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
