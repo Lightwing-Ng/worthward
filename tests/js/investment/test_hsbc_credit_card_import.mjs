@@ -1,4 +1,4 @@
-/* Code version: v1.5.3 */
+/* Code version: v1.5.4 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInvestmentImportWorkflowRuntime} from '../../../app/web/static/assets/js/investment/runtime/import-workflows.js';
@@ -100,7 +100,9 @@ function setup(t, fetcher = async () => response(fixture()), initialText = cardP
         refreshInvestmentRewardViews() { this.rewardViewRefreshes += 1; },
         syncHsbcPasteDisplaySummaries: () => {},
         resetHsbcPasteValidation() { this.state.hsbcPasteValidation = {state: 'idle', ready: false, fieldStatus: {}}; },
-        setImportFeedback(message) { this.feedback = message; },
+        escapeHtml: (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+        setImportFeedback(message, variant, options) { this.feedback = message; this.feedbackVariant = variant; this.feedbackOptions = options; },
+        closeInvestmentImportForm() { this.formClosed = true; },
     };
     const workflows = createInvestmentImportWorkflowRuntime(runtime);
     for (const key of ['splitHsbcPastedTextChunks', 'mergeHsbcPastedText', 'getHsbcPasteTexts', 'getHsbcPasteValidationSignature']) {
@@ -198,6 +200,8 @@ test('pending import reports progress without allowing a second submission', asy
     assert.equal(feedback.phase, 'importing');
     assert.equal(feedback.validationState, 'pending');
     assert.match(feedback.message, /Importing/);
+    assert.equal(runtime.feedback, undefined);
+    assert.equal(runtime.formClosed, undefined);
     assert.equal(runtime.isHsbcCreditCardReady(), false);
     await runtime.importHsbcCreditCard();
     assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import']);
@@ -214,6 +218,7 @@ test('saved feedback is published before waiting for paint and derived reward re
         urls.push(url);
         return response(url.endsWith('/import')
             ? {...fixture(), merged_transactions: fixture().transactions, credit_card_rewards: rewards,
+                warnings: ['Review <saved> details.'],
                 summary: {...fixture().summary, added_count: 0, promoted_count: 0, duplicate_count: 1}}
             : fixture());
     });
@@ -227,6 +232,12 @@ test('saved feedback is published before waiting for paint and derived reward re
     assert.equal(feedback.summaryLabel, 'Imported');
     assert.match(feedback.message, /^Credit-card import saved\./);
     assert.match(feedback.message, /1.*(?:duplicate|already saved)/i);
+    assert.equal(runtime.formClosed, true);
+    assert.equal(runtime.feedbackVariant, 'success');
+    assert.deepEqual(runtime.feedbackOptions, {allowHtml: true});
+    assert.match(runtime.feedback, /HSBC credit-card import complete/);
+    assert.match(runtime.feedback, /0 added, 0 updated, 1 duplicates/);
+    assert.match(runtime.feedback, /Review &lt;saved&gt; details/);
     assert.equal(elements.get('investment_import_note').textContent, feedback.message);
     assert.equal(elements.get('hsbc_credit_card_caption').textContent, 'Saved transactions');
     assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
@@ -487,6 +498,8 @@ test('new card text entered during a commit previews afterward without another w
     assert.deepEqual(urls, ['/api/credit-cards/hsbc/preview', '/api/credit-cards/hsbc/import', '/api/credit-cards/hsbc/preview']);
     assert.equal(runtime.isHsbcCreditCardReady(), true);
     assert.match(elements.get('hsbc_credit_card_status').textContent, /Preview ready/);
+    assert.equal(runtime.feedback, undefined);
+    assert.equal(runtime.formClosed, undefined);
     assert.equal(elements.get('hsbc_credit_card_rows').children.length, 1);
     assert.deepEqual(window.WORTHWARD_INVESTMENT_DATA, {transactions: [{id: 'investment-kept'}]});
     assert.equal(runtime.rewardViewRefreshes, 0);

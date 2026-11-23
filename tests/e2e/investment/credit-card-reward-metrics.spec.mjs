@@ -1,4 +1,4 @@
-/* Code version: v1.2.3
+/* Code version: v1.2.4
  * Reward detail columns retain their headline anchors across viewport changes.
  */
 import {expect, test} from '@playwright/test';
@@ -462,7 +462,8 @@ PAY w/RC SAMPLE SHOP HK
                 success: false, error: 'The card import could not be saved.', credit_card_rewards: importedRewards,
             }})
             : route.fulfill({json: {
-                success: true, ready: true, merged_transactions: [cardRow], warnings: [],
+                success: true, ready: true, committed: true, merged_transactions: [cardRow], warnings: [],
+                summary: {added_count: 1, promoted_count: 0, duplicate_count: 0},
                 credit_card_rewards: importedRewards,
             }});
     });
@@ -493,11 +494,15 @@ PAY w/RC SAMPLE SHOP HK
     const paste = page.getByRole('button', {name: 'Paste HSBC account page text from clipboard', exact: true});
     const submit = page.locator('#investment_import_submit_button');
     const status = page.locator('#hsbc_credit_card_status');
+    const form = page.locator('#transaction_form_container');
+    const feedback = page.locator('#investment_import_feedback');
     await paste.click();
     await expect(submit).toBeEnabled();
     const requestsBeforeImport = [...investmentRequests];
     await submit.click();
     await expect(status).toContainText('The card import could not be saved.');
+    await expect(form).toBeVisible();
+    await expect(feedback).toBeHidden();
     await expect(submit).toBeDisabled();
     await expect(rewards.locator('.trade-metric-value')).toHaveText('5.00');
     await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
@@ -510,8 +515,10 @@ PAY w/RC SAMPLE SHOP HK
     await paste.click();
     await expect(submit).toBeEnabled();
     await submit.click();
-    await expect(status).toContainText('Entries were read back from the credit-card ledger.');
-    await expect(submit).toBeDisabled();
+    await expect(form).toBeHidden();
+    await expect(feedback).toBeVisible();
+    await expect(feedback).toContainText('1 added, 0 updated, 0 duplicates.');
+    await expect(feedback).toContainText('Entries were read back from the credit-card ledger.');
     await expect(rewards.locator('.trade-metric-value')).toHaveText('7.50');
     await expect(kol.locator('.trade-metric-value')).toHaveText('10.00');
     await expect(holdingsRewardValue(page)).toHaveText('17.50');
@@ -532,8 +539,8 @@ PAY w/RC SAMPLE SHOP HK
     await expect(holdings.locator('[data-investment-live-field="summary_cash_balance"]')).toHaveText('1,030.00');
     await expect(holdings.locator('[data-investment-live-field="summary_total_equity"]')).toHaveText('1,030.00');
     await expect(page.locator('#investment_history tr[data-investment-history-row]')).toHaveCount(2);
-    await page.locator('#investment_import_close_button').click();
-    await expect(page.locator('#transaction_form_container')).toBeHidden();
+    await feedback.hover();
+    await feedback.getByRole('button', {name: 'Dismiss import feedback'}).click();
     await rewards.hover();
     await rewards.locator('[data-investment-metric-breakdown-trigger]').click();
     await expect(rewards.locator('.investment-stock-details-metric-breakdown')).toContainText('HKD 60.00');

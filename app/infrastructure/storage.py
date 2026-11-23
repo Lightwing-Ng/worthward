@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.21.1
+Code version: v0.21.2
 - Added: SQLite frame and structured-document persistence for local runtime data.
 - Added: Lossless SQLite investment snapshots with explicit verified Parquet migration.
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
@@ -273,6 +273,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "HK0000720752": "Ping An Money Market P USD Acc",
     "HK0001039582": "CMS USD Money Market Fund B Acc",
     "1310.HK": "HKBN Ltd.",
+    "9988.HK": "Alibaba Group Holding Limited",
     "JPM": "JPMorgan Chase & Co.",
     "KO": "The Coca-Cola Company",
     "META": "Meta Platforms, Inc.",

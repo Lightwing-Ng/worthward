@@ -1,6 +1,6 @@
 """Build the compare training web-runtime context.
 
-Code version: v0.2.1
+Code version: v0.2.2
 """
 
 from __future__ import annotations
@@ -350,7 +350,8 @@ def build_compare_training_context(context: dict[str, object]) -> dict[str, obje
         try:
             validated_tickers = list(
                 dict.fromkeys(
-                    validate_ticker_or_raise(ticker) for ticker in raw_tickers
+                    validate_ticker_or_raise(ticker, comparison_aliases=True)
+                    for ticker in raw_tickers
                 )
             )
             if len(validated_tickers) < MIN_TICKERS:
@@ -565,7 +566,8 @@ def build_compare_training_context(context: dict[str, object]) -> dict[str, obje
         try:
             validated_tickers = list(
                 dict.fromkeys(
-                    validate_ticker_or_raise(ticker) for ticker in raw_tickers
+                    validate_ticker_or_raise(ticker, comparison_aliases=True)
+                    for ticker in raw_tickers
                 )
             )
             if len(validated_tickers) < MIN_TICKERS:
