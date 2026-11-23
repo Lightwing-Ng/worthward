@@ -1,5 +1,74 @@
-/* Code version: v0.3.3 */
+/* Code version: v0.3.4 */
 import {expect, test} from '@playwright/test';
+
+test('breathes for open US market sessions in Prices, including overnight', async ({page}) => {
+    await page.clock.install({time: new Date('2026-07-14T03:00:00Z')});
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+
+    let session = 'overnight';
+    let sessionUnavailable = false;
+    await page.route('**/api/market-session/us-equity?*', async (route) => {
+        await route.fulfill({
+            status: sessionUnavailable ? 503 : 200,
+            json: {
+                success: !sessionUnavailable,
+                session,
+                is_realtime_allowed: session !== 'off',
+            },
+        });
+    });
+
+    const markerSelector = '[data-price-market-session-marker]';
+    const markerFor = (ticker) => page.locator(`[data-price-subplot][data-ticker="${ticker}"] ${markerSelector}`);
+    const ringAnimation = (marker) => marker.evaluate((element) => (
+        getComputedStyle(element, '::before').animationName
+    ));
+    await page.goto('/workspaces/prices?ticker=AAPL&ticker=NVDA&ticker=000660.KS');
+    await expect(page.locator('[data-price-subplot][data-ticker="000660.KS"]')).toBeVisible();
+    const checkOvernightMarkers = async () => {
+        await expect(page.locator(`${markerSelector}:visible`)).toHaveCount(2);
+        for (const ticker of ['AAPL', 'NVDA']) {
+            const marker = markerFor(ticker);
+            await expect(marker).toBeVisible();
+            await expect(marker).toHaveAccessibleName(`${ticker}: US overnight session is open`);
+            expect(await ringAnimation(marker)).toBe('live-marker-breath');
+        }
+    };
+    await checkOvernightMarkers();
+    await expect(markerFor('000660.KS')).toBeHidden();
+
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await expect(markerFor('NVDA')).toBeVisible();
+    await expect.poll(() => ringAnimation(markerFor('NVDA'))).toBe('none');
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+
+    for (const activeSession of ['pre', 'intraday', 'post']) {
+        session = activeSession;
+        const nextSessionResponse = page.waitForResponse('**/api/market-session/us-equity?*');
+        await page.clock.fastForward(60_000);
+        const response = await nextSessionResponse;
+        expect((await response.json()).session).toBe(activeSession);
+        await expect(page.locator(`${markerSelector}:visible`)).toHaveCount(2);
+        await expect(markerFor('NVDA')).toHaveAccessibleName('NVDA: US market session is open');
+    }
+
+    session = 'off';
+    await page.clock.fastForward(60_000);
+    await expect(page.locator(`${markerSelector}:visible`)).toHaveCount(0);
+
+    session = 'overnight';
+    await page.clock.fastForward(60_000);
+    await checkOvernightMarkers();
+
+    sessionUnavailable = true;
+    await page.clock.fastForward(60_000);
+    await expect(page.locator(`${markerSelector}:visible`)).toHaveCount(0);
+
+    sessionUnavailable = false;
+    await page.goto('/workspaces/prices?metric=market-cap&ticker=AAPL&ticker=NVDA');
+    await expect(page.getByRole('heading', {name: 'Market cap history', exact: true})).toBeVisible();
+    await expect(page.locator(markerSelector)).toHaveCount(0);
+});
 
 for (const overlay of [
     {name: 'global sidebar', toggle: '#sidebar_toggle', backdrop: '#sidebar_backdrop'},

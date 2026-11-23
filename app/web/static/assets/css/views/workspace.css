@@ -1,4 +1,4 @@
-/* Code version: v1.32.0 */
+/* Code version: v1.33.0 */
 /* Align modal titles with dismiss controls and body copy with topic icons. */
 /* Match the approved waiting notification's heading and supporting-copy hierarchy. */
 /* Reuse the canonical Frosted glass material for modal banner surfaces. */
@@ -2694,6 +2694,16 @@ footer {
 .price-subplot-canvas-wrap canvas {
     width: 100% !important;
     height: 100% !important;
+}
+
+.price-subplot-market-marker {
+    position: absolute;
+    z-index: var(--layer-inline-overlay);
+    transform: translate(-50%, -50%);
+}
+
+.price-subplot-market-marker[hidden] {
+    display: none;
 }
 
 .price-subplot-chip-loading {
