@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.149.0`
+Documentation version: `v1.150.0`
 
 ## Canonical SQLite persistence
 
@@ -1846,10 +1846,18 @@ for market-close evidence.
   for their designated cash-equivalent positions.
 
 During US overnight, pre-market, and post-market sessions, the high-precision
-Overview ranges retain the completed regular-session minute curve. The current
-extended-hours valuation is a separate far-right live point, and its total
-equity must equal the immediate Holdings Total equity snapshot. A future
-regular-session minute remains unavailable until that regular session starts.
+Overview ranges retain the completed regular-session minute curve through the
+exchange calendar's scheduled close. They connect its last available point to
+one live valuation at the New York wall-clock minute, which can precede the
+overnight trading date. The live valuation equals Holdings Total equity.
+Future regular-session minutes remain unavailable until the session starts.
+
+Daily-range equity and Stock details price views also keep their observed
+regular close and connect it to one eligible extended-hours endpoint. A
+Stock details minute view preserves its observed OHLC candles and draws a
+price segment from the last candle close to the eligible quote. The live marker
+uses the rendered endpoint's coordinates. An unavailable or ineligible quote
+leaves the historical curve at its last observed point.
 
 ## Longbridge performance-calibration contract
 

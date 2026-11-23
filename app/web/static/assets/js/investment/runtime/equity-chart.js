@@ -1,7 +1,8 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.5.2
+ * Code version: v1.5.3
+ * - Fixed: Live equity markers share rendered point geometry and stay within the value axis.
  * - Fixed: The portfolio chart measures its viewport after the Holdings summary opens.
  * - Fixed: Scrolling the Holdings viewport dismisses the chart's fixed hover tooltip.
  * - Fixed: Uses the current Investment data-utils cache version.
@@ -519,12 +520,9 @@ function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntrada
             .filter((point) => useOverviewIntradayLineRequested
                 ? point?.is_realtime !== true && point?.is_calendar_carry_forward !== true
                 : true);
-        const normalizedChartPoints = useOverviewIntradayLineRequested
-            ? preparedChartPoints
-            : runtime.ensureInvestmentLiveSessionChartSlot(preparedChartPoints);
         const sortedChartPoints = (useOverviewIntradayLineRequested
-            ? normalizedChartPoints
-            : runtime.dedupeInvestmentChartPointsByLedgerDate(normalizedChartPoints))
+            ? preparedChartPoints
+            : runtime.dedupeInvestmentChartPointsByLedgerDate(preparedChartPoints))
             .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
         runtime.setInvestmentSharedChartDateRange(sortedChartPoints);
         const fullChartPointIndexByLedgerNo = new Map();
@@ -561,8 +559,24 @@ function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntrada
             firstLedgerAnchoredPointSourceIndex < 0
             || sourceIndex >= firstLedgerAnchoredPointSourceIndex
         ));
-        const visibleChartPoints = renderableVisiblePoints.map(({ point }) => point);
-        const visiblePointSourceIndexes = renderableVisiblePoints.map(({ sourceIndex }) => sourceIndex);
+        const liveExtendedEntry = renderableVisiblePoints.findLast(({point}) => point.is_extended_session_equity);
+        let plottedEntries = renderableVisiblePoints;
+        if (liveExtendedEntry) {
+            const livePoint = liveExtendedEntry.point;
+            const historicalCutoff = livePoint.realtime_session === 'post'
+                ? livePoint.date : livePoint.realtime_session_date;
+            const historicalEntries = renderableVisiblePoints.filter(({point}) => (
+                point.is_realtime !== true && point.date < historicalCutoff
+            ));
+            const lastObservedIndex = historicalEntries.findLastIndex(({point}) => (
+                point.is_calendar_carry_forward !== true
+                && Number.isFinite(point.aggregate_total_equity ?? point.total_equity)
+            ));
+            plottedEntries = historicalEntries.slice(0, lastObservedIndex + 1);
+            if (lastObservedIndex >= 0) plottedEntries.push(liveExtendedEntry);
+        }
+        const visibleChartPoints = plottedEntries.map(({ point }) => point);
+        const visiblePointSourceIndexes = plottedEntries.map(({ sourceIndex }) => sourceIndex);
         const normalizedIntradayLinePoints = runtime.mergeInvestmentOverviewRealtimeLinePoints(
             (Array.isArray(overviewIntradayLinePoints) ? overviewIntradayLinePoints : [])
             .map((entry) => ({
@@ -575,19 +589,18 @@ function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntrada
             .filter((entry) => entry.date),
         );
         const useOverviewIntradayLine = runtime.isInvestmentOverviewIntradayEquityRange()
-            && normalizedIntradayLinePoints.length >= 390;
+            && overviewIntradayLinePoints.length >= 390
+            && normalizedIntradayLinePoints.length > 0;
         const rawDates = useOverviewIntradayLine
             ? normalizedIntradayLinePoints.map((entry) => entry.date)
             : visibleChartPoints.map((point) => point.date);
         const equity = useOverviewIntradayLine
             ? normalizedIntradayLinePoints.map((entry) => entry.equity)
             : visibleChartPoints.map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity));
-        const historicalEquity = useOverviewIntradayLine
-            ? normalizedIntradayLinePoints
-                .map((entry) => entry.equity)
-                .filter((value) => Number.isFinite(value))
+        const axisEquity = useOverviewIntradayLine
+            ? equity.filter(Number.isFinite)
             : visibleChartPoints
-            .filter((point) => point?.is_realtime !== true)
+            .filter((point) => point?.is_realtime !== true || point?.is_extended_session_equity)
             .map((point) => roundInvestmentChartCurrencyValue(point.aggregate_total_equity ?? point.total_equity))
             .filter((value) => Number.isFinite(value));
         const renderedVisibleChartPoints = useOverviewIntradayLine
@@ -620,9 +633,9 @@ function buildInvestmentEquityChartRenderState(chartPoints = [], overviewIntrada
             rawDates,
             labels: [...rawDates],
             equity,
-            historicalEquity,
+            axisEquity,
             overviewIntradayLinePoints: useOverviewIntradayLine ? normalizedIntradayLinePoints : [],
-            latestChartPoint: sortedChartPoints[sortedChartPoints.length - 1] || null,
+            latestChartPoint: liveExtendedEntry?.point || sortedChartPoints.at(-1) || null,
         };
     }
 
@@ -648,6 +661,8 @@ function syncInvestmentEquityChartRealtime(chartPoints = []) {
             const baseIntradayLinePoints = runtime.getCachedInvestmentOverviewIntradayLinePoints();
             if (baseIntradayLinePoints.length) {
                 applyInvestmentOverviewIntradayLinePoints(chartPoints, baseIntradayLinePoints);
+            } else {
+                scheduleInvestmentOverviewIntradayLinePoints(chartPoints);
             }
             return;
         }
@@ -662,11 +677,16 @@ function syncInvestmentEquityChartRealtime(chartPoints = []) {
         const nextLabels = Array.isArray(nextChartState.labels) ? nextChartState.labels : [];
         const labelsStable = previousLabels.length === nextLabels.length
             && previousLabels.every((label, index) => label === nextLabels[index]);
-        const nextYScale = labelsStable && previousRuntimeState.frozenYScale
-            ? previousRuntimeState.frozenYScale
+        const previousScale = previousRuntimeState.frozenYScale;
+        const lastPoint = nextChartState.visibleChartPoints.at(-1);
+        const lastValue = nextChartState.equity.at(-1);
+        const endpointOutsideScale = lastPoint?.is_extended_session_equity
+            && (lastValue <= previousScale?.min || lastValue >= previousScale?.max);
+        const nextYScale = labelsStable && previousScale && !endpointOutsideScale
+            ? previousScale
             : buildPixelPaddedInvestmentEquityYScale(
                 canvas,
-                nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+                nextChartState.axisEquity.length ? nextChartState.axisEquity : nextChartState.equity,
                 EQUITY_CHART_Y_PADDING_PX,
             );
         runtime.state.investmentEquityChartRuntimeState = {
@@ -683,7 +703,7 @@ function syncInvestmentEquityChartRealtime(chartPoints = []) {
             runtime.state.investmentEquityChartInstance.data.datasets[0].data = [...runtime.state.investmentEquityChartRuntimeState.equity];
         }
         const yScale = runtime.state.investmentEquityChartInstance.options?.scales?.y;
-        if (yScale && !labelsStable) {
+        if (yScale && nextYScale !== previousScale) {
             yScale.min = nextYScale.min;
             yScale.max = nextYScale.max;
         }
@@ -718,7 +738,7 @@ function applyInvestmentEquityRangeChange(chartPoints = []) {
         const nextChartState = buildInvestmentEquityChartRenderState(chartPoints, initialOverviewIntradayLinePoints);
         const nextYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
-            nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+            nextChartState.axisEquity.length ? nextChartState.axisEquity : nextChartState.equity,
             EQUITY_CHART_Y_PADDING_PX,
         );
         const realtimeMarkerElement = previousRuntimeState.realtimeMarkerElement
@@ -775,7 +795,7 @@ function applyInvestmentOverviewIntradayLinePoints(chartPoints = [], overviewInt
         if (!nextChartState.overviewIntradayLinePoints.length) return;
         const nextYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
-            nextChartState.historicalEquity.length ? nextChartState.historicalEquity : nextChartState.equity,
+            nextChartState.axisEquity.length ? nextChartState.axisEquity : nextChartState.equity,
             EQUITY_CHART_Y_PADDING_PX,
         );
         runtime.state.investmentEquityChartRuntimeState = {
@@ -1183,21 +1203,13 @@ function renderEquityChartWithEquity(chartPoints) {
                     markerElement.hidden = true;
                     return;
                 }
-                const dataset = chartInstance.data?.datasets?.[0];
-                const pointValue = Number(dataset?.data?.[realtimeIndex]);
-                if (!Number.isFinite(pointValue)) {
+                const point = chartInstance.getDatasetMeta(0)?.data?.[realtimeIndex];
+                const { chartArea } = chartInstance;
+                if (!point || point.skip || !chartArea) {
                     markerElement.hidden = true;
                     return;
                 }
-                const { scales, chartArea } = chartInstance;
-                const xScale = scales?.x;
-                const yScale = scales?.y;
-                if (!xScale || !yScale || !chartArea) {
-                    markerElement.hidden = true;
-                    return;
-                }
-                const x = xScale.getPixelForValue(realtimeIndex);
-                const y = yScale.getPixelForValue(pointValue);
+                const {x, y} = point;
                 if (!Number.isFinite(x) || !Number.isFinite(y)) {
                     markerElement.hidden = true;
                     return;
@@ -1264,7 +1276,7 @@ function renderEquityChartWithEquity(chartPoints) {
 
         const equityYScale = buildPixelPaddedInvestmentEquityYScale(
             canvas,
-            chartState.historicalEquity.length ? chartState.historicalEquity : chartState.equity,
+            chartState.axisEquity.length ? chartState.axisEquity : chartState.equity,
             EQUITY_CHART_Y_PADDING_PX,
         );
         const getOrCreateTooltip = () => {

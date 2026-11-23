@@ -1,4 +1,4 @@
-/* Code version: v1.1.1 */
+/* Code version: v1.1.2 */
 import {
     expect,
     test,
@@ -177,18 +177,19 @@ test('uses Longbridge extended-hours quotes for inline Holdings charts without r
     });
     let quoteSource = 'longbridge';
     let quotePrice = 55.54;
+    let quoteTimestamp = '2026-07-20 17:30';
     const liveQuotes = () => [{
         ticker: 'DRAM',
         price: quotePrice,
-        timestamp: '2026-07-20 17:30',
+        timestamp: quoteTimestamp,
         session: 'post',
-        session_date: '2026-07-20',
+        session_date: quoteTimestamp.slice(0, 10),
         market: 'US',
         source: quoteSource,
     }];
     await mockInvestmentReadApis(page, {
         transactions: [
-            {ledger_no: 1, broker: 'ibkr', date: '2026-07-20', type: 'buy', ticker: 'DRAM', currency: 'USD', quantity: 10, price: 54, amount: -540},
+            {ledger_no: 1, broker: 'ibkr', date: '2026-07-16', type: 'buy', ticker: 'DRAM', currency: 'USD', quantity: 10, price: 54, amount: -540},
         ],
         priceHistoryByTicker: {
             DRAM: [
@@ -197,6 +198,10 @@ test('uses Longbridge extended-hours quotes for inline Holdings charts without r
                 {date: '2026-07-20', close: 55.0},
             ],
         },
+        intradayRows: () => [
+            {date: '2026-07-20 09:30', open: 53, high: 54.25, low: 52.50, close: 54},
+            {date: '2026-07-20 15:59', open: 54.50, high: 55.25, low: 54.25, close: 55},
+        ],
         realtimeQuotes: liveQuotes,
         marketSession: {
             session: 'post',
@@ -219,30 +224,32 @@ test('uses Longbridge extended-hours quotes for inline Holdings charts without r
     await page.locator('label[for="investment_stock_details_range_3m"]').click();
 
     const marker = page.locator('[data-investment-stock-details-live-marker]');
-    await expect.poll(() => marker.evaluate((element) => !element.hidden)).toBe(true);
+    const readEndpoint = () => marker.evaluate((element) => {
+        const chart = window.Chart?.getChart(element.parentElement.querySelector('canvas'));
+        const meta = chart?.getDatasetMeta(0);
+        const point = meta?.data.at(-1);
+        const terminalSegment = meta?.dataset?.segments?.at(-1);
+        return {
+            labels: chart?.data.rawLabels || [],
+            prices: chart?.data.datasets[0].data || [],
+            markerHidden: element.hidden,
+            markerAligned: Math.abs(Number.parseFloat(element.style.left) - point?.x) <= 0.5
+                && Math.abs(Number.parseFloat(element.style.top) - point?.y) <= 0.5,
+            terminalSegmentColor: terminalSegment?.style?.borderColor ?? meta?.dataset?.options?.borderColor,
+            terminalSegmentWidth: terminalSegment?.style?.borderWidth ?? meta?.dataset?.options?.borderWidth,
+        };
+    });
+    const dailyHistory = [53, 54, 55];
+    await expect.poll(readEndpoint).toMatchObject({
+        prices: [...dailyHistory, 55.54], markerHidden: false, markerAligned: true,
+    });
+    const {terminalSegmentColor: priceLineColor} = await readEndpoint();
+    expect(priceLineColor).toEqual(expect.any(String));
+    expect(priceLineColor).not.toBe('transparent');
     const metricGrid = page.locator('.investment-stock-details-metrics');
     await expect(metricGrid).toBeHidden();
     await expect(metricGrid).not.toHaveClass(/is-investment-realtime-pulse/);
     await expect(metricGrid.locator('.investment-stock-details-metric-card').first()).toHaveCSS('animation-name', 'none');
-    await expect.poll(() => page.evaluate(() => Boolean(
-        window.Chart?.getChart?.(document.querySelector('.investment-stock-details-price-chart-canvas')),
-    ))).toBe(true);
-    const longbridgeGeometry = await marker.evaluate((element) => {
-        const canvas = document.querySelector('.investment-stock-details-price-chart-canvas');
-        const chart = window.Chart.getChart(canvas);
-        const lastIndex = chart.data.labels.length - 1;
-        return {
-            markerLeft: Number.parseFloat(element.style.left),
-            markerTop: Number.parseFloat(element.style.top),
-            expectedLeft: chart.scales.x.getPixelForValue(lastIndex),
-            expectedTop: chart.scales.y.getPixelForValue(55.54),
-            yMaximum: chart.scales.y.max,
-        };
-    });
-    expect(Math.abs(longbridgeGeometry.markerLeft - longbridgeGeometry.expectedLeft)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(longbridgeGeometry.markerTop - longbridgeGeometry.expectedTop)).toBeLessThanOrEqual(0.5);
-    expect(longbridgeGeometry.yMaximum).toBeGreaterThanOrEqual(55.54);
-
     const lastPrice = metricGrid.locator('[data-investment-live-field="stock_last_price"]');
     const holdingsLastPrice = page.locator(
         '#investment_holdings_panel tr[data-investment-holdings-ticker="DRAM"] [data-investment-live-field="last"]',
@@ -254,13 +261,24 @@ test('uses Longbridge extended-hours quotes for inline Holdings charts without r
     await expect(holdingsLastPrice).toHaveAttribute('data-investment-live-number', '55.54');
     await expect.poll(() => page.evaluate(() => typeof window.__testTriggerInvestmentRealtimePoll)).toBe('function');
 
-    for (const [price, direction] of [[56.54, 'positive'], [54.54, 'negative']]) {
-        quotePrice = price;
+    const pollQuotes = async () => {
         const quoteResponse = page.waitForResponse((response) => (
             response.url().includes('/api/investment/realtime-quotes')
         ));
-        await page.evaluate(() => window.__testTriggerInvestmentRealtimePoll());
+        await page.evaluate(() => {
+            const trigger = window.__testTriggerInvestmentRealtimePoll;
+            delete window.__testTriggerInvestmentRealtimePoll;
+            trigger();
+        });
         await quoteResponse;
+        await expect.poll(() => page.evaluate(() => typeof window.__testTriggerInvestmentRealtimePoll)).toBe('function');
+    };
+    for (const [price, direction] of [[56.54, 'positive'], [54.54, 'negative']]) {
+        quotePrice = price;
+        await pollQuotes();
+        await expect.poll(readEndpoint).toMatchObject({
+            prices: [...dailyHistory, price], markerHidden: false, markerAligned: true,
+        });
         for (const priceNode of [holdingsLastPrice, lastPrice]) {
             await expect(priceNode).toHaveAttribute('data-investment-live-number', String(price));
             await expect(priceNode).toHaveClass(new RegExp(`investment-holdings-value-${direction}`));
@@ -271,14 +289,28 @@ test('uses Longbridge extended-hours quotes for inline Holdings charts without r
             .toHaveCSS('animation-name', 'none');
     }
 
+    await page.locator('label[for="investment_stock_details_range_1w"]').click();
+    const regularMinutes = ['2026-07-20 09:30', '2026-07-20 15:59'];
+    await expect.poll(readEndpoint).toMatchObject({
+        labels: [...regularMinutes, quoteTimestamp],
+        prices: [54, 55, 54.54],
+        markerHidden: false,
+        markerAligned: true,
+        terminalSegmentColor: priceLineColor,
+        terminalSegmentWidth: 1.5,
+    });
+
+    quoteTimestamp = '2026-07-17 17:30';
+    await pollQuotes();
+    await expect.poll(readEndpoint).toMatchObject({
+        labels: regularMinutes, prices: [54, 55], markerHidden: true, terminalSegmentColor: 'transparent',
+    });
+
+    quoteTimestamp = '2026-07-20 17:30';
     quoteSource = 'yfinance';
-    const secondSessionResponse = page.waitForResponse((response) => (
-        response.url().includes('/api/market-session/us-equity')
-    ));
-    await page.reload();
-    await secondSessionResponse;
+    await pollQuotes();
     await page.locator('label[for="investment_stock_details_range_3m"]').click();
-    await expect.poll(() => marker.evaluate((element) => element.hidden)).toBe(true);
+    await expect.poll(readEndpoint).toMatchObject({prices: dailyHistory, markerHidden: true});
     await expect(metricGrid).not.toHaveClass(/is-investment-realtime-pulse/);
 });
 

@@ -1,7 +1,8 @@
 /**
  * Realtime session, quote, and chart synchronization.
  *
- * Code version: v1.4.0
+ * Code version: v1.4.1
+ * - Fixed: Daily equity retains closing observations and uses one eligible extended-hours endpoint.
  * - Changed: Holdings remembers the portfolio overview disclosure and restores legacy Overview visits.
  * - Fixed: Missing current cash remains unavailable during realtime quote updates.
  * - Changed: Equity axis ticks now use the one shared tick-selection owner
@@ -76,6 +77,9 @@ function refreshInvestmentMarketSessionState({
                     is_realtime_allowed: Boolean(safePayload.is_realtime_allowed),
                     session_date: String(safePayload.session_date || '').trim(),
                     as_of: String(safePayload.as_of || '').trim(),
+                    early_close_trading_days: Array.isArray(safePayload.early_close_trading_days)
+                        ? safePayload.early_close_trading_days.map(runtime.normalizeLedgerDate).filter(Boolean)
+                        : [],
                     trading_days: Array.isArray(safePayload.trading_days)
                         ? [...new Set(safePayload.trading_days)]
                             .map((dayKey) => runtime.normalizeLedgerDate(dayKey))
@@ -219,7 +223,7 @@ function dedupeInvestmentChartPointsByLedgerDate(chartPoints = []) {
             }
             const previousPoint = dedupedPoints[dedupedPoints.length - 1];
             const previousLedgerDate = runtime.normalizeLedgerDate(previousPoint?.date);
-            if (previousLedgerDate === ledgerDate) {
+            if (previousLedgerDate === ledgerDate && !point?.is_extended_session_equity) {
                 dedupedPoints[dedupedPoints.length - 1] = shouldPreferInvestmentChartPoint(point, previousPoint)
                     ? point
                     : previousPoint;
@@ -230,48 +234,6 @@ function dedupeInvestmentChartPointsByLedgerDate(chartPoints = []) {
         }, []);
     }
 
-function ensureInvestmentLiveSessionChartSlot(chartPoints = []) {
-        const sourcePoints = Array.isArray(chartPoints) ? chartPoints : [];
-        const realtimePoints = sourcePoints.filter((point) => point?.is_realtime === true);
-        let withoutRealtime = sourcePoints.filter((point) => point?.is_realtime !== true);
-        const liveDateKey = getInvestmentDailyEquityLiveSessionDateKey();
-        if (liveDateKey && withoutRealtime.length) {
-            if (findInvestmentChartPointIndexForLedgerDate(withoutRealtime, liveDateKey) < 0) {
-                const latestPoint = withoutRealtime[withoutRealtime.length - 1];
-                if (latestPoint) {
-                    withoutRealtime = [
-                        ...withoutRealtime,
-                        {
-                            ...latestPoint,
-                            date: liveDateKey,
-                            is_live_session_slot: true,
-                            is_trading_day: true,
-                            anchor_ledger_date: '',
-                            anchor_ledger_nos: [],
-                        },
-                    ];
-                }
-            }
-        }
-        if (!realtimePoints.length) return withoutRealtime;
-        const realtimeByDate = new Map();
-        realtimePoints.forEach((point) => {
-            const dateKey = runtime.normalizeLedgerDate(point?.date);
-            if (dateKey) realtimeByDate.set(dateKey, point);
-        });
-        const merged = withoutRealtime.map((point) => {
-            const dateKey = runtime.normalizeLedgerDate(point?.date);
-            return dateKey && realtimeByDate.has(dateKey) ? realtimeByDate.get(dateKey) : point;
-        });
-        realtimePoints.forEach((point) => {
-            const dateKey = runtime.normalizeLedgerDate(point?.date);
-            if (dateKey && !merged.some((entry) => runtime.normalizeLedgerDate(entry?.date) === dateKey)) {
-                merged.push(point);
-            }
-        });
-        return merged.sort((left, right) => String(left.date || '').localeCompare(String(right.date || '')));
-    }
-
 function getInvestmentEquityChartInputPoints(fallbackChartPoints = []) {
         const fallback = Array.isArray(fallbackChartPoints) ? fallbackChartPoints : [];
         if (!isInvestmentDailyEquityLiveRange()) return fallback;
@@ -279,9 +241,9 @@ function getInvestmentEquityChartInputPoints(fallbackChartPoints = []) {
             return [...runtime.state.investmentChartPointsCache];
         }
         if (Array.isArray(runtime.state.investmentBaseChartPointsCache) && runtime.state.investmentBaseChartPointsCache.length) {
-            return ensureInvestmentLiveSessionChartSlot(runtime.state.investmentBaseChartPointsCache);
+            return [...runtime.state.investmentBaseChartPointsCache];
         }
-        return ensureInvestmentLiveSessionChartSlot(fallback);
+        return fallback;
     }
 
 function buildInvestmentAxisTickIndexes(labels = [], rawDates = [], plotWidth = 0, parseRawDate = null) {
@@ -569,7 +531,24 @@ async function bootstrapInvestmentSessionRealtimeQuotes(latestSnapshot) {
         }
     }
 
+function clearInvestmentOverviewExtendedEndpoint() {
+        let removed = false;
+        for (const [minute, entry] of runtime.investmentOverviewRealtimeLinePointsByMinute) {
+            if (entry?.point?.is_extended_session_equity) {
+                runtime.investmentOverviewRealtimeLinePointsByMinute.delete(minute);
+                removed = true;
+            }
+        }
+        if (removed) runtime.syncInvestmentEquityChartRealtime(runtime.state.investmentBaseChartPointsCache);
+    }
+
 function resetInvestmentRealtimeChartState() {
+        runtime.investmentRealtimeQuotesByTicker.clear();
+        runtime.syncInvestmentStockDetailsLivePulse();
+        if (!isInvestmentDailyEquityLiveRange()) {
+            clearInvestmentOverviewExtendedEndpoint();
+            return;
+        }
         const baseChartPoints = Array.isArray(runtime.state.investmentBaseChartPointsCache)
             ? runtime.state.investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
             : [];
@@ -577,7 +556,6 @@ function resetInvestmentRealtimeChartState() {
             && runtime.state.investmentChartPointsCache.some((point) => point?.is_realtime === true);
         if (!hasRealtimePoint || !baseChartPoints.length) return;
         runtime.state.investmentChartPointsCache = [...baseChartPoints];
-        if (!isInvestmentDailyEquityLiveRange()) return;
         runtime.renderInvestmentHistoryTableRows(
             runtime.state.investmentProcessedTransactionsCache,
             baseChartPoints,
@@ -674,19 +652,31 @@ function getInvestmentRealtimeQuoteForTicker(ticker) {
             .find((quote) => isInvestmentHoldingsRealtimeQuote(quote)) || null;
     }
 
+function isInvestmentChartRealtimeQuote(quote) {
+        if (!quote || !shouldUseInvestmentRealtimeQuote(quote) || !runtime.isRealtimeQuotePulseProviderEligible(quote)) {
+            return false;
+        }
+        if (getInvestmentQuoteMarket(quote) !== 'US' || quote.session === 'intraday') return true;
+        if (!runtime.normalizeInvestmentIntradayMinuteKey(quote.timestamp)) return false;
+        const session = getSafeInvestmentMarketSessionState();
+        const clock = getInvestmentNewYorkClockParts();
+        const expectedDate = session?.session === quote.session && session.session_date
+            ? session.session_date
+            : quote.session === 'overnight' && clock.hour >= 20
+                ? shiftInvestmentCalendarDateKey(clock.dateKey, 1)
+                : clock.dateKey;
+        return getInvestmentRealtimeQuoteDateKey(quote) === expectedDate;
+    }
+
 function getInvestmentStockDetailsRealtimePulseTarget(ticker) {
         const quote = getInvestmentRealtimeQuoteForTicker(ticker);
-        if (
-            !quote
-            || !shouldUseInvestmentRealtimeQuote(quote)
-            || !runtime.isRealtimeQuotePulseProviderEligible(quote)
-        ) {
-            return null;
-        }
+        if (!isInvestmentChartRealtimeQuote(quote)) return null;
         const price = Number(quote.price);
         if (!Number.isFinite(price) || price <= 0) return null;
         return {
             price,
+            timestamp: quote.timestamp,
+            dateKey: getInvestmentRealtimeQuoteDateKey(quote),
             session: String(quote.session || '').trim().toLowerCase(),
             source: String(quote.source || '').trim().toLowerCase(),
         };
@@ -737,12 +727,9 @@ function buildInvestmentRealtimeTimestamp(quotes = []) {
     }
 
 function buildInvestmentRealtimeChartPoints(quotes = []) {
-        const sourceBaseChartPoints = Array.isArray(runtime.state.investmentBaseChartPointsCache)
+        const baseChartPoints = Array.isArray(runtime.state.investmentBaseChartPointsCache)
             ? runtime.state.investmentBaseChartPointsCache.filter((point) => point?.is_realtime !== true)
             : [];
-        const baseChartPoints = isInvestmentDailyEquityLiveRange()
-            ? ensureInvestmentLiveSessionChartSlot(sourceBaseChartPoints)
-            : [...sourceBaseChartPoints];
         if (!baseChartPoints.length || !runtime.state.investmentProcessedTransactionsCache.length) return baseChartPoints;
 
         const latestSnapshot = runtime.state.investmentProcessedTransactionsCache[runtime.state.investmentProcessedTransactionsCache.length - 1];
@@ -752,7 +739,13 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
                 .map((quote) => [runtime.normalizeInvestmentTicker(quote?.ticker), quote])
                 .filter(([ticker, quote]) => ticker && Number.isFinite(Number(quote?.price)))
         );
-        if (!quoteByTicker.size) return baseChartPoints;
+        const heldTickers = new Set(getInvestmentRealtimeTickersFromSnapshot(latestSnapshot));
+        const chartQuotes = [...quoteByTicker.values()].filter((quote) => (
+            heldTickers.has(runtime.normalizeInvestmentTicker(quote.ticker)) && isInvestmentChartRealtimeQuote(quote)
+        ));
+        if (!chartQuotes.length) return baseChartPoints;
+        const usChartQuotes = chartQuotes.filter((quote) => getInvestmentQuoteMarket(quote) === 'US');
+        const endpointQuotes = usChartQuotes.length ? usChartQuotes : chartQuotes;
 
         const livePrices = { ...runtime.state.investmentLatestPricesCache };
         quoteByTicker.forEach((quote, ticker) => {
@@ -841,17 +834,18 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
         const resolvedHoldingsQuotePrices = holdingsRealtimeState
             ? realtimeHoldingsQuotePrices
             : holdingsQuotePrices;
-        const realtimeTimestamp = buildInvestmentRealtimeTimestamp(quotes);
+        const realtimeTimestamp = buildInvestmentRealtimeTimestamp(endpointQuotes);
         const realtimeDateKey = getInvestmentLiveSessionDateKey()
             || runtime.normalizeLedgerDate(realtimeTimestamp)
             || runtime.normalizeLedgerDate(latestBasePoint?.date);
-        const session = Array.from(quoteByTicker.values()).find((quote) => quote?.session)?.session || 'realtime';
-        const realtimeSource = runtime.resolveRealtimeQuoteSource(Array.from(quoteByTicker.values()));
+        const session = endpointQuotes[0].session;
+        const isExtendedSession = usChartQuotes.length > 0 && session !== 'intraday';
+        const realtimeSource = runtime.resolveRealtimeQuoteSource(endpointQuotes);
         const targetIndex = findInvestmentChartPointIndexForLedgerDate(baseChartPoints, realtimeDateKey);
         const anchorPoint = targetIndex >= 0 ? baseChartPoints[targetIndex] : (latestBasePoint || {});
         const realtimePoint = {
             ...anchorPoint,
-            date: realtimeDateKey || realtimeTimestamp,
+            date: isExtendedSession ? realtimeTimestamp : realtimeDateKey || realtimeTimestamp,
             realtime_timestamp: realtimeTimestamp,
             running_cash: aggregateRunningCash,
             aggregate_running_cash: aggregateRunningCash,
@@ -872,14 +866,18 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
             cumulative_net_transfer_amount: Number(latestBasePoint?.cumulative_net_transfer_amount) || 0,
             is_trading_day: false,
             is_realtime: true,
-            is_live_session_slot: false,
+            is_extended_session_equity: isExtendedSession,
             realtime_session: session,
+            realtime_session_date: realtimeDateKey,
             realtime_source: realtimeSource,
             previous_trading_point_index: Number.isFinite(Number(anchorPoint?.previous_trading_point_index))
                 ? Number(anchorPoint.previous_trading_point_index)
                 : (targetIndex > 0 ? targetIndex - 1 : -1),
         };
 
+        if (isExtendedSession) {
+            return [...baseChartPoints, realtimePoint];
+        }
         if (targetIndex >= 0) {
             const nextChartPoints = [...baseChartPoints];
             nextChartPoints[targetIndex] = realtimePoint;
@@ -891,6 +889,7 @@ function buildInvestmentRealtimeChartPoints(quotes = []) {
 function applyInvestmentRealtimeQuotes(quotes = []) {
         const holdingsQuotes = (Array.isArray(quotes) ? quotes : [])
             .filter((quote) => isInvestmentHoldingsRealtimeQuote(quote));
+        runtime.investmentRealtimeQuotesByTicker.clear();
         rememberInvestmentRealtimeQuotes(holdingsQuotes);
         runtime.syncInvestmentStockDetailsLivePulse();
         const liveSessionQuotes = holdingsQuotes.filter((quote) => shouldApplyInvestmentRealtimePriceForHoldings(quote));
@@ -905,9 +904,7 @@ function applyInvestmentRealtimeQuotes(quotes = []) {
         }
 
         if (!liveSessionQuotes.length) {
-            if (shouldRunInvestmentRealtimeQuotes()) {
-                resetInvestmentRealtimeChartState();
-            }
+            resetInvestmentRealtimeChartState();
             return;
         }
         const liveChartPoints = buildInvestmentRealtimeChartPoints(liveSessionQuotes);
@@ -920,6 +917,8 @@ function applyInvestmentRealtimeQuotes(quotes = []) {
                 runtime.syncInvestmentEquityChartRealtime(liveChartPoints);
                 runtime.renderInvestmentDummyPortfolioDonut(latestRealtimePoint, runtime.state.investmentDummyTickerProfiles);
                 runtime.syncInvestmentDummyDonutFromInteraction();
+            } else {
+                clearInvestmentOverviewExtendedEndpoint();
             }
             return;
         }
@@ -1401,7 +1400,6 @@ function applyInvestmentAggregatePnlAvailability(tickerSummaries = []) {
         findInvestmentChartPointIndexForLedgerDate,
         shouldPreferInvestmentChartPoint,
         dedupeInvestmentChartPointsByLedgerDate,
-        ensureInvestmentLiveSessionChartSlot,
         getInvestmentEquityChartInputPoints,
         buildInvestmentAxisTickIndexes,
         buildInvestmentEquityTickIndexSet,

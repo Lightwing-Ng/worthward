@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.42.3
+ * Code version: v0.42.4
+ * - Fixed: The live marker uses the same endpoint as the daily and intraday price plots.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Loads retained historical evidence for omitted-ticker P&L reconciliation.
  * - Fixed: Historical P&L uses independent realized and point-in-time basis coverage.
@@ -87,7 +88,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.3';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.4';
 
 export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
     ledgerDate,
@@ -230,7 +231,6 @@ export function createInvestmentStockDetailsUtils({
     getInvestmentStockDetailsPriceChartInstance,
     getInvestmentStockDetailsPriceChartRequestSerial,
     getInvestmentStockDetailsRangeLabels,
-    getInvestmentLiveSessionDateKey,
     getInvestmentStockDetailsRealtimePulseTarget = () => null,
     getInvestmentTradeSessionType,
     getMoneyMarketTickerSet,
@@ -489,7 +489,6 @@ export function createInvestmentStockDetailsUtils({
         };
 
         const normalizedRange = normalizeInvestmentStockDetailsRange(getSelectedInvestmentStockDetailsRange());
-        const allowRealtimeData = shouldRunInvestmentRealtimeQuotes();
         let intradayRows = [];
         if (isInvestmentStockDetailsIntradayRange(normalizedRange)) {
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Loading 1-minute price history...</div>';
@@ -513,10 +512,10 @@ export function createInvestmentStockDetailsUtils({
         const fullLabels = constrainTickerDatesToSharedRange(tickerLabels);
         const useIntradayCandles = Array.isArray(intradayRows) && intradayRows.length > 0;
         const stockDetailsAutoRangeContext = getInvestmentStockDetailsAutoRangeContext(normalizedTicker, detailRows);
-        let labels = useIntradayCandles
+        const labels = useIntradayCandles
             ? intradayRows.map((row) => String(row?.date || ''))
             : getInvestmentStockDetailsRangeLabels(fullLabels, normalizedRange, stockDetailsAutoRangeContext);
-        let closeValues = useIntradayCandles
+        const closeValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const close = Number(intradayRows[index]?.close);
                 return Number.isFinite(close) && close > 0 ? close : null;
@@ -525,26 +524,8 @@ export function createInvestmentStockDetailsUtils({
                 const close = Number(tickerPriceMap[date]);
                 return Number.isFinite(close) && close > 0 ? close : null;
             });
-        // Appending the live-date slot does not change the historical window.
+        const historicalPointCount = labels.length;
         const latestVisibleHistoryLabel = String(labels[labels.length - 1] || '');
-        if (!useIntradayCandles) {
-            const liveDateKey = typeof getInvestmentLiveSessionDateKey === 'function'
-                ? getInvestmentLiveSessionDateKey()
-                : '';
-            if (liveDateKey && !labels.some((label) => normalizeLedgerDate(label) === liveDateKey)) {
-                const lastFiniteClose = [...closeValues].reverse().find((value) => Number.isFinite(value) && value > 0);
-                const fallbackClose = Number(
-                    tickerPriceMap[liveDateKey]
-                    ?? tickerPriceMap[labels[labels.length - 1]]
-                    ?? lastFiniteClose
-                );
-                labels = [...labels, liveDateKey];
-                closeValues = [
-                    ...closeValues,
-                    Number.isFinite(fallbackClose) && fallbackClose > 0 ? fallbackClose : null,
-                ];
-            }
-        }
         const openValues = useIntradayCandles
             ? labels.map((_, index) => {
                 const open = Number(intradayRows[index]?.open);
@@ -570,26 +551,39 @@ export function createInvestmentStockDetailsUtils({
             chartHost.innerHTML = '<div class="investment-stock-details-price-chart-empty">Price history is unavailable for this ticker.</div>';
             return;
         }
-        const latestVisibleLabel = String(labels[labels.length - 1] || '');
         const latestAvailableLabel = String(
             useIntradayCandles
                 ? intradayRows[intradayRows.length - 1]?.date || ''
                 : fullLabels[fullLabels.length - 1] || ''
         );
         const shouldRenderRealtimePulse = Boolean(
-            allowRealtimeData
-            && latestVisibleLabel
-            && latestAvailableLabel
+            latestAvailableLabel
             && latestVisibleHistoryLabel === latestAvailableLabel
             && !(normalizedRange === 'auto' && stockDetailsAutoRangeContext?.isOpenPosition === false)
         );
         const getRealtimePulseTarget = () => {
-            if (!shouldRenderRealtimePulse || typeof getInvestmentStockDetailsRealtimePulseTarget !== 'function') {
+            if (!shouldRenderRealtimePulse || !shouldRunInvestmentRealtimeQuotes()) {
                 return null;
             }
             const target = getInvestmentStockDetailsRealtimePulseTarget(normalizedTicker);
             const price = Number(target?.price);
             return Number.isFinite(price) && price > 0 ? { ...target, price } : null;
+        };
+        let livePointIndex = -1;
+        const syncPriceEndpoint = () => {
+            const target = getRealtimePulseTarget();
+            const label = normalizeInvestmentIntradayMinuteKey(target?.timestamp) || target?.dateKey;
+            labels.length = historicalPointCount;
+            closeValues.length = historicalPointCount;
+            livePointIndex = -1;
+            if (!target || !label || label < latestVisibleHistoryLabel) return;
+            if (label === latestVisibleHistoryLabel && target.price === closeValues.at(-1)) {
+                livePointIndex = historicalPointCount - 1;
+                return;
+            }
+            labels.push(label);
+            closeValues.push(target.price);
+            livePointIndex = historicalPointCount;
         };
 
         await waitForInvestmentStableElementBox(chartHost, {
@@ -1005,13 +999,16 @@ export function createInvestmentStockDetailsUtils({
             investmentStockDetailsPanel.querySelector('[data-investment-stock-chips]'),
             {resolveTheme: resolveInvestmentTheme, getPriceChart: getInvestmentStockDetailsPriceChartInstance},
         );
+        const getStockSnapshot = (index) => stockSnapshotsByDate.get(String(
+            index === historicalPointCount ? latestVisibleHistoryLabel : labels[index],
+        ));
+        syncPriceEndpoint();
         let activeChipIndex = labels.length - 1;
         let activeChipSnapshot = null;
         const syncChipSnapshot = (index = labels.length - 1) => {
             activeChipIndex = index;
-            const snapshot = stockSnapshotsByDate.get(String(labels[index]))?.chips;
-            const livePrice = index === labels.length - 1 ? getRealtimePulseTarget()?.price : null;
-            const rawPrice = livePrice ?? closeValues[index];
+            const snapshot = getStockSnapshot(index)?.chips;
+            const rawPrice = closeValues[index];
             const price = rawPrice === null || rawPrice === undefined ? null : Number(rawPrice);
             if (!snapshot) return;
             const sameSource = activeChipSnapshot?.source === snapshot;
@@ -1095,7 +1092,6 @@ export function createInvestmentStockDetailsUtils({
             ...averagePriceSeries,
             ...tradeMarkerPoints.buy.map((marker) => marker.y),
             ...tradeMarkerPoints.sell.map((marker) => marker.y),
-            getRealtimePulseTarget()?.price,
         ]);
         const buildPixelPaddedYScale = (chartCanvas, values, paddingPx) => {
             const finiteValues = (Array.isArray(values) ? values : [])
@@ -1424,21 +1420,17 @@ export function createInvestmentStockDetailsUtils({
             id: 'investmentStockDetailsRealtimeEndMarkerPlugin',
             afterDatasetsDraw(chartInstance) {
                 if (!shouldRenderRealtimePulse || !(realtimeMarkerElement instanceof HTMLElement)) return;
-                const realtimePulseTarget = getRealtimePulseTarget();
-                if (!realtimePulseTarget) {
+                const point = chartInstance.getDatasetMeta(0)?.data?.[livePointIndex];
+                if (!point || point.skip) {
                     realtimeMarkerElement.hidden = true;
                     return;
                 }
-                const lastIndex = Math.max(0, labels.length - 1);
-                const xScale = chartInstance.scales?.x;
-                const yScale = chartInstance.scales?.y;
                 const chartArea = chartInstance.chartArea;
-                if (!xScale || !yScale || !chartArea) {
+                if (!chartArea) {
                     realtimeMarkerElement.hidden = true;
                     return;
                 }
-                const x = Number(xScale.getPixelForValue(lastIndex));
-                const y = Number(yScale.getPixelForValue(realtimePulseTarget.price));
+                const {x, y} = point;
                 if (!Number.isFinite(x) || !Number.isFinite(y)) {
                     realtimeMarkerElement.hidden = true;
                     return;
@@ -1483,13 +1475,15 @@ export function createInvestmentStockDetailsUtils({
             syncChipSnapshot(pointIndex);
             const rawDate = labels[pointIndex];
             const parsedDate = parseRawDate(rawDate);
-            const snapshot = stockSnapshotsByDate.get(String(rawDate)) || {};
-            const buySellLedgerNos = Array.isArray(snapshot?.buySellLedgerNos) ? snapshot.buySellLedgerNos : [];
+            const isLiveEndpoint = pointIndex === historicalPointCount;
+            const snapshot = getStockSnapshot(pointIndex) || {};
+            const buySellLedgerNos = !isLiveEndpoint && Array.isArray(snapshot.buySellLedgerNos)
+                ? snapshot.buySellLedgerNos : [];
             const shares = parseInvestmentOptionalNumber(snapshot?.shares);
-            const closePrice = parseInvestmentOptionalNumber(snapshot?.close);
+            const closePrice = parseInvestmentOptionalNumber(closeValues[pointIndex]);
             const marketValue = Number.isFinite(shares) && Number.isFinite(closePrice) ? shares * closePrice : null;
-            const buyQuantity = Number(snapshot?.buyQuantity);
-            const sellQuantity = Number(snapshot?.sellQuantity);
+            const buyQuantity = isLiveEndpoint ? 0 : Number(snapshot?.buyQuantity);
+            const sellQuantity = isLiveEndpoint ? 0 : Number(snapshot?.sellQuantity);
             const hoverLedgerDate = normalizeLedgerDate(rawDate);
             const tooltipPresentation = [
                 pointIndex,
@@ -1533,7 +1527,7 @@ export function createInvestmentStockDetailsUtils({
                 hoverLedgerDate,
                 pointIndex === labels.length - 1,
             );
-            const unrealizedPnl = resolveHistoricalUnrealizedPnl(snapshot, hoverLedgerDate);
+            const unrealizedPnl = resolveHistoricalUnrealizedPnl({...snapshot, close: closePrice}, hoverLedgerDate);
             const buildPnlRow = (label, value, {flat = false} = {}) => {
                 const numericValue = parseInvestmentOptionalNumber(value);
                 const hasValue = numericValue !== null;
@@ -1646,7 +1640,15 @@ export function createInvestmentStockDetailsUtils({
                         data: closeValues,
                         order: 0,
                         borderColor: useIntradayCandles ? 'transparent' : resolvedTheme.accentPrimary,
-                        borderWidth: useIntradayCandles ? 0 : 1.5,
+                        borderWidth: 1.5,
+                        ...(useIntradayCandles ? {
+                            segment: {
+                                borderColor: ({p1DataIndex}) => (
+                                    p1DataIndex === livePointIndex && livePointIndex === historicalPointCount
+                                        ? resolvedTheme.accentPrimary : 'transparent'
+                                ),
+                            },
+                        } : {}),
                         pointRadius: 0,
                         tension: 0,
                         borderJoinStyle: 'round',
@@ -1754,6 +1756,8 @@ export function createInvestmentStockDetailsUtils({
         canvas._syncInvestmentStockDetailsRealtimePulse = () => {
             const yScale = chartInstance.options?.scales?.y;
             if (!yScale) return;
+            const wasTrackingLatest = activeChipIndex >= labels.length - 1;
+            syncPriceEndpoint();
             const nextYScale = buildPixelPaddedYScale(
                 canvas,
                 getStockDetailsChartYScaleValues(),
@@ -1762,7 +1766,7 @@ export function createInvestmentStockDetailsUtils({
             yScale.min = nextYScale.min;
             yScale.max = nextYScale.max;
             chartInstance.update('none');
-            syncChipSnapshot(activeChipIndex);
+            syncChipSnapshot(wasTrackingLatest ? labels.length - 1 : activeChipIndex);
         };
         const readyScheduler = window.WorthwardMotion?.scheduler;
         if (readyScheduler?.frame) {

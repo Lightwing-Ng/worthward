@@ -1,7 +1,7 @@
 """
 Investment page regression tests.
 
-Code version: v1.8.5
+Code version: v1.8.6
 - Fixed: HSBC cash-boundary reads keep mixed-portfolio snapshot fields scoped.
 - Changed: Replaced production-derived transaction references with synthetic
   identifiers while preserving transfer-binding coverage.
@@ -1138,3 +1138,13 @@ def test_investment_market_session_honors_requested_trading_day_count(monkeypatc
     assert payload["success"] is True
     assert requested_day_counts == [23]
     assert len(payload["trading_days"]) == 23
+
+
+def test_investment_market_session_reports_historical_early_closes() -> None:
+    response = create_app().test_client().get(
+        "/api/market-session/us-equity?as_of=2025-11-30T18:00:00Z&day_count=2"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["trading_days"] == ["2025-11-26", "2025-11-28"]
+    assert response.get_json()["early_close_trading_days"] == ["2025-11-28"]
