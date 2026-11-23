@@ -1,7 +1,8 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.1.3
+ * Code version: v1.1.4
+ * - Fixed: Extended-hours equity connects one live endpoint to the completed regular curve.
  * - Fixed: A pill selection moves the pill in the click's own task and no longer hides
  *   it while it is re-measured. Geometry is written once and only when a value changed,
  *   so a running pill transition is not restarted, and the view, table or chart work
@@ -723,11 +724,17 @@ function buildInvestmentOverviewTradingDayKeys(range = runtime.state.selectedInv
         return normalizedTradingDays.slice(-requiredDayCount);
     }
 
+function getInvestmentOverviewRegularSessionCloseHour(dayKey, sessionState = runtime.getSafeInvestmentMarketSessionState?.()) {
+        const isEarlyClose = sessionState?.early_close_trading_days?.includes(dayKey)
+            || (sessionState?.session_date === dayKey && sessionState?.is_early_close === true);
+        return isEarlyClose ? 13 : 16;
+    }
+
 function buildInvestmentOverviewRegularSessionMinuteKeys(dayKey) {
         const keys = [];
         if (!runtime.normalizeLedgerDate(dayKey)) return keys;
-        for (let minuteOffset = 0; minuteOffset < 390; minuteOffset += 1) {
-            const totalMinutes = (9 * 60) + 30 + minuteOffset;
+        const closeMinute = getInvestmentOverviewRegularSessionCloseHour(dayKey) * 60;
+        for (let totalMinutes = (9 * 60) + 30; totalMinutes < closeMinute; totalMinutes += 1) {
             const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
             const minutes = String(totalMinutes % 60).padStart(2, '0');
             keys.push(`${dayKey} ${hours}:${minutes}`);
@@ -795,7 +802,7 @@ function getInvestmentOverviewSnapshotEffectiveMinuteKey(snapshot, dayKey) {
 
         const executionMinute = (minuteParts.hours * 60) + minuteParts.minutes;
         const regularSessionOpenMinute = (9 * 60) + 30;
-        const finalVisibleMinute = (15 * 60) + 59;
+        const finalVisibleMinute = (getInvestmentOverviewRegularSessionCloseHour(normalizedDayKey) * 60) - 1;
         // A one-minute OHLC close is only observable after its minute has
         // completed. Apply a fill to the following visible minute; a fill in
         // the final bar rolls into the next trading-day opening state.
@@ -1137,9 +1144,8 @@ function getCachedInvestmentOverviewIntradayLinePoints() {
         return [];
     }
 
-function getInvestmentOverviewRealtimeMinuteKey() {
+function getInvestmentOverviewRealtimeMinuteKey(sessionState = runtime.getSafeInvestmentMarketSessionState()) {
         if (!runtime.isInvestmentOverviewIntradayEquityRange()) return '';
-        const sessionState = runtime.getSafeInvestmentMarketSessionState();
         if (
             !sessionState?.is_realtime_allowed
             || !runtime.shouldShowInvestmentRealtimePulse(sessionState.session)
@@ -1158,7 +1164,8 @@ function getInvestmentOverviewRealtimeMinuteKey() {
             }
         }
         if (
-            clockParts.dateKey !== sessionDate
+            !runtime.normalizeLedgerDate(clockParts.dateKey)
+            || (sessionState.session !== 'overnight' && clockParts.dateKey !== sessionDate)
             || !Number.isFinite(clockParts.hour)
             || !Number.isFinite(clockParts.minute)
         ) {
@@ -1167,39 +1174,38 @@ function getInvestmentOverviewRealtimeMinuteKey() {
         const totalMinutes = (clockParts.hour * 60) + clockParts.minute;
         if (sessionState.session === 'intraday') {
             const regularOpenMinute = (9 * 60) + 30;
-            const finalVisibleMinute = (16 * 60) - 1;
+            const finalVisibleMinute = (getInvestmentOverviewRegularSessionCloseHour(sessionDate, sessionState) * 60) - 1;
             if (totalMinutes < regularOpenMinute || totalMinutes > finalVisibleMinute) return '';
         }
         const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
         const minutes = String(totalMinutes % 60).padStart(2, '0');
-        return `${sessionDate} ${hours}:${minutes}`;
+        return `${clockParts.dateKey} ${hours}:${minutes}`;
     }
 
 function rememberInvestmentOverviewRealtimeLinePoint(realtimePoint) {
-        const minuteKey = getInvestmentOverviewRealtimeMinuteKey();
+        const sessionState = runtime.getSafeInvestmentMarketSessionState();
+        const minuteKey = getInvestmentOverviewRealtimeMinuteKey(sessionState);
         const totalEquity = runtime.getOptionalInvestmentNumber(
             realtimePoint?.aggregate_total_equity ?? realtimePoint?.total_equity,
         );
         if (!minuteKey || totalEquity === null || realtimePoint?.is_realtime !== true) return false;
-        const sessionDate = runtime.normalizeLedgerDate(minuteKey);
-        Array.from(runtime.investmentOverviewRealtimeLinePointsByMinute.keys()).forEach((key) => {
-            if (runtime.normalizeLedgerDate(key) !== sessionDate) {
-                runtime.investmentOverviewRealtimeLinePointsByMinute.delete(key);
-                return;
+        const isExtendedSession = sessionState.session !== 'intraday';
+        const pointsByMinute = runtime.investmentOverviewRealtimeLinePointsByMinute;
+        for (const [key, previousEntry] of pointsByMinute) {
+            if (key === minuteKey) continue;
+            if (previousEntry?.point?.is_extended_session_equity
+                || (!isExtendedSession && runtime.normalizeLedgerDate(key) !== sessionState.session_date)) {
+                pointsByMinute.delete(key);
+                continue;
             }
-            if (key === minuteKey) return;
-            const previousEntry = runtime.investmentOverviewRealtimeLinePointsByMinute.get(key);
             if (previousEntry?.point?.is_realtime === true) {
-                runtime.investmentOverviewRealtimeLinePointsByMinute.set(key, {
+                pointsByMinute.set(key, {
                     ...previousEntry,
-                    point: {
-                        ...previousEntry.point,
-                        is_realtime: false,
-                    },
+                    point: {...previousEntry.point, is_realtime: false},
                 });
             }
-        });
-        runtime.investmentOverviewRealtimeLinePointsByMinute.set(minuteKey, {
+        }
+        pointsByMinute.set(minuteKey, {
             date: minuteKey,
             equity: runtime.roundInvestmentChartCurrencyValue(totalEquity),
             point: {
@@ -1207,6 +1213,7 @@ function rememberInvestmentOverviewRealtimeLinePoint(realtimePoint) {
                 date: minuteKey,
                 realtime_timestamp: minuteKey,
                 is_intraday_equity: true,
+                is_extended_session_equity: isExtendedSession,
                 is_realtime: true,
             },
         });
@@ -1215,14 +1222,37 @@ function rememberInvestmentOverviewRealtimeLinePoint(realtimePoint) {
 
 function mergeInvestmentOverviewRealtimeLinePoints(linePoints = []) {
         const sourcePoints = Array.isArray(linePoints) ? linePoints : [];
-        const currentMinuteKey = getInvestmentOverviewRealtimeMinuteKey();
+        const sessionState = runtime.getSafeInvestmentMarketSessionState();
+        const currentMinuteKey = getInvestmentOverviewRealtimeMinuteKey(sessionState);
         if (!currentMinuteKey) return sourcePoints;
+        const pointsByMinute = runtime.investmentOverviewRealtimeLinePointsByMinute;
+        const realtimeEntry = pointsByMinute.get(currentMinuteKey);
+        if (sessionState.session !== 'intraday') {
+            const sessionDate = runtime.normalizeLedgerDate(sessionState.session_date);
+            const regularBoundary = sessionState.session === 'post'
+                ? `${getInvestmentOverviewRegularSessionCloseHour(sessionDate, sessionState)}:00`
+                : '09:30';
+            const regularEnd = `${sessionDate} ${regularBoundary}`;
+            const completedRegularPoints = sourcePoints
+                .filter((entry) => entry?.date && entry.date < regularEnd && !entry.point?.is_extended_session_equity)
+                .map((entry) => {
+                    const observation = pointsByMinute.get(entry.date);
+                    return !Number.isFinite(entry.equity) && observation && !observation.point?.is_extended_session_equity
+                        ? {...observation, point: {...observation.point, is_realtime: false}}
+                        : entry;
+                });
+            const lastRegularIndex = completedRegularPoints.findLastIndex((entry) => Number.isFinite(entry.equity));
+            if (realtimeEntry?.point?.is_extended_session_equity && lastRegularIndex >= 0) {
+                return [...completedRegularPoints.slice(0, lastRegularIndex + 1), realtimeEntry];
+            }
+            return completedRegularPoints;
+        }
         const currentSessionDate = runtime.normalizeLedgerDate(currentMinuteKey);
         const mergedPoints = sourcePoints.map((entry) => {
             const entryDate = String(entry?.date || '');
             if (runtime.normalizeLedgerDate(entryDate) !== currentSessionDate) return entry;
-            const realtimeEntry = runtime.investmentOverviewRealtimeLinePointsByMinute.get(entryDate);
-            if (realtimeEntry) return realtimeEntry;
+            const observation = pointsByMinute.get(entryDate);
+            if (observation && !observation.point?.is_extended_session_equity) return observation;
             if (entryDate > currentMinuteKey) {
                 return {
                     date: entryDate,
@@ -1232,8 +1262,8 @@ function mergeInvestmentOverviewRealtimeLinePoints(linePoints = []) {
             }
             return entry;
         });
-        const realtimeEntry = runtime.investmentOverviewRealtimeLinePointsByMinute.get(currentMinuteKey);
-        if (realtimeEntry && !mergedPoints.some((entry) => String(entry?.date || '') === currentMinuteKey)) {
+        if (realtimeEntry && !realtimeEntry.point?.is_extended_session_equity
+            && !mergedPoints.some((entry) => entry.date === currentMinuteKey)) {
             mergedPoints.push(realtimeEntry);
         }
         return mergedPoints;
@@ -1277,7 +1307,8 @@ function getInvestmentEquitySegmentBorderColor(context, fallbackColor = "#0055cc
         ) {
             const p0DayKey = runtime.normalizeLedgerDate(rawLabels[p0Index]);
             const p1DayKey = runtime.normalizeLedgerDate(rawLabels[p1Index]);
-            if (p0DayKey && p1DayKey && p0DayKey !== p1DayKey) {
+            const destination = runtime.state.investmentEquityChartRuntimeState.visibleChartPoints?.[p1Index];
+            if (p0DayKey && p1DayKey && p0DayKey !== p1DayKey && !destination?.is_extended_session_equity) {
                 return 'rgba(0, 85, 204, 0)';
             }
         }

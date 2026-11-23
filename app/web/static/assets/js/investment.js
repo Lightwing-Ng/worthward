@@ -1,8 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.176.2
+ * Code version: v2.176.4
  * - Fixed: Loads the HSBC card completion notice and preserves visible import feedback during initial loading.
+ * - Fixed: Loads aligned live equity and price endpoints in extended sessions.
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
  * - Changed: Loads the HSBC paste preview requirement for Sync now.
  * - Fixed: Loads the HSBC clipboard fallback for local HTTP pages.
@@ -97,7 +98,7 @@ import {
     restoreInvestmentImportBroker,
 } from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.1';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.1';
-import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.2';
+import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.3';
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.5.0';
 import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
@@ -109,14 +110,14 @@ import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
 } from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.4';
-import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.3';
-import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.4.0';
+import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.4';
+import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.4.1';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.2.0';
 import {
     createInvestmentStockHistoryFilterRuntime,
     INVESTMENT_VIEW_SURFACE_HEIGHT_RELEASED_EVENT,
 } from './investment/runtime/stock-history-filters.js?v=investment-stock-history-filters-v1.6.1';
-import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.0';
+import {createInvestmentTransactionTableRuntime} from './investment/runtime/transaction-table.js?v=investment-transaction-table-runtime-v1.6.1';
 import {createInvestmentWorkspaceControlsRuntime} from './investment/runtime/workspace-controls.js?v=investment-workspace-controls-v1.5.3';
 
 import {
@@ -170,7 +171,7 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.42.3';
+} from './investment/stock-details.js?v=investment-stock-details-v0.42.4';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
@@ -850,7 +851,6 @@ Object.assign(runtime, createInvestmentDataUtils({
             runtime.state.investmentStockDetailsPriceChartInstance = value;
         },
         buildInvestmentAxisTickIndexes: runtime.buildInvestmentAxisTickIndexes,
-        getInvestmentLiveSessionDateKey: runtime.getInvestmentLiveSessionDateKey,
         getInvestmentStockDetailsRealtimePulseTarget: runtime.getInvestmentStockDetailsRealtimePulseTarget,
         shouldRunInvestmentRealtimeQuotes: runtime.shouldRunInvestmentRealtimeQuotes,
         shouldTrackHoldingTicker: runtime.shouldTrackHoldingTicker,

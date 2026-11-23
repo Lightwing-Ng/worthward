@@ -1,7 +1,7 @@
 /**
  * Investment transaction-table replay and dashboard composition.
  *
- * Code version: v1.6.0
+ * Code version: v1.6.1
  * - Added: Cash rewards preserve signed cash deltas and their normalized display type.
  * - Fixed: Same-day settlement balances retain their exact cash-account scope.
  * - Fixed: Loads pending history cash with the dated foreign-currency basis.
@@ -1245,9 +1245,7 @@ async function renderTransactionTable(transactions, {
                 },
             );
         runtime.state.investmentBaseChartPointsCache = Array.isArray(chartPoints) ? [...chartPoints] : [];
-        runtime.state.investmentChartPointsCache = runtime.isInvestmentDailyEquityLiveRange()
-            ? runtime.ensureInvestmentLiveSessionChartSlot(runtime.state.investmentBaseChartPointsCache)
-            : [...runtime.state.investmentBaseChartPointsCache];
+        runtime.state.investmentChartPointsCache = [...runtime.state.investmentBaseChartPointsCache];
         runtime.state.investmentProcessedTransactionsCache = Array.isArray(processed) ? processed : [];
         runtime.state.investmentReplaySnapshotsCache = Array.isArray(hsbcSettlementReplaySnapshots)
             ? hsbcSettlementReplaySnapshots
@@ -1313,13 +1311,19 @@ async function renderTransactionTable(transactions, {
                     const livePoints = runtime.buildInvestmentRealtimeChartPoints(sessionQuotes);
                     if (livePoints.length) {
                         runtime.state.investmentChartPointsCache = [...livePoints];
+                        if (runtime.state.investmentEquityChartInstance) {
+                            runtime.syncInvestmentEquityChartRealtime(livePoints);
+                        }
                     }
                 } else {
                     const livePoints = runtime.buildInvestmentRealtimeChartPoints(sessionQuotes);
                     const latestRealtimePoint = [...livePoints]
                         .reverse()
                         .find((point) => point?.is_realtime === true) || null;
-                    runtime.rememberInvestmentOverviewRealtimeLinePoint(latestRealtimePoint);
+                    if (runtime.rememberInvestmentOverviewRealtimeLinePoint(latestRealtimePoint)
+                        && runtime.state.investmentEquityChartInstance) {
+                        runtime.syncInvestmentEquityChartRealtime(livePoints);
+                    }
                 }
             }
         }).catch((err) => {

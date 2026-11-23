@@ -1,4 +1,4 @@
-/* Code version: v1.3.9 */
+/* Code version: v1.3.10 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -638,7 +638,12 @@ test('card import sends only shared account text and digest without investment w
         result.merged_transactions = result.transactions.map((row) => ({...row, status: 'posted'}));
         return route.fulfill({json: result});
     });
+    const initialTransactions = page.waitForResponse((response) => (
+        new URL(response.url()).pathname === '/api/investment/transactions'
+        && response.request().method() === 'GET'
+    ));
     await openAccountImport(page);
+    await initialTransactions;
     await page.evaluate(() => {
         document.getElementById('hsbc_portfolio_text').value = 'Existing Portfolio draft';
         document.getElementById('hsbc_order_status_text').value = 'Existing Order Status draft';
