@@ -1,16 +1,16 @@
 """Build the comparison web-runtime context.
 
-Code version: v0.3.0
+Code version: v0.3.1
 """
 
 from __future__ import annotations
-
-from app.infrastructure.storage import read_market_frame
 
 from app.core.markets.sessions import (
     market_session_last_bar_minute,
     market_session_segments,
 )
+from app.infrastructure.storage import read_market_frame
+from app.services.market.logos import build_local_alias_search_items
 
 
 def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
@@ -309,8 +309,23 @@ def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
             response.delete_cookie(SETTINGS_FEEDBACK_COOKIE, path="/settings")
         return response
 
-    def validate_ticker_or_raise(raw_ticker: str) -> str:
+    def normalize_comparison_ticker_input(raw_ticker: str) -> str:
         normalized_ticker = normalize_ticker_input(raw_ticker)
+        if normalized_ticker.isdigit():
+            matches = build_local_alias_search_items(normalized_ticker)
+            if len(matches) == 1:
+                return normalize_ticker_input(matches[0]["symbol"])
+        return normalized_ticker
+
+    def validate_ticker_or_raise(
+        raw_ticker: str, *, comparison_aliases: bool = False
+    ) -> str:
+        normalize = (
+            normalize_comparison_ticker_input
+            if comparison_aliases
+            else normalize_ticker_input
+        )
+        normalized_ticker = normalize(raw_ticker)
         if not has_valid_ticker_format(normalized_ticker):
             raise ValueError(f"Invalid ticker format: {raw_ticker}.")
         return normalized_ticker
@@ -331,10 +346,15 @@ def build_comparison_context(context: dict[str, object]) -> dict[str, object]:
         comparison_metric: str | None = None,
     ) -> list[str]:
         resolved_metric = comparison_metric or resolve_comparison_metric(view_name)
+        normalize = (
+            normalize_comparison_ticker_input
+            if view_name in {"tickers", "market-caps", "prices"}
+            else normalize_ticker_input
+        )
         return parse_requested_tickers_from_args(
             request.args,
             max_tickers=max_tickers_for_view(view_name, resolved_metric),
-            normalize=normalize_ticker_input,
+            normalize=normalize,
             getlist=request.args.getlist,
         )
 

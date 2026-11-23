@@ -1,7 +1,7 @@
 """
 Market data retrieval services.
 
-Code version: v0.27.0
+Code version: v0.27.1
 
 - Fixed: Closed-session holdings retain the latest completed trading day's
   timestamped Longbridge post-market quote.
@@ -106,7 +106,7 @@ COMPARE_OVERNIGHT_COMPANION_SYMBOLS = {
 LOGGER = logging.getLogger(__name__)
 YFINANCE_LOGGER = logging.getLogger("yfinance")
 class YfinanceDownloadError(ValueError):
-    """Raised when yfinance returns no usable frame or raises a transport error."""
+    """Raised when Yahoo market history is unavailable, including terminal fallback failures."""
 
 
 def _is_yfinance_rate_limit_error(error: BaseException) -> bool:
@@ -1328,7 +1328,7 @@ def _download_daily_history_with_fallback(
             if not supports_longbridge_fallback
             else "Optional Longbridge fallback is not configured."
         )
-        raise ValueError(
+        raise YfinanceDownloadError(
             f"Unable to fetch 1-day market data for {ticker} from Yahoo. "
             f"{yahoo_failure_detail}. {longbridge_availability}"
         ) from last_yahoo_chart_error
@@ -1336,7 +1336,7 @@ def _download_daily_history_with_fallback(
     try:
         return _download_daily_history_with_longbridge(ticker, start=start)
     except Exception as exc:
-        raise ValueError(
+        raise YfinanceDownloadError(
             f"Unable to fetch 1-day market data for {ticker}. {yahoo_failure_detail}. "
             f"Optional Longbridge fallback also failed: {exc}"
         ) from exc

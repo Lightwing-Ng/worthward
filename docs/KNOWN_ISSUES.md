@@ -7,6 +7,11 @@ hides when the session closes or its status is unavailable. Its status
 describes the market session independently of the chart's interval or quote
 freshness.
 
+Ticker comparison resolves a bare numeric code when local symbol search has
+one exact identity, such as `9988` for `9988.HK`. Explicit exchange suffixes
+retain their market. When history is unavailable after provider fallback, the
+workspace names the affected tickers and keeps the selected slots.
+
 Holdings starts with a collapsible portfolio summary. Its expanded equity chart
 and allocation donut align with the two chart columns in ticker details. The
 summary stays open independently of the single expanded ticker. Legacy Overview
@@ -155,9 +160,10 @@ persistent action note. Ready previews disclose captured and duplicate counts
 and explain Import now. While card text is being parsed, a frosted notice with
 the shared spinner replaces the inline status styling. It clears on success,
 failure, or when the source changes. Recognized cash rebates display as Rebate.
-Confirmed saves retain Imported and saved counts before
-derived reward views refresh; rendering failures cannot turn a saved result into
-a retryable import error. Reopening the same broker dialog preserves that result;
+Confirmed saves close the dialog and show a dismissible completion notice with
+added, updated, and duplicate counts before derived reward views refresh.
+Rendering failures cannot turn a saved result into a retryable import error.
+Reopening the same broker dialog shows Imported and the saved transactions;
 editing the source or changing broker or mode still invalidates it. Imports
 remain explicit, and the separate card ledger never changes investment cash.
 
@@ -1437,7 +1443,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.290.2`
+Documentation version: `v1.291.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

@@ -1,4 +1,5 @@
-{# Code version: v1.89.3
+{# Code version: v1.89.4
+   Fixed: Loads the HSBC credit-card completion notice.
    Fixed: Loads the extended-hours chart endpoint updates.
    Changed: Loads the HSBC paste preview requirement for Sync now.
    Added: Shows a frosted progress notice while parsing HSBC credit-card text.
@@ -800,5 +801,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.1') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.176.3') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.176.4') }}"></script>
 {% endblock %}

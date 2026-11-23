@@ -1,4 +1,4 @@
-/* Code version: v1.3.8 */
+/* Code version: v1.3.10 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -390,7 +390,7 @@ for (const [label, text, status] of [
     });
 }
 
-test('credit-card feedback shows progress, the next step, and an all-duplicate saved result', async ({page}) => {
+test('credit-card feedback confirms an all-duplicate import after ledger readback', async ({page}) => {
     const calls = await guardRoutingRequests(page);
     const writes = [];
     const imports = [];
@@ -429,8 +429,8 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
         result.merged_transactions = result.transactions;
         await route.fulfill({json: result});
     });
-    await openAccountImport(page);
-    await pasteDisplayText(page, '#hsbc_cash_account_display', completeCardPage);
+    await openAccountImport(page, 847, '/trade/investment?view=holdings', 1063);
+    await pasteAccountClipboard(page, completeCardPage);
     await previewArrived;
     const status = page.locator('#hsbc_credit_card_status');
     const progress = page.locator('#hsbc_credit_card_progress');
@@ -439,6 +439,8 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     const icon = page.locator('#hsbc_cash_account_text_status');
     const display = page.locator('#hsbc_cash_account_display');
     const submit = page.locator('#investment_import_submit_button');
+    const form = page.locator('#transaction_form_container');
+    const feedback = page.locator('#investment_import_feedback');
     await expect(status).toContainText('Parsing credit-card activity');
     await expect(progress).toHaveCSS('backdrop-filter', /blur\(/);
     await expect(spinner).toBeVisible();
@@ -461,6 +463,7 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     await expect(note).toHaveText(await status.textContent());
     await expect(icon).not.toHaveClass(/suggestion-loading-spinner/);
     await expect(submit).toBeEnabled();
+    await expect(feedback).toBeHidden();
     expect(imports).toEqual([]);
     await submit.click();
     await importArrived;
@@ -468,7 +471,18 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     await expect(note).toHaveText(await status.textContent());
     await expect(icon).toHaveClass(/suggestion-loading-spinner/);
     await expect(submit).toBeDisabled();
+    await expect(feedback).toBeHidden();
     releaseImport();
+    await expect(form).toBeHidden();
+    await expect(feedback).toBeVisible();
+    await expect(feedback.locator('.notice-floating-banner-heading')).toHaveText('HSBC credit-card import complete');
+    await expect(feedback.locator('.notice-floating-banner-copy')).toHaveText(
+        '0 added, 0 updated, 4 duplicates. Entries were read back from the credit-card ledger.',
+    );
+    await feedback.hover();
+    await feedback.getByRole('button', {name: 'Dismiss import feedback'}).click();
+    await expect(feedback).toBeHidden();
+    await page.locator('#toggle_form_button').click();
     await expect(status).toContainText('Credit-card import saved.');
     await expect(status).toContainText('0 added, 0 updated, 4 duplicates.');
     await expect(note).toHaveText(await status.textContent());
@@ -477,12 +491,7 @@ test('credit-card feedback shows progress, the next step, and an all-duplicate s
     await expect(icon).not.toHaveClass(/suggestion-loading-spinner/);
     await expect(submit).toBeDisabled();
     await expect(page.locator('#hsbc_credit_card_caption')).toHaveText('Saved transactions');
-    await page.locator('#investment_import_close_button').click();
-    await page.locator('#toggle_form_button').click();
-    await expect(status).toContainText('Credit-card import saved.');
-    await expect(note).toHaveText(await status.textContent());
-    await expect(display).toHaveValue(/Imported/);
-    await expect(submit).toBeDisabled();
+    await expect(page.locator('#hsbc_credit_card_rows tr')).toHaveCount(4);
     expect(previews).toBe(1);
     expect(imports).toEqual([{text: completeCardPage, source_sha256: 'a'.repeat(64)}]);
     expect(calls).toEqual({cash: 0, card: 0, preview: 0});
@@ -625,10 +634,16 @@ test('card import sends only shared account text and digest without investment w
     await page.route('**/api/credit-cards/hsbc/import', (route) => {
         calls.push({body: route.request().postDataJSON(), csrf: route.request().headers()['x-csrf-token']});
         const result = parsedCard();
+        result.committed = true;
         result.merged_transactions = result.transactions.map((row) => ({...row, status: 'posted'}));
         return route.fulfill({json: result});
     });
+    const initialTransactions = page.waitForResponse((response) => (
+        new URL(response.url()).pathname === '/api/investment/transactions'
+        && response.request().method() === 'GET'
+    ));
     await openAccountImport(page);
+    await initialTransactions;
     await page.evaluate(() => {
         document.getElementById('hsbc_portfolio_text').value = 'Existing Portfolio draft';
         document.getElementById('hsbc_order_status_text').value = 'Existing Order Status draft';
@@ -638,6 +653,8 @@ test('card import sends only shared account text and digest without investment w
     expect(calls).toEqual([]);
     const requestsBeforeImport = [...investmentRequests];
     await page.locator('#investment_import_submit_button').click();
+    await expect(page.locator('#transaction_form_container')).toBeHidden();
+    await page.locator('#toggle_form_button').click();
     await expect(page.locator('#hsbc_credit_card_status')).toContainText('read back');
     await expect(page.locator('#hsbc_credit_card_caption')).toHaveText('Saved transactions');
     await expect(page.locator('#hsbc_credit_card_rows tr').nth(1)).toContainText('Posted');

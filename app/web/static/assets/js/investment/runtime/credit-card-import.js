@@ -1,6 +1,7 @@
 /**
  * HSBC credit-card automatic preview, isolated import, and ledger readback.
- * Code version: v1.6.0
+ * Code version: v1.6.1
+ * - Fixed: Confirmed card imports close the form and show the shared completion notice.
  * - Changed: Preview shows transaction changes and entries requiring review.
  * - Added: A frosted progress notice while parsing the pasted card page.
  * - Fixed: Card progress, duplicate counts, and saved feedback remain visible before view refresh.
@@ -271,7 +272,13 @@ export function createHsbcCreditCardImportRuntime(runtime) {
             if (!current(epoch, text)) return;
             state.result = null;
             state.text = '';
-            setStatus(resultStatus(`Credit-card import saved. ${importCounts(result)} Entries were read back from the credit-card ledger.`, result), 'saved');
+            const savedDetails = resultStatus(`${importCounts(result)} Entries were read back from the credit-card ledger.`, result);
+            runtime.setImportFeedback(`
+                <p class="notice-floating-banner-heading">HSBC credit-card import complete</p>
+                <p class="notice-floating-banner-copy">${runtime.escapeHtml(savedDetails)}</p>
+            `.trim(), 'success', {allowHtml: true});
+            runtime.closeInvestmentImportForm();
+            setStatus(`Credit-card import saved. ${savedDetails}`, 'saved');
             renderResult(result, 'imported');
             syncControls();
             if (result.credit_card_rewards && typeof result.credit_card_rewards === 'object') {

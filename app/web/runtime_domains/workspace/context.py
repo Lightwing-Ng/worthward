@@ -1,12 +1,13 @@
 """Build the workspace web-runtime context.
 
-Code version: v0.2.2
+Code version: v0.2.3
 """
 
 from __future__ import annotations
 
 from functools import partial
 
+from app.services.market.market_data import YfinanceDownloadError
 from app.web.runtime_domains.workspace.dependencies import (
     WORKSPACE_RUNTIME_DEPENDENCIES as WORKSPACE_RUNTIME_DEPENDENCIES,
     build_workspace_dependencies,
@@ -839,9 +840,11 @@ def build_workspace_context(context: dict[str, object]) -> dict[str, object]:
                                     )
                                 )
                             except ValueError as fetch_exc:
-                                if "No market data returned" in str(
-                                    fetch_exc
-                                ) or "Local market data for" in str(fetch_exc):
+                                if (
+                                    isinstance(fetch_exc, YfinanceDownloadError)
+                                    or "No market data returned" in str(fetch_exc)
+                                    or "Local market data for" in str(fetch_exc)
+                                ):
                                     try:
                                         dataset = handle_fetch_history_failure(
                                             ticker,

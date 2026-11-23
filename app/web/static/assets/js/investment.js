@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.176.3
+ * Code version: v2.176.4
+ * - Fixed: Loads the HSBC card completion notice and preserves visible import feedback during initial loading.
  * - Fixed: Loads aligned live equity and price endpoints in extended sessions.
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
  * - Changed: Loads the HSBC paste preview requirement for Sync now.
@@ -103,7 +104,7 @@ import {createInvestmentFundingMetricsRuntime} from './investment/runtime/fundin
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.9.0';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.8.1';
-import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.6.0';
+import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.6.1';
 import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.4.0';
 import {
     createInvestmentMetricsImportRuntime,
@@ -1303,17 +1304,18 @@ Object.assign(runtime, createInvestmentDataUtils({
         runtime.fetchInvestmentData({onProgress})
             .then(({ valuationStatus }) => {
                 runtime.hideInvestmentLoadingModal({ resetContent: true, owner: loadingOwner });
+                if (runtime.importFeedback?.hidden === false) return;
                 if (valuationStatus?.isDegraded) {
                     runtime.setImportFeedback(valuationStatus.message, 'warning');
-                    return;
                 }
-                runtime.clearImportFeedback();
             })
             .catch(err => {
                 runtime.hideInvestmentLoadingModal({ resetContent: true, owner: loadingOwner });
                 if (runtime.isLifecycleInterruptedFetch(err)) return;
                 console.error('Failed to load transactions:', err);
-                runtime.setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
+                if (runtime.importFeedback?.hidden !== false) {
+                    runtime.setImportFeedback(`Failed to load investment data: ${err.message}`, 'error');
+                }
             });
     }, 150);
 

@@ -1,7 +1,7 @@
 """
 Tests for compare page ticker control rendering.
 
-Code version: v0.16.3
+Code version: v0.16.4
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from app.core.preferences.date_display import DateDisplaySettings
 from app.core.preferences.broker import BrokerSettings
 from app.core.preferences.language import LanguageSettings
 from app.models.schemas import SeriesPayload
+from app.services.market import market_data
 from tests.factories.market import (
     close_frame_for_dates,
     close_frame_for_ticker,
@@ -39,6 +40,54 @@ def _write_intraday_stores(frames_by_ticker: dict[str, pd.DataFrame]) -> tempfil
 
 
 class ComparePageTests(unittest.TestCase):
+    def test_prices_resolves_known_hk_codes_and_reports_provider_outages(self) -> None:
+        route = "/workspaces/prices?ticker=QQQ&ticker=NVDA&ticker=0700.HK&ticker=9988"
+        expected_tickers = ["QQQ", "NVDA", "700.HK", "9988.HK"]
+
+        for scenario in ("available", "offline", "providers unavailable"):
+            with self.subTest(scenario=scenario):
+                def _fetch_history(
+                    ticker: str, include_dividends: bool, **kwargs: object
+                ) -> pd.DataFrame:
+                    if ticker == "9988.HK" and scenario != "available":
+                        return market_data.fetch_history(ticker, include_dividends, **kwargs)
+                    return close_frame_for_ticker(ticker)
+
+                with (
+                    patch("app.web.runtime.ensure_latest_daily_caches", return_value=[]),
+                    patch("app.web.runtime.fetch_history", side_effect=_fetch_history) as fetch,
+                    patch("app.web.runtime.fetch_quote_profile", side_effect=quote_profile_stub),
+                    patch("app.web.runtime.record_ticker_usage"),
+                    patch.object(
+                        market_data, "is_remote_market_access_disabled",
+                        return_value=scenario == "offline",
+                    ),
+                    patch.object(
+                        market_data, "_download_daily_history_with_yfinance",
+                        side_effect=TimeoutError("Yahoo history timed out."),
+                    ),
+                    patch.object(
+                        market_data, "download_yahoo_chart_daily_history",
+                        side_effect=TimeoutError("Yahoo Chart timed out."),
+                    ),
+                    patch.object(market_data, "_load_longbridge_market_settings", return_value=None),
+                ):
+                    response = create_app().test_client().get(route)
+
+                html = response.get_data(as_text=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual([call.args[0] for call in fetch.call_args_list], expected_tickers)
+                ticker_inputs = re.findall(r'<input[^>]+name="ticker"[^>]+value="([^"]*)"', html)
+                self.assertEqual(ticker_inputs, expected_tickers)
+                self.assertNotIn("Unable to load this workspace", html)
+                if scenario == "available":
+                    self.assertEqual(
+                        re.findall(r'<section[^>]+data-price-subplot data-ticker="([^"]+)"', html),
+                        expected_tickers,
+                    )
+                else:
+                    self.assertIn("No local or remote market data is available for 9988.HK.", html)
+
     def test_comparison_workspaces_keep_missing_ticker_identity_and_fail_explicitly(self) -> None:
         requested_tickers = ["QQQ", "MISS", "AAPL"]
         comparison_routes = (
