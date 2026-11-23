@@ -1,7 +1,8 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.42.4
+ * Code version: v0.42.5
+ * - Fixed: The live cost-lot snapshot reports the quote observation date.
  * - Fixed: The live marker uses the same endpoint as the daily and intraday price plots.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Loads retained historical evidence for omitted-ticker P&L reconciliation.
@@ -88,7 +89,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.4';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.5';
 
 export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
     ledgerDate,
@@ -1011,13 +1012,17 @@ export function createInvestmentStockDetailsUtils({
             const rawPrice = closeValues[index];
             const price = rawPrice === null || rawPrice === undefined ? null : Number(rawPrice);
             if (!snapshot) return;
+            const date = index === historicalPointCount
+                ? (useIntradayCandles ? String(labels[index]) : normalizeLedgerDate(labels[index]))
+                : snapshot.date;
             const sameSource = activeChipSnapshot?.source === snapshot;
             const nextPrice = Number.isFinite(price) ? price : null;
-            if (sameSource && activeChipSnapshot.price === nextPrice) return;
-            activeChipSnapshot = {source: snapshot, price: nextPrice};
-            chipChart?.render(snapshot.price === nextPrice
+            if (sameSource && activeChipSnapshot.price === nextPrice && activeChipSnapshot.date === date) return;
+            activeChipSnapshot = {source: snapshot, price: nextPrice, date};
+            const pricedSnapshot = snapshot.price === nextPrice
                 ? snapshot
-                : repriceInvestmentStockDetailsChipSnapshot(snapshot, nextPrice));
+                : repriceInvestmentStockDetailsChipSnapshot(snapshot, nextPrice);
+            chipChart?.render(date === snapshot.date ? pricedSnapshot : {...pricedSnapshot, date});
         };
         syncChipSnapshot();
 

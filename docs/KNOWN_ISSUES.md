@@ -12,6 +12,14 @@ one exact identity, such as `9988` for `9988.HK`. Explicit exchange suffixes
 retain their market. When history is unavailable after provider fallback, the
 workspace names the affected tickers and keeps the selected slots.
 
+The Holdings equity chart includes each finite live valuation in its vertical
+range, including when only Hong Kong is trading. The marker follows the
+plotted point.
+
+Stock Details uses the live quote's date for the current lot distribution.
+Historical hover keeps the selected observation's date and close. The
+date-filter panel opens above the header when space below is insufficient.
+
 Holdings starts with a collapsible portfolio summary. Its expanded equity chart
 and allocation donut align with the two chart columns in ticker details. The
 summary stays open independently of the single expanded ticker. Legacy Overview
@@ -1443,7 +1451,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.291.0`
+Documentation version: `v1.292.0`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

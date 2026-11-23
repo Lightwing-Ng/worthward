@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.4.0
+ * Code version: v1.4.1
+ * - Fixed: Keeps Stock details date-filter controls within the viewport.
  * - Changed: HSBC paste sync requires a returned preview and explains missing input.
  * - Added: Read-only previews of HSBC cash and securities changes.
  * - Fixed: Focuses the HSBC paste field when clipboard reads are unavailable.
@@ -368,8 +369,14 @@ function positionInvestmentStockDetailsTimeFilterPanel(field) {
         );
         panel.style.position = 'fixed';
         panel.style.left = `${Math.round(left)}px`;
-        panel.style.top = `${Math.round(rect.bottom + 6)}px`;
         panel.style.width = `${Math.round(width)}px`;
+        const gap = 6;
+        const panelHeight = panel.offsetHeight;
+        const maxTop = Math.max(viewportPadding, window.innerHeight - panelHeight - viewportPadding);
+        const belowTop = rect.bottom + gap;
+        const aboveTop = rect.top - gap - panelHeight;
+        const top = belowTop > maxTop && aboveTop >= viewportPadding ? aboveTop : belowTop;
+        panel.style.top = `${Math.round(Math.min(Math.max(viewportPadding, top), maxTop))}px`;
         // The date picker is portaled to the document root at the global popover layer.
         // Keep its owning panel immediately beneath it so the picker remains clickable.
         panel.style.zIndex = 'calc(var(--layer-global-popover) - 1)';

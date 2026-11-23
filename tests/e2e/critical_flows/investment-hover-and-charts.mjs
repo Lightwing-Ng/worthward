@@ -1,4 +1,4 @@
-/* Code version: v1.0.5 */
+/* Code version: v1.0.6 */
 import {
     expect,
     test,
@@ -689,6 +689,7 @@ test('filters stock-details rows by currency, one day, or one calendar month whi
     await timeFilterTrigger.click();
     await expect(datePanel).toBeHidden();
     await timeFilterTrigger.click();
+    await expect(datePanel).toBeInViewport({ratio: 1});
     await expect(datePopover).toBeVisible();
     const feedback = page.locator('#investment_stock_details_date_start_feedback');
     await expect(feedback).toHaveText(

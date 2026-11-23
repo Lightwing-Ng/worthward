@@ -1,4 +1,4 @@
-/* Code version: v0.14.3 */
+/* Code version: v0.14.4 */
 import {expect, test} from '@playwright/test';
 import {openBacktestParameterOverlay} from '../support/backtest-parameter-overlay-helper.mjs';
 
@@ -529,6 +529,15 @@ test('Leveraged Rotation exposes generic triggers and a collision-safe allocatio
     expect(await limits.locator('.strategy-allocation-track-shell').evaluateAll((tracks) => (
         tracks.map((track) => getComputedStyle(track).height)
     ))).toEqual(['30px', '30px']);
+    // Let the native toggle start its spring so the open groups reserve their full height.
+    await page.locator('[data-trade-strategy-panel]').evaluate(async (panel) => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await Promise.allSettled(
+            panel.getAnimations({subtree: true})
+                .filter((animation) => animation.effect?.target instanceof HTMLDetailsElement)
+                .map((animation) => animation.finished),
+        );
+    });
     const barGeometry = await page.locator(
         '[data-strategy-allocation-range], [data-limit-range]',
     ).evaluateAll((bars) => bars.map((bar) => {
