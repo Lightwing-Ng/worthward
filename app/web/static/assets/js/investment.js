@@ -1,7 +1,7 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.176.4
+ * Code version: v2.176.5
  * - Fixed: Loads the HSBC card completion notice and preserves visible import feedback during initial loading.
  * - Fixed: Loads aligned live equity and price endpoints in extended sessions.
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
@@ -220,7 +220,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.176.1',
+    entry: 'v2.176.5',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
