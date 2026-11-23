@@ -1,6 +1,6 @@
 """Build the investment market live web-runtime context.
 
-Code version: v0.2.0
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -439,7 +439,14 @@ def build_investment_market_live_context(
                 day_count=requested_day_count,
             )
             response = jsonify(
-                {"success": True, "trading_days": trading_days, **session_state}
+                {
+                    "success": True,
+                    "trading_days": trading_days,
+                    "early_close_trading_days": [
+                        day for day in trading_days if is_nyse_early_close(day)
+                    ],
+                    **session_state,
+                }
             )
             response.status_code = 200
             return apply_no_store_headers(response)
@@ -466,6 +473,7 @@ def build_investment_market_live_context(
                     "next_session_open": "",
                     "next_session_close": "",
                     "trading_days": [],
+                    "early_close_trading_days": [],
                 }
             )
             response.status_code = 500

@@ -1,4 +1,4 @@
-/* Code version: v1.0.1 */
+/* Code version: v1.0.2 */
 import {
     expect,
     test,
@@ -479,21 +479,15 @@ test('fills the current 1W session axis and stops its realtime curve at the New 
     ]);
 });
 
-test('keeps the completed regular curve and appends an overnight live equity marker', async ({page}) => {
-    await page.addInitScript(() => {
-        const RealDate = Date;
-        const fixedTimestamp = new RealDate('2026-08-12T06:00:00Z').valueOf();
-        class FixedDate extends RealDate {
-            constructor(...args) {
-                super(...(args.length ? args : [fixedTimestamp]));
-            }
-
-            static now() {
-                return fixedTimestamp;
-            }
-        }
-        window.Date = FixedDate;
-    });
+test('connects the completed regular curve to one extended-hours live equity endpoint', async ({page}) => {
+    const sessions = [
+        {session: 'overnight', timestamp: '2026-08-11 21:15', sessionDate: '2026-08-12'},
+        {session: 'pre', timestamp: '2026-08-12 05:30', sessionDate: '2026-08-12'},
+        {session: 'post', timestamp: '2026-08-11 17:30', sessionDate: '2026-08-11'},
+    ];
+    let currentSession = sessions[0];
+    let realtimeQuoteAvailable = true;
+    const marketClock = () => `${currentSession.timestamp.replace(' ', 'T')}:00-04:00`;
     const tradingDays = [
         '2026-08-05',
         '2026-08-06',
@@ -517,24 +511,24 @@ test('keeps the completed regular curve and appends an overnight live equity mar
         ],
         tradingDays,
         priceHistoryByTicker: {
-            QQQ: tradingDays.map((date) => ({date, close: 100})),
+            QQQ: tradingDays.map((date) => ({date, close: date === '2026-08-11' ? 104 : 100})),
         },
-        realtimeQuotes: [{
+        realtimeQuotes: () => (realtimeQuoteAvailable ? [{
             ticker: 'QQQ',
             price: 120,
-            timestamp: '2026-08-12 02:00',
-            session: 'overnight',
-            session_date: '2026-08-12',
+            timestamp: currentSession.timestamp,
+            session: currentSession.session,
+            session_date: currentSession.sessionDate,
             market: 'US',
             source: 'longbridge',
-        }],
-        marketSession: {
-            session: 'overnight',
+        }] : []),
+        marketSession: () => ({
+            session: currentSession.session,
             is_trading_day: true,
             is_realtime_allowed: true,
-            session_date: '2026-08-12',
-            as_of: '2026-08-12T02:00:00-04:00',
-        },
+            session_date: currentSession.sessionDate,
+            as_of: marketClock(),
+        }),
         intradayRows: (url) => {
             const requestedDays = String(url.searchParams.get('days') || '').split(',').filter(Boolean);
             return requestedDays.flatMap((day) => Array.from({length: 390}, (_, minuteOffset) => {
@@ -553,51 +547,85 @@ test('keeps the completed regular curve and appends an overnight live equity mar
         },
     });
     await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto('/trade/investment?view=overview&range=1w');
+    for (const session of sessions) {
+        await test.step(session.session, async () => {
+            currentSession = session;
+            await page.clock.setFixedTime(new Date(marketClock()));
+            await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=1w');
+            await expect.poll(() => page.evaluate(() => {
+                const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+                if (!chart) return null;
+                const labels = chart.data.rawLabels;
+                const dataset = chart.data.datasets[0];
+                const lastIndex = labels.length - 1;
+                const point = chart.getDatasetMeta(0).data.at(-1);
+                const marker = document.querySelector('[data-investment-equity-live-marker]');
+                const terminalSegmentColor = dataset.segment.borderColor({
+                    chart, p0DataIndex: lastIndex - 1, p1DataIndex: lastIndex,
+                });
+                return {
+                    labelCount: labels.length,
+                    historicalStart: dataset.data[labels.indexOf('2026-08-11 09:30')],
+                    historicalEnd: dataset.data.at(-2),
+                    historicalEndLabel: labels.at(-2),
+                    lastLabel: labels.at(-1),
+                    lastValue: dataset.data.at(-1),
+                    terminalSegmentVisible: terminalSegmentColor === dataset.borderColor,
+                    markerHidden: marker?.hidden ?? true,
+                    markerAligned: Math.abs(Number.parseFloat(marker?.style.left) - point?.x) <= 0.5
+                        && Math.abs(Number.parseFloat(marker?.style.top) - point?.y) <= 0.5,
+                    holdingsTotalEquity: Number(
+                        document.querySelector('[data-investment-live-field="summary_total_equity"]')
+                            ?.dataset.investmentLiveNumber,
+                    ),
+                };
+            }), {timeout: 30_000}).toEqual({
+                labelCount: (5 * 390) + 1,
+                historicalStart: 10_000,
+                historicalEnd: 10_003.89,
+                historicalEndLabel: '2026-08-11 15:59',
+                lastLabel: session.timestamp,
+                lastValue: 10_020,
+                terminalSegmentVisible: true,
+                markerHidden: false,
+                markerAligned: true,
+                holdingsTotalEquity: 10_020,
+            });
+        });
+    }
 
-    await expect.poll(() => page.evaluate(() => {
-        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
-        const labels = chart?.data?.rawLabels || [];
-        const values = chart?.data?.datasets?.[0]?.data || [];
-        const currentDayValues = labels
-            .map((label, index) => ({label, value: values[index]}))
-            .filter(({label}) => label.startsWith('2026-08-11'));
-        const marker = document.querySelector('[data-investment-equity-live-marker]');
-        return {
-            labelCount: labels.length,
-            historicalStart: currentDayValues[0]?.value ?? null,
-            historicalEnd: currentDayValues.at(-1)?.value ?? null,
-            lastLabel: labels.at(-1) || '',
-            lastValue: values.at(-1) ?? null,
-            markerHidden: marker?.hidden ?? true,
-            holdingsTotalEquity: Number(
-                document.querySelector('[data-investment-live-field="summary_total_equity"]')
-                    ?.dataset.investmentLiveNumber,
-            ),
-        };
-    }), {timeout: 30_000}).toEqual({
-        labelCount: (5 * 390) + 1,
-        historicalStart: 10_000,
-        historicalEnd: 10_003.89,
-        lastLabel: '2026-08-12 02:00',
-        lastValue: 10_020,
-        markerHidden: false,
-        holdingsTotalEquity: 10_020,
-    });
+    await test.step('same-day regular close on the 3M chart', async () => {
+        realtimeQuoteAvailable = false;
+        await page.goto('/trade/investment?view=holdings&summary=expanded&summary-range=3m');
+        const readDailyEndpoint = () => page.evaluate(() => {
+            const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
+            if (!chart) return null;
+            const {rawLabels, datasets: [dataset]} = chart.data;
+            const point = chart.getDatasetMeta(0).data.at(-1);
+            const marker = document.querySelector('[data-investment-equity-live-marker]');
+            return {
+                observations: rawLabels.flatMap((label, index) => (
+                    label.startsWith('2026-08-11') ? [[label, dataset.data[index]]] : []
+                )),
+                lastLabel: rawLabels.at(-1),
+                markerHidden: marker?.hidden ?? true,
+                markerAligned: Math.abs(Number.parseFloat(marker?.style.left) - point?.x) <= 0.5
+                    && Math.abs(Number.parseFloat(marker?.style.top) - point?.y) <= 0.5,
+            };
+        });
+        await expect.poll(readDailyEndpoint).toMatchObject({
+            observations: [['2026-08-11', 10_004]], lastLabel: '2026-08-11', markerHidden: true,
+        });
 
-    const markerState = await page.locator('[data-investment-equity-live-marker]').evaluate((element) => {
-        const chart = window.Chart?.getChart(document.querySelector('#investmentEquityChart'));
-        const lastIndex = chart.data.labels.length - 1;
-        const lastValue = Number(chart.data.datasets[0].data[lastIndex]);
-        return {
-            left: Number.parseFloat(element.style.left),
-            top: Number.parseFloat(element.style.top),
-            expectedLeft: chart.scales.x.getPixelForValue(lastIndex),
-            expectedTop: chart.scales.y.getPixelForValue(lastValue),
-        };
+        realtimeQuoteAvailable = true;
+        await page.reload();
+        await expect.poll(readDailyEndpoint).toMatchObject({
+            observations: [['2026-08-11', 10_004], [currentSession.timestamp, 10_020]],
+            lastLabel: currentSession.timestamp,
+            markerHidden: false,
+            markerAligned: true,
+        });
     });
-    expect(Math.abs(markerState.left - markerState.expectedLeft)).toBeLessThanOrEqual(0.5);
-    expect(Math.abs(markerState.top - markerState.expectedTop)).toBeLessThanOrEqual(0.5);
 });
 
 test('renders the 1M investment equity curve from the requested high-precision calendar', async ({page}) => {
