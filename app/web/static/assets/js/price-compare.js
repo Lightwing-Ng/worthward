@@ -1,4 +1,4 @@
-/* Code version: v0.29.2 */
+/* Code version: v0.30.0 */
 (() => {
 	const bootstrap = window.WORTHWARD_BOOTSTRAP = window.WORTHWARD_BOOTSTRAP || {};
 	const state = window.WORTHWARD_APP;
@@ -33,6 +33,7 @@
 	const REFRESH_MS = 45000;
 	const Y_AXIS_MIN_WIDTH = 36;
 	const LOGO_SIZE = 20;
+	const LIVE_MARKER_LOGO_OFFSET = (LOGO_SIZE / 2) + 14;
 	const RIGHT_GUTTER = 44;
 	const CHIP_PANEL_MIN_WIDTH = 116;
 	const CHIP_PANEL_MAX_WIDTH = 190;
@@ -112,6 +113,13 @@
 		chartAxis,
 		yAxisMinWidth: Y_AXIS_MIN_WIDTH,
 	});
+	const marketSession = priceCompareRuntime.createPriceMarketSession({
+		getEndpoint: () => isPriceComparison() ? state.endpoints?.investmentMarketSession : null,
+		getMarkers: () => [...priceCharts.values()]
+			.map((chart) => chart.$priceMarketSessionMarker)
+			.filter(Boolean),
+	});
+
 	const destroyPriceCharts = () => {
 		if (sharedHoverFrame) window.cancelAnimationFrame(sharedHoverFrame);
 		sharedHoverFrame = 0;
@@ -120,7 +128,9 @@
 		document.querySelectorAll("[data-price-subplot-canvas]").forEach((canvas) => {
 			canvas.onmouseleave = null;
 			canvas.onpointermove = null;
-			window.Chart?.getChart?.(canvas)?.destroy();
+			const chart = window.Chart?.getChart?.(canvas);
+			chart?.$priceMarketSessionMarker?.setAttribute("hidden", "");
+			chart?.destroy();
 		});
 		priceCharts.clear();
 		sharedHoverIndex = -1;
@@ -1446,6 +1456,10 @@
 			const isBottomSubplot = () => canvas.closest("[data-price-subplot]") === document.querySelector("#price_subplot_region > [data-price-subplot]:last-child");
 			const item = series[index];
 			if (!item) return;
+			const marketMarker = marketForTicker(item.ticker) === "US"
+				&& /^[A-Z]+(?:[.-][A-Z])?(?:\.US)?$/i.test(item.ticker)
+				? canvas.parentElement?.querySelector("[data-price-market-session-marker]")
+				: null;
 			const prices = Array.isArray(item.prices) ? item.prices.map(finiteNumber) : [];
 			const rawDates = Array.isArray(item.raw_dates) ? item.raw_dates : [];
 			const labels = rawDates.length ? rawDates : (item.dates || []);
@@ -1689,6 +1703,12 @@
 					const centerX = sourcePosition.x + ((targetPosition.x - sourcePosition.x) * motionProgress);
 					const centerY = sourcePosition.y + ((targetPosition.y - sourcePosition.y) * motionProgress);
 					if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) return;
+					if (marketMarker) {
+						marketMarker.style.left = `${Math.max(12, centerX - LIVE_MARKER_LOGO_OFFSET)}px`;
+						marketMarker.style.top = `${centerY}px`;
+						chart.$priceMarketSessionMarker = marketMarker;
+						marketSession.syncMarker(marketMarker);
+					}
 					chart.$closingLogoPosition = {x: centerX, y: centerY};
 					chart.$closingLogoAlignment = horizontalAlignment;
 					chart.canvas.dataset.logoHorizontalAlignment = "global-theme-toggle-center";
@@ -2223,6 +2243,7 @@
 		liveRequestController = null;
 		if (!isPriceComparison()) return;
 		renderPriceSubplots();
+		void marketSession.refresh();
 		teardownPriceSubplotOrdering = initializePriceSubplotOrdering();
 		updatePriceCompareHeadingDate();
 		const initialParams = new URLSearchParams(window.location.search);
@@ -2234,8 +2255,16 @@
 			|| ""
 		).toLowerCase();
 		if (initialPeriod === "1d") void refreshLivePrices();
-		if (!refreshTimer) refreshTimer = window.setInterval(refreshLivePrices, REFRESH_MS);
+		if (!refreshTimer) {
+			refreshTimer = window.setInterval(() => {
+				void marketSession.refresh();
+				void refreshLivePrices();
+			}, REFRESH_MS);
+		}
 	};
+	document.addEventListener("visibilitychange", () => {
+		if (!document.hidden) void marketSession.refresh();
+	});
 	bootstrap.refreshPriceCompareLive = refreshLivePrices;
 	bootstrap.formatPriceSharedTooltipDate = formatSharedTooltipDate;
 	bootstrap.formatPriceCompareHeadingDate = formatPriceCompareHeadingDate;

@@ -1,5 +1,12 @@
 # Known issues and operating constraints
 
+Price comparison shows a market-session marker beside each US equity chart's
+ticker logo, including on the default 1Y view. The marker uses the US equity
+calendar for overnight, pre-market, regular, and post-market sessions and
+hides when the session closes or its status is unavailable. Its status
+describes the market session independently of the chart's interval or quote
+freshness.
+
 Ticker comparison resolves a bare numeric code when local symbol search has
 one exact identity, such as `9988` for `9988.HK`. Explicit exchange suffixes
 retain their market. When history is unavailable after provider fallback, the

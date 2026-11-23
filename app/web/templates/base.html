@@ -1,4 +1,4 @@
-{# Code version: v0.65.13 #}
+{# Code version: v0.65.14 #}
 <!doctype html>
 <html lang="{{ language_html_lang or 'en-US' }}">
 {% from "_macros.html" import render_notice_banner with context %}
@@ -127,7 +127,7 @@
     </style>
     <script src="{{ url_for('static', filename='assets/js/branding-compat.js', v=version ~ '-branding-compat-v0.1.0') }}"></script>
     <script src="{{ url_for('static', filename='assets/js/color-tokens.js', v=version ~ '-color-tokens-js-v0.1.0') }}"></script>
-<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.117.7') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='assets/css/app.css', v=version ~ '-app-css-v0.117.8') }}">
     <script src="{{ url_for('static', filename='assets/js/responsive.js', v=version ~ '-responsive-v1.3.2') }}"></script>
     {% block head_extras %}{% endblock %}
 </head>
@@ -456,8 +456,8 @@
 {% block page_scripts %}{% endblock %}
 {% if current_view in ["tickers", "market-caps", "prices", "portfolio", "dca", "backtest"] %}
 <script src="{{ url_for('static', filename='assets/js/chip-distribution.js', v=version ~ '-chip-distribution-v0.5.0') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/price-compare/runtime.js', v=version ~ '-price-compare-runtime-v1.3.1') }}"></script>
-<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.29.2') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare/runtime.js', v=version ~ '-price-compare-runtime-v1.4.0') }}"></script>
+<script src="{{ url_for('static', filename='assets/js/price-compare.js', v=version ~ '-price-compare-v0.30.0') }}"></script>
 {% endif %}
 {% if current_view in ["backtest"] %}
     <script src="{{ url_for('static', filename='assets/js/lstm-training.js', v=version ~ '-lstm-training-v0.15.0') }}"></script>
