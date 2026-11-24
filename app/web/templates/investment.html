@@ -1,4 +1,5 @@
-{# Code version: v1.89.6
+{# Code version: v1.89.7
+   Fixed: Loads stable first-frame geometry for the Overview range control.
    Fixed: Loads the HSBC credit-card completion notice.
    Fixed: Loads the extended-hours chart endpoint updates.
    Changed: Loads the HSBC paste preview requirement for Sync now.
@@ -801,5 +802,5 @@
 
 {% block page_scripts %}
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.1') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.176.6') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.176.7') }}"></script>
 {% endblock %}

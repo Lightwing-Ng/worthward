@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.176.6
+ * Code version: v2.176.7
+ * - Fixed: Loads stable first-frame geometry for the Overview range control.
  * - Fixed: Loads the HSBC card completion notice and preserves visible import feedback during initial loading.
  * - Fixed: Loads aligned live equity and price endpoints in extended sessions.
  * - Fixed: Refreshes splitter constraints when a view releases its temporary height.
@@ -110,7 +111,7 @@ import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
 } from './investment/runtime/metrics-import.js?v=investment-metrics-import-v1.7.4';
-import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.4';
+import {createInvestmentRangeTransferRuntime} from './investment/runtime/range-transfer.js?v=investment-range-transfer-v1.1.5';
 import {createInvestmentRealtimeChartRuntime} from './investment/runtime/realtime-chart.js?v=investment-realtime-chart-v1.4.1';
 import {createInvestmentShareLinkedHoverRuntime} from './investment/runtime/share-linked-hover.js?v=investment-share-linked-hover-v1.2.0';
 import {

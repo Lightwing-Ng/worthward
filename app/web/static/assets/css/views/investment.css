@@ -1,4 +1,4 @@
-/* Code version: v1.89.1 */
+/* Code version: v1.89.2 */
 
 :root {
     --investment-community-share-print-width: 53.98mm;
@@ -2703,6 +2703,11 @@
 
 .investment-stock-details-range-shell > .segmented-control {
     pointer-events: auto;
+}
+
+/* Start the pill at its measured geometry when the Overview becomes visible. */
+[data-investment-equity-range-segmented]:not(.is-pill-ready)::before {
+    display: none;
 }
 
 .investment-stock-details-price-chart-canvas {

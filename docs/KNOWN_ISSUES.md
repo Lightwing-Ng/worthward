@@ -23,7 +23,8 @@ date-filter panel opens above the header when space below is insufficient.
 Holdings starts with a collapsible portfolio summary. Its expanded equity chart
 and allocation donut align with the two chart columns in ticker details. The
 summary stays open independently of the single expanded ticker. Legacy Overview
-URLs open the summary and preserve its range.
+URLs open the summary and preserve its range. The restored range control paints
+as one row with the selected range indicator at its measured size and position.
 The Holdings summary count button uses the table body size and medium weight
 across viewport widths.
 Holdings ticker rows open an inline price chart and cost-lot distribution.
@@ -1451,7 +1452,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.292.0`
+Documentation version: `v1.292.1`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows
