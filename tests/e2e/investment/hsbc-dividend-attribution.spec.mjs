@@ -1,5 +1,5 @@
 /* HSBC dividend attribution through the transaction Description dropdown.
- * Code version: v1.0.0
+ * Code version: v1.0.1
  */
 
 import {expect, test} from '@playwright/test';
@@ -78,7 +78,9 @@ for (const width of [1280, 390]) {
         expect(writes).toHaveLength(0);
 
         const trigger = row.locator('[data-shared-select-trigger]');
-        await expect(trigger).toHaveCount(1);
+        await expect(trigger).toBeVisible();
+        await expect(trigger).toHaveCSS('border-radius', '999px');
+        await expect(trigger).toHaveCSS('corner-shape', /^(squircle|superellipse\(2\))$/);
         await trigger.press('ArrowDown');
         const menu = page.locator(`#${await trigger.getAttribute('aria-controls')}`);
         await expect(menu).toBeVisible();
@@ -103,7 +105,9 @@ for (const width of [1280, 390]) {
         await expect(row).toHaveAttribute('data-investment-history-ticker', 'QQQI');
         await expect(row.locator('td').nth(4)).toContainText('QQQI · CORP EVT PAYMENT SEC');
         await expect(select).toHaveValue('QQQI');
-        await expect(row.locator('[data-shared-select-trigger]')).toBeFocused();
+        await expect(trigger).toBeFocused();
+        await expect(trigger).toHaveCSS('border-radius', '999px');
+        await expect(trigger).toHaveCSS('corner-shape', /^(squircle|superellipse\(2\))$/);
         await expect(row.locator('td').nth(6)).toHaveText('12.34');
         expect(await page.evaluate(() => window.WORTHWARD_INVESTMENT_DATA.transactions[0].description))
             .toBe('CORP EVT PAYMENT SEC');
