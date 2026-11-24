@@ -1,9 +1,9 @@
-/* Code version: v1.0.2 */
+/* Code version: v1.0.3 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
 // Fixtures are intercepted in the browser and never enter a persistent store.
-const loadInvestmentPage = async (page, query = 'view=holdings') => {
+const loadInvestmentPage = async (page, query = 'view=holdings', width = 1_024) => {
     await mockInvestmentReadApis(page, {
         transactions: [
             {broker: 'ibkr', date: '2026-07-10', type: 'buy', ticker: 'QQQ', currency: 'USD', quantity: 1, price: 500, amount: -500},
@@ -16,8 +16,8 @@ const loadInvestmentPage = async (page, query = 'view=holdings') => {
             ],
         },
     });
-    await page.setViewportSize({width: 1_024, height: 863});
-    await page.goto(`/trade/investment?${query}`);
+    await page.setViewportSize({width, height: 863});
+    await page.goto(query ? `/trade/investment?${query}` : '/trade/investment');
     await expect(page.locator('#investment_view_segmented')).toHaveClass(/is-pill-ready/);
 };
 
@@ -143,3 +143,63 @@ test('moves an overview range pill in the click task without hiding it', async (
     expect(snapshot.ready).toBe(true);
     await expect(overviewRange.locator('input[value="3m"]')).toBeChecked();
 });
+
+for (const [width, query] of [[854, 'view=holdings&summary=expanded&summary-range=ytd'], [390, '']]) {
+    test(`renders the restored Overview range at its final shape from the first visible frame at ${width}px`, async ({page}) => {
+        await page.addInitScript(() => {
+            localStorage.setItem('worthward:investment:page-memory:v1', JSON.stringify({
+                last_view: 'holdings',
+                last_overview_expanded: true,
+                last_equity_range: 'ytd',
+            }));
+            window.__overviewRangeFrames = [];
+            const sample = () => {
+                const control = document.querySelector('[data-investment-equity-range-segmented]');
+                const rail = control?.getBoundingClientRect();
+                if (rail?.height > 0) {
+                    const active = control.querySelector('input:checked');
+                    const option = active.closest('label').getBoundingClientRect();
+                    const pill = getComputedStyle(control, '::before');
+                    const transform = new DOMMatrixReadOnly(pill.transform === 'none' ? undefined : pill.transform);
+                    window.__overviewRangeFrames.push({
+                        chartReady: document.getElementById('investmentEquityChart')?.dataset.investmentChartReady === '1',
+                        active: active.value,
+                        rows: new Set(Array.from(control.querySelectorAll('label'), (label) => label.getBoundingClientRect().top)).size,
+                        railWidth: rail.width,
+                        railHeight: rail.height,
+                        railRadius: getComputedStyle(control).borderTopLeftRadius,
+                        pillWidth: parseFloat(pill.width),
+                        pillHeight: parseFloat(pill.height),
+                        pillRadius: pill.borderTopLeftRadius,
+                        pillOpacity: Number(pill.opacity),
+                        widthError: Math.abs(parseFloat(pill.width) - option.width),
+                        leftError: Math.abs(rail.left + parseFloat(pill.left) + transform.m41 - control.scrollLeft - option.left),
+                    });
+                }
+                if (window.__overviewRangeFrames.length < 12) requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+        });
+
+        await loadInvestmentPage(page, query, width);
+        await expect(page.locator('#investmentEquityChart')).toHaveAttribute('data-investment-chart-ready', '1');
+        await expect.poll(() => page.evaluate(() => window.__overviewRangeFrames.length)).toBe(12);
+        const frames = await page.evaluate(() => window.__overviewRangeFrames);
+        const final = frames.at(-1);
+        expect(frames[0].chartReady).toBe(false);
+        expect(final.chartReady).toBe(true);
+        for (const frame of frames) {
+            expect(frame.active).toBe('ytd');
+            expect(frame.rows).toBe(1);
+            expect(Math.abs(frame.railWidth - final.railWidth)).toBeLessThanOrEqual(1);
+            expect(frame.railHeight).toBe(final.railHeight);
+            expect(frame.railRadius).toBe(final.railRadius);
+            expect(Math.abs(frame.pillWidth - final.pillWidth)).toBeLessThanOrEqual(1);
+            expect(frame.pillHeight).toBe(final.pillHeight);
+            expect(frame.pillRadius).toBe(final.pillRadius);
+            expect(frame.pillOpacity).toBe(1);
+            expect(frame.widthError).toBeLessThanOrEqual(1);
+            expect(frame.leftError).toBeLessThanOrEqual(1);
+        }
+    });
+}

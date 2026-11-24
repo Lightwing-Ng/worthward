@@ -1,7 +1,8 @@
 /**
  * Range controls and internal-transfer matching.
  *
- * Code version: v1.1.4
+ * Code version: v1.1.5
+ * - Fixed: Measure the Overview range pill before its first visible frame.
  * - Fixed: Extended-hours equity connects one live endpoint to the completed regular curve.
  * - Fixed: A pill selection moves the pill in the click's own task and no longer hides
  *   it while it is re-measured. Geometry is written once and only when a value changed,
@@ -1550,6 +1551,10 @@ function scheduleInvestmentEquityRangePillUpdate() {
             window.cancelAnimationFrame(runtime.state.investmentEquityRangeMeasureRaf);
             runtime.state.investmentEquityRangeMeasureRaf = 0;
         }
+        if (!rangeControl.classList.contains('is-pill-ready')) {
+            updateInvestmentEquityRangePill();
+            return;
+        }
         runtime.state.investmentEquityRangeMeasureRaf = window.requestAnimationFrame(() => {
             runtime.state.investmentEquityRangeMeasureRaf = window.requestAnimationFrame(() => {
                 runtime.state.investmentEquityRangeMeasureRaf = 0;
@@ -1576,7 +1581,7 @@ function renderInvestmentRangeControl({
                      data-segmented-owner="adapter"
                      data-active="${runtime.escapeHtml(activeRange)}"
                      data-option-count="${options.length}"
-                     style="--segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
+                     style="--segmented-option-count: ${options.length}; --segmented-active-index: ${activeIndex}; --segmented-pill-left: 0px; --segmented-pill-width: 0px;">
                     ${options.map((option) => `
                         <label class="segmented-control-option" for="${runtime.escapeHtml(inputIdPrefix)}_${option.value}">
                             <input id="${runtime.escapeHtml(inputIdPrefix)}_${option.value}"
