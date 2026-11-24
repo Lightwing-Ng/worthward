@@ -1,6 +1,6 @@
 # CSS architecture
 
-Documentation version: `v1.7.0`
+Documentation version: `v1.7.1`
 
 `app.css` is the manifest-style entrypoint. Its import order is part of the
 cascade contract and must match the source exactly.
@@ -127,6 +127,9 @@ rectangles and their actual clipping layers. Its single value comes from
 sets each corner's size and remains the fallback in browsers without
 `corner-shape`. Circular actions, markers, dots, and pill controls retain round
 geometry; do not add them to the continuous-corner selector registry.
+The HSBC dividend attribution picker is a local exception in
+`views/investment-tables.css` and pairs the shared pill radius with the continuous
+corner profile.
 
 Allocation range thumbs use the shared resizer's Frosted Glass background, border,
 shadow, and backdrop blur in both browser pseudo-elements. Hover, keyboard focus,

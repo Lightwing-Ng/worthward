@@ -1,4 +1,4 @@
-/* Code version: v1.8.5 */
+/* Code version: v1.8.6 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -2353,6 +2353,12 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 .investment-transfer-link-shell.is-unresolved .investment-transfer-link-select {
     border: 1px solid var(--theme-accent-secondary) !important;
     border-radius: var(--radius-soft);
+}
+
+.investment-dividend-attribution-select.trade-strategy-select,
+.investment-transfer-link-shared-select-field:has(> .investment-dividend-attribution-select) .investment-transfer-link-select.trade-strategy-select {
+    border-radius: var(--radius-pill);
+    corner-shape: var(--corner-shape-continuous);
 }
 
 .investment-transfer-link-select.trade-strategy-select:hover,
