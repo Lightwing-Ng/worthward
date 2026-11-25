@@ -1,4 +1,4 @@
-{# Code version: v1.0.0 #}
+{# Code version: v1.1.0 #}
     <section class="settings-card settings-general-card settings-general-panel">
         <div class="settings-general-header">
             <p class="settings-general-kicker">{{ translate_ui('Investment accounting') }}</p>
@@ -23,6 +23,22 @@
                     <div id="settings_investment_cost_basis_method_dropdown" class="trade-strategy-dropdown backtest-shared-select-dropdown" data-shared-select-dropdown role="listbox" aria-label="{{ translate_ui('Sell matching method') }}" hidden></div>
                 </div>
             </div>
+        </form>
+        <form class="settings-general-form" method="post" action="{{ settings_urls.investment }}/action">
+            <input type="hidden" name="csrf_token" value="{{ investment_csrf_token }}">
+            <input type="hidden" name="action" value="set_show_broker_realized_pnl">
+            <div class="field-checkbox field-switch">
+                {{ render_switch(
+                    'settings_investment_show_broker_realized_pnl',
+                    translate_ui('Show broker realized P&L alongside portfolio'),
+                    'investment_show_broker_realized_pnl',
+                    checked=investment_show_broker_realized_pnl,
+                    input_attrs='aria-describedby="settings_investment_show_broker_realized_pnl_help" onchange="this.form.submit()"',
+                ) }}
+            </div>
+            <p class="settings-general-copy" id="settings_investment_show_broker_realized_pnl_help">
+                {{ translate_ui('Applies to eligible sales in All brokers using Lowest-cost lots first.') }}
+            </p>
         </form>
         <p class="settings-general-copy">{{ translate_ui('Broker-reported closed-trade P&L remains authoritative when available. Transfer-basis reconstruction remains separately labelled as FIFO reconstructed.') }}</p>
     </section>

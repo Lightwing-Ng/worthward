@@ -1,6 +1,8 @@
 """Shared web-runtime facade and explicit route-handler schema.
 
-Code version: v1.8.0
+Code version: v1.10.0
+- Added: Private Portfolio lot assignments for the Investment workspace.
+- Added: Saved broker realized P&L display preference for Investment.
 - Added: Independent HSBC credit-card handlers in the explicit runtime schema.
 - Added: Classified Longbridge connection check for the broker authorize action.
 - Added: Investment session-token handler for import dialog readiness.
@@ -56,7 +58,10 @@ from app.core.preferences.cash_equivalent import (
 )
 from app.core.preferences.investment import (
     load_investment_cost_basis_method,
+    load_investment_portfolio_lot_assignments,
+    load_investment_show_broker_realized_pnl,
     save_investment_cost_basis_method,
+    save_investment_show_broker_realized_pnl,
 )
 from app.core.markets.identity import infer_ticker_market, market_timezone_for_ticker
 from app.core.debug_reporting import load_optional_debug_endpoint, post_debug_event
@@ -736,6 +741,8 @@ _LATE_BOUND_RUNTIME_CALLABLES = frozenset(
         "load_cash_equivalent_tickers",
         "load_date_display_settings",
         "load_investment_cost_basis_method",
+        "load_investment_portfolio_lot_assignments",
+        "load_investment_show_broker_realized_pnl",
         "load_language_settings",
         "load_local_one_minute_history",
         "load_longbridge_account_balances",

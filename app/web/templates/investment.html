@@ -1,4 +1,5 @@
-{# Code version: v1.89.7
+{# Code version: v1.90.1
+   Added: Pass locally saved portfolio lot assignments to Stock details.
    Fixed: Loads stable first-frame geometry for the Overview range control.
    Fixed: Loads the HSBC credit-card completion notice.
    Fixed: Loads the extended-hours chart endpoint updates.
@@ -801,6 +802,7 @@
 {% endblock %}
 
 {% block page_scripts %}
+    <script id="investment_portfolio_lot_assignments" type="application/json">{{ investment_portfolio_lot_assignments|default({})|tojson }}</script>
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.1') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.176.7') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.179.1') }}"></script>
 {% endblock %}

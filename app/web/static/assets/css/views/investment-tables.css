@@ -1,4 +1,4 @@
-/* Code version: v1.8.6 */
+/* Code version: v1.8.7 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1460,6 +1460,11 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 .investment-import-process-list .investment-import-paste-button {
     grid-column: 2;
+}
+
+#hsbc_paste_preview_positions td > ul {
+    margin: 0;
+    padding-inline-start: 1.25em;
 }
 
 /* Credit-card previews keep every column within the shared account field. */

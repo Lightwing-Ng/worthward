@@ -1,7 +1,9 @@
 /**
  * Investment transaction and valuation helpers.
  *
- * Code version: v1.125.2
+ * Code version: v1.127.0
+ * - Added: Pass explicit lot assignments into portfolio sell attribution.
+ * - Added: Independent portfolio sell attribution for Stock details.
  * - Fixed: Loads extracted position-boundary helpers with synchronized module versions.
  * - Fixed: Retained historical position evidence validates omitted-ticker P&L boundaries.
  * - Changed: Realized and unrealized P&L expose independent availability and coverage.
@@ -259,7 +261,10 @@ import {
 } from './data-utils/position-valuation.js?v=investment-data-utils-position-valuation-v1.3.7';
 import {
     createInvestmentReconciliationUtils,
-} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.5.2';
+} from './data-utils/reconciliation.js?v=investment-data-utils-reconciliation-v1.6.0';
+import {
+    buildInvestmentPortfolioSellAttribution,
+} from './data-utils/portfolio-attribution.js?v=investment-data-utils-portfolio-attribution-v1.1.0';
 import {
     createInvestmentSummaryUtils,
 } from './data-utils/summaries.js?v=investment-data-utils-summaries-v1.4.0';
@@ -698,6 +703,9 @@ export function createInvestmentDataUtils({
         applyInvestmentTransactionToState,
         buildDailyEquityChartPoints,
         buildInvestmentFxRateTimeline,
+        buildInvestmentPortfolioSellAttribution: (transactions, getValuationQuantity, options) => (
+            buildInvestmentPortfolioSellAttribution(transactions, runtime, getValuationQuantity, options)
+        ),
         buildRenderedSplitFactorHints,
         buildTickerPriceIndex,
         buildTickerSummaries,
@@ -828,7 +836,7 @@ export function createInvestmentDataUtils({
     };
 }
 
-export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.125.2';
+export const INVESTMENT_DATA_UTILS_MODULE_VERSION = 'v1.127.0';
 
 export function isInvestmentRealizedPnlUnavailable(summary) {
     if (typeof summary?.realizedPnlUnavailable === 'boolean') {

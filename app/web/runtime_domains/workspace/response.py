@@ -1,6 +1,6 @@
 """Render the final workspace template from an evaluated workspace context.
 
-Code version: v0.1.1
+Code version: v0.3.0
 """
 
 from __future__ import annotations
@@ -90,6 +90,12 @@ def render_workspace_response(
             cash_equivalent_fund_rows=values["cash_equivalent_fund_rows"],
             backtest_execution_mode=values["backtest_execution_mode"],
             investment_cost_basis_method=values["investment_cost_basis_method"],
+            investment_show_broker_realized_pnl=ctx.load_investment_show_broker_realized_pnl(),
+            investment_portfolio_lot_assignments=(
+                ctx.load_investment_portfolio_lot_assignments()
+                if values["template_name"] == "investment.html"
+                else {}
+            ),
             date_display_full_format=values["date_display_settings"].full_date_format,
             date_display_short_format=values["date_display_settings"].short_date_format,
             language_code=values["language_settings"].language,

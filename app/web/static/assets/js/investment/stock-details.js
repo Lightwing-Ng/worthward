@@ -1,7 +1,9 @@
 /**
  * Investment stock-details composition and chart runtime.
  *
- * Code version: v0.42.5
+ * Code version: v0.44.1
+ * - Added: Use local lot assignments in Portfolio realized P&L.
+ * - Added: Portfolio-level realized P&L alongside broker-attributed sell rows.
  * - Fixed: The live cost-lot snapshot reports the quote observation date.
  * - Fixed: The live marker uses the same endpoint as the daily and intraday price plots.
  * - Fixed: Uses the current Investment data-utils cache version.
@@ -34,7 +36,7 @@ import {
     aggregateInvestmentScopedPositionStates,
     isInvestmentRealizedPnlUnavailable,
     parseInvestmentOptionalNumber,
-} from './data-utils.js?v=investment-data-utils-v1.125.2';
+} from './data-utils.js?v=investment-data-utils-v1.127.0';
 import {
     INVESTMENT_TRADE_MARKER_GLOW_MAX_DISTANCE_PX,
     INVESTMENT_TRADE_MARKER_GLOW_MAX_NEIGHBORS,
@@ -89,7 +91,7 @@ import {
 
 const aggregateInvestmentStockDetailPositionStates = aggregateInvestmentScopedPositionStates;
 
-export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.42.5';
+export const INVESTMENT_STOCK_DETAILS_MODULE_VERSION = 'v0.44.1';
 
 export function resolveInvestmentStockDetailsHistoricalUnrealizedPnl(snapshot, {
     ledgerDate,
@@ -196,6 +198,7 @@ export function createInvestmentStockDetailsUtils({
     buildInvestmentAxisTickIndexes,
     buildInvestmentIntradayDayBoundaries,
     buildInvestmentIntradayDayFallbackIndex,
+    buildInvestmentPortfolioSellAttribution,
     buildRenderedSplitFactorHints,
     buildTickerPriceIndex,
     clearInvestmentHistoryHighlights,
@@ -259,6 +262,7 @@ export function createInvestmentStockDetailsUtils({
     normalizeInvestmentIntradayMinuteKey,
     normalizeLedgerDate,
     normalizePriceHistoryPayload,
+    portfolioLotAssignments,
     renderInvestmentBrokerCell,
     resolveInvestmentTheme,
     setActiveStockDetailsHoverPointRecord,
@@ -284,11 +288,17 @@ export function createInvestmentStockDetailsUtils({
         const sourceIndexes = new Map(
             sourceTransactions.map((txn, sourceIndex) => [txn, sourceIndex]),
         );
-        sortInvestmentTaxLotTransactions(
-            sourceTransactions.filter(
-                (txn) => getInvestmentCanonicalTicker(txn?.ticker) === normalizedTicker,
-            ),
-        ).forEach((txn) => {
+        const tickerTransactions = sourceTransactions.filter(
+            (txn) => getInvestmentCanonicalTicker(txn?.ticker) === normalizedTicker,
+        );
+        const getValuationQuantity = (txn) => getTransactionValuationQuantity(
+            txn, tickerPriceIndex, renderedSplitFactorHints,
+        );
+        const appliedAssignments = new Set();
+        const portfolioSellAttribution = buildInvestmentPortfolioSellAttribution?.(
+            tickerTransactions, getValuationQuantity, {lotAssignments: portfolioLotAssignments, appliedAssignments},
+        );
+        sortInvestmentTaxLotTransactions(tickerTransactions).forEach((txn) => {
             const sourceIndex = sourceIndexes.get(txn);
             const normalizedType = getNormalizedTransactionType(txn);
             const lotScopeKey = getTransactionLotScopeKey(txn, normalizedTicker);
@@ -296,7 +306,7 @@ export function createInvestmentStockDetailsUtils({
                 stockStates.set(lotScopeKey, createPositionState(normalizedTicker));
             }
             const stockState = stockStates.get(lotScopeKey);
-            const valuationQuantity = getTransactionValuationQuantity(txn, tickerPriceIndex, renderedSplitFactorHints);
+            const valuationQuantity = getValuationQuantity(txn);
             const transactionPrice = getTransactionPrice(txn);
             let realizedPnl = null;
             const computedRealizedPnl = applyInvestmentTransactionToState(
@@ -341,6 +351,8 @@ export function createInvestmentStockDetailsUtils({
                 ...txn,
                 rowMarketValue,
                 rowRealizedPnl: Number.isFinite(realizedPnl) ? realizedPnl : null,
+                rowPortfolioRealizedPnl: portfolioSellAttribution?.get(txn) ?? null,
+                rowPortfolioUsesAssignedLots: appliedAssignments.has(txn),
             });
         });
         return sourceTransactions

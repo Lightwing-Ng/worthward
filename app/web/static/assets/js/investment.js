@@ -1,7 +1,9 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.176.7
+ * Code version: v2.179.1
+ * - Added: Load cross-broker Portfolio attribution and assigned lots in Stock details.
+ * - Fixed: Load the HSBC holding changes list in the sync preview.
  * - Fixed: Loads stable first-frame geometry for the Overview range control.
  * - Fixed: Loads the HSBC card completion notice and preserves visible import feedback during initial loading.
  * - Fixed: Loads aligned live equity and price endpoints in extended sessions.
@@ -99,14 +101,14 @@ import {
     restoreInvestmentImportBroker,
 } from './investment/runtime/import-process-list.js?v=investment-import-process-list-v1.0.1';
 import {createInvestmentRuntimeConfig} from './investment/runtime/config.js?v=investment-runtime-config-v1.4.1';
-import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.4';
+import {createInvestmentEquityChartRuntime} from './investment/runtime/equity-chart.js?v=investment-equity-chart-v1.5.6';
 import {createInvestmentExportHistoryRuntime} from './investment/runtime/export-history.js?v=investment-export-history-v1.5.0';
-import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.1';
+import {createInvestmentFundingMetricsRuntime} from './investment/runtime/funding-metrics.js?v=investment-funding-metrics-v1.7.3';
 import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/history-pagination.js?v=investment-history-pagination-v1.1.0';
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.9.0';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.8.1';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.6.1';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.4.1';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.7.1';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
@@ -142,7 +144,7 @@ import {
     isRealtimeQuotePulseProviderEligible,
     parseInvestmentOptionalNumber,
     resolveRealtimeQuoteSource,
-} from './investment/data-utils.js?v=investment-data-utils-v1.125.2';
+} from './investment/data-utils.js?v=investment-data-utils-v1.127.0';
 import {
     INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
     buildHsbcImportFeedbackMessage,
@@ -172,12 +174,12 @@ import {
     normalizeInvestmentStockDetailsIntradayRows,
     normalizeInvestmentIntradayMinuteKey,
     normalizeInvestmentRange,
-} from './investment/stock-details.js?v=investment-stock-details-v0.42.5';
+} from './investment/stock-details.js?v=investment-stock-details-v0.44.1';
 import {
     INVESTMENT_REALTIME_MODULE_VERSION,
     createInvestmentLiveValueAnimator,
     createInvestmentRealtimeQuotePoller,
-} from './investment/realtime.js?v=investment-realtime-v1.5.1';
+} from './investment/realtime.js?v=investment-realtime-v1.5.3';
 import {
     INVESTMENT_TRANSACTION_FILTERS_MODULE_VERSION,
     buildInvestmentBrokerFilterIndex,
@@ -221,7 +223,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.176.6',
+    entry: 'v2.179.1',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,
@@ -766,6 +768,7 @@ Object.assign(runtime, createInvestmentDataUtils({
         buildInvestmentFxRateTimeline: runtime.buildInvestmentFxRateTimeline,
         buildInvestmentIntradayDayBoundaries: runtime.buildInvestmentIntradayDayBoundaries,
         buildInvestmentIntradayDayFallbackIndex: runtime.buildInvestmentIntradayDayFallbackIndex,
+        buildInvestmentPortfolioSellAttribution: runtime.buildInvestmentPortfolioSellAttribution,
         buildRenderedSplitFactorHints: runtime.buildRenderedSplitFactorHints,
         buildTickerPriceIndex: runtime.buildTickerPriceIndex,
         clearInvestmentHistoryHighlights: runtime.clearInvestmentHistoryHighlights,
@@ -843,6 +846,9 @@ Object.assign(runtime, createInvestmentDataUtils({
         normalizeInvestmentTicker: runtime.normalizeInvestmentTicker,
         normalizeLedgerDate: runtime.normalizeLedgerDate,
         normalizePriceHistoryPayload: runtime.normalizePriceHistoryPayload,
+        portfolioLotAssignments: JSON.parse(
+            document.getElementById('investment_portfolio_lot_assignments')?.textContent || '{}',
+        ),
         renderInvestmentBrokerCell: runtime.renderInvestmentBrokerCell,
         resolveInvestmentTheme: runtime.resolveInvestmentTheme,
         setActiveStockDetailsHoverPointRecord: (value) => {

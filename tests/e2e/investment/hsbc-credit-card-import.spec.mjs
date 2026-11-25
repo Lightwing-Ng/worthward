@@ -1,4 +1,4 @@
-/* Code version: v1.3.10 */
+/* Code version: v1.3.11 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -306,7 +306,13 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
     }
     await expect(page.locator('#hsbc_paste_preview_transactions tr')).toContainText('Sample trade');
     await expect(page.locator('#hsbc_paste_preview_transactions tr')).toContainText('USD -94.25 settled');
-    await expect(page.locator('#hsbc_paste_preview_positions tr')).toContainText('Shares 10 → 15');
+    const holdingChanges = page.locator('#hsbc_paste_preview_positions tr')
+        .getByRole('cell').nth(1).getByRole('list');
+    await expect(holdingChanges).toHaveCSS('list-style-type', 'disc');
+    await expect(holdingChanges.getByRole('listitem')).toHaveText([
+        'Shares 10 → 15',
+        'Average cost USD 18.50 → USD 18.75',
+    ]);
     for (const [, , source, , text] of fields) await expect(page.locator(source)).toHaveValue(text);
     await page.evaluate(() => {
         Object.defineProperty(navigator, 'clipboard', {
