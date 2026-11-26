@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.150.6`
+Documentation version: `v1.150.7`
 
 ## Canonical SQLite persistence
 
@@ -105,8 +105,12 @@ signed closing balance, including `CR` credit balances. RewardCash opening,
 earned, adjusted, redeemed, and closing amounts must also reconcile. These
 dated statement facts do not replace the selected webpage snapshot; CSVs
 have no balance snapshot. Cross-source matching preserves source-row aliases
-and occurrence multiplicity while normalizing only supported payment and
-Apple Pay description differences. Ambiguous matches fail closed.
+and occurrence multiplicity while normalizing the bank's explicit repayment,
+Apple Pay, sales, RewardCash, and rebate labels. Statement rebates require
+both the bank's rebate label and its printed credit marker. Their original
+currency and amount remain separate from the HKD liability change. Previously
+retained files continue to use their recorded parser version. Ambiguous matches
+fail closed.
 
 The investment transactions GET adds a fresh, privacy-safe
 `credit_card_rewards` disclosure after reading its investment cache. This

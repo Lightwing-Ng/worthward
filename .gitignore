@@ -9,12 +9,14 @@ market_store/*
 market_store/logos/*
 !market_store/logos/EUV.png
 !market_store/logos/000660.KS.svg
+!market_store/logos/700.HK.png
 !market_store/logos/AAPL.svg
 !market_store/logos/AMD.svg
 !market_store/logos/AMZN.svg
 !market_store/logos/ASML.svg
 !market_store/logos/AXP.US.svg
 !market_store/logos/AXP.svg
+!market_store/logos/BABA.png
 !market_store/logos/BAC.US.svg
 !market_store/logos/BAC.svg
 !market_store/logos/C.svg

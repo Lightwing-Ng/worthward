@@ -1,6 +1,6 @@
 """Parse immutable HSBC card statements and explicitly scoped CSV exports.
 
-Code version: v1.0.0
+Code version: v1.1.0
 """
 
 from __future__ import annotations
@@ -19,8 +19,14 @@ import subprocess
 import unicodedata
 from typing import Any
 
+from app.services.hsbc_credit_card import (
+    is_hsbc_credit_card_statement_rebate_description,
+)
 
-PARSER_VERSION = "hsbc-credit-card-files-v1"
+
+HSBC_RED_STATEMENT_TITLE = "Statement of HSBC Red Credit Card Account"
+_LEGACY_PARSER_VERSION = "hsbc-credit-card-files-v1"
+PARSER_VERSION = "hsbc-credit-card-files-v2"
 _AMOUNT = r"(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}"
 _MONTHS = {
     name: index
@@ -146,7 +152,7 @@ def _pdf_text(raw: bytes) -> str:
 
 def _pdf(raw: bytes, source: dict[str, Any]) -> dict[str, Any]:
     text = _pdf_text(raw)
-    if "Statement of HSBC Red Credit Card Account" not in text:
+    if HSBC_RED_STATEMENT_TITLE not in text:
         raise ValueError("Only English HSBC Red credit-card statements are supported.")
     accounts = {
         normalize_card_account(match)
@@ -207,9 +213,20 @@ def _pdf(raw: bytes, source: dict[str, Any]) -> dict[str, Any]:
             re.fullmatch(r"#PAY WITH RC: \d{2}[A-Z]{3}", value)
             for value in continuation
         )
+        foreign = re.search(rf"\s+([A-Z]{{3}})\s+({_AMOUNT})$", description)
+        billing_description = description[: foreign.start()] if foreign else description
         normalized = _normalize(description)
         if normalized == "IFS PAYMENT - THANK YOU" and credit:
             kind = "repayment"
+        elif (
+            source["parser_version"] == PARSER_VERSION
+            and is_hsbc_credit_card_statement_rebate_description(billing_description)
+        ):
+            if not credit or reward:
+                raise ValueError(
+                    "The HSBC card statement rebate direction is unsupported."
+                )
+            kind = "rebate"
         elif reward and credit:
             kind = "rewardcash"
         elif not credit and not re.search(
@@ -220,16 +237,13 @@ def _pdf(raw: bytes, source: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(
                 "The HSBC card statement transaction direction is unsupported."
             )
-        foreign = re.search(rf"\s+([A-Z]{{3}})\s+({_AMOUNT})$", description)
-        if foreign:
-            description = description[: foreign.start()]
         row = _row(
             account,
             source["sha256"],
             len(rows) + 1,
             _short_date(transaction, statement_day),
             _short_date(post, statement_day),
-            description,
+            billing_description,
             kind,
             _decimal(amount),
             occurrences,
@@ -355,7 +369,7 @@ def parse_hsbc_credit_card_file_source(source: dict[str, Any]) -> dict[str, Any]
         raise ValueError("The HSBC card file source bytes are invalid.") from exc
     if (
         _sha256(raw) != source.get("sha256")
-        or source.get("parser_version") != PARSER_VERSION
+        or source.get("parser_version") not in (_LEGACY_PARSER_VERSION, PARSER_VERSION)
     ):
         raise ValueError("The HSBC card file failed immutable source verification.")
     kind = source.get("format")

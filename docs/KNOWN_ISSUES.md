@@ -279,11 +279,15 @@ HSBC Red statement reconciliation and rewards, 21 Oct 2026: the local
 `scripts/reconcile_hsbc_credit_card.py` maintenance entrypoint previews PDF/CSV
 bundles and saves only through the separate card-ledger service after an
 explicit `--commit` and backup. The browser's HSBC Statements mode accepts
-cash-account PDFs or matching composite and investment statements. For credit
-cards, the browser accepts account-page text in Copy/paste. File evidence
-retains raw bytes and explicit account
-scope, statement balance and RewardCash continuity, separate posting dates,
-and cross-source aliases. Dated statement credit balances must not be
+cash-account PDFs or matching composite and investment statements. A recognized
+HSBC Red statement in this mode directs users to Copy/paste for a complete
+account page or to the local PDF reconciliation command. Statement credits
+explicitly labeled as rebates reduce card liabilities. Reconciliation preserves
+their foreign currency evidence and matches them to equivalent account-page
+returns. The account-page `SALES:` prefix is ignored when matching otherwise
+identical purchases across sources. File evidence retains raw bytes and explicit
+account scope, statement balance and RewardCash continuity, separate posting
+dates, and cross-source aliases. Dated statement credit balances must not be
 interpreted as unsigned liabilities or replace a selected webpage snapshot.
 Metrics includes posted RewardCash in Rewards, separately from KOL rewards.
 The 23 Oct 2026 aggregation contract above extends its P&L attribution while
@@ -1453,7 +1457,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.292.2`
+Documentation version: `v1.292.3`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

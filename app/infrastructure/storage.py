@@ -1,7 +1,7 @@
 """
 Filesystem helpers for market store persistence.
 
-Code version: v0.21.2
+Code version: v0.21.3
 - Added: SQLite frame and structured-document persistence for local runtime data.
 - Added: Lossless SQLite investment snapshots with explicit verified Parquet migration.
 - Changed: Canonical ticker format validation now lives beside ticker normalization for reuse across services.
@@ -252,6 +252,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "AMZN": "Amazon.com, Inc.",
     "AXP": "American Express Company",
     "BAC": "Bank of America Corporation",
+    "BABA": "Alibaba Group Holding Limited",
     "BOXX": "Alpha Architect 1-3 Month Box ETF",
     "C": "Citigroup Inc.",
     "CVX": "Chevron Corporation",
@@ -273,6 +274,7 @@ KNOWN_TICKER_COMPANY_NAMES: dict[str, str] = {
     "HK0000720752": "Ping An Money Market P USD Acc",
     "HK0001039582": "CMS USD Money Market Fund B Acc",
     "1310.HK": "HKBN Ltd.",
+    "700.HK": "Tencent Holdings Limited",
     "9988.HK": "Alibaba Group Holding Limited",
     "JPM": "JPMorgan Chase & Co.",
     "KO": "The Coca-Cola Company",
@@ -303,8 +305,10 @@ ROUNDHILL_PRODUCT_LOGO_TICKERS = frozenset({
 
 PINNED_LOGO_TICKERS = frozenset({
     "1310.HK",
+    "700.HK",
     "AMD",
     "AVGO",
+    "BABA",
     "COST",
     "GOOG",
     "GOOGL",

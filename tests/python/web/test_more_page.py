@@ -1,7 +1,8 @@
 """
 Tests for route stability across refactored web runtime branches.
 
-Code version: v0.27.9
+Code version: v0.27.10
+- Added: Recognized HSBC card PDFs receive card import guidance.
 - Added: HSBC cash paste prevalidation shows only new financial rows and balances.
 - Added: The IBKR Web-paste route preserves forex semantics and every native
   cash balance from a paired Your Holdings capture.
@@ -915,6 +916,32 @@ Fees: 0.12
             [(payload, filename) for payload, filename in statement_payloads],
             [(b"investment", "opaque-2.pdf"), (b"composite", "opaque-1.pdf")],
         )
+
+    def test_hsbc_statement_route_rejects_card_pdf_without_writing(self) -> None:
+        client = create_app().test_client()
+
+        with patch(
+            "app.services.investment_import._extract_statement_pdf_text",
+            return_value="Statement of HSBC Red     Credit Card Account",
+        ):
+            response = self._post_investment_import(
+                client,
+                "/api/investment/transactions",
+                data={
+                    "broker": "hsbc",
+                    "hsbc_import_mode": "statement_pdf",
+                    "hsbc_statement_pdfs": (io.BytesIO(b"card"), "opaque.pdf"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        error = response.get_json()["error"]
+        self.assertIn("HSBC Red credit-card statement", error)
+        self.assertIn("choose Copy/paste", error)
+        self.assertIn("scripts/reconcile_hsbc_credit_card.py", error)
+        self.assertFalse(self.investment_store_path.exists())
+        self.assertFalse(investment_evidence_dir_for(self.investment_store_path).exists())
 
     def test_bochk_statement_route_receives_one_multi_file_pdf_batch(self) -> None:
         client = create_app().test_client()

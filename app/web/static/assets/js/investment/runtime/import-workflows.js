@@ -1,7 +1,8 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.7.1
+ * Code version: v1.7.2
+ * - Changed: Show a compact HSBC paste preview outcome with a status icon.
  * - Added: Display Portfolio realized P&L with optional broker amounts and assigned-lot provenance.
  * - Fixed: Render HSBC holding changes as a bullet list.
  * - Fixed: Keeps Stock details date-filter controls within the viewport.
@@ -873,10 +874,16 @@ function syncHsbcPastePreview() {
         const pending = state === 'pending';
         panel.hidden = !pending && !preview && !notice;
         const hasChanges = preview?.transactions?.length || preview?.balances?.length || preview?.positions?.length;
-        panel.querySelector('#hsbc_paste_preview_status').textContent = pending
+        if (preview && !pending && !notice) {
+            panel.dataset.previewResult = hasChanges ? 'changes' : 'unchanged';
+        } else {
+            delete panel.dataset.previewResult;
+        }
+        const status = panel.querySelector('[data-hsbc-paste-preview-copy]')
+            || panel.querySelector('#hsbc_paste_preview_status');
+        status.textContent = pending
             ? 'Checking HSBC activity…'
-            : notice || (hasChanges ? 'Review the changes, then select Sync now.'
-                : 'No changes to transactions, cash balances, or holdings. Select Sync now to save the capture.');
+            : notice || (hasChanges ? 'Changes found.' : 'No changes to transactions, cash balances, or holdings.');
         renderHsbcPastePreviewTable('hsbc_paste_preview_transactions', preview?.transactions, (row) => {
             const type = String(row.type || '').replaceAll('_', ' ');
             const trade = [type && type[0].toUpperCase() + type.slice(1), row.ticker,

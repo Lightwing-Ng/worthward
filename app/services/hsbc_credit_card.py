@@ -1,6 +1,6 @@
 """Parse HSBC credit-card clipboard evidence without persistence or network access.
 
-Code version: v0.3.0
+Code version: v0.4.0
 """
 
 from collections import Counter
@@ -178,6 +178,11 @@ def is_hsbc_credit_card_rebate_description(description: str) -> bool:
             r"\b(?:REFUND|REVERSAL|REVERSED|CHARGEBACK|CREDIT)\b", normalized
         )
     )
+
+
+def is_hsbc_credit_card_statement_rebate_description(description: str) -> bool:
+    """Match the explicit statement rebate label without the webpage row prefix."""
+    return is_hsbc_credit_card_rebate_description(f"RETURN: {description}")
 
 
 def _kind(description: str) -> tuple[str, str]:

@@ -1,6 +1,6 @@
 """Anonymous real-byte card file imports in isolated stores.
 
-Code version: v1.0.0
+Code version: v1.0.1
 """
 
 import base64
@@ -14,7 +14,10 @@ import shutil
 import pytest
 
 from app.services import credit_card_ledger as ledger
-from app.services.hsbc_credit_card_files import capture_hsbc_credit_card_file
+from app.services.hsbc_credit_card_files import (
+    capture_hsbc_credit_card_file,
+    parse_hsbc_credit_card_file_source,
+)
 from tests.factories.hsbc_credit_card import hsbc_credit_card_text
 
 
@@ -28,7 +31,9 @@ _HEADER = (
 )
 
 
-def _pdf_bytes(*, amount="10.00", count=1, credit=False, month="OCT", year="2026"):
+def _pdf_bytes(
+    *, amount="10.00", count=1, credit=False, month="OCT", year="2026", description=None
+):
     """Build a small, valid PDF containing anonymous bank-shaped text evidence."""
     balance = format(Decimal(amount) * count * (-1 if credit else 1), ".2f")
     closing = balance.removeprefix("-") + ("CR" if credit else "")
@@ -39,10 +44,11 @@ def _pdf_bytes(*, amount="10.00", count=1, credit=False, month="OCT", year="2026
         "Post date Trans date Description of transaction Amount (HKD)",
         "PREVIOUS BALANCE 0.00",
     ]
+    description = description or (
+        "IFS PAYMENT - THANK YOU" if credit else "SAMPLE SHOP HONG KONG HK"
+    )
     for _ in range(count):
-        rows.append(
-            f"14{month} 12{month} {'IFS PAYMENT - THANK YOU' if credit else 'SAMPLE SHOP HONG KONG HK'} {amount}{'CR' if credit else ''}"
-        )
+        rows.append(f"14{month} 12{month} {description} {amount}{'CR' if credit else ''}")
     rows.extend(
         [
             "REWARDCASH OPENING BALANCE : 0",
@@ -138,6 +144,69 @@ def test_pdf_original_bytes_dated_signed_snapshot_and_separate_dates():
     assert base64.b64decode(capture["source"]["content_base64"]) == raw
     assert capture["source"]["sha256"] == hashlib.sha256(raw).hexdigest()
     assert "Account balance:" not in capture["source"]["text"]
+
+
+@pytest.mark.parametrize(
+    "description",
+    ["SAMPLE CAMPAIGN REBATE Rebate CN", "MastercardTravelmeitua Rebate HK"],
+)
+def test_statement_rebate_reconciles_with_same_date_clipboard_credit(
+    tmp_path, description
+):
+    pdf = tmp_path / "statement.pdf"
+    pdf.write_bytes(_pdf_bytes(credit=True, description=f"{description} CNY 8.00"))
+    page = _page(description=f"RETURN: {description}")
+    store = tmp_path / "cards.sqlite3"
+    ledger.commit_hsbc_credit_card_import(page, store)
+    before = store.read_bytes()
+
+    preview = ledger.preview_hsbc_credit_card_files([pdf], store)
+    assert preview["ready"] is True
+    assert preview["summary"]["added_count"] == 0
+    assert preview["summary"]["duplicate_count"] == 1
+    assert store.read_bytes() == before
+
+    result = ledger.commit_hsbc_credit_card_files([pdf], store)
+    assert result["files"][0]["capture_snapshot"]["account_balance"] == "-10.00"
+    stored = ledger.load_credit_card_ledger(store)
+    row = next(iter(stored["transactions"].values()))
+    assert row["kind"] == "rebate"
+    assert row["description"] == description
+    assert row["liability_delta"] == "-10.00"
+    assert row["original_currency"] == "CNY"
+    assert row["original_amount"] == "8.00"
+    assert row["post_dates"] == ["2026-10-14"]
+    assert len(row["source_sha256s"]) == 2
+    after = store.read_bytes()
+    repeated = ledger.commit_hsbc_credit_card_files([pdf], store)
+    assert repeated["summary"]["added_count"] == 0
+    assert store.read_bytes() == after
+
+
+def test_statement_purchase_matches_clipboard_sales_prefix(tmp_path):
+    pdf = tmp_path / "statement.pdf"
+    pdf.write_bytes(_pdf_bytes(description="SAMPLE SHOP HONG KONG HK CNY 8.00"))
+    store = tmp_path / "cards.sqlite3"
+    ledger.commit_hsbc_credit_card_import(
+        _page(description="SALES: SAMPLE SHOP HONG KONG HK"), store
+    )
+    result = ledger.commit_hsbc_credit_card_files([pdf], store)
+    assert result["summary"]["added_count"] == 0
+    assert result["summary"]["duplicate_count"] == 1
+    row = next(iter(ledger.load_credit_card_ledger(store)["transactions"].values()))
+    assert row["kind"] == "purchase"
+    assert row["post_dates"] == ["2026-10-14"]
+    assert len(row["source_sha256s"]) == 2
+
+
+def test_statement_rebate_requires_credit_and_legacy_source_keeps_its_parser():
+    description = "SAMPLE CAMPAIGN REBATE Rebate CN"
+    with pytest.raises(ValueError, match="rebate direction"):
+        capture_hsbc_credit_card_file(_pdf_bytes(description=description), "new.pdf")
+    capture = capture_hsbc_credit_card_file(_pdf_bytes(credit=True), "previous.pdf")
+    prior = {**capture["source"], "parser_version": "hsbc-credit-card-files-v1"}
+    previous = parse_hsbc_credit_card_file_source(prior)
+    assert previous["transactions"] == capture["transactions"]
 
 
 def test_bundle_preview_is_read_only_and_preserves_current_page_snapshot(tmp_path):
