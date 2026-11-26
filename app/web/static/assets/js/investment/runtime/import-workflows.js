@@ -1,7 +1,9 @@
 /**
  * Broker import validation and paste workflows.
  *
- * Code version: v1.4.1
+ * Code version: v1.7.1
+ * - Added: Display Portfolio realized P&L with optional broker amounts and assigned-lot provenance.
+ * - Fixed: Render HSBC holding changes as a bullet list.
  * - Fixed: Keeps Stock details date-filter controls within the viewport.
  * - Changed: HSBC paste sync requires a returned preview and explains missing input.
  * - Added: Read-only previews of HSBC cash and securities changes.
@@ -516,10 +518,38 @@ function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
                 </tr>
             `;
         }
+        const allBrokersSelected = runtime.isInvestmentBrokerFilterAllSelected(
+            runtime.getInvestmentBrokerFilterSelectedCodes({view: 'stock_details'}),
+            runtime.getAvailableInvestmentBrokerCodes(),
+        );
+        const showBrokerRealizedPnl = window.WORTHWARD_APP?.investmentShowBrokerRealizedPnl === true;
         return filteredDetailRows.map((txn) => {
+            const currency = runtime.formatTransactionCurrency(txn);
             const realizedPnlClass = txn.pnlUnavailable || txn.rowRealizedPnl === null
                 ? ''
                 : runtime.getInvestmentHoldingsRealizedToneClass(txn.rowRealizedPnl);
+            const realizedPnlDisplay = txn.pnlUnavailable ? 'Unavailable' : (txn.rowRealizedPnl === null
+                ? '-' : runtime.formatAmountWithCurrency(txn.rowRealizedPnl, currency, {showUsdSymbol: false}));
+            const portfolioPnl = txn.rowPortfolioRealizedPnl;
+            const showPortfolioPnl = allBrokersSelected && Number.isFinite(portfolioPnl);
+            const showBoth = showPortfolioPnl && showBrokerRealizedPnl;
+            let realizedPnlMarkup = !showPortfolioPnl || showBoth
+                ? runtime.renderInvestmentHistoryMetricValue(
+                    realizedPnlDisplay, showBoth ? 'Broker realized P&L' : '', realizedPnlClass,
+                )
+                : '';
+            if (showPortfolioPnl) {
+                const displayAmount = Math.abs(portfolioPnl) < runtime.INVESTMENT_DAILY_PNL_DISPLAY_EPSILON
+                    ? 0 : portfolioPnl;
+                const sign = displayAmount > 0 ? '+' : '';
+                const display = `${sign}${runtime.formatAmountWithCurrency(displayAmount, currency, {showUsdSymbol: false})}`;
+                const title = txn.rowPortfolioUsesAssignedLots
+                    ? 'Portfolio realized P&L · User-assigned lots'
+                    : 'Portfolio realized P&L · Lowest-cost lots first';
+                const tone = runtime.getInvestmentHoldingsRealizedToneClass(portfolioPnl);
+                const portfolioPnlMarkup = runtime.renderInvestmentHistoryMetricValue(display, title, tone);
+                realizedPnlMarkup += showBoth ? `<br><small>Portfolio ${portfolioPnlMarkup}</small>` : portfolioPnlMarkup;
+            }
             return `
             <tr data-investment-stock-detail-ledger="${txn.ledger_no}">
                 ${runtime.renderInvestmentBrokerCell(txn)}
@@ -527,11 +557,11 @@ function renderInvestmentStockDetailsTableRowsMarkup(detailRows = []) {
                 <td class="investment-history-cell investment-history-cell-right">${runtime.formatTransactionDateDisplay(txn)}</td>
                 <td class="investment-history-cell investment-history-cell-center">${runtime.formatEventType(txn.type)}</td>
                 <td class="investment-history-cell investment-history-cell-left">${runtime.formatTransactionDescription(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-center">${runtime.formatTransactionCurrency(txn)}</td>
-                <td class="investment-history-cell investment-history-cell-right">${runtime.renderInvestmentHistoryMetricValue(runtime.formatAmountWithCurrency(txn.display_amount ?? runtime.getTransactionEconomicAmount(txn), runtime.formatTransactionCurrency(txn), { showUsdSymbol: false }))}</td>
+                <td class="investment-history-cell investment-history-cell-center">${currency}</td>
+                <td class="investment-history-cell investment-history-cell-right">${runtime.renderInvestmentHistoryMetricValue(runtime.formatAmountWithCurrency(txn.display_amount ?? runtime.getTransactionEconomicAmount(txn), currency, { showUsdSymbol: false }))}</td>
                 <td class="investment-history-cell investment-history-cell-right">${runtime.renderInvestmentHistoryMetricValue(runtime.formatTransactionCommissionDisplay(txn))}</td>
-                <td class="investment-history-cell investment-history-cell-right">${runtime.renderInvestmentHistoryMetricValue(txn.rowMarketValue === null ? '-' : runtime.formatAmountWithCurrency(txn.rowMarketValue, runtime.formatTransactionCurrency(txn), { showUsdSymbol: false }))}</td>
-                <td class="investment-history-cell investment-history-cell-right${realizedPnlClass}">${runtime.renderInvestmentHistoryMetricValue(txn.pnlUnavailable ? 'Unavailable' : (txn.rowRealizedPnl === null ? '-' : runtime.formatAmountWithCurrency(txn.rowRealizedPnl, runtime.formatTransactionCurrency(txn), { showUsdSymbol: false })), '', realizedPnlClass)}</td>
+                <td class="investment-history-cell investment-history-cell-right">${runtime.renderInvestmentHistoryMetricValue(txn.rowMarketValue === null ? '-' : runtime.formatAmountWithCurrency(txn.rowMarketValue, currency, { showUsdSymbol: false }))}</td>
+                <td class="investment-history-cell investment-history-cell-right">${realizedPnlMarkup}</td>
             </tr>
         `;
         }).join('');
@@ -542,7 +572,8 @@ function buildSafeInvestmentStockDetailRows(processedTransactions, ticker) {
             runtime.getInvestmentAggregateOnlyTransactions(processedTransactions),
             ticker,
         );
-        const pnlUnavailable = runtime.isInvestmentAggregateSecurityTransferPnlUnavailable(ticker)
+        const transferPnlUnavailable = runtime.isInvestmentAggregateSecurityTransferPnlUnavailable(ticker);
+        const pnlUnavailable = transferPnlUnavailable
             || runtime.state.investmentTickerSummariesCache.some((summary) => (
                 runtime.normalizeInvestmentTicker(summary?.ticker) === runtime.normalizeInvestmentTicker(ticker)
                 && runtime.isInvestmentRealizedPnlUnavailable(summary)
@@ -551,6 +582,7 @@ function buildSafeInvestmentStockDetailRows(processedTransactions, ticker) {
         return detailRows.map((row) => ({
             ...row,
             rowRealizedPnl: null,
+            rowPortfolioRealizedPnl: transferPnlUnavailable ? null : row.rowPortfolioRealizedPnl,
             pnlUnavailable: true,
         }));
     }
@@ -823,7 +855,7 @@ function renderHsbcPastePreviewTable(id, entries, formatRow) {
             const row = document.createElement('tr');
             formatRow(entry).forEach((value) => {
                 const cell = document.createElement('td');
-                cell.textContent = value;
+                cell.append(value ?? '');
                 row.appendChild(cell);
             });
             return row;
@@ -867,17 +899,21 @@ function syncHsbcPastePreview() {
             ];
         });
         renderHsbcPastePreviewTable('hsbc_paste_preview_positions', preview?.positions, (row) => {
-            const details = [
+            const details = document.createElement('ul');
+            for (const [label, field, currency] of [
                 ['Shares', 'quantity', ''],
                 ['Average cost', 'cost_price', row.currency],
                 ['Last price', 'last_price', row.currency],
                 ['Market value', 'market_value', row.currency],
-            ].flatMap(([label, field, currency]) => {
+            ]) {
                 const previous = formatHsbcPreviewAmount(row[`previous_${field}`], currency);
                 const current = formatHsbcPreviewAmount(row[field], currency);
-                return previous === current ? [] : [`${label} ${previous} → ${current}`];
-            });
-            return [row.ticker, details.join(' · ')];
+                if (previous === current) continue;
+                const item = document.createElement('li');
+                item.textContent = `${label} ${previous} → ${current}`;
+                details.appendChild(item);
+            }
+            return [row.ticker, details.childElementCount ? details : ''];
         });
         const warnings = panel.querySelector('#hsbc_paste_preview_warnings');
         const messages = Array.isArray(preview?.warnings) ? preview.warnings : [];

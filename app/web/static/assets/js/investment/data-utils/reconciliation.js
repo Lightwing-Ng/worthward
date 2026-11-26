@@ -1,7 +1,8 @@
 /**
  * Authoritative snapshot, reconciliation, and transaction-state utilities.
  *
- * Code version: v1.5.2
+ * Code version: v1.6.0
+ * - Added: Reuse evidenced net sell proceeds in portfolio lot attribution.
  * - Changed: Position-boundary helpers use a cohesive injected utility factory.
  * - Fixed: Omitted current positions retain scoped historical boundary evidence for P&L replay.
  * - Fixed: Supplemental sell proceeds preserve signed and zero net cash evidence.
@@ -1976,6 +1977,7 @@ export function createInvestmentReconciliationUtils(runtime) {
         registerHsbcSettlementPostingOwnerConflicts,
         getTransactionEvidencedTradeCashAmount,
         getTransactionEvidencedTradePrincipalAmount,
+        getInvestmentReplaySellProceeds,
         getTransactionEvidencedUnitPrice,
         getTransactionEffectiveUnitPrice,
         getTransactionDerivedCostBasis,

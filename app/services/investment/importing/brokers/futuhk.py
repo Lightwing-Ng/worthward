@@ -1,6 +1,7 @@
 """Investment import domain: futuhk.
 
-Code version: v0.2.0
+Code version: v0.2.1
+- Fixed: Reuse explicit distribution symbols for legacy Futu cash records.
 """
 
 from __future__ import annotations
@@ -246,6 +247,29 @@ def _infer_futuhk_ticker(description: str) -> str | None:
     return None
 
 
+def _infer_futuhk_distribution_ticker(record: dict[str, Any]) -> str | None:
+    source = record.get("source") if isinstance(record.get("source"), dict) else {}
+    if source.get("file_kind") not in {
+        "futuhk_statement_pdf",
+        "futuhk_email_notification",
+    } or _normalize_text(record.get("currency")).upper() != "USD":
+        return None
+
+    activity = {
+        "dividend": r"DIVIDENDS?",
+        "foreign_tax_withholding": "WITHHOLDING",
+        "payment_in_lieu": "PAYMENT",
+    }.get(_normalize_text(record.get("type")).lower())
+    if not activity:
+        return None
+    remark = _normalize_whitespace(_normalize_text(record.get("description"))).upper()
+    match = re.match(
+        rf"^([A-Z][A-Z0-9._-]{{0,15}})\s+\d[\d,.]*\s+SHARES\s+{activity}\b",
+        remark,
+    )
+    return normalize_ticker(f"{match.group(1)}.US") if match else None
+
+
 def _classify_futuhk_flow_type(direction: str, remark: str) -> str:
     normalized_remark = _normalize_whitespace(remark).upper()
     if "DIVIDEND" in normalized_remark or "DIVIDENDS" in normalized_remark:
@@ -440,14 +464,8 @@ def _parse_futuhk_flow_records(
             amount_dec,
             is_cash_flow_override=True,
         )
-        if mapped_type in {"dividend", "foreign_tax_withholding", "payment_in_lieu"}:
-            symbol_match = re.match(
-                r"^([A-Z][A-Z0-9._-]{0,15})\s+\d[\d,.]*\s+SHARES\s+"
-                r"(?:DIVIDENDS?|WITHHOLDING|PAYMENT)",
-                remark.upper(),
-            )
-            if symbol_match:
-                record["ticker"] = normalize_ticker(f"{symbol_match.group(1)}.US")
+        if ticker := _infer_futuhk_distribution_ticker(record):
+            record["ticker"] = ticker
         _stamp_futuhk_internal_transfer_metadata(record)
         records.append(record)
     return records

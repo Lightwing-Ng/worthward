@@ -1,7 +1,8 @@
-/* Code version: v1.0.1
+/* Code version: v1.0.3
  * Intercepted account evidence keeps P&L component availability independent.
  */
 import {expect, test} from '@playwright/test';
+import {getInvestmentPortfolioLotAssignmentKey} from '../../../app/web/static/assets/js/investment/data-utils/portfolio-attribution.js';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
 const trade = (account, type, date, quantity, price = 10) => ({
@@ -171,4 +172,93 @@ test('an unpriced later acquisition keeps unrealized and cumulative P&L unavaila
     await page.reload();
     await expect(holding(page).locator('[data-investment-live-field="last"]')).toHaveAttribute('data-investment-live-display', '13.00');
     await assertUnknownBasis();
+});
+
+test('Investment settings persist whether portfolio P&L shows the broker amount alongside it', async ({page}) => {
+    await preparePage(page);
+    const opening = {...trade('SELLING', 'buy', '2026-07-01', 10, 50), broker: 'schwab'};
+    const cheaper = trade('BUYING', 'buy', '2026-07-02', 5, 40);
+    const sale = {...trade('SELLING', 'sell', '2026-07-03', 5, 42), broker: 'schwab'};
+    await mockInvestmentReadApis(page, {
+        brokers: ['ibkr', 'schwab'],
+        transactions: [opening, cheaper, sale],
+        priceHistoryByTicker: {TEST: [{date: '2026-07-21', close: 42}]},
+    });
+    const toggle = page.getByRole('checkbox', {name: 'Show broker realized P&L alongside portfolio'});
+    const portfolioTitle = 'Portfolio realized P&L · Lowest-cost lots first';
+
+    async function expectDisplay(showBoth) {
+        await page.goto('/trade/investment?view=holdings&ticker=TEST');
+        const pnl = page.locator('#investment_stock_details tr[data-investment-stock-detail-ledger]')
+            .filter({has: page.getByText('Sell', {exact: true})}).locator('td').last();
+        await expect(pnl.getByTitle(portfolioTitle, {exact: true})).toHaveText('+10.00');
+        if (showBoth) {
+            await expect(pnl.getByTitle('Broker realized P&L', {exact: true})).toHaveText('-40.00');
+        } else {
+            await expect(pnl).toHaveText('+10.00');
+        }
+    }
+
+    async function saveToggle(enabled) {
+        const [response] = await Promise.all([
+            page.waitForResponse((response) => (
+                new URL(response.url()).pathname === '/settings/investment/action'
+                && response.request().method() === 'POST'
+            )),
+            toggle.press('Space'),
+        ]);
+        expect([302, 303]).toContain(response.status());
+        await page.goto('/settings/investment');
+        await expect(toggle).toBeChecked({checked: enabled});
+    }
+
+    await page.goto('/settings/investment');
+    await expect(toggle).not.toBeChecked();
+    await expectDisplay(false);
+    await page.goto('/settings/investment');
+    await saveToggle(true);
+    await expectDisplay(true);
+    await page.goto('/settings/investment');
+    await saveToggle(false);
+    await expectDisplay(false);
+});
+
+test('Stock details uses a saved same-day cross-broker lot assignment and labels its provenance', async ({page}) => {
+    await preparePage(page);
+    const date = '2026-07-21';
+    const purchase = {
+        ...trade('BUYING', 'buy', date, 5, 40),
+        broker: 'hsbc', source: {statement_order_id: 'TEST-ORDER', source_has_intraday_timestamp: false},
+    };
+    const sale = {
+        ...trade('SELLING', 'sell', date, 5, 42), broker: 'schwab', amount: 209.75,
+        normalized: {net_amount: '209.75', commission: '0.25'},
+        source: {datetime_precision: 'day'},
+        manual_internal_transfer_key: `v2:${JSON.stringify(['schwab', 'SELLING', date, 'sell', 'USD', '209.75'])}`,
+    };
+    const tickerScope = {ticker: 'TEST', currency: 'USD'};
+    const purchaseKey = getInvestmentPortfolioLotAssignmentKey(purchase, {
+        ...tickerScope, broker: 'hsbc', accountToken: 'buying',
+    }, 5);
+    const saleKey = getInvestmentPortfolioLotAssignmentKey(sale, {...tickerScope, broker: 'schwab'}, 5);
+    const assignments = {[saleKey]: [purchaseKey]};
+    await page.route('**/trade/investment?*', async (route) => {
+        const response = await route.fetch();
+        const body = await response.text();
+        const node = /(<script id="investment_portfolio_lot_assignments" type="application\/json">)\{\}(<\/script>)/;
+        expect(body).toMatch(node);
+        await route.fulfill({response, body: body.replace(node, (_match, start, end) => (
+            `${start}${JSON.stringify(assignments)}${end}`
+        ))});
+    });
+    const opening = {...trade('SELLING', 'buy', '2026-07-01', 10, 50), broker: 'schwab'};
+    await mockInvestmentReadApis(page, {
+        brokers: ['hsbc', 'schwab'], transactions: [opening, purchase, sale],
+        priceHistoryByTicker: {TEST: [{date, close: 42}]},
+    });
+    await page.goto('/trade/investment?view=holdings&ticker=TEST');
+    const pnl = page.locator('#investment_stock_details tr[data-investment-stock-detail-ledger]')
+        .filter({has: page.getByText('Sell', {exact: true})}).locator('td').last();
+    await expect(pnl.getByTitle('Portfolio realized P&L · User-assigned lots')).toHaveText('+9.75');
+    await expect(pnl).toHaveText('+9.75');
 });

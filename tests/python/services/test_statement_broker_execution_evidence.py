@@ -1,12 +1,14 @@
 """Bounded PDF parser execution, income, and batch identity regressions.
 
-Code version: v0.1.0
+Code version: v0.1.1
 """
 
+from copy import deepcopy
 from unittest.mock import patch
 
 import pytest
 
+from app.services.investment.importing.bindings import normalize_investment_payload_tickers
 from app.services.investment.importing.brokers import futuhk
 from app.services.investment.importing.brokers.usmart_tiger import (
     _tigertrade_forex_records,
@@ -46,6 +48,109 @@ def test_futu_income_uses_explicit_symbol_in_source_remark(remark, kind):
     )
     assert row["type"] == kind
     assert row["ticker"] == remark.split()[0]
+
+
+@pytest.mark.parametrize(
+    ("file_kind", "kind", "remark", "amount", "expected_ticker"),
+    [
+        (
+            "futuhk_statement_pdf",
+            "dividend",
+            "SPLG 4.50000000 SHARES DIVIDENDS 0.34 USD PER SHARE",
+            "1.53",
+            "SPLG",
+        ),
+        (
+            "futuhk_statement_pdf",
+            "foreign_tax_withholding",
+            "SPLG 4.50000000 SHARES WITHHOLDING TAX -0.034 USD PER SHARE- TAX",
+            "-0.15",
+            "SPLG",
+        ),
+        (
+            "futuhk_email_notification",
+            "dividend",
+            "TSM 2.00000000 SHARES DIVIDENDS 0.51 USD PER SHARE",
+            "1.02",
+            "TSM",
+        ),
+        (
+            "futuhk_email_notification",
+            "foreign_tax_withholding",
+            "TSM 2.00000000 SHARES WITHHOLDING TAX -0.102 USD PER SHARE- TAX",
+            "-0.20",
+            "TSM",
+        ),
+    ],
+)
+def test_futu_legacy_income_links_preserve_cash_and_source_evidence(
+    file_kind, kind, remark, amount, expected_ticker,
+):
+    unbound = {
+        "broker": "futuhk",
+        "account": "FUTU-TEST",
+        "date": "2023-05-05",
+        "ticker": None,
+        "type": kind,
+        "currency": "USD",
+        "description": remark,
+        "gross_amount_raw": amount,
+        "net_amount_raw": amount,
+        "normalized": {"net_amount": amount, "cash_delta": amount},
+        "source": {"file_kind": file_kind, "source_record_id": "test-source-1"},
+    }
+    payload = normalize_investment_payload_tickers({"transactions": [deepcopy(unbound)]})
+
+    assert payload["transactions"] == [{**unbound, "ticker": expected_ticker}]
+    assert normalize_investment_payload_tickers(deepcopy(payload)) == payload
+
+
+@pytest.mark.parametrize(
+    ("broker", "file_kind", "kind", "remark", "ticker"),
+    [
+        (
+            "futuhk", "futuhk_statement_pdf", "dividend",
+            "Account note: SPLG 3 SHARES DIVIDENDS", None,
+        ),
+        (
+            "futuhk", "futuhk_email_notification", "dividend",
+            "DIVIDENDS for 3 shares of SPLG", None,
+        ),
+        (
+            "ibkr", "futuhk_statement_pdf", "dividend",
+            "SPLG 3 SHARES DIVIDENDS", None,
+        ),
+        (
+            "futuhk", "manual_investment_xlsx", "dividend",
+            "SPLG 3 SHARES DIVIDENDS", None,
+        ),
+        (
+            "futuhk", "futuhk_statement_pdf", "adjustment",
+            "SPLG 3 SHARES DIVIDENDS", None,
+        ),
+        (
+            "futuhk", "futuhk_statement_pdf", "dividend",
+            "SPLG 3 SHARES DIVIDENDS", "AAPL",
+        ),
+    ],
+)
+def test_futu_legacy_income_link_requires_evidence_and_preserves_existing_ticker(
+    broker, file_kind, kind, remark, ticker,
+):
+    record = {
+        "broker": broker,
+        "account": "BROKER-TEST",
+        "date": "2023-05-05",
+        "ticker": ticker,
+        "type": kind,
+        "currency": "USD",
+        "description": remark,
+        "net_amount_raw": "0.61",
+        "source": {"file_kind": file_kind},
+    }
+    result = normalize_investment_payload_tickers({"transactions": [deepcopy(record)]})
+
+    assert result["transactions"] == [record]
 
 
 def test_futu_repeated_pdf_does_not_double_count_its_rows():

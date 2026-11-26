@@ -1,6 +1,7 @@
-/* Code version: v1.2.7 */
+/* Code version: v1.2.9 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {getInvestmentPortfolioLotAssignmentKey} from '../../../../app/web/static/assets/js/investment/data-utils/portfolio-attribution.js';
 import {createInvestmentFundingMetricsRuntime} from '../../../../app/web/static/assets/js/investment/runtime/funding-metrics.js';
 import {
     INVESTMENT_DATA_UTILS_MODULE_VERSION,
@@ -865,6 +866,136 @@ test('cross-account sells consume only their account lots before ticker aggregat
     assert.equal(dram.realizedPnlLocal, 100);
     assert.ok(Math.abs(dram.unrealizedPnlLocal - 800) < 1e-9);
     assert.ok(Math.abs(dram.totalPnlLocal - 900) < 1e-9);
+});
+
+test('portfolio attribution consumes cross-broker lots once and uses net trade cash', () => {
+    setDramTestWindow();
+    const utils = createUtils();
+    const transactions = [
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'buy', date: '2026-08-01', quantity: 10, price: 50}),
+        makeScopedDramTrade({broker: 'hsbc', account: 'HSBC-1', type: 'buy', date: '2026-08-02', quantity: 5, price: 40, commission: 0.25}),
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'sell', date: '2026-08-03', quantity: 5, price: 40.25, commission: 0.50}),
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'sell', date: '2026-08-04', quantity: 5, price: 41}),
+    ];
+    const attribution = utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity);
+    assert.ok(Math.abs(attribution.get(transactions[2]) - 0.50) < 1e-9);
+    assert.equal(attribution.get(transactions[3]), -45);
+
+    setCostBasisMethod('fifo');
+    assert.equal(utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity).size, 0);
+});
+
+test('portfolio attribution defers purchases whose same-day cross-broker order is unknown', () => {
+    setDramTestWindow();
+    const utils = createUtils();
+    const transactions = [
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'buy', date: '2026-08-01', quantity: 10, price: 50}),
+        makeScopedDramTrade({broker: 'hsbc', account: 'HSBC-1', type: 'buy', date: '2026-08-02', quantity: 5, price: 39}),
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'sell', date: '2026-08-02', quantity: 5, price: 40}),
+        makeScopedDramTrade({broker: 'schwab', account: 'SCHWAB-1', type: 'sell', date: '2026-08-03', quantity: 5, price: 40}),
+    ];
+    transactions[1].source.source_has_intraday_timestamp = false;
+    transactions[2].source.datetime_precision = 'day';
+
+    const attribution = utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity);
+    assert.equal(attribution.get(transactions[2]), -50);
+    assert.equal(attribution.get(transactions[3]), 5);
+});
+
+function makePortfolioAssignmentTrade(key, fields) {
+    return {
+        ...makeScopedDramTrade({account: `${fields.broker}-assignment-test`, ...fields}),
+        manual_internal_transfer_key: `test-portfolio-lot-${key}`,
+    };
+}
+
+function getPortfolioAssignmentKey(utils, transaction) {
+    return getInvestmentPortfolioLotAssignmentKey(
+        transaction,
+        utils.getTransactionLotScope(transaction),
+        utils.getTransactionQuantity(transaction),
+    );
+}
+
+test('explicit portfolio lots stay reserved for their sells and may pair date-only trades', () => {
+    setDramTestWindow();
+    const utils = createUtils();
+    const opening = makePortfolioAssignmentTrade('opening', {
+        broker: 'schwab', type: 'buy', date: '2026-04-06', quantity: 10, price: 72,
+    });
+    const reserved = makePortfolioAssignmentTrade('reserved', {
+        broker: 'hsbc', type: 'buy', date: '2026-04-07', quantity: 4, price: 52, commission: 0.50,
+    });
+    reserved.source.statement_order_id = 'TEST-RESERVED';
+    const earlierSale = makePortfolioAssignmentTrade('earlier-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-04-08', quantity: 4, price: 56, commission: 0.25,
+    });
+    const assignedSale = makePortfolioAssignmentTrade('assigned-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-04-09', quantity: 4, price: 55, commission: 0.50,
+    });
+    const pairedBuy = makePortfolioAssignmentTrade('paired-buy', {
+        broker: 'hsbc', type: 'buy', date: '2026-04-10', quantity: 3, price: 38, commission: 0.50,
+    });
+    const pairedSale = makePortfolioAssignmentTrade('paired-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-04-10', quantity: 3, price: 39, commission: 0.25,
+    });
+    pairedBuy.source.datetime_precision = 'day';
+    pairedBuy.source.order_id = 'TEST-PAIR';
+    pairedSale.source.datetime_precision = 'day';
+    const finalSale = makePortfolioAssignmentTrade('final-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-04-13', quantity: 6, price: 44.50, commission: 0.50,
+    });
+    const excessSale = makePortfolioAssignmentTrade('excess-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-04-14', quantity: 1, price: 48,
+    });
+    const transactions = [opening, reserved, earlierSale, assignedSale, pairedBuy, pairedSale, finalSale, excessSale];
+    const getKey = (trade) => getPortfolioAssignmentKey(utils, trade);
+    const appliedAssignments = new Set();
+    const lotAssignments = {
+        [getKey(assignedSale)]: [getKey(reserved)],
+        [getKey(pairedSale)]: [getKey(pairedBuy)],
+    };
+    const automatic = utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity);
+    const attributed = utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity, {
+        lotAssignments,
+        appliedAssignments,
+    });
+    const sales = [earlierSale, assignedSale, pairedSale, finalSale];
+    const amounts = (values) => sales.map((sale) => Number(values.get(sale).toFixed(2)));
+    assert.deepEqual(amounts(automatic), [15.25, -68.50, -99.25, -64]);
+    assert.deepEqual(amounts(attributed), [-64.25, 11, 2.25, -165.50]);
+    assert.deepEqual(appliedAssignments, new Set([assignedSale, pairedSale]));
+    assert.equal(attributed.has(excessSale), false);
+});
+
+test('a stale explicit lot assignment falls back without reserving any referenced lot', () => {
+    setDramTestWindow();
+    const utils = createUtils();
+    const opening = makePortfolioAssignmentTrade('opening', {
+        broker: 'schwab', type: 'buy', date: '2026-03-02', quantity: 8, price: 60,
+    });
+    const existingLot = makePortfolioAssignmentTrade('existing', {
+        broker: 'hsbc', type: 'buy', date: '2026-03-03', quantity: 2, price: 45,
+    });
+    const missingLot = makePortfolioAssignmentTrade('missing', {
+        broker: 'hsbc', type: 'buy', date: '2026-03-03', quantity: 4, price: 44,
+    });
+    const firstSale = makePortfolioAssignmentTrade('first-sale', {
+        broker: 'schwab', type: 'sell', date: '2026-03-04', quantity: 4, price: 50,
+    });
+    const sale = makePortfolioAssignmentTrade('sale', {
+        broker: 'schwab', type: 'sell', date: '2026-03-05', quantity: 6, price: 50,
+    });
+    const transactions = [opening, existingLot, firstSale, sale];
+    const getKey = (trade) => getPortfolioAssignmentKey(utils, trade);
+    const appliedAssignments = new Set();
+    const attributed = utils.buildInvestmentPortfolioSellAttribution(transactions, utils.getTransactionQuantity, {
+        lotAssignments: {[getKey(sale)]: [getKey(existingLot), getKey(missingLot)]},
+        appliedAssignments,
+    });
+    assert.equal(attributed.get(firstSale), -10);
+    assert.equal(attributed.get(sale), -60);
+    assert.equal(appliedAssignments.size, 0);
 });
 
 test('same-ticker positions in multiple currencies do not fabricate a combined cost basis', () => {

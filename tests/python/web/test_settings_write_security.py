@@ -1,9 +1,12 @@
-"""Settings request boundary regressions. Code version: v1.0.1."""
+"""Settings request boundary regressions. Code version: v1.0.2."""
 
+import json
 from unittest.mock import patch
 
 import pytest
 from bs4 import BeautifulSoup
+
+from app.core.preferences import store
 
 
 @pytest.mark.parametrize("headers", [
@@ -49,3 +52,42 @@ def test_native_settings_forms_include_session_token(client, section):
         token = session["_investment_csrf_token"]
     for form in soup.select('form[method="post"]'):
         assert form.select_one('input[name="csrf_token"]')["value"] == token
+
+
+def test_investment_pnl_display_toggle_persists_independently_of_lot_method(
+    client, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(store, "SETTINGS_STORE_DIR", tmp_path)
+    monkeypatch.setattr(store, "GENERAL_SETTINGS_PATH", tmp_path / "settings.sqlite3")
+
+    def investment_state():
+        response = client.get("/trade/investment")
+        assert response.status_code == 200
+        soup = BeautifulSoup(response.data, "html.parser")
+        return json.loads(soup.select_one("#worthward_state").string)
+
+    assert investment_state()["investmentShowBrokerRealizedPnl"] is False
+    with client.session_transaction() as session:
+        token = session["_investment_csrf_token"]
+
+    def save_investment_setting(**fields):
+        response = client.post(
+            "/settings/investment/action",
+            data={"csrf_token": token, **fields},
+            headers={"Origin": "http://localhost", "Sec-Fetch-Site": "same-origin"},
+        )
+        assert response.status_code == 303
+        assert response.headers["Location"] == "/settings/investment"
+
+    save_investment_setting(
+        action="set_show_broker_realized_pnl", investment_show_broker_realized_pnl="1",
+    )
+    save_investment_setting(investment_cost_basis_method="fifo")
+    enabled = investment_state()
+    assert enabled["investmentShowBrokerRealizedPnl"] is True
+    assert enabled["investmentCostBasisMethod"] == "fifo"
+
+    save_investment_setting(action="set_show_broker_realized_pnl")
+    disabled = investment_state()
+    assert disabled["investmentShowBrokerRealizedPnl"] is False
+    assert disabled["investmentCostBasisMethod"] == "fifo"

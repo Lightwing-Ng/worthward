@@ -54,7 +54,8 @@ HSBC Copy/paste previews, 16 Nov 2026: the card preview lists additions,
 updated transactions, and entries requiring review. An unchanged transaction
 is summarized without a detail row. Bank-cash pastes preview cash activity
 and balance changes. A complete securities capture previews trade,
-settlement, balance, and position changes. For a collapsed cash amount with
+settlement, balance, and position changes. The Holding changes table lists each
+changed field as a separate bullet. For a collapsed cash amount with
 a sale reference, an explicit direction or a matching older running balance
 is needed to distinguish proceeds from a debit. An ambiguous row is omitted
 and flagged in the preview. The previews are read-only. Saving the capture
@@ -1452,7 +1453,7 @@ those daily signals on real minute bars; this is not minute-frequency model
 training. Adding technical indicators from local OHLCV would add derived
 features, not the missing external observations or independent accuracy proof.
 
-Documentation version: `v1.292.1`
+Documentation version: `v1.292.2`
 
 Price Field display-lattice expansion, 14 Sep 2026: every Price Field strategy
 now publishes one reusable 20-column by 24-row display lattice with 12 rows

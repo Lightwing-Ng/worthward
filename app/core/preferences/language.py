@@ -1,7 +1,7 @@
 """
 Language preference persistence and translation helpers.
 
-Code version: v0.12.0
+Code version: v0.13.0
 """
 
 from __future__ import annotations
@@ -272,6 +272,8 @@ SETTINGS_TRANSLATION_ROWS = _build_translation_rows(
         ("Last in, first out (LIFO)", "後進先出（LIFO）", "后进先出（LIFO）"),
         ("Pool open buys into one moving average cost before each sell.", "每次賣出前，將未平倉買入合併為一個移動平均成本。", "每次卖出前，将未平仓买入合并为一个移动平均成本。"),
         ("Moving average cost", "移動平均成本", "移动平均成本"),
+        ("Show broker realized P&L alongside portfolio", "同時顯示券商及投資組合的已實現損益", "同时显示券商及投资组合的已实现盈亏"),
+        ("Applies to eligible sales in All brokers using Lowest-cost lots first.", "適用於在「所有券商」中採用「成本最低批次優先」的合資格賣出交易。", "适用于在「所有券商」中采用「成本最低批次优先」的符合条件的卖出交易。"),
         ("Broker-reported closed-trade P&L remains authoritative when available. Transfer-basis reconstruction remains separately labelled as FIFO reconstructed.", "如有券商報告的已平倉交易損益，仍以其為準。轉倉成本基礎重建則會獨立標示為 FIFO 重建。", "如有券商报告的已平仓交易损益，仍以其为准。转仓成本基础重建则会单独标示为 FIFO 重建。"),
         ("Token map", "權杖對照表", "令牌映射表"),
         ("Run the network checks again and refresh the availability results shown below.", "再次執行網絡檢查，並更新下方顯示的可用性結果。", "再次执行网络检查，并更新下方显示的可用性结果。"),

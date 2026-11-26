@@ -1,6 +1,7 @@
 """Investment import domain: bindings.
 
-Code version: v0.4.0
+Code version: v0.4.1
+- Fixed: Resolve explicit ticker symbols on legacy Futu distributions.
 - Added: Standard imports normalize evidenced HSBC bank cashback types.
 """
 
@@ -103,9 +104,11 @@ def normalize_investment_payload_tickers(payload: dict[str, Any]) -> dict[str, A
                     if raw_currency in {"CNY", "RMB"}:
                         source.setdefault("statement_currency_raw", raw_currency)
                     txn["source"] = source
-            raw_ticker = txn.get("ticker")
+            raw_ticker = _normalize_text(txn.get("ticker"))
+            if not raw_ticker and record_broker == "futuhk":
+                raw_ticker = _ii_futuhk._infer_futuhk_distribution_ticker(txn)
             if raw_ticker:
-                txn["ticker"] = canonicalize_investment_ticker(str(raw_ticker))
+                txn["ticker"] = canonicalize_investment_ticker(raw_ticker)
             description = _ii_basics._normalize_standard_transaction_description(
                 txn.get("description"),
                 transaction_type=txn.get("type"),

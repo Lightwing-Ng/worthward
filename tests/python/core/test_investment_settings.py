@@ -1,6 +1,6 @@
 """Tests for the persisted Investment accounting preference.
 
-Code version: v0.1.1
+Code version: v0.1.2
 """
 
 from __future__ import annotations
@@ -52,6 +52,32 @@ class InvestmentSettingsTests(unittest.TestCase):
             self.assertEqual(payload["theme"], "dark")
             self.assertEqual(payload["investment"]["other_preference"], "preserve")
             self.assertEqual(payload["investment"]["cost_basis_method"], "fifo")
+
+    def test_portfolio_lot_assignments_save_and_reject_reuse(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with (
+                patch.object(settings_store, "SETTINGS_STORE_DIR", root),
+                patch.object(settings_store, "GENERAL_SETTINGS_PATH", root / "settings.sqlite3"),
+                patch.object(settings_store, "LEGACY_SECTION_PATHS", {}),
+            ):
+                self.assertEqual(investment_settings.load_investment_portfolio_lot_assignments(), {})
+                investment_settings.save_investment_show_broker_realized_pnl(True)
+
+                assignments = {"sell-a": ["buy-a", "buy-b"]}
+                investment_settings.save_investment_portfolio_lot_assignments(assignments)
+                self.assertEqual(
+                    investment_settings.load_investment_portfolio_lot_assignments(), assignments,
+                )
+                self.assertTrue(investment_settings.load_investment_show_broker_realized_pnl())
+
+                with self.assertRaises(ValueError):
+                    investment_settings.save_investment_portfolio_lot_assignments(
+                        {**assignments, "sell-b": ["buy-a"]},
+                    )
+                self.assertEqual(
+                    investment_settings.load_investment_portfolio_lot_assignments(), assignments,
+                )
 
 
 if __name__ == "__main__":

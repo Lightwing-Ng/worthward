@@ -1,7 +1,7 @@
 /**
  * Equity chart rendering and historical P&L state.
  *
- * Code version: v1.5.4
+ * Code version: v1.5.6
  * - Fixed: Keeps finite live equity points within the daily value axis across markets.
  * - Fixed: Live equity markers share rendered point geometry and stay within the value axis.
  * - Fixed: The portfolio chart measures its viewport after the Holdings summary opens.
@@ -27,7 +27,7 @@
 import {
     isInvestmentRealizedPnlUnavailable,
     isInvestmentUnrealizedPnlUnavailable,
-} from '../data-utils.js?v=investment-data-utils-v1.125.2';
+} from '../data-utils.js?v=investment-data-utils-v1.127.0';
 
 const EQUITY_CHART_Y_PADDING_PX = 5;
 

@@ -1,7 +1,7 @@
 /**
  * Investment realtime value transition helpers.
  *
- * Code version: v1.5.1
+ * Code version: v1.5.3
  * - Added: Holdings P&L uses interruptible, formatter-preserving spring digits.
  * - Fixed: Uses the current Investment data-utils cache version.
  * - Fixed: Unknown live values remove numeric metadata without becoming zero.
@@ -18,11 +18,11 @@
  * - Changed: Live digit transitions share the application Motion Core scheduler instead of creating one rAF loop per digit.
  */
 
-import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.125.2';
+import {parseInvestmentOptionalNumber} from './data-utils.js?v=investment-data-utils-v1.127.0';
 import {getNumericDisplayParts, parseNumericDisplayValue} from '../numeric-display.js?v=numeric-display-v1.3.0';
 import {createAnimatedNumber} from '../animated-number.js?v=animated-number-v1.1.0';
 
-export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.5.1';
+export const INVESTMENT_REALTIME_MODULE_VERSION = 'v1.5.3';
 
 export function createInvestmentRealtimeQuotePoller({
     pollDelayMs = 60_000,

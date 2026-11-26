@@ -1,6 +1,6 @@
 """Explicit dependency contract for the workspace web-runtime namespace.
 
-Code version: v1.0.1
+Code version: v1.2.0
 """
 
 from __future__ import annotations
@@ -126,6 +126,8 @@ WORKSPACE_RUNTIME_DEPENDENCIES: tuple[str, ...] = (
     "load_compare_one_day_intraday_dataset",
     "load_date_display_settings",
     "load_investment_cost_basis_method",
+    "load_investment_portfolio_lot_assignments",
+    "load_investment_show_broker_realized_pnl",
     "load_language_settings",
     "load_longbridge_account_label",
     "load_smtp_settings",

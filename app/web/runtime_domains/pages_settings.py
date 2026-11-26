@@ -1,6 +1,6 @@
 """Build the pages settings web-runtime context.
 
-Code version: v0.4.0
+Code version: v0.5.0
 """
 
 from __future__ import annotations
@@ -162,6 +162,10 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
     save_full_date_display_format = context["save_full_date_display_format"]
 
     save_investment_cost_basis_method = context["save_investment_cost_basis_method"]
+
+    save_investment_show_broker_realized_pnl = context[
+        "save_investment_show_broker_realized_pnl"
+    ]
 
     save_language_code = context["save_language_code"]
 
@@ -1121,6 +1125,12 @@ def build_pages_settings_context(context: dict[str, object]) -> dict[str, object
         return _redirect_with_settings_feedback("backtest", notice=notice)
 
     def investment_settings_action():
+        if request.form.get("action") == "set_show_broker_realized_pnl":
+            save_investment_show_broker_realized_pnl(
+                request.form.get("investment_show_broker_realized_pnl") == "1"
+            )
+            return _redirect_with_settings_feedback("investment")
+
         current_method = load_investment_cost_basis_method()
         selected_method = save_investment_cost_basis_method(
             request.form.get("investment_cost_basis_method", current_method),

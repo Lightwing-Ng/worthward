@@ -1,6 +1,6 @@
 # Architecture guide
 
-Documentation version: `v1.150.0`
+Documentation version: `v1.150.6`
 
 ## Canonical SQLite persistence
 
@@ -1543,6 +1543,34 @@ and adjust residual costs without inventing unavailable historical lot identity.
 Remaining lot costs must sum to the residual total basis, without negative lot
 prices or cost lost through per-lot clipping. Full liquidation must realize the
 same residual basis previously reported by Holdings.
+
+In All brokers Stock details, Lowest-cost lots first displays the Portfolio
+value for qualifying sales by default. The Investment setting `Show broker
+realized P&L alongside portfolio` adds the broker-scoped figure to those rows.
+Broker-scoped P&L supplies the displayed amount when Portfolio attribution is
+unavailable or a broker filter limits the view. Portfolio attribution replays
+recorded trades in a single inventory per security and currency. It matches a
+sale's net proceeds against the cheapest available basis and consumes each
+share once. When the order of same-day cross-broker executions is uncertain,
+that day's acquisitions enter the pool after that day's sales. Verified
+internal security transfers remain neutral in this replay. Broker-based
+reconciliation and portfolio valuations continue to use the scoped results
+described above.
+
+Locally stored user assignments can reserve whole acquisitions for a specific
+portfolio sale. The reserved quantity must cover exactly the sale quantity;
+any remaining portfolio activity uses the ordinary chronological matcher over
+unreserved lots. A user-confirmed same-day pair can establish eligibility when
+the recorded intraday order is uncertain. The display identifies an applied
+assignment and uses recorded acquisition costs and sale proceeds, including
+evidenced fees. Assignments are stored in the Investment preferences and only
+applied to the `All brokers` Portfolio attribution in Stock details.
+
+Futu statement and email cash distributions with an explicit symbol in the
+source description resolve their missing ticker during normalization. The same
+rule applies to dividends and their withholding, so the Holdings realized
+total includes the signed net distribution in the existing ticker scope.
+
 When a broker performance snapshot is older than its position snapshot, the
 browser reads the performance snapshot's own canonical broker-snapshot as-of
 date to determine which later trades supplement realized P&L. The position
