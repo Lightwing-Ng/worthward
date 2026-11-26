@@ -1,6 +1,7 @@
 """Keep HSBC credit-card liabilities separate from investment accounting.
 
-Code version: v1.4.0
+Code version: v1.5.0
+- Fixed: Match statement purchases and rebates to equivalent account-page rows.
 - Added: Preview account activity changes and rows that need review.
 - Fixed: Source-labeled posted HKD rebates remain readable with exact liability evidence.
 - Added: Pending CNY purchase evidence and currency-separated pending totals.
@@ -28,7 +29,10 @@ from typing import Any, Iterator
 
 from app.core.config import SETTINGS_STORE_DIR
 from app.core.object_sqlite import read_structured_object, write_structured_object
-from app.services.hsbc_credit_card import is_hsbc_credit_card_rebate_description
+from app.services.hsbc_credit_card import (
+    is_hsbc_credit_card_rebate_description,
+    is_hsbc_credit_card_statement_rebate_description,
+)
 
 
 CREDIT_CARD_LEDGER_PATH = SETTINGS_STORE_DIR / "credit_cards.sqlite3"
@@ -116,7 +120,10 @@ def _validate_transaction(row: Any) -> None:
     if row["kind"] == "rebate" and (
         row["status"] != "posted"
         or row["currency"] != "HKD"
-        or not is_hsbc_credit_card_rebate_description(row["description"])
+        or not (
+            is_hsbc_credit_card_rebate_description(row["description"])
+            or is_hsbc_credit_card_statement_rebate_description(row["description"])
+        )
     ):
         raise ValueError("Only source-labeled posted HKD card rebates are supported.")
     if row["status"] not in {"posted", "pending"} or (
@@ -468,10 +475,12 @@ def _match_key(row: dict[str, Any]) -> tuple[Any, ...]:
     )
     if row["kind"] == "repayment" and description == "IFS PAYMENT - THANK YOU":
         description = "PAYMENT - THANK YOU"
-    elif row["kind"] == "purchase" and description.startswith("APPLEPAY "):
-        description = description[len("APPLEPAY ") :]
+    elif row["kind"] == "purchase":
+        description = re.sub(r"^(?:APPLEPAY |SALES: )", "", description, count=1)
     elif row["kind"] == "rewardcash" and description.startswith("PAY W/RC "):
         description = description[len("PAY W/RC ") :]
+    elif row["kind"] == "rebate":
+        description = description.removeprefix("RETURN: ")
     return (
         row["account_id"],
         row["card_last4"],
@@ -792,11 +801,15 @@ def _file_captures(
     inputs = [(Path(item), Path(item).read_bytes()) for item in files]
     if any(path.suffix.lower() not in {".pdf", ".csv"} for path, _ in inputs):
         raise ValueError("Only HSBC credit-card PDF and CSV files are supported.")
-    captures = [
-        capture_hsbc_credit_card_file(raw, path.name)
-        for path, raw in inputs
-        if path.suffix.lower() == ".pdf"
-    ]
+    captures = []
+    for path, raw in inputs:
+        if path.suffix.lower() != ".pdf":
+            continue
+        prior = ledger["sources"].get(hashlib.sha256(raw).hexdigest())
+        if prior is not None and prior.get("format") == "statement_pdf":
+            captures.append(_parse_source(prior))
+        else:
+            captures.append(capture_hsbc_credit_card_file(raw, path.name))
     accounts = {capture["account_id"] for capture in captures}
     if len(accounts) > 1:
         raise ValueError(

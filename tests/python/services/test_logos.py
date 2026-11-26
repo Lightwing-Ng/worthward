@@ -1,7 +1,7 @@
 """
 Tests for logo provider ticker normalization.
 
-Code version: v0.9.4
+Code version: v0.9.5
 """
 
 from __future__ import annotations
@@ -197,6 +197,54 @@ class LogoServiceTests(unittest.TestCase):
                 "source": "local",
             }],
         )
+
+    def test_tencent_numeric_aliases_resolve_without_cached_quotes(self) -> None:
+        with (
+            patch("app.services.market.logos._search_yfinance_quotes") as remote_search,
+            patch("app.services.market.logos._lookup_exact_us_suggestion") as exact_us_search,
+        ):
+            for query in ("0700", "700", "0700.HK"):
+                with self.subTest(query=query):
+                    self.assertEqual(search_tickers(query), [{
+                        "symbol": "0700.HK",
+                        "name": "Tencent Holdings Limited",
+                        "logo_url": "",
+                        "source": "local",
+                    }])
+
+        remote_search.assert_not_called()
+        exact_us_search.assert_not_called()
+
+        logo_filename = "700.HK.png"
+        bundled_logo = Path(__file__).resolve().parents[3] / "market_store" / "logos" / logo_filename
+        local_logo = self.market_store_root / "logos" / logo_filename
+        local_logo.write_bytes(bundled_logo.read_bytes())
+        response = create_app().test_client().get("/api/symbol-search?q=0700")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()[0]["logo_url"],
+                         f"/market-store/logos/{logo_filename}?v={local_logo.stat().st_mtime_ns}")
+
+    def test_baba_profile_uses_the_bundled_logo(self) -> None:
+        logo_filename = "BABA.png"
+        bundled_logo = Path(__file__).resolve().parents[3] / "market_store" / "logos" / logo_filename
+        local_logo = self.market_store_root / "logos" / logo_filename
+        local_logo.parent.mkdir(parents=True)
+        local_logo.write_bytes(bundled_logo.read_bytes())
+
+        with (
+            create_app().test_request_context(),
+            patch("app.services.market.logos._load_yfinance_ticker_info") as remote_profile,
+            patch("app.services.market.logos.refresh_logo_store") as remote_logo,
+        ):
+            profile = fetch_quote_profile("BABA")
+
+        self.assertEqual(profile.company_name, "Alibaba Group Holding Limited")
+        self.assertEqual(
+            profile.logo_url,
+            f"/market-store/logos/{logo_filename}?v={local_logo.stat().st_mtime_ns}",
+        )
+        remote_profile.assert_not_called()
+        remote_logo.assert_not_called()
 
     def test_yfinance_ticker_profile_reuses_shared_verified_session(self) -> None:
         shared_session = object()

@@ -1,7 +1,8 @@
 /**
  * Investment workspace composition entry.
  *
- * Code version: v2.179.1
+ * Code version: v2.179.2
+ * - Changed: Load the HSBC paste preview outcome and status icon.
  * - Added: Load cross-broker Portfolio attribution and assigned lots in Stock details.
  * - Fixed: Load the HSBC holding changes list in the sync preview.
  * - Fixed: Loads stable first-frame geometry for the Overview range control.
@@ -108,7 +109,7 @@ import {createInvestmentHistoryPaginationRuntime} from './investment/runtime/his
 import {createInvestmentHoldingsLiveRuntime} from './investment/runtime/holdings-live.js?v=investment-holdings-live-v1.9.0';
 import {createInvestmentHoldingsWorkspaceRuntime} from './investment/runtime/holdings-workspace.js?v=investment-holdings-workspace-v1.8.1';
 import {createHsbcCreditCardImportRuntime} from './investment/runtime/credit-card-import.js?v=hsbc-credit-card-import-v1.6.1';
-import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.7.1';
+import {createInvestmentImportWorkflowRuntime} from './investment/runtime/import-workflows.js?v=investment-import-workflows-v1.7.2';
 import {
     createInvestmentMetricsImportRuntime,
     waitForInvestmentLoadingPaint,
@@ -223,7 +224,7 @@ const chartAxis = window.WORTHWARD_CHART_AXIS || {};
 const preferenceStorage = window.WORTHWARD_STORAGE || {local: window.localStorage};
 
 window.WORTHWARD_INVESTMENT_MODULE_VERSIONS = Object.freeze({
-    entry: 'v2.179.1',
+    entry: 'v2.179.2',
     chartOrbit: INVESTMENT_CHART_ORBIT_MODULE_VERSION,
     dataUtils: INVESTMENT_DATA_UTILS_MODULE_VERSION,
     importFeedback: INVESTMENT_IMPORT_FEEDBACK_MODULE_VERSION,

@@ -1,4 +1,4 @@
-/* Code version: v1.8.7 */
+/* Code version: v1.8.9 */
 
 .scrollable-data-table-shell,
 .investment-holdings-table-shell {
@@ -1462,6 +1462,50 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
     grid-column: 2;
 }
 
+/* The paste preview shares the Process List marker and content columns. */
+.hsbc-paste-preview-status {
+    display: grid;
+    grid-template-columns: var(--process-list-marker-size) minmax(0, 1fr);
+    column-gap: var(--process-list-column-gap);
+}
+
+.hsbc-paste-preview-status > [data-hsbc-paste-preview-copy] {
+    grid-column: 2;
+}
+
+.hsbc-paste-preview-icon {
+    display: none;
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: center;
+    align-self: start;
+    inline-size: 1lh;
+    block-size: 1lh;
+    background-color: var(--process-list-marker-color);
+    mask: var(--hsbc-paste-preview-icon) center / contain no-repeat;
+    -webkit-mask: var(--hsbc-paste-preview-icon) center / contain no-repeat;
+}
+
+.hsbc-paste-preview[data-preview-result] .hsbc-paste-preview-icon {
+    display: block;
+}
+
+.hsbc-paste-preview[data-preview-result="unchanged"] {
+    --hsbc-paste-preview-icon: url("/static/images/exclamationmark.magnifyingglass.svg");
+}
+
+.hsbc-paste-preview[data-preview-result="changes"] {
+    --hsbc-paste-preview-icon: url("/static/images/plus.magnifyingglass.svg");
+}
+
+.hsbc-paste-preview-details {
+    margin-block-start: var(--process-list-copy-gap);
+}
+
+.hsbc-paste-preview-details:not(:has(> :not([hidden]))) {
+    display: none;
+}
+
 #hsbc_paste_preview_positions td > ul {
     margin: 0;
     padding-inline-start: 1.25em;
@@ -1986,7 +2030,6 @@ body:has(#transaction_form_container .investment-import-broker-field.is-open) ca
 
 #investment_import_hsbc_fields .investment-import-file-input {
     font-size: var(--font-table-body);
-    line-height: 1.2;
 }
 
 .investment-import-file-input::file-selector-button {

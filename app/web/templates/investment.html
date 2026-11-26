@@ -1,4 +1,5 @@
-{# Code version: v1.90.1
+{# Code version: v1.90.2
+   Changed: Align the HSBC sync preview status with the import steps.
    Added: Pass locally saved portfolio lot assignments to Stock details.
    Fixed: Loads stable first-frame geometry for the Overview range control.
    Fixed: Loads the HSBC credit-card completion notice.
@@ -668,26 +669,31 @@
                                               hidden
                                               spellcheck="false"></textarea>
                                 </div>
-                                <section id="hsbc_paste_preview" class="settings-table-wrap" aria-label="HSBC sync preview" hidden>
-                                    <p id="hsbc_paste_preview_status" class="settings-service-note" role="status"></p>
-                                    <table class="settings-table" hidden>
-                                        <caption>Transaction changes</caption>
-                                        <colgroup><col style="width: 19%;"><col style="width: 39%;"><col style="width: 17%;"><col style="width: 25%;"></colgroup>
-                                        <thead><tr><th scope="col">Date</th><th scope="col">Activity</th><th scope="col">Change</th><th scope="col">Amount</th></tr></thead>
-                                        <tbody id="hsbc_paste_preview_transactions"></tbody>
-                                    </table>
-                                    <table class="settings-table" hidden>
-                                        <caption>Cash balance changes</caption>
-                                        <thead><tr><th scope="col">Account</th><th scope="col">Date</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead>
-                                        <tbody id="hsbc_paste_preview_balances"></tbody>
-                                    </table>
-                                    <table class="settings-table" hidden>
-                                        <caption>Holding changes</caption>
-                                        <colgroup><col style="width: 22%;"><col style="width: 78%;"></colgroup>
-                                        <thead><tr><th scope="col">Ticker</th><th scope="col">Changes</th></tr></thead>
-                                        <tbody id="hsbc_paste_preview_positions"></tbody>
-                                    </table>
-                                    <ul id="hsbc_paste_preview_warnings" class="settings-service-note" hidden></ul>
+                                <section id="hsbc_paste_preview" class="hsbc-paste-preview" aria-label="HSBC sync preview" hidden>
+                                    <p id="hsbc_paste_preview_status" class="settings-service-note hsbc-paste-preview-status" role="status">
+                                        <span class="hsbc-paste-preview-icon" aria-hidden="true"></span>
+                                        <span data-hsbc-paste-preview-copy></span>
+                                    </p>
+                                    <div class="settings-table-wrap hsbc-paste-preview-details">
+                                        <table class="settings-table" hidden>
+                                            <caption>Transaction changes</caption>
+                                            <colgroup><col style="width: 19%;"><col style="width: 39%;"><col style="width: 17%;"><col style="width: 25%;"></colgroup>
+                                            <thead><tr><th scope="col">Date</th><th scope="col">Activity</th><th scope="col">Change</th><th scope="col">Amount</th></tr></thead>
+                                            <tbody id="hsbc_paste_preview_transactions"></tbody>
+                                        </table>
+                                        <table class="settings-table" hidden>
+                                            <caption>Cash balance changes</caption>
+                                            <thead><tr><th scope="col">Account</th><th scope="col">Date</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead>
+                                            <tbody id="hsbc_paste_preview_balances"></tbody>
+                                        </table>
+                                        <table class="settings-table" hidden>
+                                            <caption>Holding changes</caption>
+                                            <colgroup><col style="width: 22%;"><col style="width: 78%;"></colgroup>
+                                            <thead><tr><th scope="col">Ticker</th><th scope="col">Changes</th></tr></thead>
+                                            <tbody id="hsbc_paste_preview_positions"></tbody>
+                                        </table>
+                                        <ul id="hsbc_paste_preview_warnings" class="settings-service-note" hidden></ul>
+                                    </div>
                                 </section>
                                 </div>
                                 <div data-hsbc-import-mode-panel="statement_pdf" hidden>
@@ -804,5 +810,5 @@
 {% block page_scripts %}
     <script id="investment_portfolio_lot_assignments" type="application/json">{{ investment_portfolio_lot_assignments|default({})|tojson }}</script>
     <script src="{{ url_for('static', filename='assets/js/chart.js', v=version ~ '-chart-v0.14.1') }}"></script>
-    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.179.1') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='assets/js/investment.js', v=version ~ '-investment-v2.179.2') }}"></script>
 {% endblock %}

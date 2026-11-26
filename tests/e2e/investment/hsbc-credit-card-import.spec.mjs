@@ -1,4 +1,4 @@
-/* Code version: v1.3.11 */
+/* Code version: v1.3.13 */
 import {expect, test} from '@playwright/test';
 import {mockInvestmentReadApis} from '../critical_flows/support.mjs';
 
@@ -269,7 +269,7 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
             },
         }});
     });
-    await openAccountImport(page);
+    await openAccountImport(page, 1280, '/trade/investment?view=holdings');
     await page.route('**/api/investment/transactions*', (route) => {
         if (route.request().method() !== 'POST') return route.fallback();
         writes.push(route.request().url());
@@ -283,6 +283,10 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
         ['#hsbc_order_status_paste_button', '#hsbc_order_status_display', '#hsbc_order_status_text', 'order_status_text', 'Order Status\nSample order capture'],
     ];
     const expected = {cash_account_text: '', portfolio_text: '', order_status_text: ''};
+    const preview = page.getByRole('region', {name: 'HSBC sync preview'});
+    const previewStatus = preview.getByRole('status');
+    const previewIcon = previewStatus.locator('.hsbc-paste-preview-icon');
+    const syncButton = page.getByRole('button', {name: 'Sync now'});
     for (const [button, display, source, key, text] of fields) {
         await page.locator(button).click();
         await expect(page.locator(display)).toBeFocused();
@@ -292,12 +296,20 @@ test('native HSBC cash, portfolio, and order pastes retain separate multiline so
         await expect(page.locator(source)).toHaveValue(text);
         await expect.poll(() => validations.at(-1)).toEqual({...expected});
         if (key === 'portfolio_text') {
-            await expect(page.locator('#hsbc_paste_preview_status')).toHaveText('Paste Order Status to preview this HSBC sync.');
-            await expect(page.locator('#investment_import_submit_button')).toBeDisabled();
+            await expect(previewStatus).toHaveText('Paste Order Status to preview this HSBC sync.');
+            await expect(preview).not.toHaveAttribute('data-preview-result', /.+/);
+            await expect(previewIcon).toBeHidden();
+            await expect(syncButton).toBeDisabled();
             await expect(page.locator('#hsbc_paste_preview_balances tr')).toHaveCount(0);
             continue;
         }
-        await expect(page.locator('#investment_import_submit_button')).toBeEnabled();
+        await expect(preview).toHaveAttribute('data-preview-result', 'changes');
+        await expect(previewStatus).toHaveText('Changes found.');
+        await expect(previewIcon).toBeVisible();
+        await expect(preview.locator('.hsbc-paste-preview-details')).toBeVisible();
+        await expect(previewIcon).toHaveAttribute('aria-hidden', 'true');
+        await expect(previewIcon).toHaveCSS('mask-image', /plus\.magnifyingglass\.svg/);
+        await expect(syncButton).toBeEnabled();
         await expect(page.locator('#hsbc_paste_preview_balances tr')).toHaveCount(1);
         await expect(page.locator('#hsbc_paste_preview_balances tr')).toContainText('USD Savings');
         await expect(page.locator('#hsbc_paste_preview_balances tr')).toContainText('USD 1,250.00');
@@ -350,6 +362,7 @@ test('HSBC sync stays blocked until validation returns a complete preview', asyn
         await pasteAccountClipboard(page, completeCashPage);
         await expect.poll(() => validations).toBe(attempt);
         await expect(previewStatus).toContainText('The HSBC sync preview is unavailable.');
+        await expect(previewStatus.locator('.hsbc-paste-preview-icon')).toBeHidden();
         await expect(submitButton).toBeDisabled();
         await page.locator('#investment_form').evaluate((form) => form.requestSubmit());
     }
@@ -367,7 +380,46 @@ test('an unchanged HSBC cash capture shows a summary and keeps sync available', 
     await openAccountImport(page, 390, '/trade/investment?view=holdings');
     await pasteAccountClipboard(page, completeCashPage.replace('HSBC HKD Savings', 'HKD Current'));
     const preview = page.getByRole('region', {name: 'HSBC sync preview'});
-    await expect(preview.getByRole('status')).toContainText('No changes to transactions, cash balances, or holdings.');
+    const previewStatus = preview.getByRole('status');
+    const previewIcon = previewStatus.locator('.hsbc-paste-preview-icon');
+    await expect(preview).toHaveAttribute('data-preview-result', 'unchanged');
+    await expect(previewStatus).toHaveText('No changes to transactions, cash balances, or holdings.');
+    await expect(previewIcon).toBeVisible();
+    await expect(previewIcon).toHaveAttribute('aria-hidden', 'true');
+    await expect(previewIcon).toHaveCSS('mask-image', /exclamationmark\.magnifyingglass\.svg/);
+    const alignment = await previewStatus.evaluate((status) => {
+        const icon = status.querySelector('.hsbc-paste-preview-icon').getBoundingClientRect();
+        const steps = status.closest('section').previousElementSibling;
+        const markers = Array.from(steps.querySelectorAll('.process-list-marker'));
+        const orderTitle = steps.querySelector(
+            'label[for="hsbc_order_status_display"] .investment-import-label-text',
+        ).getBoundingClientRect();
+        const copy = status.querySelector('[data-hsbc-paste-preview-copy]');
+        const bounds = copy.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(copy);
+        const lines = Array.from(range.getClientRects());
+        const lineHeight = parseFloat(getComputedStyle(copy).lineHeight);
+        return {
+            lines: lines.length,
+            lineStarts: lines.map((line) => Math.abs(line.left - bounds.left)),
+            titleOffset: Math.abs(orderTitle.left - bounds.left),
+            markerOffsets: markers.map((marker) => {
+                const rect = marker.getBoundingClientRect();
+                return Math.abs(rect.left + rect.width / 2 - icon.left - icon.width / 2);
+            }),
+            iconGap: bounds.left - icon.right,
+            firstLineIconOffset: Math.abs(icon.top + icon.height / 2 - bounds.top - lineHeight / 2),
+        };
+    });
+    expect(alignment.lines).toBeGreaterThan(1);
+    expect(Math.max(...alignment.lineStarts)).toBeLessThanOrEqual(1);
+    expect(alignment.titleOffset).toBeLessThanOrEqual(1);
+    expect(alignment.markerOffsets).toHaveLength(3);
+    expect(Math.max(...alignment.markerOffsets)).toBeLessThanOrEqual(1);
+    expect(alignment.iconGap).toBeGreaterThan(0);
+    expect(alignment.firstLineIconOffset).toBeLessThanOrEqual(1);
+    await expect(preview.locator('.hsbc-paste-preview-details')).toBeHidden();
     await expect(preview.getByRole('table')).toHaveCount(0);
     await expect(page.getByRole('button', {name: 'Sync now'})).toBeEnabled();
     expect(calls).toEqual({cash: 0, card: 0, preview: 0});
@@ -724,6 +776,11 @@ for (const [width, height] of [[827, 1189], [390, 844]]) {
         const inputBounds = await input.boundingBox();
         const labelBounds = await label.boundingBox();
         expect(Math.abs(inputBounds.x - labelBounds.x)).toBeLessThanOrEqual(1);
+        const inputGeometry = await input.evaluate((element) => ({
+            innerHeight: element.clientHeight,
+            lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+        }));
+        expect(inputGeometry.lineHeight).toBe(inputGeometry.innerHeight);
     });
 }
 

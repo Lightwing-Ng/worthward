@@ -1,6 +1,7 @@
 """Investment import domain: hsbc statements.
 
-Code version: v0.3.0
+Code version: v0.3.1
+- Fixed: Direct recognized HSBC Red card statements to the card ledger workflow.
 - Added: Cash rows retain their immutable statement sequence identity for
   same-day settlement replay comparisons.
 - Fixed: Statement-pair orders retain the consumed principal and fee rows as
@@ -9,6 +10,7 @@ Code version: v0.3.0
 
 from __future__ import annotations
 
+from app.services.hsbc_credit_card_files import HSBC_RED_STATEMENT_TITLE
 from app.services.investment.importing.support import (
     Any,
     DEFAULT_CONVENTION_TIME,
@@ -1880,6 +1882,13 @@ def build_investment_payload_from_hsbc_statement_bundle(
     classifications: list[tuple[bytes, str, str, bool]] = []
     for payload, filename in non_empty:
         text = _investment_import_compat.extract_statement_pdf_text(payload, "HSBC")
+        if HSBC_RED_STATEMENT_TITLE in _normalize_whitespace(text):
+            raise ValueError(
+                f"{filename or 'The uploaded PDF'} is an HSBC Red credit-card statement. "
+                "To import card activity in the browser, select HSBC, choose Copy/paste, "
+                "and paste the complete credit-card account page. "
+                "To reconcile this PDF locally, use scripts/reconcile_hsbc_credit_card.py."
+            )
         extracted_text_by_payload_id[id(payload)] = text
         is_full_monthly_statement = (
             "HSBC One Portfolio" in text
